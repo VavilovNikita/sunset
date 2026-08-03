@@ -7,6 +7,11 @@ target/
 ### Room image uploads (runtime data, mirrors public/uploads in the Next.js app) ###
 /uploads/
 
+### Local env / secrets ###
+.env
+.env.*
+!.env.example
+
 ### STS ###
 .apt_generated
 .classpath

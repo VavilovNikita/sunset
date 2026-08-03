@@ -1,0 +1,35 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sunset-backend:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Overridable via .env; safe fallback keeps container logs readable if unset.
+      JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75.0}
+    # Bound to loopback only: the existing reverse proxy on the VPS (in front of
+    # the Next.js app) is expected to proxy /api/* to http://127.0.0.1:8080.
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - uploads:/app/uploads
+    # Uncomment if Postgres runs as a container on this VPS (e.g. part of the
+    # Next.js app's compose stack) rather than a separate managed DB host, and
+    # attach that stack's network below instead of/alongside the default one.
+    # networks:
+    #   - default
+    #   - nextjs_default
+    extra_hosts:
+      # Lets DATABASE_URL use host.docker.internal if Postgres runs directly on
+      # the VPS host (outside any container). Harmless no-op otherwise.
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  uploads:
+
+# networks:
+#   nextjs_default:
+#     external: true

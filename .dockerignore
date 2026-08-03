@@ -1,0 +1,15 @@
+.git
+.idea
+.vscode
+target
+uploads
+*.iml
+*.log
+HELP.md
+openapi-generator-cli.jar
+openapi.yaml
+Dockerfile
+.dockerignore
+docker-compose.yml
+.env
+.env.*
