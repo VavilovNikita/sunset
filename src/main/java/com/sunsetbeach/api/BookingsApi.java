@@ -26,7 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-03T20:50:04.328032600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface BookingsApi {
 
@@ -109,6 +109,88 @@ public interface BookingsApi {
                 if (mediaType.isCompatibleWith(MediaType.valueOf(""))) {
                     String exampleString = "";
                     ApiUtil.setExampleResponse(request, "", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /bookings/{id} : Get a booking by id
+     * Requires any authenticated staff session (ADMIN or MANAGER). Used by the admin detail/status-change screen.
+     *
+     * @param id  (required)
+     * @return The booking. (status code 200)
+     *         or No valid session cookie. (status code 401)
+     *         or Booking not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/bookings/{id}",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<Booking> getBooking(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /bookings : List bookings
+     * Requires any authenticated staff session (ADMIN or MANAGER). Filters mirror &#x60;GET /bookings/export&#x60;. Ordered by &#x60;checkIn&#x60; ascending. 
+     *
+     * @param from Include bookings whose &#x60;checkOut&#x60; is after this date (i.e. still relevant on/after &#x60;from&#x60;). (optional)
+     * @param to Include bookings whose &#x60;checkIn&#x60; is before this date. (optional)
+     * @param status  (optional)
+     * @return Matching bookings, ordered by &#x60;checkIn&#x60; ascending. (status code 200)
+     *         or No valid session cookie. (status code 401)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/bookings",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<List<Booking>> listBookings(
+        @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = false) String from,
+        @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = false) String to,
+         @Valid @RequestParam(value = "status", required = false) BookingStatus status
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {

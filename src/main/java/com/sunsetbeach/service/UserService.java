@@ -10,6 +10,7 @@ import com.sunsetbeach.model.User;
 import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
 import com.sunsetbeach.repository.UserRepository;
+import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,17 @@ public class UserService {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+    }
+
+    @Transactional(readOnly = true)
+    public List<User> list() {
+        return userRepository.findAll().stream().map(userMapper::toDto).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public User getById(String id) {
+        UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        return userMapper.toDto(entity);
     }
 
     @Transactional

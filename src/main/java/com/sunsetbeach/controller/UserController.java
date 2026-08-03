@@ -6,6 +6,7 @@ import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
 import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.UserService;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -18,6 +19,16 @@ public class UserController implements UsersApi {
 
     public UserController(UserService userService) {
         this.userService = userService;
+    }
+
+    @Override
+    public ResponseEntity<List<User>> listUsers() {
+        return ResponseEntity.ok(userService.list());
+    }
+
+    @Override
+    public ResponseEntity<User> getUser(String id) {
+        return ResponseEntity.ok(userService.getById(id));
     }
 
     @Override

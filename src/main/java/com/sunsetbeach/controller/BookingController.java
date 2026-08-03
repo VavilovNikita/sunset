@@ -6,6 +6,7 @@ import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.service.BookingService;
+import java.util.List;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -20,6 +21,16 @@ public class BookingController implements BookingsApi {
 
     public BookingController(BookingService bookingService) {
         this.bookingService = bookingService;
+    }
+
+    @Override
+    public ResponseEntity<List<Booking>> listBookings(String from, String to, BookingStatus status) {
+        return ResponseEntity.ok(bookingService.list(from, to, status));
+    }
+
+    @Override
+    public ResponseEntity<Booking> getBooking(String id) {
+        return ResponseEntity.ok(bookingService.getById(id));
     }
 
     @Override

@@ -23,6 +23,16 @@ public class RoomController implements RoomsApi {
     }
 
     @Override
+    public ResponseEntity<List<Room>> listRooms() {
+        return ResponseEntity.ok(roomService.list());
+    }
+
+    @Override
+    public ResponseEntity<Room> getRoom(String id) {
+        return ResponseEntity.ok(roomService.getById(id));
+    }
+
+    @Override
     public ResponseEntity<Room> createRoom(RoomInput roomInput) {
         return ResponseEntity.status(HttpStatus.CREATED).body(roomService.create(roomInput));
     }

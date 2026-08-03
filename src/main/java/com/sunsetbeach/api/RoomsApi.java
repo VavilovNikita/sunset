@@ -26,7 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-03T20:50:04.328032600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface RoomsApi {
 
@@ -161,6 +161,83 @@ public interface RoomsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /rooms/{id} : Get a room by id
+     * Requires any authenticated staff session (ADMIN or MANAGER). Used to prefill the admin edit form.
+     *
+     * @param id  (required)
+     * @return The room. (status code 200)
+     *         or No valid session cookie. (status code 401)
+     *         or Room not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/rooms/{id}",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<Room> getRoom(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /rooms : List all rooms
+     * Requires any authenticated staff session (ADMIN or MANAGER). No pagination (small hotel).
+     *
+     * @return All rooms. (status code 200)
+     *         or No valid session cookie. (status code 401)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/rooms",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<List<Room>> listRooms(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

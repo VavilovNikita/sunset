@@ -10,6 +10,8 @@ import com.sunsetbeach.model.AvailabilityDay;
 import com.sunsetbeach.model.AvailabilityRangeInput;
 import com.sunsetbeach.model.AvailabilityResponse;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.PublicAvailabilityDay;
+import com.sunsetbeach.model.PublicAvailabilityResponse;
 import com.sunsetbeach.repository.AvailabilityRepository;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.RoomRepository;
@@ -40,7 +42,40 @@ public class AvailabilityService {
     @Transactional(readOnly = true)
     public AvailabilityResponse getAvailability(String roomId, String monthParam) {
         RoomEntity room = roomRepository.findById(roomId).orElseThrow(() -> new NotFoundException("Room not found"));
+        List<DayBlock> blocks = computeBlocks(room, monthParam);
 
+        List<AvailabilityDay> days = blocks.stream()
+                .map(block -> {
+                    var source = block.isBooked()
+                            ? AvailabilityDay.SourceEnum.BOOKING
+                            : block.manual() ? AvailabilityDay.SourceEnum.MANUAL : null;
+                    return new AvailabilityDay(block.date().toString(), block.isBooked() || block.manual(), source);
+                })
+                .toList();
+
+        return new AvailabilityResponse(days);
+    }
+
+    /**
+     * Public counterpart of {@link #getAvailability} - same day-by-day computation, but never
+     * reveals whether a blocked day is a real booking or a manual staff block.
+     */
+    @Transactional(readOnly = true)
+    public PublicAvailabilityResponse getPublicAvailability(String roomId, String monthParam) {
+        RoomEntity room = roomRepository.findById(roomId).orElseThrow(() -> new NotFoundException("Room not found"));
+        List<DayBlock> blocks = computeBlocks(room, monthParam);
+
+        List<PublicAvailabilityDay> days = blocks.stream()
+                .map(block -> new PublicAvailabilityDay(block.date().toString(), block.isBooked() || block.manual()))
+                .toList();
+
+        return new PublicAvailabilityResponse(days);
+    }
+
+    private record DayBlock(LocalDate date, boolean isBooked, boolean manual) {
+    }
+
+    private List<DayBlock> computeBlocks(RoomEntity room, String monthParam) {
         YearMonth month = DateRangeUtil.parseMonthOrCurrent(monthParam);
         LocalDate monthStart = month.atDay(1);
         LocalDate monthEnd = month.atEndOfMonth();
@@ -56,18 +91,9 @@ public class AvailabilityService {
             bookedDates.addAll(DateRangeUtil.getNights(booking.getCheckIn(), booking.getCheckOut()));
         }
 
-        List<AvailabilityDay> days = DateRangeUtil.eachDateInRange(monthStart, monthEnd).stream()
-                .map(date -> {
-                    boolean isBooked = bookedDates.contains(date);
-                    boolean manual = manualByDate.getOrDefault(date, false);
-                    var source = isBooked
-                            ? AvailabilityDay.SourceEnum.BOOKING
-                            : manual ? AvailabilityDay.SourceEnum.MANUAL : null;
-                    return new AvailabilityDay(date.toString(), isBooked || manual, source);
-                })
+        return DateRangeUtil.eachDateInRange(monthStart, monthEnd).stream()
+                .map(date -> new DayBlock(date, bookedDates.contains(date), manualByDate.getOrDefault(date, false)))
                 .toList();
-
-        return new AvailabilityResponse(days);
     }
 
     @Transactional

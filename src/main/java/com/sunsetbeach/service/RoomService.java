@@ -40,6 +40,17 @@ public class RoomService {
         this.uploadsRoot = Path.of(uploadsRoot);
     }
 
+    @Transactional(readOnly = true)
+    public List<Room> list() {
+        return roomRepository.findAll().stream().map(roomMapper::toDto).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Room getById(String id) {
+        RoomEntity entity = roomRepository.findById(id).orElseThrow(() -> new NotFoundException("Room not found"));
+        return roomMapper.toDto(entity);
+    }
+
     @Transactional
     public Room create(RoomInput input) {
         RoomEntity entity = new RoomEntity();

@@ -90,11 +90,30 @@ public class BookingService {
     }
 
     @Transactional(readOnly = true)
+    public List<Booking> list(String from, String to, BookingStatus status) {
+        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status));
+        return bookings.stream().map(b -> bookingMapper.toDto(b, b.getRoom())).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Booking getById(String id) {
+        BookingEntity booking = bookingRepository.findById(id).orElseThrow(() -> new NotFoundException("Booking not found"));
+        RoomEntity room = roomRepository.findById(booking.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        return bookingMapper.toDto(booking, room);
+    }
+
+    @Transactional(readOnly = true)
     public String exportCsv(String from, String to, BookingStatus status) {
+        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status));
+        return buildCsv(bookings);
+    }
+
+    /** Shared by {@link #list} and {@link #exportCsv} - same filters, same `checkIn` ascending order. */
+    private static Specification<BookingEntity> buildSpecification(String from, String to, BookingStatus status) {
         LocalDate fromDate = from != null ? LocalDate.parse(from) : null;
         LocalDate toDate = to != null ? LocalDate.parse(to) : null;
 
-        Specification<BookingEntity> spec = (root, query, cb) -> {
+        return (root, query, cb) -> {
             if (Long.class != query.getResultType()) {
                 root.fetch("room");
             }
@@ -111,9 +130,6 @@ public class BookingService {
             query.orderBy(cb.asc(root.get("checkIn")));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
-
-        List<BookingEntity> bookings = bookingRepository.findAll(spec);
-        return buildCsv(bookings);
     }
 
     private static String buildCsv(List<BookingEntity> bookings) {
