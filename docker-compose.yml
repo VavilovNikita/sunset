@@ -16,20 +16,49 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - uploads:/app/uploads
-    # Uncomment if Postgres runs as a container on this VPS (e.g. part of the
-    # Next.js app's compose stack) rather than a separate managed DB host, and
-    # attach that stack's network below instead of/alongside the default one.
+    # --- Where does Postgres actually live? Pick ONE scenario. ---------------
+    #
+    # Scenario A: Postgres runs directly on the VPS host, OR as a container
+    # that publishes its port to the host (e.g. "5432:5432" in its own
+    # compose file). In both cases the DB is reachable from any container via
+    # the host's gateway IP.
+    #   -> DATABASE_URL in .env: jdbc:postgresql://host.docker.internal:5432/...
+    #   -> Leave `networks:` below commented out - the extra_hosts entry
+    #      further down is all that's needed.
+    #
+    # Scenario B: Postgres runs as a container in the sunset-beach compose
+    # project, WITHOUT a published host port (the common case - only the
+    # frontend port is usually published). It's then only reachable from
+    # containers attached to that project's internal docker network, using
+    # the DB container's name as the hostname - host.docker.internal will
+    # NOT work here because the port isn't exposed on the host at all.
+    #   -> DATABASE_URL in .env: jdbc:postgresql://<db-container-name>:5432/...
+    #      (find the name with `docker ps`, e.g. sunset-beach-db-1)
+    #   -> Uncomment `networks:` below AND the external network block at the
+    #      bottom of this file, replacing sunset-beach_default with the real
+    #      network name (see comment there on how to find it).
     # networks:
     #   - default
-    #   - nextjs_default
+    #   - sunset-beach_default
     extra_hosts:
-      # Lets DATABASE_URL use host.docker.internal if Postgres runs directly on
-      # the VPS host (outside any container). Harmless no-op otherwise.
+      # Lets DATABASE_URL use host.docker.internal for Scenario A above.
+      # Harmless no-op if you're on Scenario B instead.
       - "host.docker.internal:host-gateway"
 
 volumes:
   uploads:
 
+# Scenario B only (see the `networks:` comment on the backend service above).
+# Docker Compose names the default network after the project directory:
+# "<frontend-project-folder-name>_default" (or a custom name if the
+# frontend's compose file sets `name:` / COMPOSE_PROJECT_NAME). It is NOT
+# prefixed with "nextjs-" or similar unless that's literally the folder name.
+#
+# To find the real name, run this on the VPS once the frontend stack is up:
+#   docker network ls
+# and look for an entry matching <frontend-project-folder-name>_default,
+# e.g. sunset-beach_default if the frontend's compose project lives in a
+# folder named "sunset-beach".
 # networks:
-#   nextjs_default:
+#   sunset-beach_default:
 #     external: true
