@@ -9,8 +9,10 @@ import com.sunsetbeach.model.User;
 import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.security.JwtService;
+import com.sunsetbeach.security.LoginRateLimiter;
 import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,32 +31,47 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final UserService userService;
+    private final LoginRateLimiter loginRateLimiter;
 
     public AuthController(
             UserRepository userRepository,
             UserMapper userMapper,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
-            UserService userService) {
+            UserService userService,
+            LoginRateLimiter loginRateLimiter) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.userService = userService;
+        this.loginRateLimiter = loginRateLimiter;
     }
 
     @PostMapping("/auth/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
-        UserEntity entity = userRepository.findByEmail(request.getEmail().trim())
-                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+        String email = request.getEmail().trim();
+        String ip = clientIp(httpRequest);
+        loginRateLimiter.checkAllowed(ip, email);
 
-        if (!passwordEncoder.matches(request.getPassword(), entity.getPasswordHash())) {
+        UserEntity entity = userRepository.findByEmail(email).orElse(null);
+        if (entity == null || !passwordEncoder.matches(request.getPassword(), entity.getPasswordHash())) {
+            loginRateLimiter.recordFailure(ip, email);
             throw new UnauthorizedException("Invalid email or password");
         }
+        loginRateLimiter.recordSuccess(ip, email);
 
         StaffPrincipal principal = new StaffPrincipal(entity.getId(), entity.getEmail(), entity.getRole());
         String token = jwtService.issue(principal);
         return ResponseEntity.ok(new AuthResponse(token, userMapper.toDto(entity)));
+    }
+
+    private static String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
     /**

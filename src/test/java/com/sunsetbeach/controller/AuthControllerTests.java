@@ -15,6 +15,7 @@ import com.sunsetbeach.model.User;
 import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.security.JwtService;
+import com.sunsetbeach.security.LoginRateLimiter;
 import com.sunsetbeach.security.RestAccessDeniedHandler;
 import com.sunsetbeach.security.RestAuthEntryPoint;
 import com.sunsetbeach.security.SecurityConfig;
@@ -40,7 +41,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * ADMIN-only rule on /auth/register, all through the actual SecurityConfig + JwtService.
  */
 @WebMvcTest(controllers = {AuthController.class})
-@Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, UserMapper.class})
+@Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, UserMapper.class, LoginRateLimiter.class})
 class AuthControllerTests {
 
     private static final String JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long!!";
@@ -112,6 +113,27 @@ class AuthControllerTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"nobody@example.com\",\"password\":\"whatever1\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void login_afterFiveFailuresFromSameIpAndEmail_isRateLimited() throws Exception {
+        // Distinct email so this test's failures don't share the (ip, email) rate-limit
+        // bucket with any other test's failed attempts in this class - the limiter bean
+        // is a singleton reused across tests via Spring's test context cache.
+        when(userRepository.findByEmail("rate-limited@example.com")).thenReturn(Optional.empty());
+
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"rate-limited@example.com\",\"password\":\"whatever1\"}"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"rate-limited@example.com\",\"password\":\"whatever1\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error").exists());
     }
 
     @Test

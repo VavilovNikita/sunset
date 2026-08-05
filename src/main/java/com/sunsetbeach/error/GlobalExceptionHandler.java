@@ -55,6 +55,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorMessage(ex.getMessage()));
     }
 
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ErrorMessage> handleTooManyRequests(TooManyRequestsException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(new ErrorMessage(ex.getMessage()));
+    }
+
     @ExceptionHandler({BadRequestException.class, MissingServletRequestPartException.class})
     public ResponseEntity<ErrorMessage> handleBadRequest(Exception ex) {
         String message = ex instanceof MissingServletRequestPartException ? "No files provided" : ex.getMessage();

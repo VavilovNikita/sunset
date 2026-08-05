@@ -98,6 +98,14 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Content-based MIME sniffing for uploaded room photos - detects the real file
+             type from magic bytes instead of trusting the client-supplied Content-Type. -->
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>3.1.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa-test</artifactId>
