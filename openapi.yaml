@@ -16,7 +16,9 @@ servers:
 
 tags:
   - name: Auth
-    description: NextAuth.js-managed authentication endpoints.
+    description: >
+      Self-hosted authentication - this app owns the `User` table and issues/verifies
+      its own JWTs. Replaces the old NextAuth.js-managed cookie session.
   - name: Rooms
     description: Room CRUD and image management (staff only).
   - name: Pricing
@@ -37,55 +39,116 @@ tags:
       staff block.
 
 security:
-  - sessionAuth: []
+  - bearerAuth: []
 
 paths:
-  /auth/{nextauth}:
-    parameters:
-      - name: nextauth
-        in: path
-        required: true
-        schema:
-          type: string
-        description: >
-          Catch-all segment(s) consumed by NextAuth.js (e.g. `session`,
-          `csrf`, `providers`, `callback/credentials`, `signin`, `signout`).
-    get:
-      operationId: nextAuthGet
-      tags: [Auth]
-      summary: NextAuth.js GET endpoints (session, csrf, providers, signin/signout pages, oauth callbacks)
-      description: >
-        Delegated entirely to `NextAuth(authOptions)` from `next-auth`
-        (Credentials provider, JWT session strategy). Request/response shapes
-        are whatever the installed `next-auth` v4 version defines for each
-        sub-route and are not reproduced here.
-      security: []
-      responses:
-        "200":
-          description: Response shape depends on the NextAuth.js sub-route requested.
+  /auth/login:
     post:
-      operationId: nextAuthPost
+      operationId: login
       tags: [Auth]
-      summary: NextAuth.js POST endpoints (signin/signout/callback)
+      summary: Log in with email/password
       description: >
-        Delegated entirely to `NextAuth(authOptions)`. The
-        `callback/credentials` sub-route is what `/admin/login` submits to;
-        it validates `email`/`password` against `User.passwordHash` (bcrypt)
-        and, on success, sets the JWT session cookie described in
-        `sessionAuth`.
+        Verifies `email`/`password` against `User.passwordHash` (bcrypt) and, on
+        success, returns a JWT to send as `Authorization: Bearer <token>` on
+        subsequent requests. No server-side session is created.
       security: []
       requestBody:
-        required: false
+        required: true
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
-              type: object
-              description: Shape depends on the NextAuth.js sub-route (e.g. email/password for credentials sign-in).
+              $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Response shape depends on the NextAuth.js sub-route requested.
-        "302":
-          description: Redirect (e.g. after signin/signout).
+          description: Login succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Email not found or password incorrect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Invalid email or password
+
+  /auth/register:
+    post:
+      operationId: registerUser
+      tags: [Auth]
+      summary: Create a staff user (alias of POST /users)
+      description: >
+        Requires an authenticated session with role `ADMIN`. Identical
+        behavior to `POST /users` - see that operation for the full response/
+        error shape.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreateInput"
+      responses:
+        "201":
+          description: User created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Body failed `userCreateSchema` validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Email already in use.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: A user with that email already exists
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [Auth]
+      summary: Get the currently authenticated user
+      description: Requires a valid `Authorization: Bearer` JWT.
+      responses:
+        "200":
+          description: The authenticated user (no `passwordHash`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [Auth]
+      summary: Log out
+      description: >
+        No-op on this side - JWTs are stateless and not revoked server-side.
+        Real logout is the client discarding the token.
+      security: []
+      responses:
+        "204":
+          description: Always succeeds.
 
   /rooms:
     get:
@@ -996,23 +1059,22 @@ paths:
 
 components:
   securitySchemes:
-    sessionAuth:
-      type: apiKey
-      in: cookie
-      name: next-auth.session-token
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
       description: >
-        NextAuth.js v4 JWT session cookie, set by `POST
-        /api/auth/callback/credentials` after a successful login at
-        `/admin/login`. Cookie name is prefixed `__Secure-` when the app is
-        served over HTTPS. Every route in this file except `POST /bookings`
-        and the `/auth/*` endpoints goes through `withApiAuth` (lib/rbac.ts),
-        which returns 401 if there is no session, and — where the route
-        additionally passes `{ role: "ADMIN" }` — 403 if the session's role
-        isn't `ADMIN`.
+        JWT returned by `POST /auth/login`, sent as `Authorization: Bearer
+        <token>`. Contains `sub` (user id), `email`, `role`, standard `iat`/`exp`
+        (default TTL 7 days, configurable via `JWT_TTL_DAYS`). Every route in
+        this file except `POST /bookings` and the unauthenticated `/auth/*`
+        endpoints (`login`, `logout`) requires a valid token, returning 401 if
+        missing/invalid/expired, and 403 where the route additionally requires
+        role `ADMIN`.
 
   responses:
     Unauthorized:
-      description: No valid session cookie.
+      description: No valid JWT.
       content:
         application/json:
           schema:
@@ -1020,7 +1082,7 @@ components:
           example:
             error: Unauthorized
     Forbidden:
-      description: Session is valid but lacks the required role (`ADMIN`).
+      description: Token is valid but lacks the required role (`ADMIN`).
       content:
         application/json:
           schema:
@@ -1250,6 +1312,26 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+          description: JWT to send as `Authorization: Bearer <token>` on subsequent requests.
+        user:
+          $ref: "#/components/schemas/User"
 
     UserCreateInput:
       type: object

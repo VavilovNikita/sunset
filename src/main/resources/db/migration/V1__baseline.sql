@@ -1,0 +1,19 @@
+-- Baseline placeholder - never executed.
+--
+-- spring.flyway.baseline-version=1 (see application.properties) tells Flyway the database
+-- is already at version 1 the first time it runs, so this file is skipped rather than applied.
+-- It exists purely as a record of the pre-Flyway schema shape, which was created by the
+-- Next.js app's Prisma migrations and already matches what Hibernate validates against
+-- (spring.jpa.hibernate.ddl-auto=validate). Confirmed compatible with the existing
+-- UserEntity/RoomEntity/etc. mappings - no structural change was needed, so no real
+-- migration was required to introduce Java-side JWT auth.
+--
+-- Real schema changes from this point forward go in V2__..., V3__..., etc.
+--
+-- CREATE TABLE "User" (
+--     id            text PRIMARY KEY,
+--     email         text UNIQUE NOT NULL,
+--     "passwordHash" text NOT NULL,
+--     role          "Role" NOT NULL DEFAULT 'MANAGER',
+--     "createdAt"   timestamp(3) NOT NULL DEFAULT now()
+-- );

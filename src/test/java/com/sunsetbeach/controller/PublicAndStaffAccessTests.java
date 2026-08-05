@@ -7,17 +7,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.Room;
-import com.sunsetbeach.security.NextAuthTokenService;
+import com.sunsetbeach.security.JwtService;
 import com.sunsetbeach.security.RestAccessDeniedHandler;
 import com.sunsetbeach.security.RestAuthEntryPoint;
 import com.sunsetbeach.security.SecurityConfig;
-import com.sunsetbeach.security.TestSessionTokens;
+import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.AvailabilityService;
 import com.sunsetbeach.service.PricingService;
 import com.sunsetbeach.service.RoomImageService;
 import com.sunsetbeach.service.RoomService;
 import com.sunsetbeach.service.UserService;
-import jakarta.servlet.http.Cookie;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,19 +37,21 @@ import org.springframework.test.web.servlet.MockMvc;
  * Verifies the auth boundary between staff-only reads, ADMIN-only reads, and public/unauthenticated
  * reads (including real file serving from {@code app.uploads.root}) added alongside the new
  * GET endpoints. Slices in RoomController/UserController/PublicController plus the real security
- * chain (SecurityConfig, NextAuthTokenService) so 401/403/200 boundaries are exercised for real;
- * only the service layer below the controllers is mocked (RoomImageService is real, backed by
- * a temp directory, so the file-serving 200/404 cases hit an actual filesystem lookup).
+ * chain (SecurityConfig, JwtService) so 401/403/200 boundaries are exercised for real; only the
+ * service layer below the controllers is mocked (RoomImageService is real, backed by a temp
+ * directory, so the file-serving 200/404 cases hit an actual filesystem lookup).
  */
 @WebMvcTest(controllers = {RoomController.class, UserController.class, PublicController.class})
-@Import({SecurityConfig.class, NextAuthTokenService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, RoomImageService.class})
+@Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, RoomImageService.class})
 class PublicAndStaffAccessTests {
 
-    private static final String NEXTAUTH_SECRET = "test-nextauth-secret-at-least-32-bytes-long!!";
-    private static final String SESSION_COOKIE = "next-auth.session-token";
+    private static final String JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long!!";
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JwtService jwtService;
 
     @MockitoBean
     private RoomService roomService;
@@ -69,7 +70,8 @@ class PublicAndStaffAccessTests {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("app.security.nextauth-secret", () -> NEXTAUTH_SECRET);
+        registry.add("app.security.jwt-secret", () -> JWT_SECRET);
+        registry.add("app.security.jwt-ttl-days", () -> "7");
         registry.add("app.uploads.root", () -> uploadsRoot.toString());
     }
 
@@ -80,34 +82,34 @@ class PublicAndStaffAccessTests {
         Files.writeString(roomDir.resolve("photo.jpg"), "fake-jpeg-bytes");
     }
 
-    private static Cookie managerCookie() {
-        return new Cookie(SESSION_COOKIE, TestSessionTokens.encode(NEXTAUTH_SECRET, "user-1", "manager@example.com", Role.MANAGER));
+    private String managerBearerToken() {
+        return "Bearer " + jwtService.issue(new StaffPrincipal("user-1", "manager@example.com", Role.MANAGER));
     }
 
     @Test
-    void publicRoomsList_withoutCookie_isOk() throws Exception {
+    void publicRoomsList_withoutToken_isOk() throws Exception {
         when(roomService.list()).thenReturn(List.of(sampleRoom()));
         mockMvc.perform(get("/public/rooms")).andExpect(status().isOk());
     }
 
     @Test
-    void staffRoomsList_withoutCookie_isUnauthorized() throws Exception {
+    void staffRoomsList_withoutToken_isUnauthorized() throws Exception {
         mockMvc.perform(get("/rooms")).andExpect(status().isUnauthorized());
     }
 
     @Test
-    void staffRoomsList_withManagerCookie_isOk() throws Exception {
+    void staffRoomsList_withManagerToken_isOk() throws Exception {
         when(roomService.list()).thenReturn(List.of(sampleRoom()));
-        mockMvc.perform(get("/rooms").cookie(managerCookie())).andExpect(status().isOk());
+        mockMvc.perform(get("/rooms").header("Authorization", managerBearerToken())).andExpect(status().isOk());
     }
 
     @Test
-    void usersList_withManagerCookie_isForbidden() throws Exception {
-        mockMvc.perform(get("/users").cookie(managerCookie())).andExpect(status().isForbidden());
+    void usersList_withManagerToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/users").header("Authorization", managerBearerToken())).andExpect(status().isForbidden());
     }
 
     @Test
-    void roomImage_existingFile_withoutCookie_isOkWithBytes() throws Exception {
+    void roomImage_existingFile_withoutToken_isOkWithBytes() throws Exception {
         mockMvc.perform(get("/uploads/rooms/room-1/photo.jpg"))
                 .andExpect(status().isOk())
                 .andExpect(content().bytes("fake-jpeg-bytes".getBytes()));

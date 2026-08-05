@@ -50,6 +50,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorMessage(ex.getMessage()));
     }
 
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<ErrorMessage> handleUnauthorized(UnauthorizedException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorMessage(ex.getMessage()));
+    }
+
     @ExceptionHandler({BadRequestException.class, MissingServletRequestPartException.class})
     public ResponseEntity<ErrorMessage> handleBadRequest(Exception ex) {
         String message = ex instanceof MissingServletRequestPartException ? "No files provided" : ex.getMessage();

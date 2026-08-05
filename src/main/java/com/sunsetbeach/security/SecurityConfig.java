@@ -13,9 +13,10 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * No login/session management lives here - the Next.js app owns /admin/login and /auth/*.
- * This service only verifies the next-auth.session-token cookie those flows produce
- * (see NextAuthSessionAuthFilter) and enforces the same role rules lib/rbac.ts does.
+ * All login/session management lives in this app - see AuthController for
+ * POST /auth/login|register and GET /auth/me. Every authenticated request carries the JWT
+ * issued by login in an {@code Authorization: Bearer} header (see JwtAuthFilter); there is no
+ * server-side session state.
  */
 @Configuration
 public class SecurityConfig {
@@ -23,7 +24,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            NextAuthTokenService tokenService,
+            JwtService jwtService,
             RestAuthEntryPoint authEntryPoint,
             RestAccessDeniedHandler accessDeniedHandler) throws Exception {
         http
@@ -35,12 +36,15 @@ public class SecurityConfig {
                         .requestMatchers("/public/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/bookings").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/logout").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/register").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
                         .requestMatchers("/users/**").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
-                .addFilterBefore(new NextAuthSessionAuthFilter(tokenService), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
