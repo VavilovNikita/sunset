@@ -3,6 +3,7 @@ package com.sunsetbeach.service;
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.UserRepository;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
@@ -43,7 +44,12 @@ public class EmailService {
 
     public void sendNewBookingEmail(BookingEntity booking, RoomEntity room) {
         try {
-            List<String> to = userRepository.findAll().stream().map(u -> u.getEmail()).toList();
+            // ADMIN/MANAGER only - now that WAITER/CASHIER exist (POS module), the full
+            // userRepository.findAll() this used to send to would put room-booking
+            // notifications in front of restaurant/bar staff who have nothing to do with them.
+            List<String> to = userRepository.findByRoleIn(List.of(Role.ADMIN, Role.MANAGER)).stream()
+                    .map(u -> u.getEmail())
+                    .toList();
             if (to.isEmpty()) {
                 return;
             }

@@ -7,6 +7,8 @@ package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCreateInput;
+import com.sunsetbeach.model.BookingFolio;
+import com.sunsetbeach.model.BookingPosOrder;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.ErrorMessage;
@@ -26,7 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-03T20:50:04.328032600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T19:32:58.716822+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface BookingsApi {
 
@@ -88,10 +90,10 @@ public interface BookingsApi {
      * Requires any authenticated staff session (ADMIN or MANAGER).
      *
      * @param from Include bookings whose &#x60;checkOut&#x60; is after this date (i.e. still relevant on/after &#x60;from&#x60;). (optional)
-     * @param to Include bookings whose &#x60;checkIn&#x60; is before this date. (optional)
+     * @param to Include bookings whose &#x60;checkIn&#x60; is on or before this date - together with &#x60;from&#x60;, a proper closed-range/half-open-stay overlap test (so &#x60;from&#x3D;to&#x3D;&lt;today&gt;&#x60; finds a booking checking in today). (optional)
      * @param status  (optional)
      * @return CSV file, one row per booking, ordered by &#x60;checkIn&#x60; ascending. (status code 200)
-     *         or No valid session cookie. (status code 401)
+     *         or No valid JWT. (status code 401)
      */
     @RequestMapping(
         method = RequestMethod.GET,
@@ -129,7 +131,7 @@ public interface BookingsApi {
      *
      * @param id  (required)
      * @return The booking. (status code 200)
-     *         or No valid session cookie. (status code 401)
+     *         or No valid JWT. (status code 401)
      *         or Booking not found. (status code 404)
      */
     @RequestMapping(
@@ -166,14 +168,98 @@ public interface BookingsApi {
 
 
     /**
+     * GET /bookings/{id}/folio : Get the total amount owed against a booking&#39;s room folio
+     * Requires any authenticated staff session. &#x60;roomTotal&#x60; + &#x60;roomChargesTotal&#x60; &#x3D; &#x60;folioTotal&#x60; - built on the same &#x60;BookingService&#x60; query &#x60;GET /bookings/{id}/pos-orders&#x60; itemizes (see that operation), just totaled instead of broken out per order. 
+     *
+     * @param id  (required)
+     * @return The booking&#39;s folio total. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Booking not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/bookings/{id}/folio",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<BookingFolio> getBookingFolio(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"folioTotal\" : \"folioTotal\", \"roomChargeCount\" : 0, \"roomTotal\" : \"roomTotal\", \"roomChargesTotal\" : \"roomChargesTotal\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /bookings/{id}/pos-orders : List POS orders charged to a booking&#39;s room folio
+     * Requires any authenticated staff session. One entry per &#x60;Order&#x60; that has a &#x60;Payment&#x60; with &#x60;method&#x3D;ROOM_CHARGE&#x60; and &#x60;bookingId&#x60; equal to this booking (built from the same underlying query &#x60;BookingService.computeFolio&#x60; sums over - see that method&#39;s Javadoc). Each entry carries a short item breakdown so the admin \&quot;Room charges\&quot; view can render without a follow-up &#x60;GET /orders/{id}&#x60; per row. 
+     *
+     * @param id  (required)
+     * @return Room-charge orders for this booking, oldest first. Empty array if none. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Booking not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/bookings/{id}/pos-orders",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<List<BookingPosOrder>> listBookingPosOrders(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"amount\" : \"amount\", \"orderId\" : \"orderId\", \"paidAt\" : \"2000-01-23T04:56:07.000+00:00\", \"items\" : [ { \"quantity\" : 0, \"name\" : \"name\" }, { \"quantity\" : 0, \"name\" : \"name\" } ] }, { \"amount\" : \"amount\", \"orderId\" : \"orderId\", \"paidAt\" : \"2000-01-23T04:56:07.000+00:00\", \"items\" : [ { \"quantity\" : 0, \"name\" : \"name\" }, { \"quantity\" : 0, \"name\" : \"name\" } ] } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * GET /bookings : List bookings
      * Requires any authenticated staff session (ADMIN or MANAGER). Filters mirror &#x60;GET /bookings/export&#x60;. Ordered by &#x60;checkIn&#x60; ascending. 
      *
      * @param from Include bookings whose &#x60;checkOut&#x60; is after this date (i.e. still relevant on/after &#x60;from&#x60;). (optional)
-     * @param to Include bookings whose &#x60;checkIn&#x60; is before this date. (optional)
+     * @param to Include bookings whose &#x60;checkIn&#x60; is on or before this date - together with &#x60;from&#x60;, a proper closed-range/half-open-stay overlap test (so &#x60;from&#x3D;to&#x3D;&lt;today&gt;&#x60; finds a booking checking in today). (optional)
      * @param status  (optional)
      * @return Matching bookings, ordered by &#x60;checkIn&#x60; ascending. (status code 200)
-     *         or No valid session cookie. (status code 401)
+     *         or No valid JWT. (status code 401)
      */
     @RequestMapping(
         method = RequestMethod.GET,
@@ -213,7 +299,7 @@ public interface BookingsApi {
      * @param bookingStatusInput  (required)
      * @return Updated booking. (status code 200)
      *         or Body failed &#x60;bookingStatusSchema&#x60; validation. (status code 400)
-     *         or No valid session cookie. (status code 401)
+     *         or No valid JWT. (status code 401)
      *         or Booking not found (Prisma &#x60;P2025&#x60;). (status code 404)
      */
     @RequestMapping(

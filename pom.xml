@@ -69,7 +69,16 @@
             <version>2.2.22</version>
         </dependency>
 
-        <!-- Schema migrations: this app now owns the Postgres schema (formerly Prisma's job). -->
+        <!-- Schema migrations: this app now owns the Postgres schema (formerly Prisma's job).
+             Spring Boot 4's autoconfiguration is now split into small per-feature modules
+             (see spring-boot-jpa/spring-boot-hibernate/spring-boot-jdbc below) instead of one
+             spring-boot-autoconfigure jar that lit up whenever flyway-core was present - the
+             raw Flyway libraries alone do NOT get Spring Boot to actually invoke Flyway.migrate()
+             at startup without this module too. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-flyway</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>

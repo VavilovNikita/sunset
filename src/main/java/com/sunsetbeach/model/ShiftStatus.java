@@ -16,23 +16,19 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Hierarchical: ADMIN > MANAGER > CASHIER > WAITER (see RoleHierarchy bean). A role check written as e.g. \"CASHIER\" is satisfied by CASHIER, MANAGER, or ADMIN. `/users/_**` is the one exception — hard-restricted to ADMIN regardless of hierarchy. 
+ * Gets or Sets ShiftStatus
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
-public enum Role {
+public enum ShiftStatus {
   
-  ADMIN("ADMIN"),
+  OPEN("OPEN"),
   
-  MANAGER("MANAGER"),
-  
-  CASHIER("CASHIER"),
-  
-  WAITER("WAITER");
+  CLOSED("CLOSED");
 
   private String value;
 
-  Role(String value) {
+  ShiftStatus(String value) {
     this.value = value;
   }
 
@@ -47,8 +43,8 @@ public enum Role {
   }
 
   @JsonCreator
-  public static Role fromValue(String value) {
-    for (Role b : Role.values()) {
+  public static ShiftStatus fromValue(String value) {
+    for (ShiftStatus b : ShiftStatus.values()) {
       if (b.value.equals(value)) {
         return b;
       }

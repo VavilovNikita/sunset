@@ -27,6 +27,18 @@ tags:
     description: Manual availability blocks for a room (staff only).
   - name: Bookings
     description: Guest booking creation (public) and status management/export (staff only).
+  - name: Menu
+    description: POS menu item catalog (staff reads, MANAGER or above manages).
+  - name: Tables
+    description: POS restaurant/bar/spa/pool tables (staff reads, MANAGER or above manages).
+  - name: Orders
+    description: >
+      POS orders and their line items (WAITER or above opens/edits; CASHIER or above closes
+      or cancels — cancel is available to WAITER too, only closing requires CASHIER).
+  - name: Shifts
+    description: POS cashier shift open/close and cash reconciliation (CASHIER or above).
+  - name: Payments
+    description: Cross-shift POS payment reporting for a date range (MANAGER or above).
   - name: Users
     description: Staff account management (ADMIN only).
   - name: Public
@@ -126,7 +138,7 @@ paths:
       operationId: getCurrentUser
       tags: [Auth]
       summary: Get the currently authenticated user
-      description: Requires a valid `Authorization: Bearer` JWT.
+      description: "Requires a valid `Authorization: Bearer` JWT."
       responses:
         "200":
           description: The authenticated user (no `passwordHash`).
@@ -582,7 +594,7 @@ paths:
           schema:
             type: string
             pattern: '^\d{4}-\d{2}-\d{2}$'
-          description: Include bookings whose `checkIn` is before this date.
+          description: 'Include bookings whose `checkIn` is on or before this date - together with `from`, a proper closed-range/half-open-stay overlap test (so `from=to=<today>` finds a booking checking in today).'
         - name: status
           in: query
           required: false
@@ -719,6 +731,76 @@ paths:
               example:
                 error: Booking not found
 
+  /bookings/{id}/folio:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getBookingFolio
+      tags: [Bookings]
+      summary: Get the total amount owed against a booking's room folio
+      description: >
+        Requires any authenticated staff session. `roomTotal` + `roomChargesTotal` = `folioTotal`
+        - built on the same `BookingService` query `GET /bookings/{id}/pos-orders` itemizes (see
+        that operation), just totaled instead of broken out per order.
+      responses:
+        "200":
+          description: The booking's folio total.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingFolio"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Booking not found
+
+  /bookings/{id}/pos-orders:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: listBookingPosOrders
+      tags: [Bookings]
+      summary: List POS orders charged to a booking's room folio
+      description: >
+        Requires any authenticated staff session. One entry per `Order` that has a `Payment`
+        with `method=ROOM_CHARGE` and `bookingId` equal to this booking (built from the same
+        underlying query `BookingService.computeFolio` sums over - see that method's Javadoc).
+        Each entry carries a short item breakdown so the admin "Room charges" view can render
+        without a follow-up `GET /orders/{id}` per row.
+      responses:
+        "200":
+          description: Room-charge orders for this booking, oldest first. Empty array if none.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BookingPosOrder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Booking not found
+
   /bookings/export:
     get:
       operationId: exportBookings
@@ -739,7 +821,7 @@ paths:
           schema:
             type: string
             pattern: '^\d{4}-\d{2}-\d{2}$'
-          description: Include bookings whose `checkIn` is before this date.
+          description: 'Include bookings whose `checkIn` is on or before this date - together with `from`, a proper closed-range/half-open-stay overlap test (so `from=to=<today>` finds a booking checking in today).'
         - name: status
           in: query
           required: false
@@ -762,6 +844,875 @@ paths:
               description: 'Always `attachment; filename="bookings.csv"`.'
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /menu:
+    get:
+      operationId: listMenuItems
+      tags: [Menu]
+      summary: List all menu items
+      description: Requires any authenticated staff session (ADMIN/MANAGER/CASHIER/WAITER).
+      responses:
+        "200":
+          description: All menu items.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MenuItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createMenuItem
+      tags: [Menu]
+      summary: Create a menu item
+      description: Requires role `MANAGER` or above.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MenuItemInput"
+      responses:
+        "201":
+          description: Menu item created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MenuItem"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /menu/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getMenuItem
+      tags: [Menu]
+      summary: Get a menu item by id
+      description: Requires any authenticated staff session.
+      responses:
+        "200":
+          description: The menu item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MenuItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Menu item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Menu item not found
+    patch:
+      operationId: updateMenuItem
+      tags: [Menu]
+      summary: Update a menu item
+      description: Requires role `MANAGER` or above. Full replacement of all `MenuItemInput` fields — no partial update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MenuItemInput"
+      responses:
+        "200":
+          description: Updated menu item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MenuItem"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Menu item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Menu item not found
+    delete:
+      operationId: deleteMenuItem
+      tags: [Menu]
+      summary: Delete a menu item
+      description: Requires role `MANAGER` or above.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Menu item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Menu item not found
+        "409":
+          description: This menu item has existing order lines and can't be deleted (FK constraint).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: This menu item has existing order lines and can't be deleted.
+
+  /tables:
+    get:
+      operationId: listTables
+      tags: [Tables]
+      summary: List all tables
+      description: Requires any authenticated staff session.
+      responses:
+        "200":
+          description: All tables.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Table"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createTable
+      tags: [Tables]
+      summary: Create a table
+      description: Requires role `MANAGER` or above.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TableInput"
+      responses:
+        "201":
+          description: Table created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Table"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /tables/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateTable
+      tags: [Tables]
+      summary: Update a table
+      description: Requires role `MANAGER` or above. Full replacement of all `TableInput` fields — no partial update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TableInput"
+      responses:
+        "200":
+          description: Updated table.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Table"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Table not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Table not found
+    delete:
+      operationId: deleteTable
+      tags: [Tables]
+      summary: Delete a table
+      description: Requires role `MANAGER` or above.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Table not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Table not found
+        "409":
+          description: This table has open (OPEN/SENT) orders and can't be deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: This table has open orders and can't be deleted.
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [Orders]
+      summary: List orders
+      description: Requires any authenticated staff session. Filters combine with AND.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/OrderStatus"
+        - name: zone
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Zone"
+          description: Filters by the zone of the order's table; orders with no table never match.
+        - name: tableId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: bookingId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matching orders.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createOrder
+      tags: [Orders]
+      summary: Open a new order
+      description: Requires role `WAITER` or above (i.e. any staff role — WAITER is the floor of the hierarchy).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCreateInput"
+      responses:
+        "201":
+          description: Order created with status `OPEN` and no items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: '`tableId` or `bookingId` given but not found.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getOrder
+      tags: [Orders]
+      summary: Get an order by id, with its line items
+      description: Requires any authenticated staff session.
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Order not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Order not found
+    patch:
+      operationId: updateOrder
+      tags: [Orders]
+      summary: Update an order's note/table, or send it (OPEN -> SENT)
+      description: Requires role `WAITER` or above.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderUpdateInput"
+      responses:
+        "200":
+          description: Updated order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Body failed validation, or `status` requested a transition other than `OPEN` -> `SENT`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Order not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Order not found
+
+  /orders/{id}/items:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: addOrderItems
+      tags: [Orders]
+      summary: Add one or more line items to an order
+      description: >
+        Requires role `WAITER` or above. Legal while the order is `OPEN` or `SENT` - a guest
+        adding a round of drinks after the order was already sent to the kitchen is normal, and
+        appending new lines doesn't retroactively change anything about the lines already sent.
+        `unitPrice` is snapshotted from the current `MenuItem.price` server-side — never taken
+        from the client. Unlike this endpoint, `PATCH`/`DELETE` on an individual existing line
+        (`/orders/{id}/items/{itemId}`) still require the order to be `OPEN` - editing or
+        removing a line that may already be in progress in the kitchen is not offered here.
+        Note there is no separate "sent to kitchen" timestamp: `Order.updatedAt` is overwritten
+        by this call like any other mutation, so it cannot be used to tell which lines were on
+        the original ticket versus added afterward - a kitchen-facing view would need to diff
+        on `OrderItem.createdAt` for that.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/OrderItemInput"
+      responses:
+        "201":
+          description: Updated order, with the new line(s) appended and `total` recomputed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Order not found, or a `menuItemId` doesn't exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Order is not `OPEN` or `SENT` (i.e. it's already `PAID`/`CANCELLED`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Order is not open or sent
+
+  /orders/{id}/items/{itemId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateOrderItem
+      tags: [Orders]
+      summary: Replace a line item's quantity/note
+      description: Requires role `WAITER` or above. Only legal while the order is `OPEN`. `unitPrice` is not re-snapshotted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderItemInput"
+      responses:
+        "200":
+          description: Updated order, with `total` recomputed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Order or line item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Order is not `OPEN`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Order is not open
+    delete:
+      operationId: deleteOrderItem
+      tags: [Orders]
+      summary: Remove a line item
+      description: Requires role `WAITER` or above. Only legal while the order is `OPEN`.
+      responses:
+        "200":
+          description: Updated order, with `total` recomputed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Order or line item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Order is not `OPEN`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Order is not open
+
+  /orders/{id}/close:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: closeOrder
+      tags: [Orders]
+      summary: Close an order with a payment
+      description: >
+        Requires role `CASHIER` or above, and requires the calling user to have an `OPEN`
+        `Shift` (409 otherwise). Creates a `Payment` row for `Order.total`/`method` (and
+        `bookingId` when `method` is `ROOM_CHARGE`) tied to that shift, then sets the order's
+        status to `PAID`. The amount charged is always `Order.total` - see `CloseOrderInput`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloseOrderInput"
+      responses:
+        "200":
+          description: Closed order (status `PAID`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Body failed validation, or `method` is `ROOM_CHARGE` without a `bookingId`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Order not found, or (for `ROOM_CHARGE`) `bookingId` not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Order already `PAID`/`CANCELLED`, caller has no open shift, or (for `ROOM_CHARGE`) the booking is `CANCELLED`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /orders/{id}/cancel:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: cancelOrder
+      tags: [Orders]
+      summary: Cancel an order
+      description: Requires role `WAITER` or above. No payment is created.
+      responses:
+        "200":
+          description: Cancelled order (status `CANCELLED`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Order not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Order not found
+        "409":
+          description: Order already `PAID`/`CANCELLED`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /shifts/open:
+    post:
+      operationId: openShift
+      tags: [Shifts]
+      summary: Open a shift for the calling user
+      description: Requires role `CASHIER` or above. 409 if the calling user already has an open shift (enforced by a unique partial index, not just an application-level check).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShiftOpenInput"
+      responses:
+        "201":
+          description: Shift opened.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shift"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "409":
+          description: Caller already has an open shift.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: You already have an open shift
+
+  /shifts/current:
+    get:
+      operationId: getCurrentShift
+      tags: [Shifts]
+      summary: Get the calling user's currently open shift
+      description: >
+        Requires role `CASHIER` or above. Looks up by `openedByUserId` = the calling user's id
+        AND `status=OPEN` - never returns another user's shift, even to a MANAGER/ADMIN caller.
+        Lets a client on any device discover whether it already has an open shift without
+        relying on browser local storage.
+      responses:
+        "200":
+          description: The calling user's open shift.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shift"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: The calling user has no open shift.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: No open shift
+
+  /shifts/{id}/close:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: closeShift
+      tags: [Shifts]
+      summary: Close a shift
+      description: Requires role `CASHIER` or above.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShiftCloseInput"
+      responses:
+        "200":
+          description: Closed shift (status `CLOSED`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shift"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Shift not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Shift not found
+        "409":
+          description: >
+            Already `CLOSED`, or there are `OPEN`/`SENT` orders anywhere in the system. This is
+            a system-wide gate, not scoped to this particular shift - `Order` has no `shiftId`
+            (only `Payment` does, and only once an order is closed), so there is no way to ask
+            "orders opened during this shift" and the check intentionally doesn't pretend
+            otherwise.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /shifts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getShift
+      tags: [Shifts]
+      summary: Get a shift summary
+      description: >
+        Requires role `CASHIER` or above. A caller whose role is exactly `CASHIER` (not
+        `MANAGER`/`ADMIN`) may only fetch a shift they themselves opened - any other shift id
+        404s for them, same as if it didn't exist, to avoid confirming another cashier's shift
+        even exists. `MANAGER`/`ADMIN` can fetch any shift.
+      responses:
+        "200":
+          description: The shift with payment totals broken out by method.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Shift not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Shift not found
+
+  /shifts/{id}/export:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: exportShift
+      tags: [Shifts]
+      summary: Export a shift's payments as CSV
+      description: Requires role `MANAGER` or above.
+      responses:
+        "200":
+          description: CSV file, one row per payment recorded under this shift.
+          content:
+            text/csv:
+              schema:
+                type: string
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: 'Always `attachment; filename="shift-{id}.csv"`.'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Shift not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Shift not found
+
+  /payments/summary:
+    get:
+      operationId: getPaymentsSummary
+      tags: [Payments]
+      summary: Get a payment totals summary for a date range
+      description: >
+        Requires role `MANAGER` or above. `from`/`to` are inclusive dates, filtered by
+        `Payment.createdAt`. `totals` reuses the exact same per-method aggregation
+        `GET /shifts/{id}` builds `ShiftSummary.totals` from - just scoped to a date range
+        across all shifts instead of one shift (see `PaymentAggregation` in the backend; the
+        arithmetic is not duplicated between the two).
+
+
+        **`totals.roomCharge` is not received revenue.** It's money moved onto a guest's room
+        folio at the moment a POS order was closed with `method=ROOM_CHARGE` - it only becomes
+        real, collected revenue if/when the underlying `Booking` itself is later paid, which is
+        a separate event this endpoint does not track (see `GET /bookings/{id}/folio`).
+        Including it in a revenue total here would either double-count it (once here, again
+        when the booking is paid) or count it before any money actually changed hands.
+        `grandTotal` is therefore **`totals.cash + totals.card + totals.other` only** -
+        `totals.roomCharge` is deliberately excluded and must be read as a separate "moved to
+        room folios this period" figure, never added into `grandTotal` on the client.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Inclusive start date (by `Payment.createdAt`).
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Inclusive end date (by `Payment.createdAt`).
+      responses:
+        "200":
+          description: Payment totals for the date range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentsSummary"
+        "400":
+          description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
 
   /users:
     get:
@@ -1089,11 +2040,54 @@ components:
             $ref: "#/components/schemas/ErrorMessage"
           example:
             error: Forbidden
+    ForbiddenManagerPlus:
+      description: Token is valid but lacks the required role (`MANAGER` or above).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          example:
+            error: Forbidden
+    ForbiddenCashierPlus:
+      description: Token is valid but lacks the required role (`CASHIER` or above).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          example:
+            error: Forbidden
 
   schemas:
     Role:
       type: string
-      enum: [ADMIN, MANAGER]
+      enum: [ADMIN, MANAGER, CASHIER, WAITER]
+      description: >
+        Hierarchical: ADMIN > MANAGER > CASHIER > WAITER (see RoleHierarchy bean). A role
+        check written as e.g. "CASHIER" is satisfied by CASHIER, MANAGER, or ADMIN. `/users/**`
+        is the one exception — hard-restricted to ADMIN regardless of hierarchy.
+
+    Zone:
+      type: string
+      enum: [RESTAURANT, BAR, SPA, POOL, ROOM_SERVICE]
+      description: Physical area a POS Table belongs to.
+
+    OrderStatus:
+      type: string
+      enum: [OPEN, SENT, PAID, CANCELLED]
+      description: >
+        OPEN (being built) -> SENT (sent to kitchen/bar, still editable-ish per business
+        rule) -> PAID (closed with a Payment) or CANCELLED. PAID and CANCELLED are terminal.
+
+    PaymentMethod:
+      type: string
+      enum: [CASH, CARD, ROOM_CHARGE, OTHER]
+      description: >
+        CARD is a ledger entry recorded on the cashier's word, not a confirmation from a
+        payment terminal/acquirer — there is no card-processing integration.
+
+    ShiftStatus:
+      type: string
+      enum: [OPEN, CLOSED]
 
     BookingStatus:
       type: string
@@ -1329,7 +2323,7 @@ components:
       properties:
         token:
           type: string
-          description: JWT to send as `Authorization: Bearer <token>` on subsequent requests.
+          description: "JWT to send as `Authorization: Bearer <token>` on subsequent requests."
         user:
           $ref: "#/components/schemas/User"
 
@@ -1460,3 +2454,417 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PublicAvailabilityDay"
+
+    MenuItem:
+      type: object
+      required: [id, name, description, category, price, isAvailable, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        price:
+          type: string
+          description: Decimal(10,2) rendered as a string, e.g. `"250.00"` — same convention as `Room.basePrice`.
+        isAvailable:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    MenuItemInput:
+      type: object
+      description: Full replacement on PATCH — no partial update (same convention as `RoomInput`).
+      required: [name, description, category, price]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        category:
+          type: string
+          minLength: 1
+          maxLength: 60
+        price:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+        isAvailable:
+          type: boolean
+          default: true
+
+    Table:
+      type: object
+      description: >
+        A physical POS table/spot a guest tab can be opened against. Mapped to a
+        `PosTable` database table (not `Table`) to sidestep the SQL keyword collision — the
+        API schema name is unaffected.
+      required: [id, zone, label, capacity, isActive]
+      properties:
+        id:
+          type: string
+        zone:
+          $ref: "#/components/schemas/Zone"
+        label:
+          type: string
+        capacity:
+          type: integer
+        isActive:
+          type: boolean
+
+    TableInput:
+      type: object
+      description: Full replacement on PATCH — no partial update.
+      required: [zone, label, capacity]
+      properties:
+        zone:
+          $ref: "#/components/schemas/Zone"
+        label:
+          type: string
+          minLength: 1
+          maxLength: 60
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 50
+        isActive:
+          type: boolean
+          default: true
+
+    OrderItem:
+      type: object
+      description: A single line of an Order. `unitPrice` is a snapshot of `MenuItem.price` at the moment the item was added — later menu price changes never retroactively affect it.
+      required: [id, orderId, menuItemId, quantity, unitPrice, note, createdAt]
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        menuItemId:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: string
+          description: Decimal(10,2) rendered as a string, snapshotted at insert time.
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    Order:
+      type: object
+      description: >
+        `total` is always server-computed from `items` — never taken from the client (same
+        rule as `Booking.totalPrice`).
+      required: [id, tableId, bookingId, guestName, status, openedByUserId, total, note, items, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        tableId:
+          type: string
+          nullable: true
+        bookingId:
+          type: string
+          nullable: true
+        guestName:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        openedByUserId:
+          type: string
+        total:
+          type: string
+          description: Decimal(10,2) rendered as a string, e.g. `"1250.00"`.
+        note:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OrderCreateInput:
+      type: object
+      description: At least one of `tableId`/`bookingId`/`guestName` is expected in practice (an order with none of them is a valid but untraceable tab), but this isn't enforced server-side — same "trust the caller on shape, not on price" spirit as elsewhere.
+      properties:
+        tableId:
+          type: string
+          nullable: true
+        bookingId:
+          type: string
+          nullable: true
+        guestName:
+          type: string
+          nullable: true
+          maxLength: 120
+
+    OrderUpdateInput:
+      type: object
+      description: >
+        Partial update (unlike `RoomInput`/`MenuItemInput`/`TableInput`): an omitted field
+        leaves the existing value alone, an explicit `null` on `note`/`tableId` clears it.
+        The only legal `status` transition through this endpoint is `OPEN` -> `SENT`; any
+        other value (including trying to set `PAID`/`CANCELLED` here instead of through
+        `/close` or `/cancel`) is rejected with 400.
+      properties:
+        note:
+          type: string
+          nullable: true
+          maxLength: 1000
+        tableId:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+
+    OrderItemInput:
+      type: object
+      description: >
+        Used both as the array body of `POST /orders/{id}/items` (create) and the single-object
+        body of `PATCH /orders/{id}/items/{itemId}` (full replacement of `quantity`/`note` for
+        that line — `menuItemId` is immutable after creation but still required in the body for
+        symmetry with the create shape; the server ignores it on PATCH).
+      required: [menuItemId, quantity]
+      properties:
+        menuItemId:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        note:
+          type: string
+          nullable: true
+          maxLength: 500
+
+    CloseOrderInput:
+      type: object
+      description: >
+        Body of `POST /orders/{id}/close`. No `amount` field: there's no partial-payment
+        model (an `Order` goes straight to the terminal `PAID` status on the first close, it
+        can't accumulate multiple payments), so the amount charged is never a client-supplied
+        number - the server always charges `Order.total` exactly, the same "never trust the
+        client on money" rule as `Booking.totalPrice`/`Order.total` itself. `bookingId` is
+        required when `method` is `ROOM_CHARGE` — a cross-field rule enforced server-side, not
+        expressible in JSON Schema (same pattern as `BookingCreateInput`'s `checkIn < checkOut`).
+      required: [method]
+      properties:
+        method:
+          $ref: "#/components/schemas/PaymentMethod"
+        bookingId:
+          type: string
+
+    Payment:
+      type: object
+      required: [id, orderId, method, amount, bookingId, recordedByUserId, shiftId, createdAt]
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        method:
+          $ref: "#/components/schemas/PaymentMethod"
+        amount:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        bookingId:
+          type: string
+          nullable: true
+          description: Set only when `method` is `ROOM_CHARGE`.
+        recordedByUserId:
+          type: string
+        shiftId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    Shift:
+      type: object
+      required: [id, openedByUserId, openedAt, closedByUserId, closedAt, openingCashFloat, closingCashCounted, status, notes]
+      properties:
+        id:
+          type: string
+        openedByUserId:
+          type: string
+        openedAt:
+          type: string
+          format: date-time
+        closedByUserId:
+          type: string
+          nullable: true
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+        openingCashFloat:
+          type: string
+          nullable: true
+          description: Decimal(10,2) rendered as a string.
+        closingCashCounted:
+          type: string
+          nullable: true
+          description: Decimal(10,2) rendered as a string.
+        status:
+          $ref: "#/components/schemas/ShiftStatus"
+        notes:
+          type: string
+          nullable: true
+
+    ShiftOpenInput:
+      type: object
+      properties:
+        openingCashFloat:
+          type: number
+          minimum: 0
+
+    ShiftCloseInput:
+      type: object
+      properties:
+        closingCashCounted:
+          type: number
+          minimum: 0
+        notes:
+          type: string
+          nullable: true
+          maxLength: 1000
+
+    ShiftTotals:
+      type: object
+      description: Sum of this shift's `Payment.amount`, broken out by method — CASH/CARD/OTHER only; ROOM_CHARGE payments settle against the room folio, not this shift's cash/card reconciliation, so they're reported separately as `roomCharge`.
+      required: [cash, card, roomCharge, other, paymentCount]
+      properties:
+        cash:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        card:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        roomCharge:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        other:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        paymentCount:
+          type: integer
+
+    ShiftSummary:
+      type: object
+      required: [id, openedByUserId, openedAt, closedByUserId, closedAt, openingCashFloat, closingCashCounted, status, notes, totals]
+      properties:
+        id:
+          type: string
+        openedByUserId:
+          type: string
+        openedAt:
+          type: string
+          format: date-time
+        closedByUserId:
+          type: string
+          nullable: true
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+        openingCashFloat:
+          type: string
+          nullable: true
+          description: Decimal(10,2) rendered as a string.
+        closingCashCounted:
+          type: string
+          nullable: true
+          description: Decimal(10,2) rendered as a string.
+        status:
+          $ref: "#/components/schemas/ShiftStatus"
+        notes:
+          type: string
+          nullable: true
+        totals:
+          $ref: "#/components/schemas/ShiftTotals"
+
+    BookingPosOrderItem:
+      type: object
+      description: Compact line-item summary - menu item name (not id) and quantity, nothing else.
+      required: [name, quantity]
+      properties:
+        name:
+          type: string
+        quantity:
+          type: integer
+
+    BookingPosOrder:
+      type: object
+      description: One `Order` that was closed with `method=ROOM_CHARGE` against this booking.
+      required: [orderId, amount, paidAt, items]
+      properties:
+        orderId:
+          type: string
+        amount:
+          type: string
+          description: The `Payment.amount` recorded when this order was closed - decimal(10,2) rendered as a string.
+        paidAt:
+          type: string
+          format: date-time
+          description: '`Payment.createdAt` - when the order was closed, not when the order was opened.'
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookingPosOrderItem"
+
+    BookingFolio:
+      type: object
+      description: >
+        `folioTotal` = `roomTotal` + `roomChargesTotal`, computed on the fly by
+        `BookingService.computeFolio`/`getFolio` - see that method's Javadoc. Never stored.
+      required: [roomTotal, roomChargesTotal, folioTotal, roomChargeCount]
+      properties:
+        roomTotal:
+          type: string
+          description: '`Booking.totalPrice` - decimal(10,2) rendered as a string.'
+        roomChargesTotal:
+          type: string
+          description: Sum of this booking's ROOM_CHARGE `Payment.amount` rows - decimal(10,2) rendered as a string.
+        folioTotal:
+          type: string
+          description: '`roomTotal` + `roomChargesTotal` - decimal(10,2) rendered as a string.'
+        roomChargeCount:
+          type: integer
+          description: Number of ROOM_CHARGE payments summed into `roomChargesTotal` - same count as `GET /bookings/{id}/pos-orders` would return entries.
+
+    PaymentsSummary:
+      type: object
+      description: >
+        Response of `GET /payments/summary`. See that operation's description for why
+        `totals.roomCharge` is excluded from `grandTotal` - do not sum `totals.*` yourself on
+        the client, use `grandTotal` as-is for received revenue.
+      required: [from, to, totals, grandTotal]
+      properties:
+        from:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        to:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        totals:
+          $ref: "#/components/schemas/ShiftTotals"
+        grandTotal:
+          type: string
+          description: '`totals.cash + totals.card + totals.other` - decimal(10,2) rendered as a string. Deliberately excludes `totals.roomCharge`.'

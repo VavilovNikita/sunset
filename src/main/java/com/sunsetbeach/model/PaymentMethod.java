@@ -16,23 +16,23 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Hierarchical: ADMIN > MANAGER > CASHIER > WAITER (see RoleHierarchy bean). A role check written as e.g. \"CASHIER\" is satisfied by CASHIER, MANAGER, or ADMIN. `/users/_**` is the one exception — hard-restricted to ADMIN regardless of hierarchy. 
+ * CARD is a ledger entry recorded on the cashier's word, not a confirmation from a payment terminal/acquirer — there is no card-processing integration. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
-public enum Role {
+public enum PaymentMethod {
   
-  ADMIN("ADMIN"),
+  CASH("CASH"),
   
-  MANAGER("MANAGER"),
+  CARD("CARD"),
   
-  CASHIER("CASHIER"),
+  ROOM_CHARGE("ROOM_CHARGE"),
   
-  WAITER("WAITER");
+  OTHER("OTHER");
 
   private String value;
 
-  Role(String value) {
+  PaymentMethod(String value) {
     this.value = value;
   }
 
@@ -47,8 +47,8 @@ public enum Role {
   }
 
   @JsonCreator
-  public static Role fromValue(String value) {
-    for (Role b : Role.values()) {
+  public static PaymentMethod fromValue(String value) {
+    for (PaymentMethod b : PaymentMethod.values()) {
       if (b.value.equals(value)) {
         return b;
       }

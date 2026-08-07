@@ -3,6 +3,8 @@ package com.sunsetbeach.controller;
 import com.sunsetbeach.api.BookingsApi;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCreateInput;
+import com.sunsetbeach.model.BookingFolio;
+import com.sunsetbeach.model.BookingPosOrder;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.service.BookingService;
@@ -41,6 +43,16 @@ public class BookingController implements BookingsApi {
     @Override
     public ResponseEntity<Booking> updateBookingStatus(String id, BookingStatusInput bookingStatusInput) {
         return ResponseEntity.ok(bookingService.updateStatus(id, bookingStatusInput));
+    }
+
+    @Override
+    public ResponseEntity<List<BookingPosOrder>> listBookingPosOrders(String id) {
+        return ResponseEntity.ok(bookingService.listPosOrders(id));
+    }
+
+    @Override
+    public ResponseEntity<BookingFolio> getBookingFolio(String id) {
+        return ResponseEntity.ok(bookingService.getFolio(id));
     }
 
     @Override

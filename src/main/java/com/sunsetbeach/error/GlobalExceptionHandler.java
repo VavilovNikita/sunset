@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
@@ -38,6 +39,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ValidationException.class)
     public ResponseEntity<ValidationError> handleValidation(ValidationException ex) {
         return ResponseEntity.badRequest().body(toValidationError(ex.getFormErrors(), ex.getFieldErrors()));
+    }
+
+    /**
+     * A required @RequestParam (e.g. GET /payments/summary's from/to) missing from the request.
+     * Without this handler Spring's own default 400 body would be a different shape than every
+     * other validation failure in this API.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ValidationError> handleMissingParameter(MissingServletRequestParameterException ex) {
+        Map<String, List<String>> fieldErrors = new LinkedHashMap<>();
+        fieldErrors.put(ex.getParameterName(), List.of("is required"));
+        return ResponseEntity.badRequest().body(toValidationError(new ArrayList<>(), fieldErrors));
     }
 
     @ExceptionHandler(NotFoundException.class)

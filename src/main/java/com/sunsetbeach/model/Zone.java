@@ -16,23 +16,25 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Hierarchical: ADMIN > MANAGER > CASHIER > WAITER (see RoleHierarchy bean). A role check written as e.g. \"CASHIER\" is satisfied by CASHIER, MANAGER, or ADMIN. `/users/_**` is the one exception — hard-restricted to ADMIN regardless of hierarchy. 
+ * Physical area a POS Table belongs to.
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
-public enum Role {
+public enum Zone {
   
-  ADMIN("ADMIN"),
+  RESTAURANT("RESTAURANT"),
   
-  MANAGER("MANAGER"),
+  BAR("BAR"),
   
-  CASHIER("CASHIER"),
+  SPA("SPA"),
   
-  WAITER("WAITER");
+  POOL("POOL"),
+  
+  ROOM_SERVICE("ROOM_SERVICE");
 
   private String value;
 
-  Role(String value) {
+  Zone(String value) {
     this.value = value;
   }
 
@@ -47,8 +49,8 @@ public enum Role {
   }
 
   @JsonCreator
-  public static Role fromValue(String value) {
-    for (Role b : Role.values()) {
+  public static Zone fromValue(String value) {
+    for (Zone b : Zone.values()) {
       if (b.value.equals(value)) {
         return b;
       }

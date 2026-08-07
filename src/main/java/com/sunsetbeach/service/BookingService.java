@@ -1,22 +1,38 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.MenuItemEntity;
+import com.sunsetbeach.entity.OrderItemEntity;
+import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.BookingMapper;
+import com.sunsetbeach.mapper.PriceFormat;
+import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCreateInput;
+import com.sunsetbeach.model.BookingFolio;
+import com.sunsetbeach.model.BookingPosOrder;
+import com.sunsetbeach.model.BookingPosOrderItem;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
+import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.MenuItemRepository;
+import com.sunsetbeach.repository.OrderItemRepository;
+import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import jakarta.persistence.criteria.Predicate;
+import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -33,18 +49,27 @@ public class BookingService {
     private final BookingWriter bookingWriter;
     private final BookingMapper bookingMapper;
     private final EmailService emailService;
+    private final PaymentRepository paymentRepository;
+    private final OrderItemRepository orderItemRepository;
+    private final MenuItemRepository menuItemRepository;
 
     public BookingService(
             RoomRepository roomRepository,
             BookingRepository bookingRepository,
             BookingWriter bookingWriter,
             BookingMapper bookingMapper,
-            EmailService emailService) {
+            EmailService emailService,
+            PaymentRepository paymentRepository,
+            OrderItemRepository orderItemRepository,
+            MenuItemRepository menuItemRepository) {
         this.roomRepository = roomRepository;
         this.bookingRepository = bookingRepository;
         this.bookingWriter = bookingWriter;
         this.bookingMapper = bookingMapper;
         this.emailService = emailService;
+        this.paymentRepository = paymentRepository;
+        this.orderItemRepository = orderItemRepository;
+        this.menuItemRepository = menuItemRepository;
     }
 
     public Booking createBooking(BookingCreateInput input) {
@@ -102,6 +127,93 @@ public class BookingService {
         return bookingMapper.toDto(booking, room);
     }
 
+    /**
+     * folio(booking) = booking.totalPrice + sum of ROOM_CHARGE Payment.amount for this
+     * booking. Computed on the fly, never stored - this is the one place that calculation is
+     * allowed to happen; callers (e.g. {@link #getFolio}, {@link #listPosOrders}) should go
+     * through this method (or {@link #computeFolioBreakdown}/{@link #roomChargePayments})
+     * rather than summing Payments themselves.
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal computeFolio(String bookingId) {
+        return computeFolioBreakdown(bookingId).folioTotal();
+    }
+
+    /** Same numbers as {@link #computeFolio}, broken out for `GET /bookings/{id}/folio`. */
+    @Transactional(readOnly = true)
+    public BookingFolio getFolio(String bookingId) {
+        FolioBreakdown breakdown = computeFolioBreakdown(bookingId);
+        return new BookingFolio(
+                PriceFormat.asDecimalString(breakdown.roomTotal()),
+                PriceFormat.asDecimalString(breakdown.roomChargesTotal()),
+                PriceFormat.asDecimalString(breakdown.folioTotal()),
+                breakdown.roomChargeCount());
+    }
+
+    /** The one place booking.totalPrice + Σ ROOM_CHARGE Payment.amount is actually computed. */
+    private FolioBreakdown computeFolioBreakdown(String bookingId) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        List<PaymentEntity> payments = roomChargePayments(bookingId);
+        BigDecimal roomCharges = payments.stream().map(PaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new FolioBreakdown(booking.getTotalPrice(), roomCharges, payments.size());
+    }
+
+    private record FolioBreakdown(BigDecimal roomTotal, BigDecimal roomChargesTotal, int roomChargeCount) {
+        BigDecimal folioTotal() {
+            return roomTotal.add(roomChargesTotal);
+        }
+    }
+
+    /**
+     * One entry per ROOM_CHARGE Payment against this booking - the same underlying data
+     * {@link #computeFolio} sums, just itemized instead of totaled. Powers the admin "Room
+     * charges" view without a per-row GET /orders/{id} round trip.
+     */
+    @Transactional(readOnly = true)
+    public List<BookingPosOrder> listPosOrders(String bookingId) {
+        if (!bookingRepository.existsById(bookingId)) {
+            throw new NotFoundException("Booking not found");
+        }
+
+        List<PaymentEntity> payments = roomChargePayments(bookingId);
+        if (payments.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> orderIds = payments.stream().map(PaymentEntity::getOrderId).toList();
+        Map<String, List<OrderItemEntity>> itemsByOrderId = orderItemRepository.findByOrderIdIn(orderIds).stream()
+                .collect(Collectors.groupingBy(OrderItemEntity::getOrderId));
+
+        List<String> menuItemIds =
+                itemsByOrderId.values().stream().flatMap(List::stream).map(OrderItemEntity::getMenuItemId).distinct().toList();
+        Map<String, String> menuItemNames =
+                menuItemRepository.findAllById(menuItemIds).stream().collect(Collectors.toMap(MenuItemEntity::getId, MenuItemEntity::getName));
+
+        return payments.stream()
+                .sorted(Comparator.comparing(PaymentEntity::getCreatedAt))
+                .map(payment -> toBookingPosOrder(
+                        payment, itemsByOrderId.getOrDefault(payment.getOrderId(), List.of()), menuItemNames))
+                .toList();
+    }
+
+    /** Shared by {@link #computeFolio} and {@link #listPosOrders} - the one query both read from. */
+    private List<PaymentEntity> roomChargePayments(String bookingId) {
+        return paymentRepository.findByBookingIdAndMethod(bookingId, PaymentMethod.ROOM_CHARGE);
+    }
+
+    private static BookingPosOrder toBookingPosOrder(
+            PaymentEntity payment, List<OrderItemEntity> items, Map<String, String> menuItemNames) {
+        List<BookingPosOrderItem> itemDtos = items.stream()
+                .map(item -> new BookingPosOrderItem(
+                        menuItemNames.getOrDefault(item.getMenuItemId(), "Unknown item"), item.getQuantity()))
+                .toList();
+        return new BookingPosOrder(
+                payment.getOrderId(),
+                PriceFormat.asDecimalString(payment.getAmount()),
+                TimestampFormat.toUtc(payment.getCreatedAt()),
+                itemDtos);
+    }
+
     @Transactional(readOnly = true)
     public String exportCsv(String from, String to, BookingStatus status) {
         List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status));
@@ -125,7 +237,11 @@ public class BookingService {
                 predicates.add(cb.greaterThan(root.get("checkOut"), fromDate));
             }
             if (toDate != null) {
-                predicates.add(cb.lessThan(root.get("checkIn"), toDate));
+                // <=, not < : checkIn/checkOut is a half-open [checkIn, checkOut) stay window,
+                // but from/to is a closed [from, to] query range - a booking checking in exactly
+                // on `to` (e.g. from=to=today, checkIn=today) must still match. A strict "<"
+                // here would silently drop same-day check-ins from range queries.
+                predicates.add(cb.lessThanOrEqualTo(root.get("checkIn"), toDate));
             }
             query.orderBy(cb.asc(root.get("checkIn")));
             return cb.and(predicates.toArray(new Predicate[0]));
