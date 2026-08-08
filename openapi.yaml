@@ -806,7 +806,16 @@ paths:
       operationId: exportBookings
       tags: [Bookings]
       summary: Export bookings as CSV
-      description: Requires any authenticated staff session (ADMIN or MANAGER).
+      description: >
+        Requires any authenticated staff session (ADMIN or MANAGER).
+
+
+        The file opens with a UTF-8 BOM followed by a `sep=,` directive line so it opens
+        correctly by double-click in Excel regardless of the OS's regional list-separator
+        setting (a ru-RU/de-DE/etc. Windows defaults that to `;`, which is why a plain
+        comma-CSV lands as one column there) - see `CsvBuilder` in the backend. Both CSV
+        exports (`GET /bookings/export` and `GET /shifts/{id}/export`) share this same
+        preamble/escaping so they can't drift apart.
       parameters:
         - name: from
           in: query
@@ -829,7 +838,10 @@ paths:
             $ref: "#/components/schemas/BookingStatus"
       responses:
         "200":
-          description: CSV file, one row per booking, ordered by `checkIn` ascending.
+          description: >
+            CSV file, one row per booking, ordered by `checkIn` ascending. Prefixed with a
+            UTF-8 BOM and a `sep=,` directive line (not shown in the example below) - see this
+            operation's description.
           content:
             text/csv:
               schema:
@@ -1632,15 +1644,56 @@ paths:
     get:
       operationId: exportShift
       tags: [Shifts]
-      summary: Export a shift's payments as CSV
-      description: Requires role `MANAGER` or above.
+      summary: Export a shift's Z-report as CSV
+      description: >
+        Requires role `MANAGER` or above. This is the till-reconciliation report, not a raw
+        payment dump: identifiers that only make sense to a database (order/booking/cashier
+        UUIDs) are replaced with what a manager actually needs to read - the order's
+        table/zone and item composition (or a short fallback if there's no table), the guest
+        name and room for ROOM_CHARGE payments, and the cashier's email. The underlying
+        `Payment.id`/`Order.id` are kept as the last two columns for support/audit lookups,
+        not as the first thing a human sees. Timestamps are seconds-precision (`yyyy-MM-dd
+        HH:mm:ss "UTC"`), not the millisecond ISO instant used elsewhere in the API.
+
+
+        The file opens with a UTF-8 BOM and a `sep=,` directive line - see `GET
+        /bookings/export`'s description for why.
+
+
+        After the payment rows, a blank line separates a totals block (label, value per row):
+        `Cash`/`Card`/`Other`/`Room charge (posted to room folio - not received cash/card)`
+        (same per-method split and the same ROOM_CHARGE exclusion as `GET /payments/summary`
+        - see that operation's description for why ROOM_CHARGE isn't received revenue),
+        `Received total (cash + card + other)`, `Payments` (count), `Opening cash float`,
+        `Expected cash (float + cash payments)`, `Counted cash` (the shift's
+        `closingCashCounted`, or `—` if the shift hasn't been closed/recounted yet), and
+        finally `Discrepancy (counted - expected)` - positive means the drawer has more cash
+        than it should, negative means it's short. This last figure is the actual point of
+        closing a shift.
       responses:
         "200":
-          description: CSV file, one row per payment recorded under this shift.
+          description: >
+            CSV file: a header row, one row per payment recorded under this shift, a blank
+            row, then the reconciliation totals block described above.
           content:
             text/csv:
               schema:
                 type: string
+                example: |
+                  Time,Method,Amount,Order,Guest / Room,Cashier,Payment ID,Order ID
+                  2026-08-08 20:26:40 UTC,ROOM_CHARGE,1080.00,Bar – Bar Seat 3: 2× Mojito; 1× Caesar salad,Jane Doe – Ocean View Suite,cashier@sunsetbeach.example,aa89f455-...,5de7944d-...
+
+                  Summary,
+                  Cash,3200.00
+                  Card,1500.00
+                  Other,0.00
+                  Room charge (posted to room folio - not received cash/card),1080.00
+                  Received total (cash + card + other),4700.00
+                  Payments,5
+                  Opening cash float,2000.00
+                  Expected cash (float + cash payments),5200.00
+                  Counted cash,5150.00
+                  Discrepancy (counted - expected),-50.00
           headers:
             Content-Disposition:
               schema:

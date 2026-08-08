@@ -91,11 +91,11 @@ public interface ShiftsApi {
 
 
     /**
-     * GET /shifts/{id}/export : Export a shift&#39;s payments as CSV
-     * Requires role &#x60;MANAGER&#x60; or above.
+     * GET /shifts/{id}/export : Export a shift&#39;s Z-report as CSV
+     * Requires role &#x60;MANAGER&#x60; or above. Human-readable till-reconciliation report (table/guest/cashier names, not raw UUIDs) ending in a totals block with the counted-vs-expected cash discrepancy - see the openapi.yaml description for the full column/summary layout.
      *
      * @param id  (required)
-     * @return CSV file, one row per payment recorded under this shift. (status code 200)
+     * @return CSV file: payment rows, a blank row, then the reconciliation totals block. (status code 200)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
      *         or Shift not found. (status code 404)

@@ -3,6 +3,7 @@ package com.sunsetbeach.mapper;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 
 /**
@@ -13,10 +14,21 @@ import java.time.temporal.ChronoUnit;
  */
 public final class TimestampFormat {
 
+    private static final DateTimeFormatter READABLE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     private TimestampFormat() {
     }
 
     public static OffsetDateTime toUtc(LocalDateTime value) {
         return value.truncatedTo(ChronoUnit.MILLIS).atOffset(ZoneOffset.UTC);
+    }
+
+    /**
+     * Human-readable form for CSV exports (Excel columns, not JSON): whole seconds, no
+     * milliseconds, explicit "UTC" suffix since a bare "yyyy-MM-dd HH:mm:ss" would otherwise
+     * read as local time to whoever opens the file.
+     */
+    public static String readable(LocalDateTime value) {
+        return value.truncatedTo(ChronoUnit.SECONDS).format(READABLE) + " UTC";
     }
 }

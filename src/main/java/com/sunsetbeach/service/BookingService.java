@@ -249,48 +249,23 @@ public class BookingService {
     }
 
     private static String buildCsv(List<BookingEntity> bookings) {
-        String[] header = {
-            "ID", "Room", "Guest", "Email", "Phone", "Check-in", "Check-out", "Total", "Status", "Payment note", "Created at"
-        };
-        StringBuilder csv = new StringBuilder();
-        appendRow(csv, header);
+        CsvBuilder csv = new CsvBuilder();
+        csv.row("ID", "Room", "Guest", "Email", "Phone", "Check-in", "Check-out", "Total", "Status", "Payment note", "Created at");
         for (BookingEntity b : bookings) {
-            appendRow(
-                    csv,
-                    new String[] {
-                        b.getId(),
-                        b.getRoom().getName(),
-                        b.getGuestName(),
-                        b.getGuestEmail(),
-                        b.getGuestPhone(),
-                        b.getCheckIn().toString(),
-                        b.getCheckOut().toString(),
-                        b.getTotalPrice().setScale(2, java.math.RoundingMode.UNNECESSARY).toPlainString(),
-                        b.getStatus().getValue(),
-                        b.getPaymentNote() != null ? b.getPaymentNote() : "",
-                        DateRangeUtil.formatIsoInstant(b.getCreatedAt())
-                    });
+            csv.row(
+                    b.getId(),
+                    b.getRoom().getName(),
+                    b.getGuestName(),
+                    b.getGuestEmail(),
+                    b.getGuestPhone(),
+                    b.getCheckIn().toString(),
+                    b.getCheckOut().toString(),
+                    PriceFormat.asDecimalString(b.getTotalPrice()),
+                    b.getStatus().getValue(),
+                    b.getPaymentNote() != null ? b.getPaymentNote() : "",
+                    DateRangeUtil.formatIsoInstant(b.getCreatedAt()));
         }
         return csv.toString();
-    }
-
-    private static void appendRow(StringBuilder csv, String[] fields) {
-        if (!csv.isEmpty()) {
-            csv.append("\r\n");
-        }
-        for (int i = 0; i < fields.length; i++) {
-            if (i > 0) {
-                csv.append(',');
-            }
-            csv.append(csvEscape(fields[i]));
-        }
-    }
-
-    private static String csvEscape(String value) {
-        if (value.indexOf(',') >= 0 || value.indexOf('"') >= 0 || value.indexOf('\n') >= 0) {
-            return '"' + value.replace("\"", "\"\"") + '"';
-        }
-        return value;
     }
 
     private static boolean isSerializationFailure(Throwable ex) {

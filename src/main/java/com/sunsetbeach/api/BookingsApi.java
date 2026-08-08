@@ -87,7 +87,7 @@ public interface BookingsApi {
 
     /**
      * GET /bookings/export : Export bookings as CSV
-     * Requires any authenticated staff session (ADMIN or MANAGER).
+     * Requires any authenticated staff session (ADMIN or MANAGER). UTF-8 BOM + &#x60;sep&#x3D;,&#x60; preamble - see the openapi.yaml description for why.
      *
      * @param from Include bookings whose &#x60;checkOut&#x60; is after this date (i.e. still relevant on/after &#x60;from&#x60;). (optional)
      * @param to Include bookings whose &#x60;checkIn&#x60; is on or before this date - together with &#x60;from&#x60;, a proper closed-range/half-open-stay overlap test (so &#x60;from&#x3D;to&#x3D;&lt;today&gt;&#x60; finds a booking checking in today). (optional)
