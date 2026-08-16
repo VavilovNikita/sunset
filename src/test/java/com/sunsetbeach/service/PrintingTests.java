@@ -1,0 +1,446 @@
+package com.sunsetbeach.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.MenuItemEntity;
+import com.sunsetbeach.entity.PrintJobEntity;
+import com.sunsetbeach.entity.PrinterEntity;
+import com.sunsetbeach.entity.RoomEntity;
+import com.sunsetbeach.entity.UserEntity;
+import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.CloseOrderInput;
+import com.sunsetbeach.model.MenuDepartment;
+import com.sunsetbeach.model.Order;
+import com.sunsetbeach.model.OrderCreateInput;
+import com.sunsetbeach.model.OrderItemInput;
+import com.sunsetbeach.model.OrderUpdateInput;
+import com.sunsetbeach.model.PaymentMethod;
+import com.sunsetbeach.model.PrintDocumentType;
+import com.sunsetbeach.model.PrintJob;
+import com.sunsetbeach.model.PrintJobStatus;
+import com.sunsetbeach.model.Printer;
+import com.sunsetbeach.model.PrinterCodepage;
+import com.sunsetbeach.model.PrinterDepartment;
+import com.sunsetbeach.model.PrinterInput;
+import com.sunsetbeach.model.Role;
+import com.sunsetbeach.model.Shift;
+import com.sunsetbeach.model.ShiftCloseInput;
+import com.sunsetbeach.model.ShiftOpenInput;
+import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.MenuItemRepository;
+import com.sunsetbeach.repository.PrintJobRepository;
+import com.sunsetbeach.repository.PrinterRepository;
+import com.sunsetbeach.repository.RoomRepository;
+import com.sunsetbeach.repository.UserRepository;
+import jakarta.persistence.EntityManager;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * DB-backed (real dev Postgres, rolled back after each test): the network-printing feature end
+ * to end - kitchen/bar ticket routing by {@code MenuItem.department}, the fail-open contract
+ * with a genuinely unreachable printer (operation succeeds, {@code PrintJob} lands in
+ * {@code FAILED}), manual retry recovering once the printer is reachable again, and the Z-report
+ * keeping ROOM_CHARGE out of the received-money total (same rule as {@link ShiftExportTests}'
+ * CSV coverage, now for the printed version). {@code app.printing.max-attempts=1} is forced for
+ * the whole class so a single failed automatic attempt is immediately terminal ({@code FAILED})
+ * without needing to wait out multiple retries; {@code retryPendingJobs}' background sweep is
+ * pushed out to effectively never fire, so it can't race these assertions.
+ */
+@SpringBootTest
+@Transactional
+class PrintingTests {
+
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("app.printing.max-attempts", () -> "1");
+        registry.add("app.printing.connect-timeout-ms", () -> "1000");
+        registry.add("app.printing.retry-interval-ms", () -> "3600000");
+    }
+
+    @Autowired
+    private OrderService orderService;
+
+    @Autowired
+    private ShiftService shiftService;
+
+    @Autowired
+    private PrinterService printerService;
+
+    @Autowired
+    private PrinterRepository printerRepository;
+
+    @Autowired
+    private PrintJobRepository printJobRepository;
+
+    @Autowired
+    private MenuItemRepository menuItemRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private RoomRepository roomRepository;
+
+    @Autowired
+    private BookingRepository bookingRepository;
+
+    @Autowired
+    private EntityManager entityManager;
+
+    private UserEntity cashier;
+    private MenuItemEntity kitchenItem;
+    private MenuItemEntity barItem;
+
+    @BeforeEach
+    void setUp() {
+        UserEntity user = new UserEntity();
+        user.setEmail("cashier-" + UUID.randomUUID() + "@example.com");
+        user.setPasswordHash("irrelevant-for-this-test");
+        user.setRole(Role.CASHIER);
+        cashier = userRepository.saveAndFlush(user);
+
+        kitchenItem = persistMenuItem("Caesar Salad", MenuDepartment.KITCHEN, "100.00");
+        barItem = persistMenuItem("Mojito", MenuDepartment.BAR, "100.00");
+    }
+
+    // --- Ticket routing by MenuItem.department ---
+
+    @Test
+    void sendOrder_mixedItems_splitsTicketsByDepartment_kitchenTicketHasNoPrices() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+            persistPrinter(PrinterDepartment.BAR, fake.port());
+
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(
+                    order.getId(),
+                    List.of(new OrderItemInput(kitchenItem.getId(), 2), new OrderItemInput(barItem.getId(), 1)));
+            sendOrder(order.getId());
+
+            List<PrintJobEntity> jobs = jobsFor(order.getId());
+            assertThat(jobs).hasSize(2);
+
+            PrintJobEntity kitchenJob = jobs.stream()
+                    .filter(j -> j.getSummary().startsWith("Kitchen ticket"))
+                    .findFirst()
+                    .orElseThrow();
+            PrintJobEntity barJob = jobs.stream()
+                    .filter(j -> j.getSummary().startsWith("Bar ticket"))
+                    .findFirst()
+                    .orElseThrow();
+
+            String kitchenText = decode(kitchenJob);
+            assertThat(kitchenText).contains("2x Caesar Salad");
+            assertThat(kitchenText).doesNotContain("Mojito");
+            assertThat(kitchenText).doesNotContain("100.00"); // no prices on a kitchen ticket
+
+            String barText = decode(barJob);
+            assertThat(barText).contains("1x Mojito");
+            assertThat(barText).doesNotContain("Caesar Salad");
+            assertThat(barText).doesNotContain("100.00"); // no prices on a bar ticket either
+
+            // Both printers were reachable - delivery actually succeeded, not just queued.
+            assertThat(kitchenJob.getStatus()).isEqualTo(PrintJobStatus.SENT);
+            assertThat(barJob.getStatus()).isEqualTo(PrintJobStatus.SENT);
+        }
+    }
+
+    @Test
+    void sendOrder_drinksOnly_printsNothingToTheKitchen() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.BAR, fake.port());
+            // Deliberately no KITCHEN printer configured for this test.
+
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(barItem.getId(), 1)));
+            sendOrder(order.getId());
+
+            List<PrintJobEntity> jobs = jobsFor(order.getId());
+            assertThat(jobs).hasSize(1);
+            assertThat(jobs.get(0).getDocumentType()).isEqualTo(PrintDocumentType.KITCHEN_TICKET);
+            assertThat(jobs.get(0).getSummary()).startsWith("Bar ticket");
+        }
+    }
+
+    // --- Fail-open: an unreachable printer never blocks the order operation ---
+
+    @Test
+    void sendOrder_printerUnreachable_orderStillTransitions_printJobEndsFailed() throws IOException {
+        persistPrinter(PrinterDepartment.KITCHEN, unreachablePort());
+
+        Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+        orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+
+        Order sent = sendOrder(order.getId()); // must not throw despite the dead printer
+
+        assertThat(sent.getStatus().getValue()).isEqualTo("SENT");
+        List<PrintJobEntity> jobs = jobsFor(order.getId());
+        assertThat(jobs).hasSize(1);
+        PrintJobEntity job = jobs.get(0);
+        assertThat(job.getStatus()).isEqualTo(PrintJobStatus.FAILED);
+        assertThat(job.getAttempts()).isEqualTo(1);
+        assertThat(job.getLastError()).isNotBlank();
+    }
+
+    // --- Manual retry recovers once the printer is reachable again ---
+
+    @Test
+    void retryPrintJob_afterPrinterComesBackOnline_succeeds() throws IOException {
+        Printer printer = persistPrinterDto(PrinterDepartment.KITCHEN, unreachablePort());
+
+        Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+        orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+        sendOrder(order.getId());
+
+        PrintJobEntity failedJob = jobsFor(order.getId()).get(0);
+        assertThat(failedJob.getStatus()).isEqualTo(PrintJobStatus.FAILED);
+
+        try (FakePrinter fake = new FakePrinter()) {
+            // The printer "comes back online" - point the same Printer row at a reachable host.
+            PrinterInput reconnected = new PrinterInput(printer.getName(), PrinterDepartment.KITCHEN, "127.0.0.1");
+            reconnected.setPort(fake.port());
+            printerService.update(printer.getId(), reconnected);
+
+            PrintJob retried = printerService.retryPrintJob(failedJob.getId(), Role.MANAGER);
+
+            assertThat(retried.getStatus()).isEqualTo(PrintJobStatus.SENT);
+            assertThat(retried.getAttempts()).isEqualTo(2); // 1 automatic + 1 manual
+        }
+    }
+
+    // --- Z-report: same reconciliation numbers as the CSV export, ROOM_CHARGE excluded from received money ---
+
+    @Test
+    void closeShift_printsZReport_roomChargeExcludedFromReceivedTotal() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.CASHIER, fake.port());
+
+            RoomEntity room = new RoomEntity();
+            room.setName("Ocean View Suite");
+            room.setDescription("A room used only by tests");
+            room.setCapacity(2);
+            room.setBasePrice(new BigDecimal("1000.00"));
+            room = roomRepository.saveAndFlush(room);
+
+            BookingEntity booking = new BookingEntity();
+            booking.setRoomId(room.getId());
+            booking.setGuestName("Jane Doe");
+            booking.setGuestEmail("jane@example.com");
+            booking.setGuestPhone("+66800000000");
+            booking.setCheckIn(LocalDate.now());
+            booking.setCheckOut(LocalDate.now().plusDays(1));
+            booking.setTotalPrice(new BigDecimal("1000.00"));
+            booking.setStatus(BookingStatus.CONFIRMED);
+            booking = bookingRepository.saveAndFlush(booking);
+            // Forces OrderService.close()'s later bookingRepository.findById() to hydrate a fresh
+            // lazy Room proxy instead of reusing this already-managed instance, whose `room`
+            // association was never populated - see BookingRoomChargeTests.persistBooking().
+            entityManager.clear();
+
+            Shift shift = shiftService.open(cashier.getId(), new ShiftOpenInput().openingCashFloat(new BigDecimal("1000.00")));
+
+            Order cashOrder = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(cashOrder.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 2))); // 200.00
+            orderService.close(cashOrder.getId(), new CloseOrderInput(PaymentMethod.CASH), cashier.getId());
+
+            Order cardOrder = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(cardOrder.getId(), List.of(new OrderItemInput(barItem.getId(), 3))); // 300.00
+            orderService.close(cardOrder.getId(), new CloseOrderInput(PaymentMethod.CARD), cashier.getId());
+
+            MenuItemEntity suiteDinner = persistMenuItem("Suite Dinner", MenuDepartment.KITCHEN, "5000.00");
+            Order roomOrder = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(roomOrder.getId(), List.of(new OrderItemInput(suiteDinner.getId(), 1))); // 5000.00
+            orderService.close(
+                    roomOrder.getId(),
+                    new CloseOrderInput(PaymentMethod.ROOM_CHARGE).bookingId(booking.getId()),
+                    cashier.getId());
+
+            shiftService.close(shift.getId(), new ShiftCloseInput().closingCashCounted(new BigDecimal("1200.00")));
+
+            PrintJobEntity job = printJobRepository.findAll().stream()
+                    .filter(j -> j.getDocumentType() == PrintDocumentType.Z_REPORT)
+                    .filter(j -> j.getSummary().contains(shift.getId().substring(0, 8).toUpperCase()))
+                    .findFirst()
+                    .orElseThrow();
+
+            String text = decode(job);
+            assertThat(lineFor(text, "Cash")).endsWith("200.00");
+            assertThat(lineFor(text, "Card")).endsWith("300.00");
+            assertThat(lineFor(text, "Room charge")).endsWith("5000.00");
+            // Received total = cash + card only (500.00), never cash + card + room charge (5500.00).
+            assertThat(lineFor(text, "Received total")).endsWith("500.00");
+            assertThat(lineFor(text, "Opening float")).endsWith("1000.00");
+            assertThat(lineFor(text, "Expected cash")).endsWith("1200.00"); // 1000 float + 200 cash, not the room charge
+            assertThat(lineFor(text, "Counted cash")).endsWith("1200.00");
+            assertThat(lineFor(text, "Discrepancy")).endsWith("0.00");
+        }
+    }
+
+    // --- Print-job queue visibility is filtered by caller role, not just gated at the security layer ---
+
+    @Test
+    void listPrintJobs_waiterRole_seesKitchenTicketsNotZReportOrGuestReceipt_andSummariesCarryNoMoney() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+            persistPrinter(PrinterDepartment.CASHIER, fake.port());
+
+            Order ticketOrder = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(ticketOrder.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+            sendOrder(ticketOrder.getId()); // -> KITCHEN_TICKET
+            // ShiftService.close()'s unsettled-order guard is system-wide (see
+            // OrderCloseAndShiftGuardTests) - a SENT order anywhere blocks any shift from
+            // closing, so this one must be settled before the shift-close call below.
+            orderService.cancel(ticketOrder.getId());
+
+            Shift shift = shiftService.open(cashier.getId(), new ShiftOpenInput());
+            Order paidOrder = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(paidOrder.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+            orderService.close(paidOrder.getId(), new CloseOrderInput(PaymentMethod.CASH), cashier.getId()); // -> GUEST_RECEIPT
+            shiftService.close(shift.getId(), new ShiftCloseInput()); // -> Z_REPORT
+
+            List<PrintJob> waiterView = printerService.listPrintJobs(null, Role.WAITER);
+            assertThat(waiterView).extracting(PrintJob::getDocumentType).containsOnly(PrintDocumentType.KITCHEN_TICKET);
+            // Same filtering for CASHIER - only MANAGER/ADMIN get the cashier-facing documents.
+            List<PrintJob> cashierView = printerService.listPrintJobs(null, Role.CASHIER);
+            assertThat(cashierView).extracting(PrintJob::getDocumentType).containsOnly(PrintDocumentType.KITCHEN_TICKET);
+            // No money in what a waiter is allowed to see - a kitchen ticket's summary is just "what and where".
+            assertThat(waiterView).extracting(PrintJob::getSummary).noneMatch(s -> s.matches(".*\\d+\\.\\d{2}.*"));
+
+            List<PrintJob> managerView = printerService.listPrintJobs(null, Role.MANAGER);
+            assertThat(managerView)
+                    .extracting(PrintJob::getDocumentType)
+                    .contains(PrintDocumentType.KITCHEN_TICKET, PrintDocumentType.GUEST_RECEIPT, PrintDocumentType.Z_REPORT);
+        }
+    }
+
+    @Test
+    void retryPrintJob_waiterRole_documentTypeNotVisible_throwsNotFound_managerCanStillRetryIt() throws IOException {
+        PrinterEntity printer = persistPrinter(PrinterDepartment.CASHIER, unreachablePort());
+        PrintJob testPageJob = printerService.testPrint(printer.getId()); // TEST_PAGE - not staff-visible
+
+        assertThatThrownBy(() -> printerService.retryPrintJob(testPageJob.getId(), Role.WAITER))
+                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> printerService.retryPrintJob(testPageJob.getId(), Role.CASHIER))
+                .isInstanceOf(NotFoundException.class);
+
+        PrintJob retried = printerService.retryPrintJob(testPageJob.getId(), Role.MANAGER);
+        assertThat(retried.getId()).isEqualTo(testPageJob.getId());
+    }
+
+    // --- helpers ---
+
+    private MenuItemEntity persistMenuItem(String name, MenuDepartment department, String price) {
+        MenuItemEntity item = new MenuItemEntity();
+        item.setName(name);
+        item.setDescription("test item");
+        item.setCategory("Test");
+        item.setDepartment(department);
+        item.setPrice(new BigDecimal(price));
+        item.setAvailable(true);
+        return menuItemRepository.saveAndFlush(item);
+    }
+
+    private PrinterEntity persistPrinter(PrinterDepartment department, int port) {
+        return printerRepository.findById(persistPrinterDto(department, port).getId()).orElseThrow();
+    }
+
+    private Printer persistPrinterDto(PrinterDepartment department, int port) {
+        PrinterInput input = new PrinterInput("Test " + department + " printer " + UUID.randomUUID(), department, "127.0.0.1");
+        input.setPort(port);
+        return printerService.create(input);
+    }
+
+    private Order sendOrder(String orderId) {
+        return orderService.update(orderId, new OrderUpdateInput().status(com.sunsetbeach.model.OrderStatus.SENT));
+    }
+
+    private List<PrintJobEntity> jobsFor(String orderId) {
+        // PrintJob doesn't carry orderId directly - every summary generated for an order embeds
+        // its short id (see OrderPrintingService.shortId), which is unique enough to filter on here.
+        String shortId = orderId.substring(0, 8).toUpperCase();
+        return printJobRepository.findAll().stream()
+                .filter(j -> j.getSummary().contains(shortId))
+                .toList();
+    }
+
+    private static String decode(PrintJobEntity job) {
+        return new String(job.getPayload(), PrinterCodepages.charset(PrinterCodepage.PC437));
+    }
+
+    /** The two-column line whose trimmed content starts with {@code label} (e.g. "Cash", "Discrepancy"). */
+    private static String lineFor(String text, String label) {
+        return Arrays.stream(text.split("\n"))
+                .map(String::trim)
+                .filter(l -> l.startsWith(label))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No line starting with \"" + label + "\" in:\n" + text));
+    }
+
+    /** A free loopback TCP port with nothing listening on it - connecting fails fast with "connection refused". */
+    private static int unreachablePort() throws IOException {
+        try (ServerSocket probe = new ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))) {
+            return probe.getLocalPort();
+        }
+    }
+
+    /** A minimal always-up "printer": accepts TCP connections on loopback and discards whatever is written. */
+    private static final class FakePrinter implements AutoCloseable {
+        private final ServerSocket server;
+        private final Thread acceptThread;
+
+        FakePrinter() throws IOException {
+            server = new ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"));
+            acceptThread = new Thread(this::acceptLoop, "fake-printer-accept");
+            acceptThread.setDaemon(true);
+            acceptThread.start();
+        }
+
+        int port() {
+            return server.getLocalPort();
+        }
+
+        private void acceptLoop() {
+            while (!server.isClosed()) {
+                try {
+                    Socket socket = server.accept();
+                    Thread drain = new Thread(() -> drain(socket), "fake-printer-drain");
+                    drain.setDaemon(true);
+                    drain.start();
+                } catch (IOException e) {
+                    break;
+                }
+            }
+        }
+
+        private static void drain(Socket socket) {
+            try (socket) {
+                socket.getInputStream().readAllBytes();
+            } catch (IOException ignored) {
+                // Connection torn down - nothing left to drain.
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            server.close();
+        }
+    }
+}

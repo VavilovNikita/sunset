@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.MenuDepartment;
 import java.math.BigDecimal;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -15,10 +17,10 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Full replacement on PATCH — no partial update (same convention as &#x60;RoomInput&#x60;).
+ * Full replacement on PATCH — no partial update (same convention as &#x60;RoomInput&#x60;). &#x60;department&#x60; defaults to &#x60;KITCHEN&#x60; (most menu items are food) - existing rows migrated the same way; staff reassign drinks to &#x60;BAR&#x60; explicitly. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class MenuItemInput {
 
   private String name;
@@ -26,6 +28,8 @@ public class MenuItemInput {
   private String description;
 
   private String category;
+
+  private MenuDepartment department;
 
   private BigDecimal price;
 
@@ -102,6 +106,25 @@ public class MenuItemInput {
     this.category = category;
   }
 
+  public MenuItemInput department(MenuDepartment department) {
+    this.department = department;
+    return this;
+  }
+
+  /**
+   * Get department
+   * @return department
+   */
+  @Valid 
+  @JsonProperty("department")
+  public MenuDepartment getDepartment() {
+    return department;
+  }
+
+  public void setDepartment(MenuDepartment department) {
+    this.department = department;
+  }
+
   public MenuItemInput price(BigDecimal price) {
     this.price = price;
     return this;
@@ -153,13 +176,14 @@ public class MenuItemInput {
     return Objects.equals(this.name, menuItemInput.name) &&
         Objects.equals(this.description, menuItemInput.description) &&
         Objects.equals(this.category, menuItemInput.category) &&
+        Objects.equals(this.department, menuItemInput.department) &&
         Objects.equals(this.price, menuItemInput.price) &&
         Objects.equals(this.isAvailable, menuItemInput.isAvailable);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, description, category, price, isAvailable);
+    return Objects.hash(name, description, category, department, price, isAvailable);
   }
 
   @Override
@@ -169,6 +193,7 @@ public class MenuItemInput {
     sb.append("    name: ").append(toIndentedString(name)).append("\n");
     sb.append("    description: ").append(toIndentedString(description)).append("\n");
     sb.append("    category: ").append(toIndentedString(category)).append("\n");
+    sb.append("    department: ").append(toIndentedString(department)).append("\n");
     sb.append("    price: ").append(toIndentedString(price)).append("\n");
     sb.append("    isAvailable: ").append(toIndentedString(isAvailable)).append("\n");
     sb.append("}");

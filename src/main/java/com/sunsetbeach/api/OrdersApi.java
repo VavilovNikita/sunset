@@ -12,6 +12,7 @@ import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderItemInput;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.OrderUpdateInput;
+import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.ValidationError;
 import com.sunsetbeach.model.Zone;
@@ -30,7 +31,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T19:32:58.716822+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface OrdersApi {
 
@@ -368,6 +369,48 @@ public interface OrdersApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "[ { \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"total\" : \"total\", \"tableId\" : \"tableId\", \"openedByUserId\" : \"openedByUserId\", \"id\" : \"id\", \"items\" : [ { \"unitPrice\" : \"unitPrice\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"quantity\" : 0, \"orderId\" : \"orderId\", \"id\" : \"id\", \"menuItemId\" : \"menuItemId\" }, { \"unitPrice\" : \"unitPrice\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"quantity\" : 0, \"orderId\" : \"orderId\", \"id\" : \"id\", \"menuItemId\" : \"menuItemId\" } ], \"bookingId\" : \"bookingId\", \"guestName\" : \"guestName\", \"status\" : \"OPEN\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"total\" : \"total\", \"tableId\" : \"tableId\", \"openedByUserId\" : \"openedByUserId\", \"id\" : \"id\", \"items\" : [ { \"unitPrice\" : \"unitPrice\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"quantity\" : 0, \"orderId\" : \"orderId\", \"id\" : \"id\", \"menuItemId\" : \"menuItemId\" }, { \"unitPrice\" : \"unitPrice\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"quantity\" : 0, \"orderId\" : \"orderId\", \"id\" : \"id\", \"menuItemId\" : \"menuItemId\" } ], \"bookingId\" : \"bookingId\", \"guestName\" : \"guestName\", \"status\" : \"OPEN\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /orders/{id}/print-prebill : Print a pre-bill for an order
+     * Requires role &#x60;WAITER&#x60; or above. Prints to the active &#x60;CASHIER&#x60; printer: line items with prices and the total, but no payment method or paid marker - this is a courtesy printout for the guest to review before actually paying, not a receipt. Does not change &#x60;Order.status&#x60; or create a &#x60;Payment&#x60;. No-op (still returns 201, &#x60;attempted: false&#x60;, no &#x60;PrintJob&#x60; created) if there&#39;s no active &#x60;CASHIER&#x60; printer configured. 
+     *
+     * @param id  (required)
+     * @return Pre-bill print attempted (or skipped - see &#x60;attempted&#x60;). (status code 201)
+     *         or No valid JWT. (status code 401)
+     *         or Order not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/orders/{id}/print-prebill",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<PrintAttemptResult> printOrderPrebill(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"attempted\" : true, \"job\" : { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

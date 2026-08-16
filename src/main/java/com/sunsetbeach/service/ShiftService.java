@@ -16,6 +16,9 @@ import com.sunsetbeach.mapper.ShiftMapper;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.PaymentMethod;
+import com.sunsetbeach.model.PrintDocumentType;
+import com.sunsetbeach.model.PrinterCodepage;
+import com.sunsetbeach.model.PrinterDepartment;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.Shift;
 import com.sunsetbeach.model.ShiftCloseInput;
@@ -39,12 +42,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ShiftService {
+
+    private static final Logger log = LoggerFactory.getLogger(ShiftService.class);
 
     private static final List<OrderStatus> UNSETTLED_STATUSES = List.of(OrderStatus.OPEN, OrderStatus.SENT);
 
@@ -58,6 +65,7 @@ public class ShiftService {
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final ShiftMapper shiftMapper;
+    private final PrintService printService;
 
     public ShiftService(
             ShiftRepository shiftRepository,
@@ -69,7 +77,8 @@ public class ShiftService {
             BookingRepository bookingRepository,
             RoomRepository roomRepository,
             UserRepository userRepository,
-            ShiftMapper shiftMapper) {
+            ShiftMapper shiftMapper,
+            PrintService printService) {
         this.shiftRepository = shiftRepository;
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
@@ -80,6 +89,7 @@ public class ShiftService {
         this.roomRepository = roomRepository;
         this.userRepository = userRepository;
         this.shiftMapper = shiftMapper;
+        this.printService = printService;
     }
 
     @Transactional(readOnly = true)
@@ -126,7 +136,59 @@ public class ShiftService {
         shift.setClosingCashCounted(input.getClosingCashCounted());
         shift.setNotes(input.getNotes().orElse(null));
         shift.setStatus(ShiftStatus.CLOSED);
-        return shiftMapper.toDto(shiftRepository.saveAndFlush(shift));
+        ShiftEntity saved = shiftRepository.saveAndFlush(shift);
+        printZReport(saved);
+        return shiftMapper.toDto(saved);
+    }
+
+    /**
+     * Fire-and-forget, same fail-open contract as {@link OrderPrintingService}: an unreachable
+     * CASHIER printer must never fail the shift close that triggered it. No-op if no active
+     * CASHIER printer is configured.
+     */
+    private void printZReport(ShiftEntity shift) {
+        try {
+            printService.findActivePrinter(PrinterDepartment.CASHIER).ifPresent(printer -> {
+                byte[] payload = buildZReportPayload(shift, printer.getCodepage());
+                printService.queueAndAttempt(
+                        printer, PrintDocumentType.Z_REPORT, "Z-report — Shift #" + shortId(shift.getId()), payload);
+            });
+        } catch (Exception e) {
+            log.error("printZReport failed for shift {}", shift.getId(), e);
+        }
+    }
+
+    /**
+     * Same reconciliation numbers as {@link #appendSummary} (the CSV export's totals block):
+     * per-method sums, opening float, expected vs. counted cash, discrepancy. ROOM_CHARGE is
+     * called out on its own line and excluded from the received total, same reasoning as there.
+     */
+    private byte[] buildZReportPayload(ShiftEntity shift, PrinterCodepage codepage) {
+        PaymentAggregation.Totals totals = PaymentAggregation.aggregate(paymentRepository.findByShiftId(shift.getId()));
+        BigDecimal openingFloat = shift.getOpeningCashFloat() != null ? shift.getOpeningCashFloat() : BigDecimal.ZERO;
+        BigDecimal expectedCash = openingFloat.add(totals.cash());
+        BigDecimal closingCounted = shift.getClosingCashCounted();
+
+        EscPosBuilder b = new EscPosBuilder(codepage);
+        b.center(true).bold(true).line("Z-REPORT").bold(false).center(false);
+        b.line("Shift #" + shortId(shift.getId()));
+        b.line("Closed: " + TimestampFormat.readable(shift.getClosedAt()));
+        b.divider();
+        b.twoColumn("Cash", PriceFormat.asDecimalString(totals.cash()));
+        b.twoColumn("Card", PriceFormat.asDecimalString(totals.card()));
+        b.twoColumn("Other", PriceFormat.asDecimalString(totals.other()));
+        b.twoColumn("Room charge (folio, not received)", PriceFormat.asDecimalString(totals.roomCharge()));
+        b.divider();
+        b.twoColumn("Received total", PriceFormat.asDecimalString(totals.receivedTotal()));
+        b.twoColumn("Payments", String.valueOf(totals.paymentCount()));
+        b.divider();
+        b.twoColumn("Opening float", PriceFormat.asDecimalString(openingFloat));
+        b.twoColumn("Expected cash", PriceFormat.asDecimalString(expectedCash));
+        b.twoColumn("Counted cash", closingCounted != null ? PriceFormat.asDecimalString(closingCounted) : "—");
+        b.twoColumn(
+                "Discrepancy",
+                closingCounted != null ? PriceFormat.asDecimalString(closingCounted.subtract(expectedCash)) : "—");
+        return b.cutAndBuild();
     }
 
     @Transactional(readOnly = true)

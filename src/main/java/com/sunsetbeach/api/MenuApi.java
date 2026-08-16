@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface MenuApi {
 
@@ -56,7 +56,7 @@ public interface MenuApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"isAvailable\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"price\" : \"price\", \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"category\" : \"category\" }";
+                    String exampleString = "{ \"isAvailable\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"price\" : \"price\", \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"category\" : \"category\", \"department\" : \"KITCHEN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -157,7 +157,7 @@ public interface MenuApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"isAvailable\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"price\" : \"price\", \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"category\" : \"category\" }";
+                    String exampleString = "{ \"isAvailable\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"price\" : \"price\", \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"category\" : \"category\", \"department\" : \"KITCHEN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -197,7 +197,7 @@ public interface MenuApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"isAvailable\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"price\" : \"price\", \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"category\" : \"category\" }, { \"isAvailable\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"price\" : \"price\", \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"category\" : \"category\" } ]";
+                    String exampleString = "[ { \"isAvailable\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"price\" : \"price\", \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"category\" : \"category\", \"department\" : \"KITCHEN\" }, { \"isAvailable\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"price\" : \"price\", \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"category\" : \"category\", \"department\" : \"KITCHEN\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -239,7 +239,7 @@ public interface MenuApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"isAvailable\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"price\" : \"price\", \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"category\" : \"category\" }";
+                    String exampleString = "{ \"isAvailable\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"price\" : \"price\", \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"category\" : \"category\", \"department\" : \"KITCHEN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

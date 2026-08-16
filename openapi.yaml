@@ -39,6 +39,14 @@ tags:
     description: POS cashier shift open/close and cash reconciliation (CASHIER or above).
   - name: Payments
     description: Cross-shift POS payment reporting for a date range (MANAGER or above).
+  - name: Printers
+    description: >
+      ESC/POS network printer CRUD and connection testing (MANAGER or above), plus the durable
+      print-job queue (WAITER or above, with per-role document visibility - see
+      `GET /print-jobs`). Printing is best-effort and asynchronous where it needs to be: an
+      unreachable printer never fails the order/shift operation that triggered it - it leaves a
+      `PENDING`/`FAILED` `PrintJob` behind instead, retried automatically in the background and
+      retriable by hand from here.
   - name: Users
     description: Staff account management (ADMIN only).
   - name: Public
@@ -1140,6 +1148,262 @@ paths:
               example:
                 error: This table has open orders and can't be deleted.
 
+  /printers:
+    get:
+      operationId: listPrinters
+      tags: [Printers]
+      summary: List all printers
+      description: Requires role `MANAGER` or above.
+      responses:
+        "200":
+          description: All printers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Printer"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+    post:
+      operationId: createPrinter
+      tags: [Printers]
+      summary: Register a printer
+      description: >
+        Requires role `MANAGER` or above. Activating a printer (`isActive: true`, the default)
+        for a `department` that already has an active printer is rejected with 409 - deactivate
+        the old one first. Use `POST /printers/{id}/test` after creating one to confirm it's
+        actually reachable before relying on it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrinterInput"
+      responses:
+        "201":
+          description: Printer created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "409":
+          description: Another printer is already the active one for this `department`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "Another printer is already active for department KITCHEN"
+
+  /printers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updatePrinter
+      tags: [Printers]
+      summary: Update a printer
+      description: >
+        Requires role `MANAGER` or above. Full replacement of all `PrinterInput` fields - no
+        partial update. Same 409-on-active-department-conflict rule as create.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrinterInput"
+      responses:
+        "200":
+          description: Updated printer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Printer"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Printer not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Printer not found
+        "409":
+          description: Another printer is already the active one for this `department`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "Another printer is already active for department KITCHEN"
+    delete:
+      operationId: deletePrinter
+      tags: [Printers]
+      summary: Delete a printer
+      description: >
+        Requires role `MANAGER` or above. A printer that has ever printed anything (has
+        `PrintJob` rows) can't be deleted - deactivate it (`isActive: false`) instead.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Printer not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Printer not found
+        "409":
+          description: This printer has existing print jobs and can't be deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: This printer has existing print jobs and can't be deleted.
+
+  /printers/{id}/test:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: testPrinter
+      tags: [Printers]
+      summary: Print a test page
+      description: >
+        Requires role `MANAGER` or above. Attempts delivery immediately (bounded by a short
+        socket timeout) and returns the resulting `PrintJob` either way - `status: SENT` means
+        it printed, `status: PENDING`/`FAILED` means it didn't and `lastError` says why. This is
+        the only way to actually confirm a printer's host/port/codepage are right; without it,
+        setting one up is guesswork.
+      responses:
+        "201":
+          description: Test print job created and attempted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrintJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Printer not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Printer not found
+
+  /print-jobs:
+    get:
+      operationId: listPrintJobs
+      tags: [Printers]
+      summary: List print jobs
+      description: >
+        Requires role `WAITER` or above (i.e. any staff role) - but what comes back depends on
+        who's asking. `ADMIN`/`MANAGER` see every document type. `CASHIER`/`WAITER` only see
+        `KITCHEN_TICKET`/`PREBILL` jobs - `Z_REPORT` (shift cash reconciliation) and
+        `GUEST_RECEIPT` (booking/payment detail) are cashier/management information, filtered
+        out rather than 403'd so line staff still get the one thing they actually need this
+        endpoint for: seeing that their own kitchen/bar ticket or pre-bill didn't go through.
+        Ordered by `createdAt` descending (most recent first). Filter by `status=FAILED` to see
+        what needs manual attention - a silently lost kitchen ticket is a dish that never gets
+        served.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/PrintJobStatus"
+      responses:
+        "200":
+          description: Matching print jobs, filtered to the document types the caller's role may see.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PrintJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /print-jobs/{id}/retry:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: retryPrintJob
+      tags: [Printers]
+      summary: Manually retry a print job
+      description: >
+        Requires role `WAITER` or above, subject to the same per-role document-type visibility
+        as `GET /print-jobs`. Attempts delivery immediately regardless of the job's current
+        `status` or `attempts` count (a human asking for a retry overrides the automatic-retry
+        attempt ceiling). The original `payload` is replayed byte-for-byte - this re-sends
+        exactly what was originally queued, it does not regenerate the document from current
+        data. A job whose document type the caller's role can't see (e.g. a `WAITER` targeting a
+        `Z_REPORT` job id) returns 404, not 403 - the id must not be usable to confirm the job
+        exists, let alone force a reprint of it.
+      responses:
+        "200":
+          description: 'The job after the retry attempt (`status: SENT` or `FAILED`).'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrintJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Print job not found, or its document type isn't visible to the caller's role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Print job not found
+
   /orders:
     get:
       operationId: listOrders
@@ -1463,6 +1727,39 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
           description: Order already `PAID`/`CANCELLED`, caller has no open shift, or (for `ROOM_CHARGE`) the booking is `CANCELLED`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /orders/{id}/print-prebill:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: printOrderPrebill
+      tags: [Orders]
+      summary: Print a pre-bill for an order
+      description: >
+        Requires role `WAITER` or above. Prints to the active `CASHIER` printer: line items
+        with prices and the total, but no payment method or paid marker - this is a courtesy
+        printout for the guest to review before actually paying, not a receipt. Does not change
+        `Order.status` or create a `Payment`. No-op (still returns 201, `attempted: false`, no
+        `PrintJob` created) if there's no active `CASHIER` printer configured.
+      responses:
+        "201":
+          description: Pre-bill print attempted (or skipped - see `attempted`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrintAttemptResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Order not found.
           content:
             application/json:
               schema:
@@ -2144,6 +2441,141 @@ components:
       enum: [RESTAURANT, BAR, SPA, POOL, ROOM_SERVICE]
       description: Physical area a POS Table belongs to.
 
+    MenuDepartment:
+      type: string
+      enum: [KITCHEN, BAR]
+      description: >
+        Where a MenuItem's kitchen/bar ticket prints - independent of `category`, which is a
+        free-text display grouping for the menu itself (e.g. "Mains", "Cocktails") and has no
+        effect on print routing.
+
+    PrinterDepartment:
+      type: string
+      enum: [KITCHEN, BAR, CASHIER]
+      description: >
+        What a Printer receives. `KITCHEN`/`BAR` get routed kitchen/bar tickets (split from
+        order line items by `MenuItem.department`); `CASHIER` gets pre-bills, guest receipts,
+        and shift Z-reports - nothing routed by menu department ever goes there.
+
+    PrinterCodepage:
+      type: string
+      enum: [PC437, TIS620]
+      description: >
+        The single-byte ESC/POS code page text is encoded into before sending, since receipts
+        can contain non-ASCII (guest names, menu item names) and Latin/Thai need different
+        tables. `PC437` (the standard US/Latin ESC/POS code page) is the default; `TIS620`
+        covers Thai. Not a hardcoded global setting - each Printer picks its own, since a hotel
+        can have Latin-only and Thai-capable printers side by side.
+
+    PrintDocumentType:
+      type: string
+      enum: [KITCHEN_TICKET, PREBILL, GUEST_RECEIPT, Z_REPORT, TEST_PAGE]
+
+    PrintJobStatus:
+      type: string
+      enum: [PENDING, SENT, FAILED]
+      description: >
+        PENDING = queued, either freshly created or waiting for the next automatic retry.
+        SENT = delivered successfully (terminal). FAILED = automatic retries exhausted
+        (terminal until a manual retry via `POST /print-jobs/{id}/retry` puts it back in play).
+
+    Printer:
+      type: object
+      required: [id, name, department, host, port, codepage, isActive, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        department:
+          $ref: "#/components/schemas/PrinterDepartment"
+        host:
+          type: string
+          description: IP address or hostname on the hotel's local network.
+        port:
+          type: integer
+          description: 'Almost always 9100 (raw ESC/POS-over-TCP) on real hardware.'
+        codepage:
+          $ref: "#/components/schemas/PrinterCodepage"
+        isActive:
+          type: boolean
+          description: 'Whether this is currently the live printer for its `department` - see `Printer_one_active_per_department`.'
+        createdAt:
+          type: string
+          format: date-time
+
+    PrinterInput:
+      type: object
+      description: Full replacement on PATCH — no partial update (same convention as `MenuItemInput`/`TableInput`).
+      required: [name, department, host]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 120
+        department:
+          $ref: "#/components/schemas/PrinterDepartment"
+        host:
+          type: string
+          minLength: 1
+          maxLength: 255
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 9100
+        codepage:
+          $ref: "#/components/schemas/PrinterCodepage"
+          default: PC437
+        isActive:
+          type: boolean
+          default: true
+
+    PrintJob:
+      type: object
+      description: >
+        A queued/attempted print. `payload` (the raw ESC/POS bytes actually sent) is
+        intentionally not exposed here - it's binary and only meaningful to a printer.
+      required: [id, printerId, documentType, summary, status, attempts, lastError, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        printerId:
+          type: string
+        documentType:
+          $ref: "#/components/schemas/PrintDocumentType"
+        summary:
+          type: string
+          description: 'Human-readable one-liner, e.g. "Kitchen ticket — Order #ab12cd34".'
+        status:
+          $ref: "#/components/schemas/PrintJobStatus"
+        attempts:
+          type: integer
+          description: Number of delivery attempts made so far (automatic + manual).
+        lastError:
+          type: string
+          nullable: true
+          description: 'Exception message from the most recent failed attempt; null if it has never failed.'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PrintAttemptResult:
+      type: object
+      description: Result of an on-demand print action that may legitimately have nothing to print to.
+      required: [attempted]
+      properties:
+        attempted:
+          type: boolean
+          description: 'false when there was no active printer configured for the target department - nothing was queued.'
+        job:
+          $ref: "#/components/schemas/PrintJob"
+          nullable: true
+          description: 'null when `attempted` is false.'
+
     OrderStatus:
       type: string
       enum: [OPEN, SENT, PAID, CANCELLED]
@@ -2567,7 +2999,7 @@ components:
 
     MenuItem:
       type: object
-      required: [id, name, description, category, price, isAvailable, createdAt]
+      required: [id, name, description, category, department, price, isAvailable, createdAt]
       properties:
         id:
           type: string
@@ -2577,6 +3009,8 @@ components:
           type: string
         category:
           type: string
+        department:
+          $ref: "#/components/schemas/MenuDepartment"
         price:
           type: string
           description: Decimal(10,2) rendered as a string, e.g. `"250.00"` — same convention as `Room.basePrice`.
@@ -2588,7 +3022,10 @@ components:
 
     MenuItemInput:
       type: object
-      description: Full replacement on PATCH — no partial update (same convention as `RoomInput`).
+      description: >
+        Full replacement on PATCH — no partial update (same convention as `RoomInput`).
+        `department` defaults to `KITCHEN` (most menu items are food) - existing rows migrated
+        the same way; staff reassign drinks to `BAR` explicitly.
       required: [name, description, category, price]
       properties:
         name:
@@ -2603,6 +3040,9 @@ components:
           type: string
           minLength: 1
           maxLength: 60
+        department:
+          $ref: "#/components/schemas/MenuDepartment"
+          default: KITCHEN
         price:
           type: number
           minimum: 0

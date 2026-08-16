@@ -2,6 +2,7 @@ package com.sunsetbeach.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -9,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.sunsetbeach.config.JacksonConfig;
 import com.sunsetbeach.model.CloseOrderInput;
+import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.MenuItem;
 import com.sunsetbeach.model.MenuItemInput;
 import com.sunsetbeach.model.Order;
@@ -16,6 +18,9 @@ import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.PaymentsSummary;
+import com.sunsetbeach.model.PrintDocumentType;
+import com.sunsetbeach.model.PrintJob;
+import com.sunsetbeach.model.PrintJobStatus;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.ShiftTotals;
 import com.sunsetbeach.security.JwtService;
@@ -26,6 +31,7 @@ import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.MenuService;
 import com.sunsetbeach.service.OrderService;
 import com.sunsetbeach.service.PaymentService;
+import com.sunsetbeach.service.PrinterService;
 import com.sunsetbeach.service.ShiftService;
 import com.sunsetbeach.service.UserService;
 import java.math.BigDecimal;
@@ -47,7 +53,15 @@ import tools.jackson.databind.json.JsonMapper;
  * intended for the POS module's per-path role checks, and - the risk item this exists to close
  * - that it does NOT loosen the hard ADMIN-only restriction on {@code /users/**}.
  */
-@WebMvcTest(controllers = {MenuController.class, OrderController.class, UserController.class, ShiftController.class, PaymentController.class})
+@WebMvcTest(
+        controllers = {
+            MenuController.class,
+            OrderController.class,
+            UserController.class,
+            ShiftController.class,
+            PaymentController.class,
+            PrinterController.class
+        })
 @Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class})
 class PosRoleHierarchyTests {
 
@@ -76,6 +90,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private PaymentService paymentService;
+
+    @MockitoBean
+    private PrinterService printerService;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -222,12 +239,59 @@ class PosRoleHierarchyTests {
         mockMvc.perform(get("/payments/summary?to=2031-01-31").header("Authorization", token(Role.MANAGER))).andExpect(status().isBadRequest());
     }
 
+    // --- /printers and /print-jobs require MANAGER or above ---
+
+    @Test
+    void listPrinters_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/printers").header("Authorization", token(Role.CASHIER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listPrinters_withManagerToken_isOk() throws Exception {
+        when(printerService.list()).thenReturn(List.of());
+        mockMvc.perform(get("/printers").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void listPrintJobs_withWaiterToken_isOk() throws Exception {
+        // Unlike /printers/**, the queue itself is WAITER+ - PrinterService does the actual
+        // per-role document-type filtering, not the security gate.
+        when(printerService.listPrintJobs(any(), eq(Role.WAITER))).thenReturn(List.of());
+        mockMvc.perform(get("/print-jobs").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void listPrintJobs_withManagerToken_isOk() throws Exception {
+        when(printerService.listPrintJobs(any(), eq(Role.MANAGER))).thenReturn(List.of());
+        mockMvc.perform(get("/print-jobs").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void retryPrintJob_withWaiterToken_isOk() throws Exception {
+        when(printerService.retryPrintJob(anyString(), eq(Role.WAITER))).thenReturn(samplePrintJob());
+        mockMvc.perform(post("/print-jobs/job-1/retry").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    private static PrintJob samplePrintJob() {
+        return new PrintJob(
+                "job-1",
+                "printer-1",
+                PrintDocumentType.KITCHEN_TICKET,
+                "Kitchen ticket — Order #ORDER-1",
+                PrintJobStatus.SENT,
+                1,
+                null,
+                OffsetDateTime.now(),
+                OffsetDateTime.now());
+    }
+
     private static MenuItemInput sampleMenuItemInput() {
         return new MenuItemInput("Pad Thai", "Stir-fried rice noodles", "Mains", BigDecimal.valueOf(250));
     }
 
     private static MenuItem sampleMenuItem() {
-        return new MenuItem("menu-1", "Pad Thai", "Stir-fried rice noodles", "Mains", "250.00", true, OffsetDateTime.now());
+        return new MenuItem(
+                "menu-1", "Pad Thai", "Stir-fried rice noodles", "Mains", MenuDepartment.KITCHEN, "250.00", true, OffsetDateTime.now());
     }
 
     private static Order sampleOrder() {

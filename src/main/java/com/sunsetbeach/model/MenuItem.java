@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.MenuDepartment;
 import java.time.OffsetDateTime;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -19,7 +21,7 @@ import jakarta.annotation.Generated;
  * MenuItem
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class MenuItem {
 
   private String id;
@@ -29,6 +31,8 @@ public class MenuItem {
   private String description;
 
   private String category;
+
+  private MenuDepartment department;
 
   private String price;
 
@@ -44,11 +48,12 @@ public class MenuItem {
   /**
    * Constructor with only required parameters
    */
-  public MenuItem(String id, String name, String description, String category, String price, Boolean isAvailable, OffsetDateTime createdAt) {
+  public MenuItem(String id, String name, String description, String category, MenuDepartment department, String price, Boolean isAvailable, OffsetDateTime createdAt) {
     this.id = id;
     this.name = name;
     this.description = description;
     this.category = category;
+    this.department = department;
     this.price = price;
     this.isAvailable = isAvailable;
     this.createdAt = createdAt;
@@ -130,6 +135,25 @@ public class MenuItem {
     this.category = category;
   }
 
+  public MenuItem department(MenuDepartment department) {
+    this.department = department;
+    return this;
+  }
+
+  /**
+   * Get department
+   * @return department
+   */
+  @NotNull @Valid 
+  @JsonProperty("department")
+  public MenuDepartment getDepartment() {
+    return department;
+  }
+
+  public void setDepartment(MenuDepartment department) {
+    this.department = department;
+  }
+
   public MenuItem price(String price) {
     this.price = price;
     return this;
@@ -200,6 +224,7 @@ public class MenuItem {
         Objects.equals(this.name, menuItem.name) &&
         Objects.equals(this.description, menuItem.description) &&
         Objects.equals(this.category, menuItem.category) &&
+        Objects.equals(this.department, menuItem.department) &&
         Objects.equals(this.price, menuItem.price) &&
         Objects.equals(this.isAvailable, menuItem.isAvailable) &&
         Objects.equals(this.createdAt, menuItem.createdAt);
@@ -207,7 +232,7 @@ public class MenuItem {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, description, category, price, isAvailable, createdAt);
+    return Objects.hash(id, name, description, category, department, price, isAvailable, createdAt);
   }
 
   @Override
@@ -218,6 +243,7 @@ public class MenuItem {
     sb.append("    name: ").append(toIndentedString(name)).append("\n");
     sb.append("    description: ").append(toIndentedString(description)).append("\n");
     sb.append("    category: ").append(toIndentedString(category)).append("\n");
+    sb.append("    department: ").append(toIndentedString(department)).append("\n");
     sb.append("    price: ").append(toIndentedString(price)).append("\n");
     sb.append("    isAvailable: ").append(toIndentedString(isAvailable)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");

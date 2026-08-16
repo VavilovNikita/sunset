@@ -62,6 +62,13 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/shifts/*/export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/shifts/**").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.GET, "/payments/summary").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Printer CRUD/test (registering, editing, deleting, test-printing a physical
+                        // printer) is MANAGER-only. The print-job queue is WAITER+ - any staff role may
+                        // view/retry it, but PrinterService itself filters what a non-MANAGER caller can
+                        // see/retry down to KITCHEN_TICKET/PREBILL (Z-reports and guest receipts are
+                        // cashier/management information - see PrinterService#isVisible).
+                        .requestMatchers("/printers/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers("/print-jobs/**").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authEntryPoint)

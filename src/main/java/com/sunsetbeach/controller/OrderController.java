@@ -7,6 +7,7 @@ import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderItemInput;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.OrderUpdateInput;
+import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.security.CurrentUser;
 import com.sunsetbeach.service.OrderService;
@@ -67,5 +68,10 @@ public class OrderController implements OrdersApi {
     @Override
     public ResponseEntity<Order> cancelOrder(String id) {
         return ResponseEntity.ok(orderService.cancel(id));
+    }
+
+    @Override
+    public ResponseEntity<PrintAttemptResult> printOrderPrebill(String id) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(orderService.printPrebill(id));
     }
 }

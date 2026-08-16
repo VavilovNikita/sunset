@@ -19,6 +19,7 @@ import com.sunsetbeach.model.OrderItemInput;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.OrderUpdateInput;
 import com.sunsetbeach.model.PaymentMethod;
+import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.ShiftStatus;
 import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.repository.BookingRepository;
@@ -53,6 +54,7 @@ public class OrderService {
     private final ShiftRepository shiftRepository;
     private final PaymentRepository paymentRepository;
     private final OrderMapper orderMapper;
+    private final OrderPrintingService orderPrintingService;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -62,7 +64,8 @@ public class OrderService {
             BookingRepository bookingRepository,
             ShiftRepository shiftRepository,
             PaymentRepository paymentRepository,
-            OrderMapper orderMapper) {
+            OrderMapper orderMapper,
+            OrderPrintingService orderPrintingService) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.menuItemRepository = menuItemRepository;
@@ -71,6 +74,7 @@ public class OrderService {
         this.shiftRepository = shiftRepository;
         this.paymentRepository = paymentRepository;
         this.orderMapper = orderMapper;
+        this.orderPrintingService = orderPrintingService;
     }
 
     @Transactional(readOnly = true)
@@ -128,15 +132,21 @@ public class OrderService {
             String note = input.getNote().get();
             order.setNote(note != null ? note.trim() : null);
         }
+        boolean transitionedToSent = false;
         if (input.getStatus() != null) {
             if (order.getStatus() != OrderStatus.OPEN || input.getStatus() != OrderStatus.SENT) {
                 throw ValidationException.field("status", "Only the OPEN -> SENT transition is allowed here");
             }
             order.setStatus(OrderStatus.SENT);
+            transitionedToSent = true;
         }
 
         OrderEntity saved = orderRepository.saveAndFlush(order);
-        return orderMapper.toDto(saved, orderItemRepository.findByOrderId(id));
+        List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
+        if (transitionedToSent) {
+            orderPrintingService.printTickets(saved, items);
+        }
+        return orderMapper.toDto(saved, items);
     }
 
     @Transactional
@@ -215,13 +225,13 @@ public class OrderService {
                 .orElseThrow(() -> new ConflictException("You don't have an open shift"));
 
         String bookingId = null;
+        BookingEntity booking = null;
         if (input.getMethod() == PaymentMethod.ROOM_CHARGE) {
             bookingId = input.getBookingId();
             if (bookingId == null || bookingId.isBlank()) {
                 throw ValidationException.field("bookingId", "required when method is ROOM_CHARGE");
             }
-            BookingEntity booking =
-                    bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+            booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
             if (booking.getStatus() == BookingStatus.CANCELLED) {
                 throw new ConflictException("Booking is cancelled");
             }
@@ -242,7 +252,16 @@ public class OrderService {
 
         order.setStatus(OrderStatus.PAID);
         OrderEntity saved = orderRepository.saveAndFlush(order);
-        return orderMapper.toDto(saved, orderItemRepository.findByOrderId(id));
+        List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
+        orderPrintingService.printGuestReceipt(saved, items, payment, booking);
+        return orderMapper.toDto(saved, items);
+    }
+
+    @Transactional
+    public PrintAttemptResult printPrebill(String id) {
+        OrderEntity order = findOrThrow(id);
+        List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
+        return orderPrintingService.printPrebill(order, items);
     }
 
     @Transactional
