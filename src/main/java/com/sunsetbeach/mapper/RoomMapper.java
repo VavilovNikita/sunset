@@ -16,6 +16,7 @@ public class RoomMapper {
                 entity.getName(),
                 entity.getDescription(),
                 entity.getCapacity(),
+                entity.getQuantity(),
                 PriceFormat.asDecimalString(entity.getBasePrice()),
                 List.copyOf(Arrays.asList(entity.getImages())),
                 TimestampFormat.toUtc(entity.getCreatedAt()));
@@ -26,6 +27,7 @@ public class RoomMapper {
         entity.setName(input.getName().trim());
         entity.setDescription(input.getDescription().trim());
         entity.setCapacity(input.getCapacity());
+        entity.setQuantity(input.getQuantity());
         entity.setBasePrice(input.getBasePrice());
     }
 }

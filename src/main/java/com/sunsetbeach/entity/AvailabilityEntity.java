@@ -1,6 +1,5 @@
 package com.sunsetbeach.entity;
 
-import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -22,8 +21,8 @@ public class AvailabilityEntity {
 
     private LocalDate date;
 
-    @Column(name = "isBlocked")
-    private boolean isBlocked = true;
+    /** How many units of the room type are manually pulled from sale on this date. Zero is equivalent to no row existing. */
+    private int blockedCount;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
@@ -52,12 +51,12 @@ public class AvailabilityEntity {
         this.date = date;
     }
 
-    public boolean isBlocked() {
-        return isBlocked;
+    public int getBlockedCount() {
+        return blockedCount;
     }
 
-    public void setBlocked(boolean blocked) {
-        isBlocked = blocked;
+    public void setBlockedCount(int blockedCount) {
+        this.blockedCount = blockedCount;
     }
 
     public LocalDateTime getCreatedAt() {

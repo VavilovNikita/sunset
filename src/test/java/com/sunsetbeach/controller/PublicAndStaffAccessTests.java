@@ -125,6 +125,6 @@ class PublicAndStaffAccessTests {
     // mercy of how MockMvc/the servlet container happen to decode an encoded path segment.
 
     private static Room sampleRoom() {
-        return new Room("room-1", "Ocean View Suite", "A lovely room", 2, "1500.00", List.of(), OffsetDateTime.now());
+        return new Room("room-1", "Ocean View Suite", "A lovely room", 2, 1, "1500.00", List.of(), OffsetDateTime.now());
     }
 }

@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-03T20:50:04.328032600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T18:46:57.149779500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface PublicApi {
 
@@ -52,7 +52,7 @@ public interface PublicApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }";
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"quantity\" : 1, \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -70,7 +70,7 @@ public interface PublicApi {
 
     /**
      * GET /public/rooms/{id}/availability : Get day-by-day availability for a room for a given month (public)
-     * Unauthenticated. Powers the guest booking calendar. Unlike the staff endpoint, this never reveals *why* a day is blocked (real booking vs. manual staff block) - only whether it&#39;s bookable. 
+     * Unauthenticated. Powers the guest booking calendar. Unlike the staff endpoint, this never reveals *why* a day is blocked (real booking vs. manual staff block), nor how many units remain (&#x60;availableCount&#x60;) - only whether at least one unit is still bookable. Exposing the exact remaining count would let competitors read occupancy/load straight off the public site. 
      *
      * @param id  (required)
      * @param month Month key &#x60;YYYY-MM&#x60;. Defaults to the current UTC month. (optional)
@@ -195,7 +195,7 @@ public interface PublicApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" } ]";
+                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"quantity\" : 1, \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"quantity\" : 1, \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

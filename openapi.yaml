@@ -269,6 +269,16 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Room not found
+        "409":
+          description: >
+            `quantity` was lowered below the peak number of units already
+            committed (booked or manually blocked) on some future date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "Cannot reduce quantity to 1: 3 units are already committed on at least one future date"
     delete:
       operationId: deleteRoom
       tags: [Rooms]
@@ -499,10 +509,12 @@ paths:
       tags: [Availability]
       summary: Get day-by-day availability for a room for a given month
       description: >
-        Requires any authenticated staff session (ADMIN or MANAGER). A day
-        is blocked if it is covered by a non-CANCELLED booking
-        (`source: "booking"`) or by a manual `Availability` block
-        (`source: "manual"`).
+        Requires any authenticated staff session (ADMIN or MANAGER). Returns
+        the full per-day inventory breakdown (`quantity`, `blockedCount`,
+        `bookedCount`, `availableCount`) so staff can see manual blocks and
+        real bookings separately rather than a single blocked/not-blocked
+        flag. A day counts as booked if it is covered by a non-CANCELLED
+        booking (`checkIn <= date < checkOut`).
       parameters:
         - name: month
           in: query
@@ -531,12 +543,13 @@ paths:
     patch:
       operationId: setRoomAvailability
       tags: [Availability]
-      summary: Set a manual block/unblock for a date range
+      summary: Set how many units are manually blocked for a date range
       description: >
         Requires any authenticated staff session (ADMIN or MANAGER). Upserts
-        one `Availability` row per day in `[from, to]` (inclusive). Rejects
-        ranges longer than 366 days. This never touches bookings — it only
-        controls the manual-block layer.
+        one `Availability` row per day in `[from, to]` (inclusive) with
+        `blockedCount` units withdrawn from sale (`blockedCount: 0` deletes
+        the row instead). Rejects ranges longer than 366 days. This never
+        touches bookings — it only controls the manual-block layer.
       requestBody:
         required: true
         content:
@@ -551,7 +564,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/OkUpdated"
         "400":
-          description: Body failed `availabilityRangeSchema` validation, or the range exceeds 366 days.
+          description: >
+            Body failed `availabilityRangeSchema` validation, the range
+            exceeds 366 days, or `blockedCount` exceeds the room's `quantity`.
           content:
             application/json:
               schema:
@@ -561,6 +576,8 @@ paths:
               examples:
                 tooLarge:
                   value: { error: "Range too large (max 366 days)" }
+                overQuantity:
+                  value: { error: "blockedCount cannot exceed the room's quantity (2)" }
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1995,7 +2012,10 @@ paths:
       description: >
         Unauthenticated. Powers the guest booking calendar. Unlike the staff
         endpoint, this never reveals *why* a day is blocked (real booking vs.
-        manual staff block) - only whether it's bookable.
+        manual staff block), nor how many units remain (`availableCount`) -
+        only whether at least one unit is still bookable. Exposing the exact
+        remaining count would let competitors read occupancy/load straight
+        off the public site.
       security: []
       parameters:
         - name: month
@@ -2200,11 +2220,13 @@ components:
     Room:
       type: object
       description: >
-        Raw Prisma `Room` row as returned by `NextResponse.json(...)`.
-        `basePrice` is a Prisma `Decimal` — it serializes to a **string**,
-        not a JSON number. `createdAt` serializes as an ISO-8601 datetime
-        string.
-      required: [id, name, description, capacity, basePrice, images, createdAt]
+        Raw Prisma `Room` row as returned by `NextResponse.json(...)`. Despite
+        the name this is a **room type**, not a single physical room —
+        `quantity` is how many sellable units of it exist; individual units
+        aren't numbered or tracked yet. `basePrice` is a Prisma `Decimal` —
+        it serializes to a **string**, not a JSON number. `createdAt`
+        serializes as an ISO-8601 datetime string.
+      required: [id, name, description, capacity, quantity, basePrice, images, createdAt]
       properties:
         id:
           type: string
@@ -2214,6 +2236,10 @@ components:
           type: string
         capacity:
           type: integer
+        quantity:
+          type: integer
+          minimum: 1
+          description: How many sellable units of this room type exist.
         basePrice:
           type: string
           description: Decimal(10,2) rendered as a string, e.g. `"1500.00"`.
@@ -2229,7 +2255,7 @@ components:
     RoomInput:
       type: object
       description: Body of `roomSchema`. Full replacement on PATCH — no partial update.
-      required: [name, description, capacity, basePrice]
+      required: [name, description, capacity, quantity, basePrice]
       properties:
         name:
           type: string
@@ -2243,6 +2269,15 @@ components:
           minimum: 1
           maximum: 20
           description: Coerced to a number server-side (`z.coerce.number()`); a numeric string is also accepted.
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 500
+          description: >
+            How many sellable units of this room type exist. Lowering this
+            below the peak number of units already committed (booked or
+            manually blocked) on any future date is rejected with 409 — see
+            `PATCH /rooms/{id}` responses.
         basePrice:
           type: number
           minimum: 0
@@ -2425,8 +2460,12 @@ components:
 
     AvailabilityRangeInput:
       type: object
-      description: Body of `availabilityRangeSchema`. Upserts one `Availability` row per day in `[from, to]`.
-      required: [from, to, isBlocked]
+      description: >
+        Body of `availabilityRangeSchema`. Upserts one `Availability` row per
+        day in `[from, to]` with `blockedCount` units of the room type pulled
+        from sale. `blockedCount: 0` deletes the row for that day instead
+        (zero is equivalent to no row existing).
+      required: [from, to, blockedCount]
       properties:
         from:
           type: string
@@ -2434,8 +2473,10 @@ components:
         to:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
-        isBlocked:
-          type: boolean
+        blockedCount:
+          type: integer
+          minimum: 0
+          description: 'Must not exceed the room''s `quantity` - rejected with 400 otherwise.'
       # Cross-field rule enforced by Zod .refine(): from <= to.
 
     PricingDay:
@@ -2466,18 +2507,29 @@ components:
 
     AvailabilityDay:
       type: object
-      required: [date, isBlocked, source]
+      description: >
+        Per-day inventory breakdown for staff. `availableCount` is the
+        derived remainder (`quantity - blockedCount - bookedCount`) and can
+        go negative - that's not clamped away, since a negative remainder
+        (e.g. after a `quantity` reduction) is exactly the thing staff need
+        to see, not hide.
+      required: [date, quantity, blockedCount, bookedCount, availableCount]
       properties:
         date:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
-        isBlocked:
-          type: boolean
-        source:
-          type: string
-          enum: [booking, manual]
-          nullable: true
-          description: 'null when `isBlocked` is false.'
+        quantity:
+          type: integer
+          description: 'Room.quantity at query time.'
+        blockedCount:
+          type: integer
+          description: Units manually pulled from sale for this day (`Availability.blockedCount`).
+        bookedCount:
+          type: integer
+          description: Units covered by a non-CANCELLED booking for this day.
+        availableCount:
+          type: integer
+          description: 'quantity - blockedCount - bookedCount. Not clamped at 0.'
 
     AvailabilityResponse:
       type: object
@@ -2490,7 +2542,11 @@ components:
 
     PublicAvailabilityDay:
       type: object
-      description: Like `AvailabilityDay` but without `source` - guests aren't told whether a blocked day is a real booking or a manual staff block.
+      description: >
+        Like `AvailabilityDay` but collapsed to a yes/no signal - guests get
+        neither the block/booking split nor the exact remaining count
+        (revealing occupancy load to competitors), just whether at least one
+        unit is still sellable.
       required: [date, isBlocked]
       properties:
         date:
@@ -2498,6 +2554,7 @@ components:
           pattern: '^\d{4}-\d{2}-\d{2}$'
         isBlocked:
           type: boolean
+          description: 'True when availableCount <= 0 for this day.'
 
     PublicAvailabilityResponse:
       type: object

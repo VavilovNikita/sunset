@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T18:46:57.149779500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface AvailabilityApi {
 
@@ -35,12 +35,12 @@ public interface AvailabilityApi {
 
     /**
      * GET /availability/{roomId} : Get day-by-day availability for a room for a given month
-     * Requires any authenticated staff session (ADMIN or MANAGER). A day is blocked if it is covered by a non-CANCELLED booking (&#x60;source: \&quot;booking\&quot;&#x60;) or by a manual &#x60;Availability&#x60; block (&#x60;source: \&quot;manual\&quot;&#x60;). 
+     * Requires any authenticated staff session (ADMIN or MANAGER). Returns the full per-day inventory breakdown (&#x60;quantity&#x60;, &#x60;blockedCount&#x60;, &#x60;bookedCount&#x60;, &#x60;availableCount&#x60;) so staff can see manual blocks and real bookings separately rather than a single blocked/not-blocked flag. A day counts as booked if it is covered by a non-CANCELLED booking (&#x60;checkIn &lt;&#x3D; date &lt; checkOut&#x60;). 
      *
      * @param roomId  (required)
      * @param month Month key &#x60;YYYY-MM&#x60;. Defaults to the current UTC month. (optional)
      * @return Availability for every day of the month. (status code 200)
-     *         or No valid session cookie. (status code 401)
+     *         or No valid JWT. (status code 401)
      *         or Room not found. (status code 404)
      */
     @RequestMapping(
@@ -56,7 +56,7 @@ public interface AvailabilityApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"days\" : [ { \"date\" : \"date\", \"isBlocked\" : true, \"source\" : \"booking\" }, { \"date\" : \"date\", \"isBlocked\" : true, \"source\" : \"booking\" } ] }";
+                    String exampleString = "{ \"days\" : [ { \"date\" : \"date\", \"availableCount\" : 5, \"quantity\" : 0, \"blockedCount\" : 6, \"bookedCount\" : 1 }, { \"date\" : \"date\", \"availableCount\" : 5, \"quantity\" : 0, \"blockedCount\" : 6, \"bookedCount\" : 1 } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -78,14 +78,14 @@ public interface AvailabilityApi {
 
 
     /**
-     * PATCH /availability/{roomId} : Set a manual block/unblock for a date range
-     * Requires any authenticated staff session (ADMIN or MANAGER). Upserts one &#x60;Availability&#x60; row per day in &#x60;[from, to]&#x60; (inclusive). Rejects ranges longer than 366 days. This never touches bookings — it only controls the manual-block layer. 
+     * PATCH /availability/{roomId} : Set how many units are manually blocked for a date range
+     * Requires any authenticated staff session (ADMIN or MANAGER). Upserts one &#x60;Availability&#x60; row per day in &#x60;[from, to]&#x60; (inclusive) with &#x60;blockedCount&#x60; units withdrawn from sale (&#x60;blockedCount: 0&#x60; deletes the row instead). Rejects ranges longer than 366 days. This never touches bookings — it only controls the manual-block layer. 
      *
      * @param roomId  (required)
      * @param availabilityRangeInput  (required)
      * @return Number of days upserted. (status code 200)
-     *         or Body failed &#x60;availabilityRangeSchema&#x60; validation, or the range exceeds 366 days. (status code 400)
-     *         or No valid session cookie. (status code 401)
+     *         or Body failed &#x60;availabilityRangeSchema&#x60; validation, the range exceeds 366 days, or &#x60;blockedCount&#x60; exceeds the room&#39;s &#x60;quantity&#x60;.  (status code 400)
+     *         or No valid JWT. (status code 401)
      *         or Room not found. (status code 404)
      */
     @RequestMapping(

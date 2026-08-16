@@ -9,6 +9,8 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.mapper.RoomMapper;
 import com.sunsetbeach.model.Room;
+import com.sunsetbeach.repository.AvailabilityRepository;
+import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -50,7 +52,12 @@ class RoomServiceUploadTests {
                     .getBytes(StandardCharsets.UTF_8);
 
     private RoomService newService(Path uploadsRoot, RoomRepository roomRepository) {
-        return new RoomService(roomRepository, new RoomMapper(), uploadsRoot.toString());
+        return new RoomService(
+                roomRepository,
+                Mockito.mock(BookingRepository.class),
+                Mockito.mock(AvailabilityRepository.class),
+                new RoomMapper(),
+                uploadsRoot.toString());
     }
 
     @Test

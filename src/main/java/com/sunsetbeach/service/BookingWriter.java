@@ -1,5 +1,6 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.entity.AvailabilityEntity;
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.RatePlanEntity;
 import com.sunsetbeach.entity.RoomEntity;
@@ -8,6 +9,7 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.repository.AvailabilityRepository;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.RatePlanRepository;
+import com.sunsetbeach.repository.RoomRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -25,12 +27,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class BookingWriter {
 
+    private final RoomRepository roomRepository;
     private final AvailabilityRepository availabilityRepository;
     private final BookingRepository bookingRepository;
     private final RatePlanRepository ratePlanRepository;
 
     public BookingWriter(
-            AvailabilityRepository availabilityRepository, BookingRepository bookingRepository, RatePlanRepository ratePlanRepository) {
+            RoomRepository roomRepository,
+            AvailabilityRepository availabilityRepository,
+            BookingRepository bookingRepository,
+            RatePlanRepository ratePlanRepository) {
+        this.roomRepository = roomRepository;
         this.availabilityRepository = availabilityRepository;
         this.bookingRepository = bookingRepository;
         this.ratePlanRepository = ratePlanRepository;
@@ -39,7 +46,12 @@ public class BookingWriter {
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public BookingEntity insert(
             RoomEntity room, String guestName, String guestEmail, String guestPhone, LocalDate checkIn, LocalDate checkOut) {
-        if (!isRangeAvailable(room.getId(), checkIn, checkOut)) {
+        // Re-read quantity inside the SERIALIZABLE transaction rather than trusting the
+        // caller's (possibly pre-transaction) copy - this is the same value a concurrent
+        // PATCH /rooms/{id} lowering quantity would be writing, so it needs to participate
+        // in this transaction's conflict detection like everything else isRangeAvailable reads.
+        int quantity = roomRepository.findById(room.getId()).map(RoomEntity::getQuantity).orElse(room.getQuantity());
+        if (!isRangeAvailable(room.getId(), quantity, checkIn, checkOut)) {
             throw new ConflictException("Selected dates are no longer available");
         }
 
@@ -55,12 +67,35 @@ public class BookingWriter {
         return bookingRepository.saveAndFlush(entity);
     }
 
-    private boolean isRangeAvailable(String roomId, LocalDate checkIn, LocalDate checkOut) {
-        long blockedCount = availabilityRepository.countByRoomIdAndIsBlockedTrueAndDateGreaterThanEqualAndDateLessThan(
-                roomId, checkIn, checkOut);
-        long overlappingCount = bookingRepository.countByRoomIdAndStatusNotAndCheckInLessThanAndCheckOutGreaterThan(
+    /**
+     * available(date) = room.quantity - blockedCount(date) - active bookings covering date.
+     * A date is covered by a booking if checkIn &lt;= date &lt; checkOut (checkout day is free).
+     * The range is available only if every night in [checkIn, checkOut) has at least one unit
+     * left - this, plus the SERIALIZABLE isolation this method runs under, is what stops two
+     * concurrent requests from both taking the last unit on the same date.
+     */
+    private boolean isRangeAvailable(String roomId, int quantity, LocalDate checkIn, LocalDate checkOut) {
+        List<LocalDate> nights = DateRangeUtil.getNights(checkIn, checkOut);
+
+        Map<LocalDate, Integer> blockedByDate = new HashMap<>();
+        for (AvailabilityEntity block : availabilityRepository.findByRoomIdAndDateBetween(roomId, checkIn, checkOut.minusDays(1))) {
+            blockedByDate.put(block.getDate(), block.getBlockedCount());
+        }
+
+        List<BookingEntity> overlapping = bookingRepository.findByRoomIdAndStatusNotAndCheckInLessThanAndCheckOutGreaterThan(
                 roomId, BookingStatus.CANCELLED, checkOut, checkIn);
-        return blockedCount == 0 && overlappingCount == 0;
+
+        for (LocalDate night : nights) {
+            int blocked = blockedByDate.getOrDefault(night, 0);
+            long booked = overlapping.stream()
+                    .filter(b -> !night.isBefore(b.getCheckIn()) && night.isBefore(b.getCheckOut()))
+                    .count();
+            int available = quantity - blocked - (int) booked;
+            if (available < 1) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private BigDecimal computeTotalPrice(RoomEntity room, LocalDate checkIn, LocalDate checkOut) {

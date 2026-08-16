@@ -18,10 +18,8 @@ import com.sunsetbeach.repository.RoomRepository;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,57 +40,59 @@ public class AvailabilityService {
     @Transactional(readOnly = true)
     public AvailabilityResponse getAvailability(String roomId, String monthParam) {
         RoomEntity room = roomRepository.findById(roomId).orElseThrow(() -> new NotFoundException("Room not found"));
-        List<DayBlock> blocks = computeBlocks(room, monthParam);
+        List<DayInventory> inventory = computeInventory(room, monthParam);
 
-        List<AvailabilityDay> days = blocks.stream()
-                .map(block -> {
-                    var source = block.isBooked()
-                            ? AvailabilityDay.SourceEnum.BOOKING
-                            : block.manual() ? AvailabilityDay.SourceEnum.MANUAL : null;
-                    return new AvailabilityDay(block.date().toString(), block.isBooked() || block.manual(), source);
-                })
+        List<AvailabilityDay> days = inventory.stream()
+                .map(d -> new AvailabilityDay(d.date().toString(), d.quantity(), d.blockedCount(), d.bookedCount(), d.availableCount()))
                 .toList();
 
         return new AvailabilityResponse(days);
     }
 
     /**
-     * Public counterpart of {@link #getAvailability} - same day-by-day computation, but never
-     * reveals whether a blocked day is a real booking or a manual staff block.
+     * Public counterpart of {@link #getAvailability} - same day-by-day computation, but
+     * collapsed to a yes/no signal: never reveals whether a blocked day is a real booking or a
+     * manual staff block, and never reveals the exact remaining count (that would let anyone
+     * read the hotel's occupancy/load straight off the public site).
      */
     @Transactional(readOnly = true)
     public PublicAvailabilityResponse getPublicAvailability(String roomId, String monthParam) {
         RoomEntity room = roomRepository.findById(roomId).orElseThrow(() -> new NotFoundException("Room not found"));
-        List<DayBlock> blocks = computeBlocks(room, monthParam);
+        List<DayInventory> inventory = computeInventory(room, monthParam);
 
-        List<PublicAvailabilityDay> days = blocks.stream()
-                .map(block -> new PublicAvailabilityDay(block.date().toString(), block.isBooked() || block.manual()))
-                .toList();
+        List<PublicAvailabilityDay> days =
+                inventory.stream().map(d -> new PublicAvailabilityDay(d.date().toString(), d.availableCount() <= 0)).toList();
 
         return new PublicAvailabilityResponse(days);
     }
 
-    private record DayBlock(LocalDate date, boolean isBooked, boolean manual) {
+    /** availableCount is deliberately not clamped at 0 - a negative remainder is a real signal (e.g. after a quantity cut), not noise to hide. */
+    private record DayInventory(LocalDate date, int quantity, int blockedCount, int bookedCount) {
+        int availableCount() {
+            return quantity - blockedCount - bookedCount;
+        }
     }
 
-    private List<DayBlock> computeBlocks(RoomEntity room, String monthParam) {
+    private List<DayInventory> computeInventory(RoomEntity room, String monthParam) {
         YearMonth month = DateRangeUtil.parseMonthOrCurrent(monthParam);
         LocalDate monthStart = month.atDay(1);
         LocalDate monthEnd = month.atEndOfMonth();
 
-        Map<LocalDate, Boolean> manualByDate = new HashMap<>();
+        Map<LocalDate, Integer> blockedByDate = new HashMap<>();
         for (AvailabilityEntity block : availabilityRepository.findByRoomIdAndDateBetween(room.getId(), monthStart, monthEnd)) {
-            manualByDate.put(block.getDate(), block.isBlocked());
+            blockedByDate.put(block.getDate(), block.getBlockedCount());
         }
 
-        Set<LocalDate> bookedDates = new HashSet<>();
-        for (BookingEntity booking : bookingRepository.findByRoomIdAndStatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
-                room.getId(), BookingStatus.CANCELLED, monthEnd, monthStart)) {
-            bookedDates.addAll(DateRangeUtil.getNights(booking.getCheckIn(), booking.getCheckOut()));
-        }
+        List<BookingEntity> bookings = bookingRepository.findByRoomIdAndStatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
+                room.getId(), BookingStatus.CANCELLED, monthEnd, monthStart);
 
         return DateRangeUtil.eachDateInRange(monthStart, monthEnd).stream()
-                .map(date -> new DayBlock(date, bookedDates.contains(date), manualByDate.getOrDefault(date, false)))
+                .map(date -> {
+                    int booked = (int) bookings.stream()
+                            .filter(b -> !date.isBefore(b.getCheckIn()) && date.isBefore(b.getCheckOut()))
+                            .count();
+                    return new DayInventory(date, room.getQuantity(), blockedByDate.getOrDefault(date, 0), booked);
+                })
                 .toList();
     }
 
@@ -106,20 +106,30 @@ public class AvailabilityService {
             throw ValidationException.field("to", "from must be on or before to");
         }
 
+        int blockedCount = input.getBlockedCount();
+        if (blockedCount > room.getQuantity()) {
+            throw new BadRequestException("blockedCount cannot exceed the room's quantity (" + room.getQuantity() + ")");
+        }
+
         List<LocalDate> dates = DateRangeUtil.eachDateInRange(from, to);
         if (dates.size() > DateRangeUtil.MAX_RANGE_DAYS) {
             throw new BadRequestException("Range too large (max " + DateRangeUtil.MAX_RANGE_DAYS + " days)");
         }
 
         for (LocalDate date : dates) {
-            AvailabilityEntity block = availabilityRepository.findByRoomIdAndDate(room.getId(), date)
-                    .orElseGet(() -> {
-                        AvailabilityEntity created = new AvailabilityEntity();
-                        created.setRoomId(room.getId());
-                        created.setDate(date);
-                        return created;
-                    });
-            block.setBlocked(input.getIsBlocked());
+            var existing = availabilityRepository.findByRoomIdAndDate(room.getId(), date);
+            if (blockedCount == 0) {
+                // Zero is equivalent to no row existing - drop it instead of carrying a dead row.
+                existing.ifPresent(availabilityRepository::delete);
+                continue;
+            }
+            AvailabilityEntity block = existing.orElseGet(() -> {
+                AvailabilityEntity created = new AvailabilityEntity();
+                created.setRoomId(room.getId());
+                created.setDate(date);
+                return created;
+            });
+            block.setBlockedCount(blockedCount);
             availabilityRepository.save(block);
         }
 

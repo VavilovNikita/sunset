@@ -9,9 +9,14 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 public interface BookingRepository extends JpaRepository<BookingEntity, String>, JpaSpecificationExecutor<BookingEntity> {
 
-    long countByRoomIdAndStatusNotAndCheckInLessThanAndCheckOutGreaterThan(
+    List<BookingEntity> findByRoomIdAndStatusNotAndCheckInLessThanAndCheckOutGreaterThan(
             String roomId, BookingStatus excludedStatus, LocalDate checkOut, LocalDate checkIn);
 
     List<BookingEntity> findByRoomIdAndStatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
             String roomId, BookingStatus excludedStatus, LocalDate monthEnd, LocalDate monthStart);
+
+    /** Used by {@link com.sunsetbeach.service.RoomService} to find the peak future commitment before shrinking `quantity`. */
+    List<BookingEntity> findByRoomIdAndStatusNotAndCheckOutGreaterThan(String roomId, BookingStatus excludedStatus, LocalDate from);
+
+    List<BookingEntity> findByRoomId(String roomId);
 }

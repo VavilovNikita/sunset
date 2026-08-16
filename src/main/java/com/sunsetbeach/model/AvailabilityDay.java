@@ -4,7 +4,6 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -15,52 +14,21 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * AvailabilityDay
+ * Per-day inventory breakdown for staff. &#x60;availableCount&#x60; is the derived remainder (&#x60;quantity - blockedCount - bookedCount&#x60;) and can go negative - that&#39;s not clamped away, since a negative remainder (e.g. after a &#x60;quantity&#x60; reduction) is exactly the thing staff need to see, not hide. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T18:39:34.635637100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class AvailabilityDay {
 
   private String date;
 
-  private Boolean isBlocked;
+  private Integer quantity;
 
-  /**
-   * null when `isBlocked` is false.
-   */
-  public enum SourceEnum {
-    BOOKING("booking"),
-    
-    MANUAL("manual");
+  private Integer blockedCount;
 
-    private String value;
+  private Integer bookedCount;
 
-    SourceEnum(String value) {
-      this.value = value;
-    }
-
-    @JsonValue
-    public String getValue() {
-      return value;
-    }
-
-    @Override
-    public String toString() {
-      return String.valueOf(value);
-    }
-
-    @JsonCreator
-    public static SourceEnum fromValue(String value) {
-      for (SourceEnum b : SourceEnum.values()) {
-        if (b.value.equals(value)) {
-          return b;
-        }
-      }
-      return null;
-    }
-  }
-
-  private JsonNullable<SourceEnum> source = JsonNullable.<SourceEnum>undefined();
+  private Integer availableCount;
 
   public AvailabilityDay() {
     super();
@@ -69,10 +37,12 @@ public class AvailabilityDay {
   /**
    * Constructor with only required parameters
    */
-  public AvailabilityDay(String date, Boolean isBlocked, SourceEnum source) {
+  public AvailabilityDay(String date, Integer quantity, Integer blockedCount, Integer bookedCount, Integer availableCount) {
     this.date = date;
-    this.isBlocked = isBlocked;
-    this.source = JsonNullable.of(source);
+    this.quantity = quantity;
+    this.blockedCount = blockedCount;
+    this.bookedCount = bookedCount;
+    this.availableCount = availableCount;
   }
 
   public AvailabilityDay date(String date) {
@@ -94,42 +64,80 @@ public class AvailabilityDay {
     this.date = date;
   }
 
-  public AvailabilityDay isBlocked(Boolean isBlocked) {
-    this.isBlocked = isBlocked;
+  public AvailabilityDay quantity(Integer quantity) {
+    this.quantity = quantity;
     return this;
   }
 
   /**
-   * Get isBlocked
-   * @return isBlocked
+   * Room.quantity at query time.
+   * @return quantity
    */
   @NotNull 
-  @JsonProperty("isBlocked")
-  public Boolean getIsBlocked() {
-    return isBlocked;
+  @JsonProperty("quantity")
+  public Integer getQuantity() {
+    return quantity;
   }
 
-  public void setIsBlocked(Boolean isBlocked) {
-    this.isBlocked = isBlocked;
+  public void setQuantity(Integer quantity) {
+    this.quantity = quantity;
   }
 
-  public AvailabilityDay source(SourceEnum source) {
-    this.source = JsonNullable.of(source);
+  public AvailabilityDay blockedCount(Integer blockedCount) {
+    this.blockedCount = blockedCount;
     return this;
   }
 
   /**
-   * null when `isBlocked` is false.
-   * @return source
+   * Units manually pulled from sale for this day (`Availability.blockedCount`).
+   * @return blockedCount
    */
   @NotNull 
-  @JsonProperty("source")
-  public JsonNullable<SourceEnum> getSource() {
-    return source;
+  @JsonProperty("blockedCount")
+  public Integer getBlockedCount() {
+    return blockedCount;
   }
 
-  public void setSource(JsonNullable<SourceEnum> source) {
-    this.source = source;
+  public void setBlockedCount(Integer blockedCount) {
+    this.blockedCount = blockedCount;
+  }
+
+  public AvailabilityDay bookedCount(Integer bookedCount) {
+    this.bookedCount = bookedCount;
+    return this;
+  }
+
+  /**
+   * Units covered by a non-CANCELLED booking for this day.
+   * @return bookedCount
+   */
+  @NotNull 
+  @JsonProperty("bookedCount")
+  public Integer getBookedCount() {
+    return bookedCount;
+  }
+
+  public void setBookedCount(Integer bookedCount) {
+    this.bookedCount = bookedCount;
+  }
+
+  public AvailabilityDay availableCount(Integer availableCount) {
+    this.availableCount = availableCount;
+    return this;
+  }
+
+  /**
+   * quantity - blockedCount - bookedCount. Not clamped at 0.
+   * @return availableCount
+   */
+  @NotNull 
+  @JsonProperty("availableCount")
+  public Integer getAvailableCount() {
+    return availableCount;
+  }
+
+  public void setAvailableCount(Integer availableCount) {
+    this.availableCount = availableCount;
   }
 
   @Override
@@ -142,13 +150,15 @@ public class AvailabilityDay {
     }
     AvailabilityDay availabilityDay = (AvailabilityDay) o;
     return Objects.equals(this.date, availabilityDay.date) &&
-        Objects.equals(this.isBlocked, availabilityDay.isBlocked) &&
-        Objects.equals(this.source, availabilityDay.source);
+        Objects.equals(this.quantity, availabilityDay.quantity) &&
+        Objects.equals(this.blockedCount, availabilityDay.blockedCount) &&
+        Objects.equals(this.bookedCount, availabilityDay.bookedCount) &&
+        Objects.equals(this.availableCount, availabilityDay.availableCount);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(date, isBlocked, source);
+    return Objects.hash(date, quantity, blockedCount, bookedCount, availableCount);
   }
 
   @Override
@@ -156,8 +166,10 @@ public class AvailabilityDay {
     StringBuilder sb = new StringBuilder();
     sb.append("class AvailabilityDay {\n");
     sb.append("    date: ").append(toIndentedString(date)).append("\n");
-    sb.append("    isBlocked: ").append(toIndentedString(isBlocked)).append("\n");
-    sb.append("    source: ").append(toIndentedString(source)).append("\n");
+    sb.append("    quantity: ").append(toIndentedString(quantity)).append("\n");
+    sb.append("    blockedCount: ").append(toIndentedString(blockedCount)).append("\n");
+    sb.append("    bookedCount: ").append(toIndentedString(bookedCount)).append("\n");
+    sb.append("    availableCount: ").append(toIndentedString(availableCount)).append("\n");
     sb.append("}");
     return sb.toString();
   }

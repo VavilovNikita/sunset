@@ -1,20 +1,27 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.entity.AvailabilityEntity;
+import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.mapper.RoomMapper;
+import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.Room;
 import com.sunsetbeach.model.RoomInput;
+import com.sunsetbeach.repository.AvailabilityRepository;
+import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -36,11 +43,20 @@ public class RoomService {
     private static final String ALPHANUMERIC = "abcdefghijklmnopqrstuvwxyz0123456789";
 
     private final RoomRepository roomRepository;
+    private final BookingRepository bookingRepository;
+    private final AvailabilityRepository availabilityRepository;
     private final RoomMapper roomMapper;
     private final Path uploadsRoot;
 
-    public RoomService(RoomRepository roomRepository, RoomMapper roomMapper, @Value("${app.uploads.root}") String uploadsRoot) {
+    public RoomService(
+            RoomRepository roomRepository,
+            BookingRepository bookingRepository,
+            AvailabilityRepository availabilityRepository,
+            RoomMapper roomMapper,
+            @Value("${app.uploads.root}") String uploadsRoot) {
         this.roomRepository = roomRepository;
+        this.bookingRepository = bookingRepository;
+        this.availabilityRepository = availabilityRepository;
         this.roomMapper = roomMapper;
         this.uploadsRoot = Path.of(uploadsRoot);
     }
@@ -67,8 +83,52 @@ public class RoomService {
     @Transactional
     public Room update(String id, RoomInput input) {
         RoomEntity entity = roomRepository.findById(id).orElseThrow(() -> new NotFoundException("Room not found"));
+
+        if (input.getQuantity() < entity.getQuantity()) {
+            int peak = peakCommittedUnits(id, LocalDate.now());
+            if (input.getQuantity() < peak) {
+                throw new ConflictException("Cannot reduce quantity to " + input.getQuantity() + ": " + peak
+                        + " units are already committed on at least one future date");
+            }
+        }
+
         roomMapper.applyInput(entity, input);
         return roomMapper.toDto(roomRepository.save(entity));
+    }
+
+    /**
+     * The most units of this room type committed (booked or manually blocked) on any single
+     * date from {@code from} onward - a decreasing quantity edit is rejected below this, so the
+     * hotel never ends up with more commitments on a date than units to honor them. A sweep-line
+     * over booking/block interval boundaries instead of a day-by-day scan, since bookings can
+     * span an unbounded horizon: each booking contributes +1 at its (clamped) start and -1 at
+     * checkOut, each manual block contributes +blockedCount at its date and -blockedCount the
+     * day after; the running total at any event date is exactly bookedCount + blockedCount for
+     * every date up to the next event, so its max is the true peak.
+     */
+    private int peakCommittedUnits(String roomId, LocalDate from) {
+        TreeMap<LocalDate, Integer> deltas = new TreeMap<>();
+
+        for (BookingEntity booking : bookingRepository.findByRoomIdAndStatusNotAndCheckOutGreaterThan(roomId, BookingStatus.CANCELLED, from)) {
+            LocalDate start = booking.getCheckIn().isBefore(from) ? from : booking.getCheckIn();
+            deltas.merge(start, 1, Integer::sum);
+            deltas.merge(booking.getCheckOut(), -1, Integer::sum);
+        }
+        for (AvailabilityEntity block : availabilityRepository.findByRoomIdAndDateGreaterThanEqual(roomId, from)) {
+            if (block.getBlockedCount() == 0) {
+                continue;
+            }
+            deltas.merge(block.getDate(), block.getBlockedCount(), Integer::sum);
+            deltas.merge(block.getDate().plusDays(1), -block.getBlockedCount(), Integer::sum);
+        }
+
+        int running = 0;
+        int peak = 0;
+        for (int delta : deltas.values()) {
+            running += delta;
+            peak = Math.max(peak, running);
+        }
+        return peak;
     }
 
     @Transactional

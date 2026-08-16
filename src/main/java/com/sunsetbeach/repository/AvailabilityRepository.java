@@ -12,6 +12,6 @@ public interface AvailabilityRepository extends JpaRepository<AvailabilityEntity
 
     List<AvailabilityEntity> findByRoomIdAndDateBetween(String roomId, LocalDate start, LocalDate end);
 
-    long countByRoomIdAndIsBlockedTrueAndDateGreaterThanEqualAndDateLessThan(
-            String roomId, LocalDate fromInclusive, LocalDate toExclusive);
+    /** Used by {@link com.sunsetbeach.service.RoomService} to find the peak future commitment before shrinking `quantity`. */
+    List<AvailabilityEntity> findByRoomIdAndDateGreaterThanEqual(String roomId, LocalDate from);
 }

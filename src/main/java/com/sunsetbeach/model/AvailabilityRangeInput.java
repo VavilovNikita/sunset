@@ -14,17 +14,17 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Body of &#x60;availabilityRangeSchema&#x60;. Upserts one &#x60;Availability&#x60; row per day in &#x60;[from, to]&#x60;.
+ * Body of &#x60;availabilityRangeSchema&#x60;. Upserts one &#x60;Availability&#x60; row per day in &#x60;[from, to]&#x60; with &#x60;blockedCount&#x60; units of the room type pulled from sale. &#x60;blockedCount: 0&#x60; deletes the row for that day instead (zero is equivalent to no row existing). 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T18:39:34.635637100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class AvailabilityRangeInput {
 
   private String from;
 
   private String to;
 
-  private Boolean isBlocked;
+  private Integer blockedCount;
 
   public AvailabilityRangeInput() {
     super();
@@ -33,10 +33,10 @@ public class AvailabilityRangeInput {
   /**
    * Constructor with only required parameters
    */
-  public AvailabilityRangeInput(String from, String to, Boolean isBlocked) {
+  public AvailabilityRangeInput(String from, String to, Integer blockedCount) {
     this.from = from;
     this.to = to;
-    this.isBlocked = isBlocked;
+    this.blockedCount = blockedCount;
   }
 
   public AvailabilityRangeInput from(String from) {
@@ -77,23 +77,24 @@ public class AvailabilityRangeInput {
     this.to = to;
   }
 
-  public AvailabilityRangeInput isBlocked(Boolean isBlocked) {
-    this.isBlocked = isBlocked;
+  public AvailabilityRangeInput blockedCount(Integer blockedCount) {
+    this.blockedCount = blockedCount;
     return this;
   }
 
   /**
-   * Get isBlocked
-   * @return isBlocked
+   * Must not exceed the room's `quantity` - rejected with 400 otherwise.
+   * minimum: 0
+   * @return blockedCount
    */
-  @NotNull 
-  @JsonProperty("isBlocked")
-  public Boolean getIsBlocked() {
-    return isBlocked;
+  @NotNull @Min(0) 
+  @JsonProperty("blockedCount")
+  public Integer getBlockedCount() {
+    return blockedCount;
   }
 
-  public void setIsBlocked(Boolean isBlocked) {
-    this.isBlocked = isBlocked;
+  public void setBlockedCount(Integer blockedCount) {
+    this.blockedCount = blockedCount;
   }
 
   @Override
@@ -107,12 +108,12 @@ public class AvailabilityRangeInput {
     AvailabilityRangeInput availabilityRangeInput = (AvailabilityRangeInput) o;
     return Objects.equals(this.from, availabilityRangeInput.from) &&
         Objects.equals(this.to, availabilityRangeInput.to) &&
-        Objects.equals(this.isBlocked, availabilityRangeInput.isBlocked);
+        Objects.equals(this.blockedCount, availabilityRangeInput.blockedCount);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(from, to, isBlocked);
+    return Objects.hash(from, to, blockedCount);
   }
 
   @Override
@@ -121,7 +122,7 @@ public class AvailabilityRangeInput {
     sb.append("class AvailabilityRangeInput {\n");
     sb.append("    from: ").append(toIndentedString(from)).append("\n");
     sb.append("    to: ").append(toIndentedString(to)).append("\n");
-    sb.append("    isBlocked: ").append(toIndentedString(isBlocked)).append("\n");
+    sb.append("    blockedCount: ").append(toIndentedString(blockedCount)).append("\n");
     sb.append("}");
     return sb.toString();
   }
