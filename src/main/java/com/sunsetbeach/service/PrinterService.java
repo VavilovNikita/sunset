@@ -111,31 +111,56 @@ public class PrinterService {
     }
 
     @Transactional(readOnly = true)
-    public List<PrintJob> listPrintJobs(PrintJobStatus status, Role callerRole) {
+    public List<PrintJob> listPrintJobs(PrintJobStatus status, PrintDocumentType documentType, Role callerRole) {
         List<PrintJobEntity> jobs = status != null
                 ? printJobRepository.findByStatusOrderByCreatedAtDesc(status)
                 : printJobRepository.findAllByOrderByCreatedAtDesc();
         return jobs.stream()
                 .filter(job -> isVisible(job.getDocumentType(), callerRole))
+                .filter(job -> documentType == null || job.getDocumentType() == documentType)
                 .map(printJobMapper::toDto)
                 .toList();
     }
 
     @Transactional
     public PrintJob retryPrintJob(String id, Role callerRole) {
-        PrintJobEntity job =
-                printJobRepository.findById(id).orElseThrow(() -> new NotFoundException("Print job not found"));
-        // 404, not 403: a job outside the caller's visible set must look identical to a job
-        // that doesn't exist, or the id could be used to confirm/probe for e.g. a Z-report.
-        if (!isVisible(job.getDocumentType(), callerRole)) {
-            throw new NotFoundException("Print job not found");
-        }
+        PrintJobEntity job = findVisibleOrThrow(id, callerRole);
         // No ON DELETE on PrintJob.printerId (see V5 migration) - the printer this job targets
         // always still exists, deactivated or not.
         PrinterEntity printer = printerRepository
                 .findById(job.getPrinterId())
                 .orElseThrow(() -> new NotFoundException("Printer not found"));
         return printJobMapper.toDto(printService.retryManually(job, printer));
+    }
+
+    /**
+     * {@code GET /print-jobs/{id}/preview} - the same text that would come out of the printer,
+     * with the ESC/POS control sequences (init, code page, bold, centering, cut) stripped out.
+     * Lets staff check a document before it prints, or see what a FAILED job actually contained
+     * without walking over to a dead printer.
+     */
+    @Transactional(readOnly = true)
+    public String previewPrintJob(String id, Role callerRole) {
+        PrintJobEntity job = findVisibleOrThrow(id, callerRole);
+        PrinterEntity printer = printerRepository
+                .findById(job.getPrinterId())
+                .orElseThrow(() -> new NotFoundException("Printer not found"));
+        return EscPosPreview.render(job.getPayload(), printer.getCodepage());
+    }
+
+    /**
+     * Shared by {@link #retryPrintJob} and {@link #previewPrintJob}: 404, not 403, for a job
+     * outside the caller's visible set - it must look identical to a job that doesn't exist, or
+     * the id could be used to confirm/probe for (or force a reprint/read the content of) e.g. a
+     * Z-report.
+     */
+    private PrintJobEntity findVisibleOrThrow(String id, Role callerRole) {
+        PrintJobEntity job =
+                printJobRepository.findById(id).orElseThrow(() -> new NotFoundException("Print job not found"));
+        if (!isVisible(job.getDocumentType(), callerRole)) {
+            throw new NotFoundException("Print job not found");
+        }
+        return job;
     }
 
     /**

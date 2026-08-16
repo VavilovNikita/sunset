@@ -316,19 +316,109 @@ class PrintingTests {
             orderService.close(paidOrder.getId(), new CloseOrderInput(PaymentMethod.CASH), cashier.getId()); // -> GUEST_RECEIPT
             shiftService.close(shift.getId(), new ShiftCloseInput()); // -> Z_REPORT
 
-            List<PrintJob> waiterView = printerService.listPrintJobs(null, Role.WAITER);
-            assertThat(waiterView).extracting(PrintJob::getDocumentType).containsOnly(PrintDocumentType.KITCHEN_TICKET);
+            // The dev DB this suite runs against may already carry other jobs (e.g. staff manually
+            // trying the feature), so these assert set membership, not exact composition -
+            // KITCHEN_TICKET/PREBILL can legitimately be visible from elsewhere; Z_REPORT/
+            // GUEST_RECEIPT must never be, no matter what else is in the table.
+            List<PrintJob> waiterView = printerService.listPrintJobs(null, null, Role.WAITER);
+            assertThat(waiterView).extracting(PrintJob::getDocumentType).contains(PrintDocumentType.KITCHEN_TICKET);
+            assertThat(waiterView)
+                    .extracting(PrintJob::getDocumentType)
+                    .doesNotContain(PrintDocumentType.Z_REPORT, PrintDocumentType.GUEST_RECEIPT, PrintDocumentType.TEST_PAGE);
             // Same filtering for CASHIER - only MANAGER/ADMIN get the cashier-facing documents.
-            List<PrintJob> cashierView = printerService.listPrintJobs(null, Role.CASHIER);
-            assertThat(cashierView).extracting(PrintJob::getDocumentType).containsOnly(PrintDocumentType.KITCHEN_TICKET);
+            List<PrintJob> cashierView = printerService.listPrintJobs(null, null, Role.CASHIER);
+            assertThat(cashierView)
+                    .extracting(PrintJob::getDocumentType)
+                    .doesNotContain(PrintDocumentType.Z_REPORT, PrintDocumentType.GUEST_RECEIPT, PrintDocumentType.TEST_PAGE);
             // No money in what a waiter is allowed to see - a kitchen ticket's summary is just "what and where".
             assertThat(waiterView).extracting(PrintJob::getSummary).noneMatch(s -> s.matches(".*\\d+\\.\\d{2}.*"));
 
-            List<PrintJob> managerView = printerService.listPrintJobs(null, Role.MANAGER);
+            List<PrintJob> managerView = printerService.listPrintJobs(null, null, Role.MANAGER);
             assertThat(managerView)
                     .extracting(PrintJob::getDocumentType)
                     .contains(PrintDocumentType.KITCHEN_TICKET, PrintDocumentType.GUEST_RECEIPT, PrintDocumentType.Z_REPORT);
+
+            // ?documentType= actually filters, not just ?status=.
+            List<PrintJob> zReportsOnly = printerService.listPrintJobs(null, PrintDocumentType.Z_REPORT, Role.MANAGER);
+            assertThat(zReportsOnly).extracting(PrintJob::getDocumentType).containsOnly(PrintDocumentType.Z_REPORT);
+
+            // A CASH guest receipt's summary names the payment method - distinguishable from a room-charge one at a glance.
+            PrintJob guestReceipt = managerView.stream()
+                    .filter(j -> j.getDocumentType() == PrintDocumentType.GUEST_RECEIPT)
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(guestReceipt.getSummary()).contains("(CASH)");
         }
+    }
+
+    @Test
+    void printGuestReceipt_roomCharge_summaryNamesGuestNotAmount() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.CASHIER, fake.port());
+
+            RoomEntity room = new RoomEntity();
+            room.setName("Ocean View Suite");
+            room.setDescription("A room used only by tests");
+            room.setCapacity(2);
+            room.setBasePrice(new BigDecimal("1000.00"));
+            room = roomRepository.saveAndFlush(room);
+
+            BookingEntity booking = new BookingEntity();
+            booking.setRoomId(room.getId());
+            booking.setGuestName("Jane Doe");
+            booking.setGuestEmail("jane@example.com");
+            booking.setGuestPhone("+66800000000");
+            booking.setCheckIn(LocalDate.now());
+            booking.setCheckOut(LocalDate.now().plusDays(1));
+            booking.setTotalPrice(new BigDecimal("1000.00"));
+            booking.setStatus(BookingStatus.CONFIRMED);
+            booking = bookingRepository.saveAndFlush(booking);
+            entityManager.clear(); // see closeShift_printsZReport_... for why
+
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+            shiftService.open(cashier.getId(), new ShiftOpenInput());
+            orderService.close(
+                    order.getId(), new CloseOrderInput(PaymentMethod.ROOM_CHARGE).bookingId(booking.getId()), cashier.getId());
+
+            PrintJob receipt = printerService.listPrintJobs(null, PrintDocumentType.GUEST_RECEIPT, Role.MANAGER).stream()
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(receipt.getSummary()).contains("ROOM_CHARGE").contains("Jane Doe");
+            assertThat(receipt.getSummary()).doesNotMatch(".*\\d+\\.\\d{2}.*"); // no amount, just method + guest
+        }
+    }
+
+    // --- Preview: same text a printer would render, ESC/POS control bytes stripped, role-gated like retry ---
+
+    @Test
+    void previewPrintJob_visibleType_returnsReadableTextWithoutEscPosBytes() throws IOException {
+        persistPrinter(PrinterDepartment.KITCHEN, unreachablePort());
+
+        Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+        orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 2)));
+        sendOrder(order.getId());
+
+        PrintJobEntity job = jobsFor(order.getId()).get(0);
+
+        String preview = printerService.previewPrintJob(job.getId(), Role.WAITER);
+
+        assertThat(preview).contains("KITCHEN TICKET");
+        assertThat(preview).contains("2x Caesar Salad");
+        // No stray ESC (0x1B) / GS (0x1D) control bytes left in what's returned.
+        assertThat(preview.chars()).noneMatch(c -> c == 0x1B || c == 0x1D);
+    }
+
+    @Test
+    void previewPrintJob_waiterRole_hiddenDocumentType_throwsNotFound() throws IOException {
+        PrinterEntity printer = persistPrinter(PrinterDepartment.CASHIER, unreachablePort());
+        PrintJob testPageJob = printerService.testPrint(printer.getId()); // TEST_PAGE - not staff-visible
+
+        assertThatThrownBy(() -> printerService.previewPrintJob(testPageJob.getId(), Role.WAITER))
+                .isInstanceOf(NotFoundException.class);
+
+        // MANAGER can still see it.
+        assertThat(printerService.previewPrintJob(testPageJob.getId(), Role.MANAGER)).contains("TEST PAGE");
     }
 
     @Test
@@ -362,10 +452,22 @@ class PrintingTests {
         return printerRepository.findById(persistPrinterDto(department, port).getId()).orElseThrow();
     }
 
+    /**
+     * The dev DB this suite runs against is shared with manual/staff testing of the feature, and
+     * {@code Printer_one_active_per_department} allows only one active printer per department -
+     * so if staff already registered a real one (e.g. while trying the feature out), creating a
+     * second active KITCHEN/BAR/CASHIER printer 409s. Repointing the existing row's host/port
+     * instead is safe: this method only ever runs inside a {@code @Transactional} test, so the
+     * repoint is rolled back with everything else at the end of the test, restoring whatever was
+     * configured before.
+     */
     private Printer persistPrinterDto(PrinterDepartment department, int port) {
         PrinterInput input = new PrinterInput("Test " + department + " printer " + UUID.randomUUID(), department, "127.0.0.1");
         input.setPort(port);
-        return printerService.create(input);
+        return printerRepository
+                .findByDepartmentAndIsActiveTrue(department)
+                .map(existing -> printerService.update(existing.getId(), input))
+                .orElseGet(() -> printerService.create(input));
     }
 
     private Order sendOrder(String orderId) {

@@ -7,6 +7,7 @@ package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.OkTrue;
+import com.sunsetbeach.model.PrintDocumentType;
 import com.sunsetbeach.model.PrintJob;
 import com.sunsetbeach.model.PrintJobStatus;
 import com.sunsetbeach.model.Printer;
@@ -146,21 +147,22 @@ public interface PrintersApi {
 
     /**
      * GET /print-jobs : List print jobs
-     * Requires role &#x60;MANAGER&#x60; or above. Ordered by &#x60;createdAt&#x60; descending (most recent first). Filter by &#x60;status&#x3D;FAILED&#x60; to see what needs manual attention - a silently lost kitchen ticket is a dish that never gets served. 
+     * Requires role &#x60;WAITER&#x60; or above (i.e. any staff role) - but what comes back depends on who&#39;s asking. &#x60;ADMIN&#x60;/&#x60;MANAGER&#x60; see every document type. &#x60;CASHIER&#x60;/&#x60;WAITER&#x60; only see &#x60;KITCHEN_TICKET&#x60;/&#x60;PREBILL&#x60; jobs - &#x60;Z_REPORT&#x60; and &#x60;GUEST_RECEIPT&#x60; are filtered out rather than 403&#39;d. Ordered by &#x60;createdAt&#x60; descending (most recent first). Filter by &#x60;status&#x3D;FAILED&#x60; to see what needs manual attention, and/or by &#x60;documentType&#x60; to narrow to one kind of document.
      *
      * @param status  (optional)
-     * @return Matching print jobs. (status code 200)
+     * @param documentType  (optional)
+     * @return Matching print jobs, filtered to the document types the caller&#39;s role may see. (status code 200)
      *         or No valid JWT. (status code 401)
-     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
      */
     @RequestMapping(
         method = RequestMethod.GET,
         value = "/print-jobs",
         produces = { "application/json" }
     )
-    
+
     default ResponseEntity<List<PrintJob>> listPrintJobs(
-         @Valid @RequestParam(value = "status", required = false) PrintJobStatus status
+         @Valid @RequestParam(value = "status", required = false) PrintJobStatus status,
+         @Valid @RequestParam(value = "documentType", required = false) PrintDocumentType documentType
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
@@ -172,6 +174,38 @@ public interface PrintersApi {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /print-jobs/{id}/preview : Preview a print job's rendered content
+     * Requires role &#x60;WAITER&#x60; or above, subject to the same per-role document-type visibility as &#x60;GET /print-jobs&#x60; (404, not 403, for a job outside the caller&#39;s visible set). Returns the same text that would come out of the printer, with the ESC/POS control sequences (init, code page selection, bold, centering, paper cut) stripped out - not a hex dump of &#x60;payload&#x60;.
+     *
+     * @param id  (required)
+     * @return Plain-text rendering of the job's payload. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Print job not found, or its document type isn&#39;t visible to the caller&#39;s role. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/print-jobs/{id}/preview",
+        produces = { "text/plain", "application/json" }
+    )
+
+    default ResponseEntity<String> previewPrintJob(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("text/plain"))) {
+                    String exampleString = "KITCHEN TICKET\nRestaurant – Table 4\nTime: 2026-08-16 20:05:00 UTC\nWaiter: waiter@sunsetbeach.example\n------------------------------------------\n2x Caesar Salad\n   note: no croutons";
+                    ApiUtil.setExampleResponse(request, "text/plain", exampleString);
                     break;
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
@@ -229,20 +263,19 @@ public interface PrintersApi {
 
     /**
      * POST /print-jobs/{id}/retry : Manually retry a print job
-     * Requires role &#x60;MANAGER&#x60; or above. Attempts delivery immediately regardless of the job&#39;s current &#x60;status&#x60; or &#x60;attempts&#x60; count (a human asking for a retry overrides the automatic-retry attempt ceiling). The original &#x60;payload&#x60; is replayed byte-for-byte - this re-sends exactly what was originally queued, it does not regenerate the document from current data. 
+     * Requires role &#x60;WAITER&#x60; or above, subject to the same per-role document-type visibility as &#x60;GET /print-jobs&#x60;. Attempts delivery immediately regardless of the job&#39;s current &#x60;status&#x60; or &#x60;attempts&#x60; count (a human asking for a retry overrides the automatic-retry attempt ceiling). The original &#x60;payload&#x60; is replayed byte-for-byte - this re-sends exactly what was originally queued, it does not regenerate the document from current data. A job whose document type the caller&#39;s role can&#39;t see returns 404, not 403.
      *
      * @param id  (required)
      * @return The job after the retry attempt (&#x60;status: SENT&#x60; or &#x60;FAILED&#x60;). (status code 200)
      *         or No valid JWT. (status code 401)
-     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
-     *         or Print job not found. (status code 404)
+     *         or Print job not found, or its document type isn&#39;t visible to the caller&#39;s role. (status code 404)
      */
     @RequestMapping(
         method = RequestMethod.POST,
         value = "/print-jobs/{id}/retry",
         produces = { "application/json" }
     )
-    
+
     default ResponseEntity<PrintJob> retryPrintJob(
          @PathVariable("id") String id
     ) {
@@ -250,11 +283,6 @@ public interface PrintersApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

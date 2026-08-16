@@ -43,10 +43,11 @@ tags:
     description: >
       ESC/POS network printer CRUD and connection testing (MANAGER or above), plus the durable
       print-job queue (WAITER or above, with per-role document visibility - see
-      `GET /print-jobs`). Printing is best-effort and asynchronous where it needs to be: an
-      unreachable printer never fails the order/shift operation that triggered it - it leaves a
-      `PENDING`/`FAILED` `PrintJob` behind instead, retried automatically in the background and
-      retriable by hand from here.
+      `GET /print-jobs`) including a text preview of a job's rendered content
+      (`GET /print-jobs/{id}/preview`). Printing is best-effort and asynchronous where it needs
+      to be: an unreachable printer never fails the order/shift operation that triggered it - it
+      leaves a `PENDING`/`FAILED` `PrintJob` behind instead, retried automatically in the
+      background and retriable by hand from here.
   - name: Users
     description: Staff account management (ADMIN only).
   - name: Public
@@ -1347,13 +1348,20 @@ paths:
         endpoint for: seeing that their own kitchen/bar ticket or pre-bill didn't go through.
         Ordered by `createdAt` descending (most recent first). Filter by `status=FAILED` to see
         what needs manual attention - a silently lost kitchen ticket is a dish that never gets
-        served.
+        served - and/or by `documentType` to narrow to one kind of document (e.g.
+        `documentType=Z_REPORT` for a manager auditing shift closes). Both filters apply
+        server-side; an unrecognized value for either is a 400, not a silently-ignored no-op.
       parameters:
         - name: status
           in: query
           required: false
           schema:
             $ref: "#/components/schemas/PrintJobStatus"
+        - name: documentType
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/PrintDocumentType"
       responses:
         "200":
           description: Matching print jobs, filtered to the document types the caller's role may see.
@@ -1393,6 +1401,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PrintJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Print job not found, or its document type isn't visible to the caller's role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Print job not found
+
+  /print-jobs/{id}/preview:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: previewPrintJob
+      tags: [Printers]
+      summary: Preview a print job's rendered content
+      description: >
+        Requires role `WAITER` or above, subject to the same per-role document-type visibility
+        as `GET /print-jobs` (404, not 403, for a job outside the caller's visible set - see
+        that operation's description). Returns the same text that would come out of the
+        printer, with the ESC/POS control sequences (init, code page selection, bold,
+        centering, paper cut) stripped out - not a hex dump of `payload`. Useful both to check a
+        document before it prints and to see what a `FAILED` job actually contained without
+        walking over to a dead printer.
+      responses:
+        "200":
+          description: Plain-text rendering of the job's payload.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  KITCHEN TICKET
+                  Restaurant – Table 4
+                  Time: 2026-08-16 20:05:00 UTC
+                  Waiter: waiter@sunsetbeach.example
+                  ------------------------------------------
+                  2x Caesar Salad
+                     note: no croutons
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -2546,7 +2599,12 @@ components:
           $ref: "#/components/schemas/PrintDocumentType"
         summary:
           type: string
-          description: 'Human-readable one-liner, e.g. "Kitchen ticket — Order #ab12cd34".'
+          description: >
+            Human-readable one-liner, e.g. "Kitchen ticket — Order #ab12cd34" or, for a
+            `GUEST_RECEIPT`, "Guest receipt — Order #ab12cd34 (CARD)" /
+            "Guest receipt — Order #ab12cd34 (ROOM_CHARGE — Jane Doe)" - enough to tell two
+            receipts on the same order apart without opening `GET /print-jobs/{id}/preview`.
+            Never carries a money amount.
         status:
           $ref: "#/components/schemas/PrintJobStatus"
         attempts:

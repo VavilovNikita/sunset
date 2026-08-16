@@ -256,14 +256,20 @@ class PosRoleHierarchyTests {
     void listPrintJobs_withWaiterToken_isOk() throws Exception {
         // Unlike /printers/**, the queue itself is WAITER+ - PrinterService does the actual
         // per-role document-type filtering, not the security gate.
-        when(printerService.listPrintJobs(any(), eq(Role.WAITER))).thenReturn(List.of());
+        when(printerService.listPrintJobs(any(), any(), eq(Role.WAITER))).thenReturn(List.of());
         mockMvc.perform(get("/print-jobs").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
     }
 
     @Test
     void listPrintJobs_withManagerToken_isOk() throws Exception {
-        when(printerService.listPrintJobs(any(), eq(Role.MANAGER))).thenReturn(List.of());
+        when(printerService.listPrintJobs(any(), any(), eq(Role.MANAGER))).thenReturn(List.of());
         mockMvc.perform(get("/print-jobs").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void previewPrintJob_withWaiterToken_isOk() throws Exception {
+        when(printerService.previewPrintJob(anyString(), eq(Role.WAITER))).thenReturn("KITCHEN TICKET\nTable 4");
+        mockMvc.perform(get("/print-jobs/job-1/preview").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
     }
 
     @Test

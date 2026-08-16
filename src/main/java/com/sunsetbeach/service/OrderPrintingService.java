@@ -120,12 +120,25 @@ public class OrderPrintingService {
                 Map<String, MenuItemEntity> menuItemsById = resolveMenuItems(items);
                 byte[] payload = buildPriceListPayload(
                         "GUEST RECEIPT", order, items, menuItemsById, printer.getCodepage(), payment, booking);
-                printService.queueAndAttempt(
-                        printer, PrintDocumentType.GUEST_RECEIPT, "Guest receipt — Order #" + shortId(order.getId()), payload);
+                String summary = "Guest receipt — Order #" + shortId(order.getId()) + " (" + describePayment(payment, booking) + ")";
+                printService.queueAndAttempt(printer, PrintDocumentType.GUEST_RECEIPT, summary, payload);
             });
         } catch (Exception e) {
             log.error("printGuestReceipt failed for order {}", order.getId(), e);
         }
+    }
+
+    /**
+     * The payment-method suffix on a guest receipt's summary - the only thing distinguishing a
+     * card receipt from a room-charge one in the print-job queue without opening the preview.
+     * No amount here (same "no money in a one-line summary" rule as the kitchen/bar ticket and
+     * pre-bill summaries), just method - and, for ROOM_CHARGE, whose room it landed on.
+     */
+    private static String describePayment(PaymentEntity payment, BookingEntity booking) {
+        if (payment.getMethod() == PaymentMethod.ROOM_CHARGE && booking != null) {
+            return "ROOM_CHARGE — " + booking.getGuestName();
+        }
+        return payment.getMethod().getValue();
     }
 
     private Map<String, MenuItemEntity> resolveMenuItems(List<OrderItemEntity> items) {
