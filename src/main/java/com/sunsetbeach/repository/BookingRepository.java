@@ -15,8 +15,19 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
     List<BookingEntity> findByRoomIdAndStatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
             String roomId, BookingStatus excludedStatus, LocalDate monthEnd, LocalDate monthStart);
 
-    /** Used by {@link com.sunsetbeach.service.RoomService} to find the peak future commitment before shrinking `quantity`. */
-    List<BookingEntity> findByRoomIdAndStatusNotAndCheckOutGreaterThan(String roomId, BookingStatus excludedStatus, LocalDate from);
-
     List<BookingEntity> findByRoomId(String roomId);
+
+    /**
+     * Bookings assigned to a specific unit that overlap its half-open stay window, excluding
+     * this booking itself - the race check {@link com.sunsetbeach.service.BookingWriter#assignRoomUnit}
+     * runs before assigning a unit.
+     */
+    List<BookingEntity> findByRoomUnitIdAndStatusNotAndCheckInLessThanAndCheckOutGreaterThanAndIdNot(
+            String roomUnitId, BookingStatus excludedStatus, LocalDate checkOut, LocalDate checkIn, String excludedId);
+
+    /**
+     * Used by {@link com.sunsetbeach.service.RoomUnitService} to reject deleting/deactivating a
+     * unit that's still promised to a future guest.
+     */
+    boolean existsByRoomUnitIdAndStatusNotAndCheckOutGreaterThan(String roomUnitId, BookingStatus excludedStatus, LocalDate from);
 }

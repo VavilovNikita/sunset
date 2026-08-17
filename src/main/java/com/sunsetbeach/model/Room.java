@@ -19,10 +19,10 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Raw Prisma &#x60;Room&#x60; row as returned by &#x60;NextResponse.json(...)&#x60;. Despite the name this is a **room type**, not a single physical room — &#x60;quantity&#x60; is how many sellable units of it exist; individual units aren&#39;t numbered or tracked yet. &#x60;basePrice&#x60; is a Prisma &#x60;Decimal&#x60; — it serializes to a **string**, not a JSON number. &#x60;createdAt&#x60; serializes as an ISO-8601 datetime string. 
+ * Despite the name this is a **room type**, not a single physical room — individual sellable units are separate &#x60;RoomUnit&#x60; rows (see the RoomUnits tag). &#x60;activeUnitCount&#x60; is computed from those rows (&#x60;count(RoomUnit WHERE roomId &#x3D; id AND isActive)&#x60;), not stored. &#x60;basePrice&#x60; is a Prisma &#x60;Decimal&#x60; — it serializes to a **string**, not a JSON number. &#x60;createdAt&#x60; serializes as an ISO-8601 datetime string. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T18:39:34.635637100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class Room {
 
   private String id;
@@ -33,7 +33,7 @@ public class Room {
 
   private Integer capacity;
 
-  private Integer quantity;
+  private Integer activeUnitCount;
 
   private String basePrice;
 
@@ -50,12 +50,12 @@ public class Room {
   /**
    * Constructor with only required parameters
    */
-  public Room(String id, String name, String description, Integer capacity, Integer quantity, String basePrice, List<String> images, OffsetDateTime createdAt) {
+  public Room(String id, String name, String description, Integer capacity, Integer activeUnitCount, String basePrice, List<String> images, OffsetDateTime createdAt) {
     this.id = id;
     this.name = name;
     this.description = description;
     this.capacity = capacity;
-    this.quantity = quantity;
+    this.activeUnitCount = activeUnitCount;
     this.basePrice = basePrice;
     this.images = images;
     this.createdAt = createdAt;
@@ -137,24 +137,24 @@ public class Room {
     this.capacity = capacity;
   }
 
-  public Room quantity(Integer quantity) {
-    this.quantity = quantity;
+  public Room activeUnitCount(Integer activeUnitCount) {
+    this.activeUnitCount = activeUnitCount;
     return this;
   }
 
   /**
-   * How many sellable units of this room type exist.
-   * minimum: 1
-   * @return quantity
+   * Computed - number of active (`isActive: true`) `RoomUnit` rows of this type.
+   * minimum: 0
+   * @return activeUnitCount
    */
-  @NotNull @Min(1) 
-  @JsonProperty("quantity")
-  public Integer getQuantity() {
-    return quantity;
+  @NotNull @Min(0) 
+  @JsonProperty("activeUnitCount")
+  public Integer getActiveUnitCount() {
+    return activeUnitCount;
   }
 
-  public void setQuantity(Integer quantity) {
-    this.quantity = quantity;
+  public void setActiveUnitCount(Integer activeUnitCount) {
+    this.activeUnitCount = activeUnitCount;
   }
 
   public Room basePrice(String basePrice) {
@@ -235,7 +235,7 @@ public class Room {
         Objects.equals(this.name, room.name) &&
         Objects.equals(this.description, room.description) &&
         Objects.equals(this.capacity, room.capacity) &&
-        Objects.equals(this.quantity, room.quantity) &&
+        Objects.equals(this.activeUnitCount, room.activeUnitCount) &&
         Objects.equals(this.basePrice, room.basePrice) &&
         Objects.equals(this.images, room.images) &&
         Objects.equals(this.createdAt, room.createdAt);
@@ -243,7 +243,7 @@ public class Room {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, description, capacity, quantity, basePrice, images, createdAt);
+    return Objects.hash(id, name, description, capacity, activeUnitCount, basePrice, images, createdAt);
   }
 
   @Override
@@ -254,7 +254,7 @@ public class Room {
     sb.append("    name: ").append(toIndentedString(name)).append("\n");
     sb.append("    description: ").append(toIndentedString(description)).append("\n");
     sb.append("    capacity: ").append(toIndentedString(capacity)).append("\n");
-    sb.append("    quantity: ").append(toIndentedString(quantity)).append("\n");
+    sb.append("    activeUnitCount: ").append(toIndentedString(activeUnitCount)).append("\n");
     sb.append("    basePrice: ").append(toIndentedString(basePrice)).append("\n");
     sb.append("    images: ").append(toIndentedString(images)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");

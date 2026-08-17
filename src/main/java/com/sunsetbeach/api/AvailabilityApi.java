@@ -5,11 +5,8 @@
  */
 package com.sunsetbeach.api;
 
-import com.sunsetbeach.model.AvailabilityRangeInput;
 import com.sunsetbeach.model.AvailabilityResponse;
 import com.sunsetbeach.model.ErrorMessage;
-import com.sunsetbeach.model.OkUpdated;
-import com.sunsetbeach.model.SetRoomPricing400Response;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -25,7 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T18:46:57.149779500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T20:15:43.239949+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface AvailabilityApi {
 
@@ -34,8 +31,8 @@ public interface AvailabilityApi {
     }
 
     /**
-     * GET /availability/{roomId} : Get day-by-day availability for a room for a given month
-     * Requires any authenticated staff session (ADMIN or MANAGER). Returns the full per-day inventory breakdown (&#x60;quantity&#x60;, &#x60;blockedCount&#x60;, &#x60;bookedCount&#x60;, &#x60;availableCount&#x60;) so staff can see manual blocks and real bookings separately rather than a single blocked/not-blocked flag. A day counts as booked if it is covered by a non-CANCELLED booking (&#x60;checkIn &lt;&#x3D; date &lt; checkOut&#x60;). 
+     * GET /availability/{roomId} : Get day-by-day, type- and unit-level availability for a room for a given month
+     * Requires CASHIER or above. Returns the full per-day inventory breakdown at the room-type level (&#x60;unitCount&#x60;, &#x60;blockedCount&#x60;, &#x60;bookedCount&#x60;, &#x60;availableCount&#x60;) *and* a per-unit breakdown (&#x60;units[]&#x60;) so staff can see exactly which physical room is blocked/booked/free on each day - the data both the future booking calendar grid and &#x60;PUT /bookings/{id}/room-unit&#x60; (also CASHIER+) are built on. A day counts as booked if it is covered by a non-CANCELLED booking (&#x60;checkIn &lt;&#x3D; date &lt; checkOut&#x60;); a booking without an assigned unit still counts toward &#x60;bookedCount&#x60; but against no specific entry in &#x60;units[]&#x60;. Manual blocking is no longer done here - see the RoomUnits tag (&#x60;POST /room-units/{id}/blocks&#x60;). 
      *
      * @param roomId  (required)
      * @param month Month key &#x60;YYYY-MM&#x60;. Defaults to the current UTC month. (optional)
@@ -56,58 +53,7 @@ public interface AvailabilityApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"days\" : [ { \"date\" : \"date\", \"availableCount\" : 5, \"quantity\" : 0, \"blockedCount\" : 6, \"bookedCount\" : 1 }, { \"date\" : \"date\", \"availableCount\" : 5, \"quantity\" : 0, \"blockedCount\" : 6, \"bookedCount\" : 1 } ] }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-            }
-        });
-        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
-
-    }
-
-
-    /**
-     * PATCH /availability/{roomId} : Set how many units are manually blocked for a date range
-     * Requires any authenticated staff session (ADMIN or MANAGER). Upserts one &#x60;Availability&#x60; row per day in &#x60;[from, to]&#x60; (inclusive) with &#x60;blockedCount&#x60; units withdrawn from sale (&#x60;blockedCount: 0&#x60; deletes the row instead). Rejects ranges longer than 366 days. This never touches bookings — it only controls the manual-block layer. 
-     *
-     * @param roomId  (required)
-     * @param availabilityRangeInput  (required)
-     * @return Number of days upserted. (status code 200)
-     *         or Body failed &#x60;availabilityRangeSchema&#x60; validation, the range exceeds 366 days, or &#x60;blockedCount&#x60; exceeds the room&#39;s &#x60;quantity&#x60;.  (status code 400)
-     *         or No valid JWT. (status code 401)
-     *         or Room not found. (status code 404)
-     */
-    @RequestMapping(
-        method = RequestMethod.PATCH,
-        value = "/availability/{roomId}",
-        produces = { "application/json" },
-        consumes = { "application/json" }
-    )
-    
-    default ResponseEntity<OkUpdated> setRoomAvailability(
-         @PathVariable("roomId") String roomId,
-         @Valid @RequestBody AvailabilityRangeInput availabilityRangeInput
-    ) {
-        getRequest().ifPresent(request -> {
-            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"ok\" : true, \"updated\" : 0 }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    String exampleString = "{ \"days\" : [ { \"date\" : \"date\", \"availableCount\" : 5, \"blockedCount\" : 6, \"unitCount\" : 0, \"bookedCount\" : 1, \"units\" : [ { \"isAvailable\" : true, \"isBlocked\" : true, \"isBooked\" : true, \"label\" : \"label\", \"blockReason\" : \"blockReason\", \"bookingId\" : \"bookingId\", \"roomUnitId\" : \"roomUnitId\" }, { \"isAvailable\" : true, \"isBlocked\" : true, \"isBooked\" : true, \"label\" : \"label\", \"blockReason\" : \"blockReason\", \"bookingId\" : \"bookingId\", \"roomUnitId\" : \"roomUnitId\" } ] }, { \"date\" : \"date\", \"availableCount\" : 5, \"blockedCount\" : 6, \"unitCount\" : 0, \"bookedCount\" : 1, \"units\" : [ { \"isAvailable\" : true, \"isBlocked\" : true, \"isBooked\" : true, \"label\" : \"label\", \"blockReason\" : \"blockReason\", \"bookingId\" : \"bookingId\", \"roomUnitId\" : \"roomUnitId\" }, { \"isAvailable\" : true, \"isBlocked\" : true, \"isBooked\" : true, \"label\" : \"label\", \"blockReason\" : \"blockReason\", \"bookingId\" : \"bookingId\", \"roomUnitId\" : \"roomUnitId\" } ] } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

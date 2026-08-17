@@ -4,6 +4,10 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.sunsetbeach.model.RoomUnitAvailability;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -14,21 +18,24 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Per-day inventory breakdown for staff. &#x60;availableCount&#x60; is the derived remainder (&#x60;quantity - blockedCount - bookedCount&#x60;) and can go negative - that&#39;s not clamped away, since a negative remainder (e.g. after a &#x60;quantity&#x60; reduction) is exactly the thing staff need to see, not hide. 
+ * Per-day inventory breakdown for staff, at both the room-type level (&#x60;unitCount&#x60;, &#x60;blockedCount&#x60;, &#x60;bookedCount&#x60;, &#x60;availableCount&#x60;) and the physical-room level (&#x60;units[]&#x60;). &#x60;availableCount&#x60; is the derived remainder (&#x60;unitCount - blockedCount - bookedCount&#x60;) and can go negative - that&#39;s not clamped away, since a negative remainder (e.g. after room units are deactivated) is exactly the thing staff need to see, not hide. &#x60;blockedCount&#x60; counts *distinct* blocked active units for the day (an overlapping second block on the same unit doesn&#39;t double-count); &#x60;bookedCount&#x60; counts bookings covering the day regardless of whether they have an assigned unit - an unassigned booking still occupies one unit of the type. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T18:39:34.635637100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class AvailabilityDay {
 
   private String date;
 
-  private Integer quantity;
+  private Integer unitCount;
 
   private Integer blockedCount;
 
   private Integer bookedCount;
 
   private Integer availableCount;
+
+  @Valid
+  private List<@Valid RoomUnitAvailability> units = new ArrayList<>();
 
   public AvailabilityDay() {
     super();
@@ -37,12 +44,13 @@ public class AvailabilityDay {
   /**
    * Constructor with only required parameters
    */
-  public AvailabilityDay(String date, Integer quantity, Integer blockedCount, Integer bookedCount, Integer availableCount) {
+  public AvailabilityDay(String date, Integer unitCount, Integer blockedCount, Integer bookedCount, Integer availableCount, List<@Valid RoomUnitAvailability> units) {
     this.date = date;
-    this.quantity = quantity;
+    this.unitCount = unitCount;
     this.blockedCount = blockedCount;
     this.bookedCount = bookedCount;
     this.availableCount = availableCount;
+    this.units = units;
   }
 
   public AvailabilityDay date(String date) {
@@ -64,23 +72,23 @@ public class AvailabilityDay {
     this.date = date;
   }
 
-  public AvailabilityDay quantity(Integer quantity) {
-    this.quantity = quantity;
+  public AvailabilityDay unitCount(Integer unitCount) {
+    this.unitCount = unitCount;
     return this;
   }
 
   /**
-   * Room.quantity at query time.
-   * @return quantity
+   * Number of active `RoomUnit`s of this type at query time.
+   * @return unitCount
    */
   @NotNull 
-  @JsonProperty("quantity")
-  public Integer getQuantity() {
-    return quantity;
+  @JsonProperty("unitCount")
+  public Integer getUnitCount() {
+    return unitCount;
   }
 
-  public void setQuantity(Integer quantity) {
-    this.quantity = quantity;
+  public void setUnitCount(Integer unitCount) {
+    this.unitCount = unitCount;
   }
 
   public AvailabilityDay blockedCount(Integer blockedCount) {
@@ -89,7 +97,7 @@ public class AvailabilityDay {
   }
 
   /**
-   * Units manually pulled from sale for this day (`Availability.blockedCount`).
+   * Distinct active units with a `RoomUnitBlock` covering this day.
    * @return blockedCount
    */
   @NotNull 
@@ -108,7 +116,7 @@ public class AvailabilityDay {
   }
 
   /**
-   * Units covered by a non-CANCELLED booking for this day.
+   * Units covered by a non-CANCELLED booking for this day (assigned or not).
    * @return bookedCount
    */
   @NotNull 
@@ -127,7 +135,7 @@ public class AvailabilityDay {
   }
 
   /**
-   * quantity - blockedCount - bookedCount. Not clamped at 0.
+   * unitCount - blockedCount - bookedCount. Not clamped at 0.
    * @return availableCount
    */
   @NotNull 
@@ -140,6 +148,33 @@ public class AvailabilityDay {
     this.availableCount = availableCount;
   }
 
+  public AvailabilityDay units(List<@Valid RoomUnitAvailability> units) {
+    this.units = units;
+    return this;
+  }
+
+  public AvailabilityDay addUnitsItem(RoomUnitAvailability unitsItem) {
+    if (this.units == null) {
+      this.units = new ArrayList<>();
+    }
+    this.units.add(unitsItem);
+    return this;
+  }
+
+  /**
+   * One entry per active `RoomUnit` of this type.
+   * @return units
+   */
+  @NotNull @Valid 
+  @JsonProperty("units")
+  public List<@Valid RoomUnitAvailability> getUnits() {
+    return units;
+  }
+
+  public void setUnits(List<@Valid RoomUnitAvailability> units) {
+    this.units = units;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -150,15 +185,16 @@ public class AvailabilityDay {
     }
     AvailabilityDay availabilityDay = (AvailabilityDay) o;
     return Objects.equals(this.date, availabilityDay.date) &&
-        Objects.equals(this.quantity, availabilityDay.quantity) &&
+        Objects.equals(this.unitCount, availabilityDay.unitCount) &&
         Objects.equals(this.blockedCount, availabilityDay.blockedCount) &&
         Objects.equals(this.bookedCount, availabilityDay.bookedCount) &&
-        Objects.equals(this.availableCount, availabilityDay.availableCount);
+        Objects.equals(this.availableCount, availabilityDay.availableCount) &&
+        Objects.equals(this.units, availabilityDay.units);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(date, quantity, blockedCount, bookedCount, availableCount);
+    return Objects.hash(date, unitCount, blockedCount, bookedCount, availableCount, units);
   }
 
   @Override
@@ -166,10 +202,11 @@ public class AvailabilityDay {
     StringBuilder sb = new StringBuilder();
     sb.append("class AvailabilityDay {\n");
     sb.append("    date: ").append(toIndentedString(date)).append("\n");
-    sb.append("    quantity: ").append(toIndentedString(quantity)).append("\n");
+    sb.append("    unitCount: ").append(toIndentedString(unitCount)).append("\n");
     sb.append("    blockedCount: ").append(toIndentedString(blockedCount)).append("\n");
     sb.append("    bookedCount: ").append(toIndentedString(bookedCount)).append("\n");
     sb.append("    availableCount: ").append(toIndentedString(availableCount)).append("\n");
+    sb.append("    units: ").append(toIndentedString(units)).append("\n");
     sb.append("}");
     return sb.toString();
   }

@@ -12,6 +12,7 @@ import com.sunsetbeach.model.BookingPosOrder;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.ErrorMessage;
+import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -28,13 +29,76 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T19:32:58.716822+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T20:15:43.239949+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface BookingsApi {
 
     default Optional<NativeWebRequest> getRequest() {
         return Optional.empty();
     }
+
+    /**
+     * PUT /bookings/{id}/room-unit : Assign or unassign the physical room for a booking
+     * Requires CASHIER or above. One endpoint for both directions: a non-null &#x60;roomUnitId&#x60; assigns that physical room to the booking, &#x60;null&#x60; clears the assignment. Deliberately not part of &#x60;PATCH /bookings/{id}&#x60; - room assignment has its own validation (same room type, active, free for the whole stay) and its own race-safety story (SERIALIZABLE, same pattern as &#x60;POST /bookings&#x60;), so it gets its own operation. 
+     *
+     * @param id  (required)
+     * @param roomUnitAssignmentInput  (required)
+     * @return Updated booking. (status code 200)
+     *         or The room unit belongs to a different room type, or is not active. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Booking or room unit not found. (status code 404)
+     *         or The room unit is blocked or already booked for an overlapping stay - either found up front or from a concurrent conflicting assignment (Postgres serialization failure, SQLSTATE &#x60;40001&#x60;).  (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.PUT,
+        value = "/bookings/{id}/room-unit",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<Booking> assignBookingRoomUnit(
+         @PathVariable("id") String id,
+         @Valid @RequestBody RoomUnitAssignmentInput roomUnitAssignmentInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
 
     /**
      * POST /bookings : Create a booking (public — guest-facing, no session required)
@@ -59,7 +123,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -87,12 +151,12 @@ public interface BookingsApi {
 
     /**
      * GET /bookings/export : Export bookings as CSV
-     * Requires any authenticated staff session (ADMIN or MANAGER). UTF-8 BOM + &#x60;sep&#x3D;,&#x60; preamble - see the openapi.yaml description for why.
+     * Requires MANAGER or above - deliberately stricter than &#x60;GET /bookings&#x60;/ &#x60;GET /bookings/{id}&#x60; (CASHIER+): those return one guest&#39;s booking at a time for a specific front-desk task, this returns every matching guest&#39;s name/email/phone/stay in one bulk file. Bulk export of personal data is a materially different risk (a leaked or misused CSV exposes the whole filtered set at once) from looking someone up, so it gets the higher bar even though the underlying data overlaps.  The file opens with a UTF-8 BOM followed by a &#x60;sep&#x3D;,&#x60; directive line so it opens correctly by double-click in Excel regardless of the OS&#39;s regional list-separator setting (a ru-RU/de-DE/etc. Windows defaults that to &#x60;;&#x60;, which is why a plain comma-CSV lands as one column there) - see &#x60;CsvBuilder&#x60; in the backend. Both CSV exports (&#x60;GET /bookings/export&#x60; and &#x60;GET /shifts/{id}/export&#x60;) share this same preamble/escaping so they can&#39;t drift apart. 
      *
      * @param from Include bookings whose &#x60;checkOut&#x60; is after this date (i.e. still relevant on/after &#x60;from&#x60;). (optional)
      * @param to Include bookings whose &#x60;checkIn&#x60; is on or before this date - together with &#x60;from&#x60;, a proper closed-range/half-open-stay overlap test (so &#x60;from&#x3D;to&#x3D;&lt;today&gt;&#x60; finds a booking checking in today). (optional)
      * @param status  (optional)
-     * @return CSV file, one row per booking, ordered by &#x60;checkIn&#x60; ascending. (status code 200)
+     * @return CSV file, one row per booking, ordered by &#x60;checkIn&#x60; ascending. Prefixed with a UTF-8 BOM and a &#x60;sep&#x3D;,&#x60; directive line (not shown in the example below) - see this operation&#39;s description.  (status code 200)
      *         or No valid JWT. (status code 401)
      */
     @RequestMapping(
@@ -127,7 +191,7 @@ public interface BookingsApi {
 
     /**
      * GET /bookings/{id} : Get a booking by id
-     * Requires any authenticated staff session (ADMIN or MANAGER). Used by the admin detail/status-change screen.
+     * Requires CASHIER or above. Used by the admin detail/status-change screen and by front desk before deciding whether/how to change a booking&#39;s status or assign it a physical room (&#x60;PUT /bookings/{id}/room-unit&#x60;, also CASHIER+). 
      *
      * @param id  (required)
      * @return The booking. (status code 200)
@@ -146,7 +210,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -253,7 +317,7 @@ public interface BookingsApi {
 
     /**
      * GET /bookings : List bookings
-     * Requires any authenticated staff session (ADMIN or MANAGER). Filters mirror &#x60;GET /bookings/export&#x60;. Ordered by &#x60;checkIn&#x60; ascending. 
+     * Requires CASHIER or above - finding a guest&#39;s booking is front-desk work, not a MANAGER-only report (contrast with &#x60;GET /bookings/export&#x60;, which stays MANAGER+: a single-booking lookup and a bulk CSV of every guest&#39;s contact details are different risk profiles). Filters mirror &#x60;GET /bookings/export&#x60;. Ordered by &#x60;checkIn&#x60; ascending. 
      *
      * @param from Include bookings whose &#x60;checkOut&#x60; is after this date (i.e. still relevant on/after &#x60;from&#x60;). (optional)
      * @param to Include bookings whose &#x60;checkIn&#x60; is on or before this date - together with &#x60;from&#x60;, a proper closed-range/half-open-stay overlap test (so &#x60;from&#x3D;to&#x3D;&lt;today&gt;&#x60; finds a booking checking in today). (optional)
@@ -275,7 +339,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
+                    String exampleString = "[ { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -293,7 +357,7 @@ public interface BookingsApi {
 
     /**
      * PATCH /bookings/{id} : Update a booking&#39;s status / payment note
-     * Requires any authenticated staff session (ADMIN or MANAGER). Sends a guest-facing status-change email on success. 
+     * Requires CASHIER or above - marking a booking paid/cancelled or adding a payment note is routine front-desk work. Sends a guest-facing status-change email on success. 
      *
      * @param id  (required)
      * @param bookingStatusInput  (required)
@@ -316,7 +380,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

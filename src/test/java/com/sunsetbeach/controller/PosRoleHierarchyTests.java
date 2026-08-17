@@ -4,11 +4,17 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sunsetbeach.config.JacksonConfig;
+import com.sunsetbeach.model.AvailabilityResponse;
+import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.MenuItem;
@@ -18,20 +24,31 @@ import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.PaymentsSummary;
+import com.sunsetbeach.model.PricingResponse;
 import com.sunsetbeach.model.PrintDocumentType;
 import com.sunsetbeach.model.PrintJob;
 import com.sunsetbeach.model.PrintJobStatus;
 import com.sunsetbeach.model.Role;
+import com.sunsetbeach.model.Room;
+import com.sunsetbeach.model.RoomUnit;
+import com.sunsetbeach.model.RoomUnitAssignmentInput;
+import com.sunsetbeach.model.RoomUnitInput;
+import com.sunsetbeach.model.RoomUnitUpdateInput;
 import com.sunsetbeach.model.ShiftTotals;
 import com.sunsetbeach.security.JwtService;
 import com.sunsetbeach.security.RestAccessDeniedHandler;
 import com.sunsetbeach.security.RestAuthEntryPoint;
 import com.sunsetbeach.security.SecurityConfig;
 import com.sunsetbeach.security.StaffPrincipal;
+import com.sunsetbeach.service.AvailabilityService;
+import com.sunsetbeach.service.BookingService;
 import com.sunsetbeach.service.MenuService;
 import com.sunsetbeach.service.OrderService;
 import com.sunsetbeach.service.PaymentService;
+import com.sunsetbeach.service.PricingService;
 import com.sunsetbeach.service.PrinterService;
+import com.sunsetbeach.service.RoomService;
+import com.sunsetbeach.service.RoomUnitService;
 import com.sunsetbeach.service.ShiftService;
 import com.sunsetbeach.service.UserService;
 import java.math.BigDecimal;
@@ -60,7 +77,12 @@ import tools.jackson.databind.json.JsonMapper;
             UserController.class,
             ShiftController.class,
             PaymentController.class,
-            PrinterController.class
+            PrinterController.class,
+            RoomUnitController.class,
+            BookingController.class,
+            RoomController.class,
+            PricingController.class,
+            AvailabilityController.class
         })
 @Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class})
 class PosRoleHierarchyTests {
@@ -93,6 +115,21 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private PrinterService printerService;
+
+    @MockitoBean
+    private RoomUnitService roomUnitService;
+
+    @MockitoBean
+    private BookingService bookingService;
+
+    @MockitoBean
+    private RoomService roomService;
+
+    @MockitoBean
+    private PricingService pricingService;
+
+    @MockitoBean
+    private AvailabilityService availabilityService;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -276,6 +313,199 @@ class PosRoleHierarchyTests {
     void retryPrintJob_withWaiterToken_isOk() throws Exception {
         when(printerService.retryPrintJob(anyString(), eq(Role.WAITER))).thenReturn(samplePrintJob());
         mockMvc.perform(post("/print-jobs/job-1/retry").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    // --- GET /room-units and GET /room-units/{id} are open to any staff role, including WAITER
+    // - room numbers aren't sensitive, and a CASHIER needs this list to pick a candidate before
+    // calling PUT /bookings/{id}/room-unit below. Mutating endpoints stay MANAGER-only. ---
+
+    @Test
+    void listRoomUnits_withWaiterToken_isOk() throws Exception {
+        when(roomUnitService.list(null)).thenReturn(List.of());
+        mockMvc.perform(get("/room-units").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void getRoomUnit_withWaiterToken_isOk() throws Exception {
+        when(roomUnitService.getById("unit-1")).thenReturn(sampleRoomUnit());
+        mockMvc.perform(get("/room-units/unit-1").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void createRoomUnit_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/room-units")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RoomUnitInput("room-1", "203"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createRoomUnit_withManagerToken_isCreated() throws Exception {
+        when(roomUnitService.create(any())).thenReturn(sampleRoomUnit());
+        mockMvc.perform(post("/room-units")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RoomUnitInput("room-1", "203"))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void updateRoomUnit_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/room-units/unit-1")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RoomUnitUpdateInput("203", true))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deleteRoomUnit_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(delete("/room-units/unit-1").header("Authorization", token(Role.CASHIER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deleteRoomUnit_withManagerToken_isOk() throws Exception {
+        mockMvc.perform(delete("/room-units/unit-1").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    // --- Manual blocks (RoomUnitBlock.reason can carry internal staff notes) stay MANAGER-only
+    // even though the parent GET /room-units above is open to every staff role - the two must
+    // not be assumed to share visibility. ---
+
+    @Test
+    void listRoomUnitBlocks_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/room-units/unit-1/blocks").header("Authorization", token(Role.CASHIER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listRoomUnitBlocks_withManagerToken_isOk() throws Exception {
+        when(roomUnitService.listBlocks("unit-1")).thenReturn(List.of());
+        mockMvc.perform(get("/room-units/unit-1/blocks").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    // --- PUT /bookings/{id}/room-unit requires CASHIER or above - and now that GET /room-units
+    // is WAITER+, a CASHIER can actually list candidates before calling it. This is the
+    // asymmetry (action allowed, prerequisite read blocked) this test class was missing
+    // coverage for. ---
+
+    @Test
+    void assignBookingRoomUnit_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(put("/bookings/booking-1/room-unit")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RoomUnitAssignmentInput("unit-1"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void assignBookingRoomUnit_withCashierToken_isOk() throws Exception {
+        when(bookingService.assignRoomUnit(eq("booking-1"), any())).thenReturn(sampleBooking());
+        mockMvc.perform(put("/bookings/booking-1/room-unit")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RoomUnitAssignmentInput("unit-1"))))
+                .andExpect(status().isOk());
+    }
+
+    // --- Access for /rooms/**, /pricing/**, GET /bookings*, GET /availability/{roomId} was
+    // brought in line with what openapi.yaml documents (previously all of these silently fell
+    // through to anyRequest().authenticated(), open to any staff role including WAITER
+    // regardless of the documented role). See EndpointCoverageTests for the structural guard
+    // that catches a future path missing a rule like this entirely; these confirm the specific
+    // roles landed correctly for the paths that changed. ---
+
+    @Test
+    void listRooms_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/rooms").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listRooms_withManagerToken_isOk() throws Exception {
+        when(roomService.list()).thenReturn(List.of());
+        mockMvc.perform(get("/rooms").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void getRoomPricing_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/pricing/room-1").header("Authorization", token(Role.CASHIER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getRoomPricing_withManagerToken_isOk() throws Exception {
+        when(pricingService.getPricing(eq("room-1"), any())).thenReturn(new PricingResponse(BigDecimal.TEN, List.of()));
+        mockMvc.perform(get("/pricing/room-1").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void getRoomAvailability_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/availability/room-1").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getRoomAvailability_withCashierToken_isOk() throws Exception {
+        when(availabilityService.getAvailability(eq("room-1"), any())).thenReturn(new AvailabilityResponse(List.of()));
+        mockMvc.perform(get("/availability/room-1").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void listBookings_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/bookings").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listBookings_withCashierToken_isOk() throws Exception {
+        when(bookingService.list(any(), any(), any())).thenReturn(List.of());
+        mockMvc.perform(get("/bookings").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void updateBookingStatus_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/bookings/booking-1")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"CANCELLED\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void exportBookings_withCashierToken_isForbidden() throws Exception {
+        // The one deliberate exception in the Bookings group: bulk guest-PII export stays
+        // MANAGER+ even though the single-booking reads/writes above are CASHIER+.
+        mockMvc.perform(get("/bookings/export").header("Authorization", token(Role.CASHIER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void exportBookings_withManagerToken_isOk() throws Exception {
+        when(bookingService.exportCsv(any(), any(), any())).thenReturn("ID,Room,Guest,Email,Phone,Check-in,Check-out,Total,Status,Payment note,Created at");
+        mockMvc.perform(get("/bookings/export").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    private static RoomUnit sampleRoomUnit() {
+        return new RoomUnit("unit-1", "room-1", "203", true, OffsetDateTime.now());
+    }
+
+    private static Room sampleRoom() {
+        return new Room("room-1", "Ocean View Suite", "A lovely room", 2, 3, "1500.00", List.of(), OffsetDateTime.now());
+    }
+
+    private static Booking sampleBooking() {
+        return new Booking(
+                "booking-1",
+                "room-1",
+                sampleRoom(),
+                "unit-1",
+                sampleRoomUnit(),
+                "Guest",
+                "guest@example.com",
+                "+66800000000",
+                OffsetDateTime.now(),
+                OffsetDateTime.now().plusDays(1),
+                "1500.00",
+                BookingStatus.NEW,
+                null,
+                OffsetDateTime.now(),
+                OffsetDateTime.now());
     }
 
     private static PrintJob samplePrintJob() {

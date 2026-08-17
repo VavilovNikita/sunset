@@ -45,15 +45,68 @@ public class SecurityConfig {
                         // never get here even though the hierarchy grants them everything below ADMIN
                         // elsewhere (see PosRoleHierarchyTests for the regression test).
                         .requestMatchers("/users/**").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
-                        // POS module: read endpoints (GET /menu, /tables, /orders/**) fall through to
-                        // the anyRequest().authenticated() rule below - every staff role, including
-                        // WAITER, may read them. Mutating endpoints are gated per the agreed contract:
+                        // Room *type* management (Rooms/Pricing tags) - defining/pricing a room type is
+                        // a MANAGER-level task, not a front-desk one, and unlike RoomUnit below there is
+                        // no lower-role action anywhere that depends on reading these, so no read/write
+                        // split is needed: the whole surface, GET included, is MANAGER-only.
+                        .requestMatchers("/rooms/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers("/pricing/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Physical room CRUD (RoomUnit): reads are WAITER+ (room numbers aren't
+                        // sensitive - and a CASHIER assigning a room to a booking via PUT
+                        // /bookings/{id}/room-unit below needs to be able to list candidates in the
+                        // first place, or the action is permitted but unusable). Writes stay
+                        // MANAGER-only. The GET matcher must come first - more specific
+                        // (method + path) than the general rule below, same ordering requirement as
+                        // /orders/*/close vs /orders/** further down.
+                        //
+                        // The manual-block sub-resource (/room-units/{id}/blocks/**) stays
+                        // MANAGER+ for BOTH reads and writes, deliberately not loosened alongside the
+                        // parent resource: a block's `reason` is free text staff write for each other
+                        // ("owner's dog chewed the carpet, do not sell until replaced") and can carry
+                        // internal notes not meant for every role - frontend should treat this list as
+                        // MANAGER-only, not assume it follows GET /room-units's visibility.
+                        .requestMatchers(HttpMethod.GET, "/room-units", "/room-units/*").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())
+                        .requestMatchers("/room-units/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Availability: CASHIER+, not MANAGER+ as openapi.yaml originally documented -
+                        // this description predates front-desk room assignment. The per-unit breakdown
+                        // here is exactly what a CASHIER needs to see which physical room is free
+                        // before calling PUT /bookings/{id}/room-unit (also CASHIER+, below) - gating
+                        // it at MANAGER+ would recreate the same "action allowed, prerequisite read
+                        // blocked" asymmetry that GET /room-units above was loosened to fix.
+                        .requestMatchers(HttpMethod.GET, "/availability/*").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Bookings: same reasoning as availability above - openapi.yaml documented
+                        // list/get/status-update as ADMIN/MANAGER, written before this app had a
+                        // front-desk role at all. Finding a guest's booking, changing its status/
+                        // payment note, and seeing per-unit availability to assign a room are the
+                        // front desk's actual job, so all four are CASHIER+ (openapi.yaml updated to
+                        // match, not left stale). PUT .../room-unit is already CASHIER+ above.
+                        // GET /bookings/export is the one deliberate exception: bulk CSV of every
+                        // guest's name/email/phone across a date range is a different risk profile
+                        // than looking up one booking at a time, so it stays MANAGER+ - and its rule
+                        // must come first, since "/bookings/*" below would otherwise also match the
+                        // literal path segment "export".
+                        .requestMatchers(HttpMethod.GET, "/bookings/*/folio", "/bookings/*/pos-orders").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/bookings/export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers(HttpMethod.GET, "/bookings", "/bookings/*").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.PATCH, "/bookings/*").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Assigning/unassigning a booking's physical room is a front-desk (CASHIER+)
+                        // operation - explicitly matched (rather than left to a general /bookings/**
+                        // rule) since it has its own role independent of the PATCH above.
+                        .requestMatchers(HttpMethod.PUT, "/bookings/*/room-unit").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // POS module: read endpoints (GET /menu, /tables, /orders/**) are open to any
+                        // authenticated staff role, including WAITER - explicitly matched below rather
+                        // than left to fall through to anyRequest(), so the EndpointCoverageTests
+                        // guard (every openapi.yaml path must be claimed by a specific rule before the
+                        // final anyRequest() catch-all) passes for them too. Mutating endpoints are
+                        // gated per the agreed contract:
                         .requestMatchers(HttpMethod.POST, "/menu").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/menu/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.DELETE, "/menu/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers(HttpMethod.GET, "/menu", "/menu/*").authenticated()
                         .requestMatchers(HttpMethod.POST, "/tables").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/tables/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.DELETE, "/tables/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers(HttpMethod.GET, "/tables").authenticated()
                         // More specific than the /orders/** rule below, so it must come first -
                         // authorizeHttpRequests matches in declaration order.
                         .requestMatchers(HttpMethod.POST, "/orders/*/close").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
@@ -69,6 +122,14 @@ public class SecurityConfig {
                         // cashier/management information - see PrinterService#isVisible).
                         .requestMatchers("/printers/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/print-jobs/**").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())
+                        // GET /auth/me is the one endpoint outside all the tag groups above - any
+                        // valid JWT, no role check (it just echoes back who the token belongs to).
+                        .requestMatchers(HttpMethod.GET, "/auth/me").authenticated()
+                        // Deliberately left empty: every openapi.yaml path above this point is now
+                        // claimed by a specific rule. anyRequest().authenticated() stays as a safety
+                        // net for anything not yet in the contract, not as a place new endpoint groups
+                        // silently land in - see EndpointCoverageTests, which fails the build the next
+                        // time that happens instead of relying on someone noticing in review.
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authEntryPoint)

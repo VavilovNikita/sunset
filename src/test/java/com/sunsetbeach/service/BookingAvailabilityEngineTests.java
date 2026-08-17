@@ -3,17 +3,21 @@ package com.sunsetbeach.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.sunsetbeach.entity.AvailabilityEntity;
-import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.RoomEntity;
+import com.sunsetbeach.entity.RoomUnitBlockEntity;
+import com.sunsetbeach.entity.RoomUnitEntity;
+import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
+import com.sunsetbeach.model.AvailabilityDay;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
-import com.sunsetbeach.repository.AvailabilityRepository;
+import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.RoomRepository;
+import com.sunsetbeach.repository.RoomUnitBlockRepository;
+import com.sunsetbeach.repository.RoomUnitRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -39,9 +43,11 @@ import org.springframework.boot.test.context.SpringBootTest;
  * the race test. Every test cleans up what it wrote in {@link #cleanUp()} instead of relying on
  * rollback.
  *
- * <p>Covers the room-as-type availability engine: {@code available(date) = quantity -
- * blockedCount(date) - active bookings covering date}, checked for every night in a requested
- * range before a booking is allowed to sell.
+ * <p>Covers the two-level availability engine: {@code type-level available(date) =
+ * activeUnitCount - distinct blocked units(date) - active bookings covering date} (a booking
+ * without an assigned unit still occupies one unit of the type), and {@code unit-level
+ * available(date) = not blocked && not booked by an assigned booking}, checked before a booking
+ * is allowed to sell or a room unit is allowed to be assigned.
  */
 @SpringBootTest
 class BookingAvailabilityEngineTests {
@@ -50,13 +56,19 @@ class BookingAvailabilityEngineTests {
     private BookingService bookingService;
 
     @Autowired
+    private AvailabilityService availabilityService;
+
+    @Autowired
     private RoomRepository roomRepository;
 
     @Autowired
-    private BookingRepository bookingRepository;
+    private RoomUnitRepository roomUnitRepository;
 
     @Autowired
-    private AvailabilityRepository availabilityRepository;
+    private RoomUnitBlockRepository roomUnitBlockRepository;
+
+    @Autowired
+    private BookingRepository bookingRepository;
 
     private final List<String> createdRoomIds = new ArrayList<>();
 
@@ -64,27 +76,43 @@ class BookingAvailabilityEngineTests {
     void cleanUp() {
         for (String roomId : createdRoomIds) {
             bookingRepository.deleteAll(bookingRepository.findByRoomId(roomId));
-            availabilityRepository.deleteAll(
-                    availabilityRepository.findByRoomIdAndDateGreaterThanEqual(roomId, LocalDate.of(2000, 1, 1)));
+            for (RoomUnitEntity unit : roomUnitRepository.findByRoomId(roomId)) {
+                roomUnitBlockRepository.deleteAll(roomUnitBlockRepository.findByRoomUnitId(unit.getId()));
+            }
+            roomUnitRepository.deleteAll(roomUnitRepository.findByRoomId(roomId));
             roomRepository.deleteById(roomId);
         }
         createdRoomIds.clear();
     }
 
-    private RoomEntity createRoom(int quantity) {
+    private RoomEntity createRoom(int activeUnitCount) {
         RoomEntity room = new RoomEntity();
         room.setName("Engine Test Room " + UUID.randomUUID());
         room.setDescription("Room used only by BookingAvailabilityEngineTests");
         room.setCapacity(2);
-        room.setQuantity(quantity);
         room.setBasePrice(new BigDecimal("1000.00"));
         RoomEntity saved = roomRepository.saveAndFlush(room);
         createdRoomIds.add(saved.getId());
+        for (int i = 0; i < activeUnitCount; i++) {
+            createUnit(saved, true);
+        }
         return saved;
+    }
+
+    private RoomUnitEntity createUnit(RoomEntity room, boolean active) {
+        RoomUnitEntity unit = new RoomUnitEntity();
+        unit.setRoomId(room.getId());
+        unit.setLabel("Engine Test Unit " + UUID.randomUUID());
+        unit.setActive(active);
+        return roomUnitRepository.saveAndFlush(unit);
     }
 
     private static BookingCreateInput bookingInput(String roomId, LocalDate checkIn, LocalDate checkOut) {
         return new BookingCreateInput(roomId, "Guest", "guest@example.com", "+66800000000", checkIn.toString(), checkOut.toString());
+    }
+
+    private Booking assign(String bookingId, String roomUnitId) {
+        return bookingService.assignRoomUnit(bookingId, new RoomUnitAssignmentInput(roomUnitId));
     }
 
     @Test
@@ -131,12 +159,14 @@ class BookingAvailabilityEngineTests {
         RoomEntity room = createRoom(1);
         LocalDate checkIn = LocalDate.now().plusDays(40);
         LocalDate checkOut = checkIn.plusDays(2);
+        RoomUnitEntity unit = roomUnitRepository.findByRoomId(room.getId()).get(0);
 
-        AvailabilityEntity block = new AvailabilityEntity();
-        block.setRoomId(room.getId());
-        block.setDate(checkIn);
-        block.setBlockedCount(1);
-        availabilityRepository.saveAndFlush(block);
+        RoomUnitBlockEntity block = new RoomUnitBlockEntity();
+        block.setRoomUnitId(unit.getId());
+        block.setFromDate(checkIn);
+        block.setToDate(checkIn);
+        block.setReason("Under renovation");
+        roomUnitBlockRepository.saveAndFlush(block);
 
         assertThatThrownBy(() -> bookingService.createBooking(bookingInput(room.getId(), checkIn, checkOut)))
                 .isInstanceOf(ConflictException.class);
@@ -206,8 +236,107 @@ class BookingAvailabilityEngineTests {
         assertThat(successCount).isEqualTo(1);
         assertThat(conflictCount).isEqualTo(1);
 
-        List<BookingEntity> activeBookings =
-                bookingRepository.findByRoomId(room.getId()).stream().filter(b -> b.getStatus() != BookingStatus.CANCELLED).toList();
+        List<com.sunsetbeach.entity.BookingEntity> activeBookings = bookingRepository.findByRoomId(room.getId()).stream()
+                .filter(b -> b.getStatus() != BookingStatus.CANCELLED)
+                .toList();
         assertThat(activeBookings).hasSize(1);
+    }
+
+    @Test
+    void booking_withoutAssignedUnit_stillOccupiesOneUnitOfTheType() {
+        RoomEntity room = createRoom(1);
+        LocalDate checkIn = LocalDate.now().plusDays(80);
+        LocalDate checkOut = checkIn.plusDays(1);
+
+        Booking booking = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkOut));
+        assertThat(booking.getRoomUnitId().get()).isNull();
+
+        AvailabilityDay day = dayFor(room.getId(), checkIn);
+        assertThat(day.getBookedCount()).isEqualTo(1);
+        assertThat(day.getAvailableCount()).isEqualTo(0);
+        // The unit itself is neither booked nor blocked - the occupancy is only reflected at
+        // the type level, since nobody assigned a specific physical room to this booking.
+        assertThat(day.getUnits()).allSatisfy(u -> {
+            assertThat(u.getIsBooked()).isFalse();
+            assertThat(u.getIsAvailable()).isTrue();
+        });
+    }
+
+    @Test
+    void assignRoomUnit_differentRoomType_isRejected() {
+        RoomEntity room = createRoom(1);
+        RoomEntity otherRoom = createRoom(1);
+        LocalDate checkIn = LocalDate.now().plusDays(90);
+        Booking booking = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkIn.plusDays(1)));
+        RoomUnitEntity otherUnit = roomUnitRepository.findByRoomId(otherRoom.getId()).get(0);
+
+        assertThatThrownBy(() -> assign(booking.getId(), otherUnit.getId())).isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void assignRoomUnit_inactiveUnit_isRejected() {
+        RoomEntity room = createRoom(1);
+        LocalDate checkIn = LocalDate.now().plusDays(91);
+        Booking booking = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkIn.plusDays(1)));
+        RoomUnitEntity inactiveUnit = createUnit(room, false);
+
+        assertThatThrownBy(() -> assign(booking.getId(), inactiveUnit.getId())).isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void assignRoomUnit_alreadyAssignedToOverlappingBooking_isRejected() {
+        RoomEntity room = createRoom(2);
+        LocalDate checkIn = LocalDate.now().plusDays(92);
+        LocalDate checkOut = checkIn.plusDays(2);
+        RoomUnitEntity unit = roomUnitRepository.findByRoomId(room.getId()).get(0);
+
+        Booking first = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkOut));
+        Booking second = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkOut));
+        assign(first.getId(), unit.getId());
+
+        assertThatThrownBy(() -> assign(second.getId(), unit.getId())).isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void roomUnitBlock_reducesTypeLevelAvailabilityByOne() {
+        RoomEntity room = createRoom(2);
+        LocalDate date = LocalDate.now().plusDays(95);
+        RoomUnitEntity unit = roomUnitRepository.findByRoomId(room.getId()).get(0);
+
+        RoomUnitBlockEntity block = new RoomUnitBlockEntity();
+        block.setRoomUnitId(unit.getId());
+        block.setFromDate(date);
+        block.setToDate(date);
+        block.setReason("Deep cleaning");
+        roomUnitBlockRepository.saveAndFlush(block);
+
+        AvailabilityDay day = dayFor(room.getId(), date);
+        assertThat(day.getBlockedCount()).isEqualTo(1);
+        assertThat(day.getAvailableCount()).isEqualTo(1);
+    }
+
+    @Test
+    void assignRoomUnit_checkoutDayFreesTheUnit_backToBackAssignmentsBothSucceed() {
+        RoomEntity room = createRoom(1);
+        LocalDate checkIn = LocalDate.now().plusDays(100);
+        LocalDate turnoverDay = checkIn.plusDays(2);
+        RoomUnitEntity unit = roomUnitRepository.findByRoomId(room.getId()).get(0);
+
+        Booking first = bookingService.createBooking(bookingInput(room.getId(), checkIn, turnoverDay));
+        Booking second = bookingService.createBooking(bookingInput(room.getId(), turnoverDay, turnoverDay.plusDays(2)));
+
+        Booking firstAssigned = assign(first.getId(), unit.getId());
+        Booking secondAssigned = assign(second.getId(), unit.getId());
+
+        assertThat(firstAssigned.getRoomUnitId().get()).isEqualTo(unit.getId());
+        assertThat(secondAssigned.getRoomUnitId().get()).isEqualTo(unit.getId());
+    }
+
+    private AvailabilityDay dayFor(String roomId, LocalDate date) {
+        String month = "%04d-%02d".formatted(date.getYear(), date.getMonthValue());
+        return availabilityService.getAvailability(roomId, month).getDays().stream()
+                .filter(d -> d.getDate().equals(date.toString()))
+                .findFirst()
+                .orElseThrow();
     }
 }

@@ -7,6 +7,7 @@ import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingPosOrder;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
+import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.service.BookingService;
 import java.util.List;
 import org.springframework.http.ContentDisposition;
@@ -43,6 +44,11 @@ public class BookingController implements BookingsApi {
     @Override
     public ResponseEntity<Booking> updateBookingStatus(String id, BookingStatusInput bookingStatusInput) {
         return ResponseEntity.ok(bookingService.updateStatus(id, bookingStatusInput));
+    }
+
+    @Override
+    public ResponseEntity<Booking> assignBookingRoomUnit(String id, RoomUnitAssignmentInput roomUnitAssignmentInput) {
+        return ResponseEntity.ok(bookingService.assignRoomUnit(id, roomUnitAssignmentInput));
     }
 
     @Override

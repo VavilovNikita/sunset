@@ -25,9 +25,6 @@ public class RoomEntity {
 
     private Integer capacity;
 
-    /** How many sellable units of this room type exist. Physical units aren't numbered/tracked yet - this is just a count. */
-    private Integer quantity = 1;
-
     @Column(precision = 10, scale = 2)
     private BigDecimal basePrice;
 
@@ -67,14 +64,6 @@ public class RoomEntity {
 
     public void setCapacity(Integer capacity) {
         this.capacity = capacity;
-    }
-
-    public Integer getQuantity() {
-        return quantity;
-    }
-
-    public void setQuantity(Integer quantity) {
-        this.quantity = quantity;
     }
 
     public BigDecimal getBasePrice() {

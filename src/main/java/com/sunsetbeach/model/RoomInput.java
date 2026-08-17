@@ -15,10 +15,10 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Body of &#x60;roomSchema&#x60;. Full replacement on PATCH — no partial update.
+ * Body of &#x60;roomSchema&#x60;. Full replacement on PATCH — no partial update. Does not include a unit count - a room type has zero sellable units until &#x60;RoomUnit&#x60;s are added for it via &#x60;POST /room-units&#x60;. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T18:39:34.635637100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class RoomInput {
 
   private String name;
@@ -26,8 +26,6 @@ public class RoomInput {
   private String description;
 
   private Integer capacity;
-
-  private Integer quantity;
 
   private BigDecimal basePrice;
 
@@ -38,11 +36,10 @@ public class RoomInput {
   /**
    * Constructor with only required parameters
    */
-  public RoomInput(String name, String description, Integer capacity, Integer quantity, BigDecimal basePrice) {
+  public RoomInput(String name, String description, Integer capacity, BigDecimal basePrice) {
     this.name = name;
     this.description = description;
     this.capacity = capacity;
-    this.quantity = quantity;
     this.basePrice = basePrice;
   }
 
@@ -105,27 +102,6 @@ public class RoomInput {
     this.capacity = capacity;
   }
 
-  public RoomInput quantity(Integer quantity) {
-    this.quantity = quantity;
-    return this;
-  }
-
-  /**
-   * How many sellable units of this room type exist. Lowering this below the peak number of units already committed (booked or manually blocked) on any future date is rejected with 409 — see `PATCH /rooms/{id}` responses. 
-   * minimum: 1
-   * maximum: 500
-   * @return quantity
-   */
-  @NotNull @Min(1) @Max(500) 
-  @JsonProperty("quantity")
-  public Integer getQuantity() {
-    return quantity;
-  }
-
-  public void setQuantity(Integer quantity) {
-    this.quantity = quantity;
-  }
-
   public RoomInput basePrice(BigDecimal basePrice) {
     this.basePrice = basePrice;
     return this;
@@ -158,13 +134,12 @@ public class RoomInput {
     return Objects.equals(this.name, roomInput.name) &&
         Objects.equals(this.description, roomInput.description) &&
         Objects.equals(this.capacity, roomInput.capacity) &&
-        Objects.equals(this.quantity, roomInput.quantity) &&
         Objects.equals(this.basePrice, roomInput.basePrice);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, description, capacity, quantity, basePrice);
+    return Objects.hash(name, description, capacity, basePrice);
   }
 
   @Override
@@ -174,7 +149,6 @@ public class RoomInput {
     sb.append("    name: ").append(toIndentedString(name)).append("\n");
     sb.append("    description: ").append(toIndentedString(description)).append("\n");
     sb.append("    capacity: ").append(toIndentedString(capacity)).append("\n");
-    sb.append("    quantity: ").append(toIndentedString(quantity)).append("\n");
     sb.append("    basePrice: ").append(toIndentedString(basePrice)).append("\n");
     sb.append("}");
     return sb.toString();

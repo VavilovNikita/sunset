@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.Room;
+import com.sunsetbeach.model.RoomUnit;
 import java.time.OffsetDateTime;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -19,10 +20,10 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Raw Prisma &#x60;Booking&#x60; row with &#x60;room&#x60; included. &#x60;totalPrice&#x60; serializes as a **string** (Prisma &#x60;Decimal&#x60;). &#x60;checkIn&#x60;, &#x60;checkOut&#x60;, &#x60;createdAt&#x60;, &#x60;updatedAt&#x60; serialize as ISO-8601 datetime strings (&#x60;checkIn&#x60;/&#x60;checkOut&#x60; are date-only columns but still render with a &#x60;T00:00:00.000Z&#x60; time component since Prisma returns &#x60;Date&#x60; objects). 
+ * Raw Prisma &#x60;Booking&#x60; row with &#x60;room&#x60; included. &#x60;totalPrice&#x60; serializes as a **string** (Prisma &#x60;Decimal&#x60;). &#x60;checkIn&#x60;, &#x60;checkOut&#x60;, &#x60;createdAt&#x60;, &#x60;updatedAt&#x60; serialize as ISO-8601 datetime strings (&#x60;checkIn&#x60;/&#x60;checkOut&#x60; are date-only columns but still render with a &#x60;T00:00:00.000Z&#x60; time component since Prisma returns &#x60;Date&#x60; objects). &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60; are null until a physical room is assigned via &#x60;PUT /bookings/{id}/room-unit&#x60; - &#x60;roomId&#x60;/&#x60;room&#x60; (the room *type*) stay the source of truth for what was booked either way. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class Booking {
 
   private String id;
@@ -30,6 +31,10 @@ public class Booking {
   private String roomId;
 
   private Room room;
+
+  private JsonNullable<String> roomUnitId = JsonNullable.<String>undefined();
+
+  private RoomUnit roomUnit;
 
   private String guestName;
 
@@ -62,10 +67,12 @@ public class Booking {
   /**
    * Constructor with only required parameters
    */
-  public Booking(String id, String roomId, Room room, String guestName, String guestEmail, String guestPhone, OffsetDateTime checkIn, OffsetDateTime checkOut, String totalPrice, BookingStatus status, String paymentNote, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, OffsetDateTime checkIn, OffsetDateTime checkOut, String totalPrice, BookingStatus status, String paymentNote, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.roomId = roomId;
     this.room = room;
+    this.roomUnitId = JsonNullable.of(roomUnitId);
+    this.roomUnit = roomUnit;
     this.guestName = guestName;
     this.guestEmail = guestEmail;
     this.guestPhone = guestPhone;
@@ -133,6 +140,44 @@ public class Booking {
 
   public void setRoom(Room room) {
     this.room = room;
+  }
+
+  public Booking roomUnitId(String roomUnitId) {
+    this.roomUnitId = JsonNullable.of(roomUnitId);
+    return this;
+  }
+
+  /**
+   * Get roomUnitId
+   * @return roomUnitId
+   */
+  @NotNull 
+  @JsonProperty("roomUnitId")
+  public JsonNullable<String> getRoomUnitId() {
+    return roomUnitId;
+  }
+
+  public void setRoomUnitId(JsonNullable<String> roomUnitId) {
+    this.roomUnitId = roomUnitId;
+  }
+
+  public Booking roomUnit(RoomUnit roomUnit) {
+    this.roomUnit = roomUnit;
+    return this;
+  }
+
+  /**
+   * Get roomUnit
+   * @return roomUnit
+   */
+  @NotNull @Valid 
+  @JsonProperty("roomUnit")
+  public RoomUnit getRoomUnit() {
+    return roomUnit;
+  }
+
+  public void setRoomUnit(RoomUnit roomUnit) {
+    this.roomUnit = roomUnit;
   }
 
   public Booking guestName(String guestName) {
@@ -337,6 +382,8 @@ public class Booking {
     return Objects.equals(this.id, booking.id) &&
         Objects.equals(this.roomId, booking.roomId) &&
         Objects.equals(this.room, booking.room) &&
+        Objects.equals(this.roomUnitId, booking.roomUnitId) &&
+        Objects.equals(this.roomUnit, booking.roomUnit) &&
         Objects.equals(this.guestName, booking.guestName) &&
         Objects.equals(this.guestEmail, booking.guestEmail) &&
         Objects.equals(this.guestPhone, booking.guestPhone) &&
@@ -351,7 +398,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, guestName, guestEmail, guestPhone, checkIn, checkOut, totalPrice, status, paymentNote, createdAt, updatedAt);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, checkIn, checkOut, totalPrice, status, paymentNote, createdAt, updatedAt);
   }
 
   @Override
@@ -361,6 +408,8 @@ public class Booking {
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    roomId: ").append(toIndentedString(roomId)).append("\n");
     sb.append("    room: ").append(toIndentedString(room)).append("\n");
+    sb.append("    roomUnitId: ").append(toIndentedString(roomUnitId)).append("\n");
+    sb.append("    roomUnit: ").append(toIndentedString(roomUnit)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
     sb.append("    guestEmail: ").append(toIndentedString(guestEmail)).append("\n");
     sb.append("    guestPhone: ").append(toIndentedString(guestPhone)).append("\n");

@@ -5,6 +5,7 @@ import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.RoomEntity;
+import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
@@ -19,11 +20,13 @@ import com.sunsetbeach.model.BookingPosOrderItem;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.PaymentMethod;
+import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.RoomRepository;
+import com.sunsetbeach.repository.RoomUnitRepository;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
 import java.sql.SQLException;
@@ -45,6 +48,7 @@ public class BookingService {
     private static final String SERIALIZATION_FAILURE_SQLSTATE = "40001";
 
     private final RoomRepository roomRepository;
+    private final RoomUnitRepository roomUnitRepository;
     private final BookingRepository bookingRepository;
     private final BookingWriter bookingWriter;
     private final BookingMapper bookingMapper;
@@ -55,6 +59,7 @@ public class BookingService {
 
     public BookingService(
             RoomRepository roomRepository,
+            RoomUnitRepository roomUnitRepository,
             BookingRepository bookingRepository,
             BookingWriter bookingWriter,
             BookingMapper bookingMapper,
@@ -63,6 +68,7 @@ public class BookingService {
             OrderItemRepository orderItemRepository,
             MenuItemRepository menuItemRepository) {
         this.roomRepository = roomRepository;
+        this.roomUnitRepository = roomUnitRepository;
         this.bookingRepository = bookingRepository;
         this.bookingWriter = bookingWriter;
         this.bookingMapper = bookingMapper;
@@ -93,7 +99,7 @@ public class BookingService {
         }
 
         emailService.sendNewBookingEmail(saved, room);
-        return bookingMapper.toDto(saved, room);
+        return bookingMapper.toDto(saved, room, null);
     }
 
     @Transactional
@@ -111,20 +117,49 @@ public class BookingService {
 
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         emailService.sendGuestStatusEmail(saved, room);
-        return bookingMapper.toDto(saved, room);
+        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()));
     }
 
     @Transactional(readOnly = true)
     public List<Booking> list(String from, String to, BookingStatus status) {
         List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status));
-        return bookings.stream().map(b -> bookingMapper.toDto(b, b.getRoom())).toList();
+        return bookings.stream().map(b -> bookingMapper.toDto(b, b.getRoom(), b.getRoomUnit())).toList();
     }
 
     @Transactional(readOnly = true)
     public Booking getById(String id) {
         BookingEntity booking = bookingRepository.findById(id).orElseThrow(() -> new NotFoundException("Booking not found"));
         RoomEntity room = roomRepository.findById(booking.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
-        return bookingMapper.toDto(booking, room);
+        return bookingMapper.toDto(booking, room, findRoomUnit(booking.getRoomUnitId()));
+    }
+
+    /**
+     * Assigns ({@code roomUnitId} non-null) or clears ({@code roomUnitId} null) the physical
+     * room for a booking. Mirrors {@link #createBooking}'s race-safety story: the actual
+     * validation and write happen inside {@link BookingWriter#assignRoomUnit}, which runs
+     * SERIALIZABLE so two concurrent assignments of the same unit can't both succeed; a
+     * serialization failure here is translated to the same "try again" conflict as booking
+     * creation.
+     */
+    public Booking assignRoomUnit(String bookingId, RoomUnitAssignmentInput input) {
+        String roomUnitId = input.getRoomUnitId().get();
+
+        BookingEntity saved;
+        try {
+            saved = roomUnitId == null ? bookingWriter.unassignRoomUnit(bookingId) : bookingWriter.assignRoomUnit(bookingId, roomUnitId);
+        } catch (DataAccessException | TransactionSystemException e) {
+            if (isSerializationFailure(e)) {
+                throw new ConflictException("Someone just assigned this room — please try again.");
+            }
+            throw e;
+        }
+
+        RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()));
+    }
+
+    private RoomUnitEntity findRoomUnit(String roomUnitId) {
+        return roomUnitId != null ? roomUnitRepository.findById(roomUnitId).orElse(null) : null;
     }
 
     /**

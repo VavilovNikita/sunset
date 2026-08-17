@@ -3,15 +3,13 @@ package com.sunsetbeach.entity;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 
 @Entity
-@Table(name = "Availability", uniqueConstraints = @UniqueConstraint(columnNames = {"roomId", "date"}))
-public class AvailabilityEntity {
+@Table(name = "RoomUnit")
+public class RoomUnitEntity {
 
     @Id
     @UuidGenerator
@@ -19,10 +17,9 @@ public class AvailabilityEntity {
 
     private String roomId;
 
-    private LocalDate date;
+    private String label;
 
-    /** How many units of the room type are manually pulled from sale on this date. Zero is equivalent to no row existing. */
-    private int blockedCount;
+    private boolean isActive = true;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
@@ -43,20 +40,20 @@ public class AvailabilityEntity {
         this.roomId = roomId;
     }
 
-    public LocalDate getDate() {
-        return date;
+    public String getLabel() {
+        return label;
     }
 
-    public void setDate(LocalDate date) {
-        this.date = date;
+    public void setLabel(String label) {
+        this.label = label;
     }
 
-    public int getBlockedCount() {
-        return blockedCount;
+    public boolean isActive() {
+        return isActive;
     }
 
-    public void setBlockedCount(int blockedCount) {
-        this.blockedCount = blockedCount;
+    public void setActive(boolean active) {
+        isActive = active;
     }
 
     public LocalDateTime getCreatedAt() {

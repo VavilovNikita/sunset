@@ -33,6 +33,12 @@ public class BookingEntity {
     @JoinColumn(name = "roomId", insertable = false, updatable = false)
     private RoomEntity room;
 
+    private String roomUnitId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "roomUnitId", insertable = false, updatable = false)
+    private RoomUnitEntity roomUnit;
+
     private String guestName;
 
     private String guestEmail;
@@ -76,6 +82,18 @@ public class BookingEntity {
 
     public RoomEntity getRoom() {
         return room;
+    }
+
+    public String getRoomUnitId() {
+        return roomUnitId;
+    }
+
+    public void setRoomUnitId(String roomUnitId) {
+        this.roomUnitId = roomUnitId;
+    }
+
+    public RoomUnitEntity getRoomUnit() {
+        return roomUnit;
     }
 
     public String getGuestName() {

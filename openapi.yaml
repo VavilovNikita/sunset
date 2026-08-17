@@ -20,13 +20,23 @@ tags:
       Self-hosted authentication - this app owns the `User` table and issues/verifies
       its own JWTs. Replaces the old NextAuth.js-managed cookie session.
   - name: Rooms
-    description: Room CRUD and image management (staff only).
+    description: Room (room *type*) CRUD and image management (staff only).
+  - name: RoomUnits
+    description: >
+      Physical room CRUD (MANAGER or above) - individual sellable units of a Room type
+      ("203", "Garden Bungalow 4"), plus per-unit manual blocks (date range + reason) that
+      replace the old Room-level `Availability.blockedCount`.
   - name: Pricing
     description: Per-day rate overrides for a room (staff only).
   - name: Availability
-    description: Manual availability blocks for a room (staff only).
+    description: >
+      Day-by-day type- and unit-level availability for a room (staff only, read-only - manual
+      blocking now lives on RoomUnits).
   - name: Bookings
-    description: Guest booking creation (public) and status management/export (staff only).
+    description: >
+      Guest booking creation (public) and status management (CASHIER or above - front-desk
+      day-to-day work). `GET /bookings/export` is the one MANAGER+ exception - see that
+      operation.
   - name: Menu
     description: POS menu item catalog (staff reads, MANAGER or above manages).
   - name: Tables
@@ -278,16 +288,6 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Room not found
-        "409":
-          description: >
-            `quantity` was lowered below the peak number of units already
-            committed (booked or manually blocked) on some future date.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorMessage"
-              example:
-                error: "Cannot reduce quantity to 1: 3 units are already committed on at least one future date"
     delete:
       operationId: deleteRoom
       tags: [Rooms]
@@ -311,7 +311,7 @@ paths:
               example:
                 error: Room not found
         "409":
-          description: Room has existing bookings and cannot be deleted (Prisma `P2003`, FK constraint).
+          description: Room has existing bookings or room units and cannot be deleted (Prisma `P2003`, FK constraint).
           content:
             application/json:
               schema:
@@ -516,14 +516,17 @@ paths:
     get:
       operationId: getRoomAvailability
       tags: [Availability]
-      summary: Get day-by-day availability for a room for a given month
+      summary: Get day-by-day, type- and unit-level availability for a room for a given month
       description: >
-        Requires any authenticated staff session (ADMIN or MANAGER). Returns
-        the full per-day inventory breakdown (`quantity`, `blockedCount`,
-        `bookedCount`, `availableCount`) so staff can see manual blocks and
-        real bookings separately rather than a single blocked/not-blocked
-        flag. A day counts as booked if it is covered by a non-CANCELLED
-        booking (`checkIn <= date < checkOut`).
+        Requires CASHIER or above. Returns the full per-day inventory breakdown at the
+        room-type level (`unitCount`, `blockedCount`, `bookedCount`, `availableCount`) *and* a
+        per-unit breakdown (`units[]`) so staff can see exactly which physical room is
+        blocked/booked/free on each day - the data both the future booking calendar grid and
+        `PUT /bookings/{id}/room-unit` (also CASHIER+) are built on. A day counts as booked if
+        it is covered by a non-CANCELLED booking (`checkIn <= date < checkOut`); a booking
+        without an assigned unit still counts toward `bookedCount` but against no specific entry
+        in `units[]`. Manual blocking is no longer done here - see the RoomUnits tag
+        (`POST /room-units/{id}/blocks`).
       parameters:
         - name: month
           in: query
@@ -549,54 +552,286 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Room not found
-    patch:
-      operationId: setRoomAvailability
-      tags: [Availability]
-      summary: Set how many units are manually blocked for a date range
+
+  /room-units:
+    get:
+      operationId: listRoomUnits
+      tags: [RoomUnits]
+      summary: List physical rooms
       description: >
-        Requires any authenticated staff session (ADMIN or MANAGER). Upserts
-        one `Availability` row per day in `[from, to]` (inclusive) with
-        `blockedCount` units withdrawn from sale (`blockedCount: 0` deletes
-        the row instead). Rejects ranges longer than 366 days. This never
-        touches bookings — it only controls the manual-block layer.
+        Requires any authenticated staff session (ADMIN/MANAGER/CASHIER/WAITER) - room numbers
+        aren't sensitive, and e.g. a CASHIER needs this to pick a candidate before calling
+        `PUT /bookings/{id}/room-unit`. Manual blocks (`GET /room-units/{id}/blocks`) are a
+        separate, more restricted resource - see that operation.
+      parameters:
+        - name: roomId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter to units of a single room type.
+      responses:
+        "200":
+          description: Matching room units.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoomUnit"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createRoomUnit
+      tags: [RoomUnits]
+      summary: Create a physical room
+      description: Requires MANAGER or above.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AvailabilityRangeInput"
+              $ref: "#/components/schemas/RoomUnitInput"
       responses:
-        "200":
-          description: Number of days upserted.
+        "201":
+          description: Room unit created.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OkUpdated"
+                $ref: "#/components/schemas/RoomUnit"
         "400":
-          description: >
-            Body failed `availabilityRangeSchema` validation, the range
-            exceeds 366 days, or `blockedCount` exceeds the room's `quantity`.
+          description: Body failed validation, or `roomId` does not reference an existing room type.
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/ValidationError"
-                  - $ref: "#/components/schemas/ErrorMessage"
-              examples:
-                tooLarge:
-                  value: { error: "Range too large (max 366 days)" }
-                overQuantity:
-                  value: { error: "blockedCount cannot exceed the room's quantity (2)" }
+                $ref: "#/components/schemas/ErrorMessage"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Room not found.
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "409":
+          description: '`label` is already in use by another room unit (unique hotel-wide).'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
-                error: Room not found
+                error: This label is already in use by another room.
+
+  /room-units/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getRoomUnit
+      tags: [RoomUnits]
+      summary: Get a physical room by id
+      description: Requires any authenticated staff session (ADMIN/MANAGER/CASHIER/WAITER).
+      responses:
+        "200":
+          description: The room unit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomUnit"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    patch:
+      operationId: updateRoomUnit
+      tags: [RoomUnits]
+      summary: Rename or (de)activate a physical room
+      description: >
+        Requires MANAGER or above. Full replacement of `label`/`isActive` (no partial update).
+        The room type (`roomId`) is fixed at creation and cannot be changed here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomUnitUpdateInput"
+      responses:
+        "200":
+          description: Updated room unit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomUnit"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            `label` collides with another room unit, or deactivating (`isActive: false`) is
+            rejected because this unit has a non-cancelled booking assigned with a future
+            checkout date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                labelTaken:
+                  value: { error: This label is already in use by another room. }
+                hasUpcomingBooking:
+                  value: { error: "Room 203 has an upcoming booking assigned and can't be deactivated." }
+    delete:
+      operationId: deleteRoomUnit
+      tags: [RoomUnits]
+      summary: Delete a physical room
+      description: Requires MANAGER or above. Also deletes this unit's blocks.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: This room unit has a non-cancelled booking assigned with a future checkout date and can't be deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "Room 203 has an upcoming booking assigned and can't be deleted."
+
+  /room-units/{id}/blocks:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: listRoomUnitBlocks
+      tags: [RoomUnits]
+      summary: List manual blocks for a physical room
+      description: >
+        Requires MANAGER or above - deliberately more restricted than `GET /room-units`/
+        `GET /room-units/{id}`, which any staff role may call. `reason` is free text staff write
+        for each other and can carry internal notes, so this list is not exposed to CASHIER/
+        WAITER the way the room list itself is; do not assume the two endpoints share visibility.
+      responses:
+        "200":
+          description: Blocks for this room unit.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoomUnitBlock"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    post:
+      operationId: createRoomUnitBlock
+      tags: [RoomUnits]
+      summary: Pull a physical room off sale for a date range
+      description: >
+        Requires MANAGER or above. Does not touch bookings - a block only affects the
+        availability calculation. Overlapping blocks on the same unit are allowed (not merged).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomUnitBlockInput"
+      responses:
+        "201":
+          description: Block created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomUnitBlock"
+        "400":
+          description: Body failed validation (includes `fromDate <= toDate`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /room-units/{id}/blocks/{blockId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: blockId
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      operationId: deleteRoomUnitBlock
+      tags: [RoomUnits]
+      summary: Remove a manual block
+      description: Requires MANAGER or above.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Room unit or block not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /bookings:
     get:
@@ -604,8 +839,10 @@ paths:
       tags: [Bookings]
       summary: List bookings
       description: >
-        Requires any authenticated staff session (ADMIN or MANAGER). Filters
-        mirror `GET /bookings/export`. Ordered by `checkIn` ascending.
+        Requires CASHIER or above - finding a guest's booking is front-desk work, not a
+        MANAGER-only report (contrast with `GET /bookings/export`, which stays MANAGER+: a
+        single-booking lookup and a bulk CSV of every guest's contact details are different risk
+        profiles). Filters mirror `GET /bookings/export`. Ordered by `checkIn` ascending.
       parameters:
         - name: from
           in: query
@@ -702,7 +939,10 @@ paths:
       operationId: getBooking
       tags: [Bookings]
       summary: Get a booking by id
-      description: Requires any authenticated staff session (ADMIN or MANAGER). Used by the admin detail/status-change screen.
+      description: >
+        Requires CASHIER or above. Used by the admin detail/status-change screen and by front
+        desk before deciding whether/how to change a booking's status or assign it a physical
+        room (`PUT /bookings/{id}/room-unit`, also CASHIER+).
       responses:
         "200":
           description: The booking.
@@ -725,8 +965,8 @@ paths:
       tags: [Bookings]
       summary: Update a booking's status / payment note
       description: >
-        Requires any authenticated staff session (ADMIN or MANAGER). Sends a
-        guest-facing status-change email on success.
+        Requires CASHIER or above - marking a booking paid/cancelled or adding a payment note is
+        routine front-desk work. Sends a guest-facing status-change email on success.
       requestBody:
         required: true
         content:
@@ -756,6 +996,74 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Booking not found
+
+  /bookings/{id}/room-unit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: assignBookingRoomUnit
+      tags: [Bookings]
+      summary: Assign or unassign the physical room for a booking
+      description: >
+        Requires CASHIER or above. One endpoint for both directions: a non-null `roomUnitId`
+        assigns that physical room to the booking, `null` clears the assignment. Deliberately
+        not part of `PATCH /bookings/{id}` - room assignment has its own validation (same room
+        type, active, free for the whole stay) and its own race-safety story (SERIALIZABLE,
+        same pattern as `POST /bookings`), so it gets its own operation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomUnitAssignmentInput"
+      responses:
+        "200":
+          description: Updated booking.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: The room unit belongs to a different room type, or is not active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                wrongType:
+                  value: { error: "Room 5 is a different room type than this booking" }
+                inactive:
+                  value: { error: "Room 5 is not active" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking or room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            The room unit is blocked or already booked for an overlapping stay - either found
+            up front or from a concurrent conflicting assignment (Postgres serialization
+            failure, SQLSTATE `40001`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                blocked:
+                  value: { error: "Room 5 is blocked (under renovation) from 2026-08-05 to 2026-08-09" }
+                booked:
+                  value: { error: "Room 5 is already booked for an overlapping stay" }
+                raceLost:
+                  value: { error: "Someone just assigned this room — please try again." }
 
   /bookings/{id}/folio:
     parameters:
@@ -833,7 +1141,12 @@ paths:
       tags: [Bookings]
       summary: Export bookings as CSV
       description: >
-        Requires any authenticated staff session (ADMIN or MANAGER).
+        Requires MANAGER or above - deliberately stricter than `GET /bookings`/
+        `GET /bookings/{id}` (CASHIER+): those return one guest's booking at a time for a
+        specific front-desk task, this returns every matching guest's name/email/phone/stay in
+        one bulk file. Bulk export of personal data is a materially different risk (a leaked or
+        misused CSV exposes the whole filtered set at once) from looking someone up, so it gets
+        the higher bar even though the underlying data overlaps.
 
 
         The file opens with a UTF-8 BOM followed by a `sep=,` directive line so it opens
@@ -2715,13 +3028,12 @@ components:
     Room:
       type: object
       description: >
-        Raw Prisma `Room` row as returned by `NextResponse.json(...)`. Despite
-        the name this is a **room type**, not a single physical room —
-        `quantity` is how many sellable units of it exist; individual units
-        aren't numbered or tracked yet. `basePrice` is a Prisma `Decimal` —
-        it serializes to a **string**, not a JSON number. `createdAt`
-        serializes as an ISO-8601 datetime string.
-      required: [id, name, description, capacity, quantity, basePrice, images, createdAt]
+        Despite the name this is a **room type**, not a single physical room — individual
+        sellable units are separate `RoomUnit` rows (see the RoomUnits tag). `activeUnitCount`
+        is computed from those rows (`count(RoomUnit WHERE roomId = id AND isActive)`), not
+        stored. `basePrice` is a Prisma `Decimal` — it serializes to a **string**, not a JSON
+        number. `createdAt` serializes as an ISO-8601 datetime string.
+      required: [id, name, description, capacity, activeUnitCount, basePrice, images, createdAt]
       properties:
         id:
           type: string
@@ -2731,10 +3043,10 @@ components:
           type: string
         capacity:
           type: integer
-        quantity:
+        activeUnitCount:
           type: integer
-          minimum: 1
-          description: How many sellable units of this room type exist.
+          minimum: 0
+          description: 'Computed - number of active (`isActive: true`) `RoomUnit` rows of this type.'
         basePrice:
           type: string
           description: Decimal(10,2) rendered as a string, e.g. `"1500.00"`.
@@ -2749,8 +3061,11 @@ components:
 
     RoomInput:
       type: object
-      description: Body of `roomSchema`. Full replacement on PATCH — no partial update.
-      required: [name, description, capacity, quantity, basePrice]
+      description: >
+        Body of `roomSchema`. Full replacement on PATCH — no partial update. Does not include a
+        unit count - a room type has zero sellable units until `RoomUnit`s are added for it via
+        `POST /room-units`.
+      required: [name, description, capacity, basePrice]
       properties:
         name:
           type: string
@@ -2764,20 +3079,106 @@ components:
           minimum: 1
           maximum: 20
           description: Coerced to a number server-side (`z.coerce.number()`); a numeric string is also accepted.
-        quantity:
-          type: integer
-          minimum: 1
-          maximum: 500
-          description: >
-            How many sellable units of this room type exist. Lowering this
-            below the peak number of units already committed (booked or
-            manually blocked) on any future date is rejected with 409 — see
-            `PATCH /rooms/{id}` responses.
         basePrice:
           type: number
           minimum: 0
           exclusiveMinimum: true
           description: Coerced to a number server-side (`z.coerce.number()`); a numeric string is also accepted.
+
+    RoomUnit:
+      type: object
+      description: A single physical room ("203", "Garden Bungalow 4") - one sellable unit of a Room type.
+      required: [id, roomId, label, isActive, createdAt]
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        label:
+          type: string
+          description: Unique hotel-wide, not just within the room type.
+        isActive:
+          type: boolean
+          description: Inactive units are excluded from `Room.activeUnitCount` and cannot be newly assigned to a booking.
+        createdAt:
+          type: string
+          format: date-time
+
+    RoomUnitInput:
+      type: object
+      description: Body of `POST /room-units`.
+      required: [roomId, label]
+      properties:
+        roomId:
+          type: string
+        label:
+          type: string
+          minLength: 1
+          maxLength: 60
+        isActive:
+          type: boolean
+          default: true
+
+    RoomUnitUpdateInput:
+      type: object
+      description: Body of `PATCH /room-units/{id}`. Full replacement of `label`/`isActive` — `roomId` is immutable after creation.
+      required: [label, isActive]
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 60
+        isActive:
+          type: boolean
+
+    RoomUnitBlock:
+      type: object
+      description: >
+        A physical room pulled off sale for a date range, with a reason. Replaces the old
+        Room-level `Availability.blockedCount`. `fromDate`/`toDate` are both inclusive.
+      required: [id, roomUnitId, fromDate, toDate, reason, createdAt]
+      properties:
+        id:
+          type: string
+        roomUnitId:
+          type: string
+        fromDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        toDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    RoomUnitBlockInput:
+      type: object
+      description: Body of `POST /room-units/{id}/blocks`.
+      required: [fromDate, toDate, reason]
+      properties:
+        fromDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        toDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        reason:
+          type: string
+          minLength: 1
+      # Cross-field rule: fromDate <= toDate (matches RoomUnitBlock_date_range_check).
+
+    RoomUnitAssignmentInput:
+      type: object
+      description: Body of `PUT /bookings/{id}/room-unit`.
+      required: [roomUnitId]
+      properties:
+        roomUnitId:
+          type: string
+          nullable: true
+          description: The room unit to assign, or `null` to clear the current assignment.
 
     Booking:
       type: object
@@ -2787,10 +3188,15 @@ components:
         `createdAt`, `updatedAt` serialize as ISO-8601 datetime strings
         (`checkIn`/`checkOut` are date-only columns but still render with a
         `T00:00:00.000Z` time component since Prisma returns `Date` objects).
+        `roomUnitId`/`roomUnit` are null until a physical room is assigned via
+        `PUT /bookings/{id}/room-unit` - `roomId`/`room` (the room *type*) stay the source of
+        truth for what was booked either way.
       required:
         - id
         - roomId
         - room
+        - roomUnitId
+        - roomUnit
         - guestName
         - guestEmail
         - guestPhone
@@ -2808,6 +3214,12 @@ components:
           type: string
         room:
           $ref: "#/components/schemas/Room"
+        roomUnitId:
+          type: string
+          nullable: true
+        roomUnit:
+          $ref: "#/components/schemas/RoomUnit"
+          nullable: true
         guestName:
           type: string
         guestEmail:
@@ -2953,27 +3365,6 @@ components:
           description: Coerced to a number server-side (`z.coerce.number()`); a numeric string is also accepted.
       # Cross-field rule enforced by Zod .refine(): from <= to.
 
-    AvailabilityRangeInput:
-      type: object
-      description: >
-        Body of `availabilityRangeSchema`. Upserts one `Availability` row per
-        day in `[from, to]` with `blockedCount` units of the room type pulled
-        from sale. `blockedCount: 0` deletes the row for that day instead
-        (zero is equivalent to no row existing).
-      required: [from, to, blockedCount]
-      properties:
-        from:
-          type: string
-          pattern: '^\d{4}-\d{2}-\d{2}$'
-        to:
-          type: string
-          pattern: '^\d{4}-\d{2}-\d{2}$'
-        blockedCount:
-          type: integer
-          minimum: 0
-          description: 'Must not exceed the room''s `quantity` - rejected with 400 otherwise.'
-      # Cross-field rule enforced by Zod .refine(): from <= to.
-
     PricingDay:
       type: object
       required: [date, price, isOverride]
@@ -3000,31 +3391,67 @@ components:
           items:
             $ref: "#/components/schemas/PricingDay"
 
+    RoomUnitAvailability:
+      type: object
+      description: Per-day status of one physical room - the data the booking calendar grid renders per cell.
+      required: [roomUnitId, label, isBlocked, isBooked, isAvailable, bookingId, blockReason]
+      properties:
+        roomUnitId:
+          type: string
+        label:
+          type: string
+        isBlocked:
+          type: boolean
+          description: True if a `RoomUnitBlock` covers this day.
+        isBooked:
+          type: boolean
+          description: True if a non-CANCELLED booking has this unit assigned and covers this day.
+        isAvailable:
+          type: boolean
+          description: '`!isBlocked && !isBooked`.'
+        bookingId:
+          type: string
+          nullable: true
+          description: Set when `isBooked` is true.
+        blockReason:
+          type: string
+          nullable: true
+          description: Set when `isBlocked` is true (`RoomUnitBlock.reason`).
+
     AvailabilityDay:
       type: object
       description: >
-        Per-day inventory breakdown for staff. `availableCount` is the
-        derived remainder (`quantity - blockedCount - bookedCount`) and can
-        go negative - that's not clamped away, since a negative remainder
-        (e.g. after a `quantity` reduction) is exactly the thing staff need
-        to see, not hide.
-      required: [date, quantity, blockedCount, bookedCount, availableCount]
+        Per-day inventory breakdown for staff, at both the room-type level (`unitCount`,
+        `blockedCount`, `bookedCount`, `availableCount`) and the physical-room level (`units[]`).
+        `availableCount` is the derived remainder (`unitCount - blockedCount - bookedCount`) and
+        can go negative - that's not clamped away, since a negative remainder (e.g. after room
+        units are deactivated) is exactly the thing staff need to see, not hide. `blockedCount`
+        counts *distinct* blocked active units for the day (an overlapping second block on the
+        same unit doesn't double-count); `bookedCount` counts bookings covering the day
+        regardless of whether they have an assigned unit - an unassigned booking still occupies
+        one unit of the type.
+      required: [date, unitCount, blockedCount, bookedCount, availableCount, units]
       properties:
         date:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
-        quantity:
+        unitCount:
           type: integer
-          description: 'Room.quantity at query time.'
+          description: Number of active `RoomUnit`s of this type at query time.
         blockedCount:
           type: integer
-          description: Units manually pulled from sale for this day (`Availability.blockedCount`).
+          description: Distinct active units with a `RoomUnitBlock` covering this day.
         bookedCount:
           type: integer
-          description: Units covered by a non-CANCELLED booking for this day.
+          description: Units covered by a non-CANCELLED booking for this day (assigned or not).
         availableCount:
           type: integer
-          description: 'quantity - blockedCount - bookedCount. Not clamped at 0.'
+          description: 'unitCount - blockedCount - bookedCount. Not clamped at 0.'
+        units:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomUnitAvailability"
+          description: One entry per active `RoomUnit` of this type.
 
     AvailabilityResponse:
       type: object
