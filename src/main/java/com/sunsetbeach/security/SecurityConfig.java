@@ -65,7 +65,7 @@ public class SecurityConfig {
                         // Printer CRUD/test (registering, editing, deleting, test-printing a physical
                         // printer) is MANAGER-only. The print-job queue is WAITER+ - any staff role may
                         // view/retry it, but PrinterService itself filters what a non-MANAGER caller can
-                        // see/retry down to KITCHEN_TICKET/PREBILL (Z-reports and guest receipts are
+                        // see/retry down to KITCHEN_TICKET/BAR_TICKET/PREBILL (Z-reports and guest receipts are
                         // cashier/management information - see PrinterService#isVisible).
                         .requestMatchers("/printers/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/print-jobs/**").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())

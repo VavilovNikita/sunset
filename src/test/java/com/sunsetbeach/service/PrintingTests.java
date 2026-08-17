@@ -126,8 +126,8 @@ class PrintingTests {
     @Test
     void sendOrder_mixedItems_splitsTicketsByDepartment_kitchenTicketHasNoPrices() throws IOException {
         try (FakePrinter fake = new FakePrinter()) {
-            persistPrinter(PrinterDepartment.KITCHEN, fake.port());
-            persistPrinter(PrinterDepartment.BAR, fake.port());
+            PrinterEntity kitchenPrinter = persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+            PrinterEntity barPrinter = persistPrinter(PrinterDepartment.BAR, fake.port());
 
             Order order = orderService.create(new OrderCreateInput(), cashier.getId());
             orderService.addItems(
@@ -146,6 +146,11 @@ class PrintingTests {
                     .filter(j -> j.getSummary().startsWith("Bar ticket"))
                     .findFirst()
                     .orElseThrow();
+
+            assertThat(kitchenJob.getDocumentType()).isEqualTo(PrintDocumentType.KITCHEN_TICKET);
+            assertThat(kitchenJob.getPrinterId()).isEqualTo(kitchenPrinter.getId());
+            assertThat(barJob.getDocumentType()).isEqualTo(PrintDocumentType.BAR_TICKET);
+            assertThat(barJob.getPrinterId()).isEqualTo(barPrinter.getId());
 
             String kitchenText = decode(kitchenJob);
             assertThat(kitchenText).contains("2x Caesar Salad");
@@ -175,7 +180,7 @@ class PrintingTests {
 
             List<PrintJobEntity> jobs = jobsFor(order.getId());
             assertThat(jobs).hasSize(1);
-            assertThat(jobs.get(0).getDocumentType()).isEqualTo(PrintDocumentType.KITCHEN_TICKET);
+            assertThat(jobs.get(0).getDocumentType()).isEqualTo(PrintDocumentType.BAR_TICKET);
             assertThat(jobs.get(0).getSummary()).startsWith("Bar ticket");
         }
     }
@@ -297,14 +302,17 @@ class PrintingTests {
     // --- Print-job queue visibility is filtered by caller role, not just gated at the security layer ---
 
     @Test
-    void listPrintJobs_waiterRole_seesKitchenTicketsNotZReportOrGuestReceipt_andSummariesCarryNoMoney() throws IOException {
+    void listPrintJobs_waiterRole_seesKitchenAndBarTicketsNotZReportOrGuestReceipt_andSummariesCarryNoMoney() throws IOException {
         try (FakePrinter fake = new FakePrinter()) {
             persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+            persistPrinter(PrinterDepartment.BAR, fake.port());
             persistPrinter(PrinterDepartment.CASHIER, fake.port());
 
             Order ticketOrder = orderService.create(new OrderCreateInput(), cashier.getId());
-            orderService.addItems(ticketOrder.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
-            sendOrder(ticketOrder.getId()); // -> KITCHEN_TICKET
+            orderService.addItems(
+                    ticketOrder.getId(),
+                    List.of(new OrderItemInput(kitchenItem.getId(), 1), new OrderItemInput(barItem.getId(), 1)));
+            sendOrder(ticketOrder.getId()); // -> KITCHEN_TICKET + BAR_TICKET
             // ShiftService.close()'s unsettled-order guard is system-wide (see
             // OrderCloseAndShiftGuardTests) - a SENT order anywhere blocks any shift from
             // closing, so this one must be settled before the shift-close call below.
@@ -318,10 +326,12 @@ class PrintingTests {
 
             // The dev DB this suite runs against may already carry other jobs (e.g. staff manually
             // trying the feature), so these assert set membership, not exact composition -
-            // KITCHEN_TICKET/PREBILL can legitimately be visible from elsewhere; Z_REPORT/
-            // GUEST_RECEIPT must never be, no matter what else is in the table.
+            // KITCHEN_TICKET/BAR_TICKET/PREBILL can legitimately be visible from elsewhere;
+            // Z_REPORT/GUEST_RECEIPT must never be, no matter what else is in the table.
             List<PrintJob> waiterView = printerService.listPrintJobs(null, null, Role.WAITER);
-            assertThat(waiterView).extracting(PrintJob::getDocumentType).contains(PrintDocumentType.KITCHEN_TICKET);
+            assertThat(waiterView)
+                    .extracting(PrintJob::getDocumentType)
+                    .contains(PrintDocumentType.KITCHEN_TICKET, PrintDocumentType.BAR_TICKET);
             assertThat(waiterView)
                     .extracting(PrintJob::getDocumentType)
                     .doesNotContain(PrintDocumentType.Z_REPORT, PrintDocumentType.GUEST_RECEIPT, PrintDocumentType.TEST_PAGE);
@@ -330,17 +340,25 @@ class PrintingTests {
             assertThat(cashierView)
                     .extracting(PrintJob::getDocumentType)
                     .doesNotContain(PrintDocumentType.Z_REPORT, PrintDocumentType.GUEST_RECEIPT, PrintDocumentType.TEST_PAGE);
-            // No money in what a waiter is allowed to see - a kitchen ticket's summary is just "what and where".
+            // No money in what a waiter is allowed to see - a kitchen/bar ticket's summary is just "what and where".
             assertThat(waiterView).extracting(PrintJob::getSummary).noneMatch(s -> s.matches(".*\\d+\\.\\d{2}.*"));
 
             List<PrintJob> managerView = printerService.listPrintJobs(null, null, Role.MANAGER);
             assertThat(managerView)
                     .extracting(PrintJob::getDocumentType)
-                    .contains(PrintDocumentType.KITCHEN_TICKET, PrintDocumentType.GUEST_RECEIPT, PrintDocumentType.Z_REPORT);
+                    .contains(
+                            PrintDocumentType.KITCHEN_TICKET,
+                            PrintDocumentType.BAR_TICKET,
+                            PrintDocumentType.GUEST_RECEIPT,
+                            PrintDocumentType.Z_REPORT);
 
             // ?documentType= actually filters, not just ?status=.
             List<PrintJob> zReportsOnly = printerService.listPrintJobs(null, PrintDocumentType.Z_REPORT, Role.MANAGER);
             assertThat(zReportsOnly).extracting(PrintJob::getDocumentType).containsOnly(PrintDocumentType.Z_REPORT);
+
+            // ?documentType=BAR_TICKET returns bar tickets only - not the kitchen ticket from the same order.
+            List<PrintJob> barTicketsOnly = printerService.listPrintJobs(null, PrintDocumentType.BAR_TICKET, Role.WAITER);
+            assertThat(barTicketsOnly).extracting(PrintJob::getDocumentType).containsOnly(PrintDocumentType.BAR_TICKET);
 
             // A CASH guest receipt's summary names the payment method - distinguishable from a room-charge one at a glance.
             PrintJob guestReceipt = managerView.stream()

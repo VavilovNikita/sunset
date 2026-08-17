@@ -22,7 +22,7 @@ import jakarta.annotation.Generated;
  * A queued/attempted print. &#x60;payload&#x60; (the raw ESC/POS bytes actually sent) is intentionally not exposed here - it&#39;s binary and only meaningful to a printer. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T08:34:38.479759300+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class PrintJob {
 
   private String id;
@@ -127,7 +127,7 @@ public class PrintJob {
   }
 
   /**
-   * Human-readable one-liner, e.g. \"Kitchen ticket — Order #ab12cd34\".
+   * Human-readable one-liner, e.g. \"Kitchen ticket — Order #ab12cd34\" or \"Bar ticket — Order #ab12cd34\" or, for a `GUEST_RECEIPT`, \"Guest receipt — Order #ab12cd34 (CARD)\" / \"Guest receipt — Order #ab12cd34 (ROOM_CHARGE — Jane Doe)\" - enough to tell two receipts on the same order apart without opening `GET /print-jobs/{id}/preview`. Never carries a money amount. 
    * @return summary
    */
   @NotNull 

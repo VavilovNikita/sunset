@@ -80,11 +80,13 @@ public class OrderPrintingService {
             for (Map.Entry<MenuDepartment, List<OrderItemEntity>> entry : byDepartment.entrySet()) {
                 PrinterDepartment printerDepartment =
                         entry.getKey() == MenuDepartment.BAR ? PrinterDepartment.BAR : PrinterDepartment.KITCHEN;
+                PrintDocumentType documentType =
+                        printerDepartment == PrinterDepartment.BAR ? PrintDocumentType.BAR_TICKET : PrintDocumentType.KITCHEN_TICKET;
                 printService.findActivePrinter(printerDepartment).ifPresent(printer -> {
                     byte[] payload = buildTicketPayload(order, entry.getValue(), menuItemsById, printer.getCodepage(), printerDepartment);
                     printService.queueAndAttempt(
                             printer,
-                            PrintDocumentType.KITCHEN_TICKET,
+                            documentType,
                             (printerDepartment == PrinterDepartment.BAR ? "Bar ticket" : "Kitchen ticket") + " — Order #" + shortId(order.getId()),
                             payload);
                 });

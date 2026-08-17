@@ -29,14 +29,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class PrinterService {
 
     /**
-     * What CASHIER/WAITER may see in the print-job queue - kitchen/bar tickets and pre-bills
-     * only. Z-reports (shift cash reconciliation) and guest receipts (booking/payment detail)
-     * are cashier/management information, not something line staff should be able to browse or
-     * force a reprint of by guessing a job id. ADMIN/MANAGER see every document type - see
-     * {@link #isVisible}.
+     * What CASHIER/WAITER may see in the print-job queue - kitchen tickets, bar tickets, and
+     * pre-bills only. Z-reports (shift cash reconciliation) and guest receipts (booking/payment
+     * detail) are cashier/management information, not something line staff should be able to
+     * browse or force a reprint of by guessing a job id. ADMIN/MANAGER see every document type -
+     * see {@link #isVisible}.
      */
     private static final Set<PrintDocumentType> STAFF_VISIBLE_DOCUMENT_TYPES =
-            EnumSet.of(PrintDocumentType.KITCHEN_TICKET, PrintDocumentType.PREBILL);
+            EnumSet.of(PrintDocumentType.KITCHEN_TICKET, PrintDocumentType.BAR_TICKET, PrintDocumentType.PREBILL);
 
     private final PrinterRepository printerRepository;
     private final PrintJobRepository printJobRepository;

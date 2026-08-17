@@ -1342,7 +1342,7 @@ paths:
       description: >
         Requires role `WAITER` or above (i.e. any staff role) - but what comes back depends on
         who's asking. `ADMIN`/`MANAGER` see every document type. `CASHIER`/`WAITER` only see
-        `KITCHEN_TICKET`/`PREBILL` jobs - `Z_REPORT` (shift cash reconciliation) and
+        `KITCHEN_TICKET`/`BAR_TICKET`/`PREBILL` jobs - `Z_REPORT` (shift cash reconciliation) and
         `GUEST_RECEIPT` (booking/payment detail) are cashier/management information, filtered
         out rather than 403'd so line staff still get the one thing they actually need this
         endpoint for: seeing that their own kitchen/bar ticket or pre-bill didn't go through.
@@ -2522,7 +2522,11 @@ components:
 
     PrintDocumentType:
       type: string
-      enum: [KITCHEN_TICKET, PREBILL, GUEST_RECEIPT, Z_REPORT, TEST_PAGE]
+      enum: [KITCHEN_TICKET, BAR_TICKET, PREBILL, GUEST_RECEIPT, Z_REPORT, TEST_PAGE]
+      description: >
+        `KITCHEN_TICKET` and `BAR_TICKET` are the two station tickets an order send splits into
+        by `MenuItem.department` - separate values (not one type disambiguated by `summary` text)
+        so the queue can be filtered to a single station.
 
     PrintJobStatus:
       type: string
@@ -2600,7 +2604,8 @@ components:
         summary:
           type: string
           description: >
-            Human-readable one-liner, e.g. "Kitchen ticket — Order #ab12cd34" or, for a
+            Human-readable one-liner, e.g. "Kitchen ticket — Order #ab12cd34" or
+            "Bar ticket — Order #ab12cd34" or, for a
             `GUEST_RECEIPT`, "Guest receipt — Order #ab12cd34 (CARD)" /
             "Guest receipt — Order #ab12cd34 (ROOM_CHARGE — Jane Doe)" - enough to tell two
             receipts on the same order apart without opening `GET /print-jobs/{id}/preview`.

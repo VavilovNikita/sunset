@@ -16,13 +16,15 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Gets or Sets PrintDocumentType
+ * `KITCHEN_TICKET` and `BAR_TICKET` are the two station tickets an order send splits into by `MenuItem.department` - separate values (not one type disambiguated by `summary` text) so the queue can be filtered to a single station. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T08:34:38.479759300+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public enum PrintDocumentType {
   
   KITCHEN_TICKET("KITCHEN_TICKET"),
+  
+  BAR_TICKET("BAR_TICKET"),
   
   PREBILL("PREBILL"),
   
