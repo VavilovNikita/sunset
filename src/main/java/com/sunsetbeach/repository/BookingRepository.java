@@ -4,7 +4,6 @@ import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSource;
 import com.sunsetbeach.model.BookingStatus;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -53,6 +52,11 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
      */
     boolean existsByRoomUnitIdAndStatusNotAndCheckOutGreaterThan(String roomUnitId, BookingStatus excludedStatus, LocalDate from);
 
-    /** Unconfirmed public bookings past their hold window - see {@link com.sunsetbeach.service.BookingExpiryService}. */
-    List<BookingEntity> findByStatusAndSourceAndCreatedAtBefore(BookingStatus status, BookingSource source, LocalDateTime cutoff);
+    /**
+     * Every unconfirmed public booking, regardless of age - {@link com.sunsetbeach.service.BookingExpiryService}
+     * needs to run its own business-day-aware date math per row (skipping weekends), which isn't
+     * expressible as a single SQL cutoff predicate. This table is small for a hotel of this size,
+     * so fetching the whole (normally tiny or empty) NEW/PUBLIC set every sweep is cheap.
+     */
+    List<BookingEntity> findByStatusAndSource(BookingStatus status, BookingSource source);
 }

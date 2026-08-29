@@ -70,6 +70,39 @@ public class EmailService {
         }
     }
 
+    /**
+     * Staff-facing (never guest-facing) nudge for {@link BookingExpiryService}: an unconfirmed
+     * public booking is one business day away from being auto-cancelled and still needs a human
+     * decision. Deliberately the same ADMIN/MANAGER audience as {@link #sendNewBookingEmail} -
+     * this is the safety net meant to make the actual auto-cancellation a non-event in practice,
+     * not a replacement for the guest-facing "cancelled" email {@link #sendGuestStatusEmail}
+     * sends for a real, considered cancellation.
+     */
+    public void sendBookingExpiringReminderEmail(BookingEntity booking, RoomEntity room) {
+        try {
+            List<String> to = userRepository.findByRoleIn(List.of(Role.ADMIN, Role.MANAGER)).stream()
+                    .map(u -> u.getEmail())
+                    .toList();
+            if (to.isEmpty()) {
+                return;
+            }
+
+            String html = "<p>This booking request is still unconfirmed and will be automatically cancelled "
+                    + "after one more business day with no action.</p>"
+                    + "<ul>"
+                    + "<li>Room: " + room.getName() + "</li>"
+                    + "<li>Guest: " + booking.getGuestName() + " (" + booking.getGuestEmail() + ", " + booking.getGuestPhone() + ")</li>"
+                    + "<li>Check-in: " + booking.getCheckIn() + "</li>"
+                    + "<li>Check-out: " + booking.getCheckOut() + "</li>"
+                    + "</ul>"
+                    + "<p><a href=\"" + siteUrl + "/admin/bookings/" + booking.getId() + "\">Review in admin</a></p>";
+
+            send(to, "Action needed: unconfirmed booking expiring soon — " + room.getName(), html);
+        } catch (Exception e) {
+            log.error("sendBookingExpiringReminderEmail failed:", e);
+        }
+    }
+
     public void sendGuestStatusEmail(BookingEntity booking, RoomEntity room) {
         if (booking.getStatus() != BookingStatus.PAID && booking.getStatus() != BookingStatus.CANCELLED) {
             return;

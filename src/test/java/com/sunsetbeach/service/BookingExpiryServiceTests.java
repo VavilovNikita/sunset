@@ -1,6 +1,9 @@
 package com.sunsetbeach.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSource;
@@ -17,15 +20,24 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * DB-backed (real dev Postgres, rolled back after each test): covers the auto-cancellation of
  * stale, unconfirmed public bookings - the real bound on flooding POST /bookings with fake
- * reservations to hold the inventory hostage (see BookingExpiryService's javadoc). Uses the
- * configured default (24h) via app.security's test properties inherited from the app context;
- * dates here are picked well clear of that threshold in either direction so the test doesn't
- * become flaky if the default is ever tuned slightly.
+ * reservations to hold the inventory hostage - and the business-day-aware staff reminder that's
+ * meant to make the actual cancellation a rare event (see BookingExpiryService's javadoc).
+ *
+ * <p>The "N business days elapsed" boundary itself is exercised precisely and deterministically
+ * (fixed reference dates, not relative to whatever day the suite happens to run) in
+ * {@link BusinessDayCounterTests}; this class only needs to prove the sweep's wiring - fetch,
+ * decide, act - is correct, so it uses generously-clear-of-any-boundary ages ("just now" vs. "10
+ * calendar days ago", which contains far more than 2 weekdays under any possible calendar
+ * alignment) plus one property-overridden case to exercise the reminder deterministically without
+ * needing to hit an exact business-day boundary against the real clock.
  */
 @SpringBootTest
 @Transactional
@@ -43,7 +55,18 @@ class BookingExpiryServiceTests {
     @Autowired
     private EntityManager entityManager;
 
+    @MockitoSpyBean
+    private EmailService emailService;
+
     private RoomEntity room;
+
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        // Overridden per-test where a specific boundary is needed (see
+        // reminderFiresOnce_withOneBusinessDayThreshold below) - this default just documents that
+        // the property exists and is read at all.
+        registry.add("app.booking.new-booking-expiry-business-days", () -> "2");
+    }
 
     @BeforeEach
     void setUp() {
@@ -83,34 +106,49 @@ class BookingExpiryServiceTests {
     }
 
     @Test
-    void stalePublicBooking_isCancelled() {
-        BookingEntity stale = persistBooking(BookingSource.PUBLIC, LocalDateTime.now().minusHours(48));
+    void clearlyStalePublicBooking_isCancelledWithoutGuestEmail() {
+        // 10 calendar days ago contains at least 7 weekdays under any possible alignment - far
+        // past the default 2-business-day threshold regardless of which day this test runs on.
+        BookingEntity stale = persistBooking(BookingSource.PUBLIC, LocalDateTime.now().minusDays(10));
 
-        bookingExpiryService.cancelExpiredPublicBookings();
+        bookingExpiryService.sweepUnconfirmedPublicBookings();
 
         BookingEntity reloaded = bookingRepository.findById(stale.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+        // The whole point of the reminder-first design: an auto-cancellation must never trigger
+        // the guest-facing "your booking has been cancelled" email - only a human decision via
+        // BookingService.updateStatus does that.
+        verify(emailService, never()).sendGuestStatusEmail(any(), any());
     }
 
     @Test
-    void recentPublicBooking_isNotCancelled() {
-        BookingEntity fresh = persistBooking(BookingSource.PUBLIC, LocalDateTime.now().minusHours(1));
+    void freshPublicBooking_isNeitherRemindedNorCancelled() {
+        BookingEntity fresh = persistBooking(BookingSource.PUBLIC, LocalDateTime.now());
 
-        bookingExpiryService.cancelExpiredPublicBookings();
+        bookingExpiryService.sweepUnconfirmedPublicBookings();
 
         BookingEntity reloaded = bookingRepository.findById(fresh.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(BookingStatus.NEW);
+        assertThat(reloaded.isExpiryReminderSent()).isFalse();
+        verify(emailService, never()).sendBookingExpiringReminderEmail(any(), any());
     }
 
     @Test
-    void staleStaffBooking_isNeverCancelled() {
+    void staleStaffBooking_isNeverTouched() {
         // A front-desk booking is confirmed by a human at creation time - the sweep must not
-        // touch it no matter how old it is.
-        BookingEntity staleStaffBooking = persistBooking(BookingSource.STAFF, LocalDateTime.now().minusHours(48));
+        // touch it, or even consider it for a reminder, no matter how old it is.
+        BookingEntity staleStaffBooking = persistBooking(BookingSource.STAFF, LocalDateTime.now().minusDays(10));
 
-        bookingExpiryService.cancelExpiredPublicBookings();
+        bookingExpiryService.sweepUnconfirmedPublicBookings();
 
         BookingEntity reloaded = bookingRepository.findById(staleStaffBooking.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(BookingStatus.NEW);
+        assertThat(reloaded.isExpiryReminderSent()).isFalse();
+        verify(emailService, never()).sendBookingExpiringReminderEmail(any(), any());
     }
+
+    // The reminder-fires-once-then-stops behavior needs a controlled threshold to test without
+    // depending on which real weekday the suite happens to run on - see
+    // BookingExpiryServiceReminderTests, which boots its own context with
+    // app.booking.new-booking-expiry-business-days overridden to 1.
 }

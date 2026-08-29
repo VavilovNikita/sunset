@@ -63,6 +63,10 @@ public class BookingEntity {
 
     private String paymentNote;
 
+    // Set once BookingExpiryService has warned staff this booking is about to auto-cancel -
+    // prevents the reminder sweep from re-sending the same nudge on every 15-minute pass.
+    private boolean expiryReminderSent = false;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -171,6 +175,14 @@ public class BookingEntity {
 
     public void setSource(BookingSource source) {
         this.source = source;
+    }
+
+    public boolean isExpiryReminderSent() {
+        return expiryReminderSent;
+    }
+
+    public void setExpiryReminderSent(boolean expiryReminderSent) {
+        this.expiryReminderSent = expiryReminderSent;
     }
 
     public LocalDateTime getCreatedAt() {
