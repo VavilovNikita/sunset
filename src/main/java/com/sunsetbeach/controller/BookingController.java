@@ -2,13 +2,22 @@ package com.sunsetbeach.controller;
 
 import com.sunsetbeach.api.BookingsApi;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingCalendarResponse;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingPosOrder;
+import com.sunsetbeach.model.BookingScheduleInput;
+import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
+import com.sunsetbeach.model.StaffBookingCreateInput;
+import com.sunsetbeach.security.BookingRateLimiter;
+import com.sunsetbeach.security.ClientIpResolver;
+import com.sunsetbeach.service.BookingCalendarService;
 import com.sunsetbeach.service.BookingService;
+import jakarta.servlet.http.HttpServletRequest;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -21,9 +30,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class BookingController implements BookingsApi {
 
     private final BookingService bookingService;
+    private final BookingCalendarService bookingCalendarService;
+    private final BookingRateLimiter bookingRateLimiter;
+    private final HttpServletRequest request;
 
-    public BookingController(BookingService bookingService) {
+    public BookingController(
+            BookingService bookingService,
+            BookingCalendarService bookingCalendarService,
+            BookingRateLimiter bookingRateLimiter,
+            HttpServletRequest request) {
         this.bookingService = bookingService;
+        this.bookingCalendarService = bookingCalendarService;
+        this.bookingRateLimiter = bookingRateLimiter;
+        this.request = request;
     }
 
     @Override
@@ -38,6 +57,9 @@ public class BookingController implements BookingsApi {
 
     @Override
     public ResponseEntity<Booking> createBooking(BookingCreateInput bookingCreateInput) {
+        // This is the one public, unauthenticated write in the whole API - see
+        // BookingRateLimiter's javadoc for what this does and doesn't protect against.
+        bookingRateLimiter.checkAllowedAndRecord(ClientIpResolver.resolve(request));
         return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.createBooking(bookingCreateInput));
     }
 
@@ -49,6 +71,26 @@ public class BookingController implements BookingsApi {
     @Override
     public ResponseEntity<Booking> assignBookingRoomUnit(String id, RoomUnitAssignmentInput roomUnitAssignmentInput) {
         return ResponseEntity.ok(bookingService.assignRoomUnit(id, roomUnitAssignmentInput));
+    }
+
+    @Override
+    public ResponseEntity<Booking> createStaffBooking(StaffBookingCreateInput staffBookingCreateInput) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.createStaffBooking(staffBookingCreateInput));
+    }
+
+    @Override
+    public ResponseEntity<BookingCalendarResponse> getBookingsCalendar(String from, String to) {
+        return ResponseEntity.ok(bookingCalendarService.getCalendar(LocalDate.parse(from), LocalDate.parse(to)));
+    }
+
+    @Override
+    public ResponseEntity<Booking> updateBookingSchedule(String id, BookingScheduleInput bookingScheduleInput) {
+        return ResponseEntity.ok(bookingService.updateSchedule(id, bookingScheduleInput));
+    }
+
+    @Override
+    public ResponseEntity<BookingScheduleQuote> quoteBookingSchedule(String id, BookingScheduleInput bookingScheduleInput) {
+        return ResponseEntity.ok(bookingService.quoteSchedule(id, bookingScheduleInput));
     }
 
     @Override

@@ -3,6 +3,7 @@ package com.sunsetbeach.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.sunsetbeach.entity.RatePlanEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitBlockEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
@@ -11,10 +12,13 @@ import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.model.AvailabilityDay;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCreateInput;
+import com.sunsetbeach.model.BookingScheduleInput;
+import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.RatePlanRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
@@ -70,12 +74,17 @@ class BookingAvailabilityEngineTests {
     @Autowired
     private BookingRepository bookingRepository;
 
+    @Autowired
+    private RatePlanRepository ratePlanRepository;
+
     private final List<String> createdRoomIds = new ArrayList<>();
 
     @AfterEach
     void cleanUp() {
         for (String roomId : createdRoomIds) {
             bookingRepository.deleteAll(bookingRepository.findByRoomId(roomId));
+            ratePlanRepository.deleteAll(
+                    ratePlanRepository.findByRoomIdAndDateBetween(roomId, LocalDate.of(2000, 1, 1), LocalDate.of(2100, 1, 1)));
             for (RoomUnitEntity unit : roomUnitRepository.findByRoomId(roomId)) {
                 roomUnitBlockRepository.deleteAll(roomUnitBlockRepository.findByRoomUnitId(unit.getId()));
             }
@@ -112,7 +121,17 @@ class BookingAvailabilityEngineTests {
     }
 
     private Booking assign(String bookingId, String roomUnitId) {
-        return bookingService.assignRoomUnit(bookingId, new RoomUnitAssignmentInput(roomUnitId));
+        return bookingService.assignRoomUnit(bookingId, new RoomUnitAssignmentInput().roomUnitId(roomUnitId));
+    }
+
+    private Booking updateSchedule(String bookingId, LocalDate checkIn, LocalDate checkOut, String roomUnitId) {
+        return bookingService.updateSchedule(
+                bookingId, new BookingScheduleInput(checkIn.toString(), checkOut.toString()).roomUnitId(roomUnitId));
+    }
+
+    private BookingScheduleQuote quoteSchedule(String bookingId, LocalDate checkIn, LocalDate checkOut, String roomUnitId) {
+        return bookingService.quoteSchedule(
+                bookingId, new BookingScheduleInput(checkIn.toString(), checkOut.toString()).roomUnitId(roomUnitId));
     }
 
     @Test
@@ -330,6 +349,183 @@ class BookingAvailabilityEngineTests {
 
         assertThat(firstAssigned.getRoomUnitId().get()).isEqualTo(unit.getId());
         assertThat(secondAssigned.getRoomUnitId().get()).isEqualTo(unit.getId());
+    }
+
+    // --- PATCH /bookings/{id}/schedule (BookingService.updateSchedule / BookingWriter.updateSchedule) ---
+
+    @Test
+    void updateSchedule_extendsStay_recalculatesPriceFromRatePlan_notProportionally() {
+        RoomEntity room = createRoom(1);
+        LocalDate checkIn = LocalDate.now().plusDays(110);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkOut));
+
+        // The night being added by the extension gets a RatePlan override far from basePrice -
+        // a naive "scale totalPrice by the new/old night count" implementation would get this
+        // wrong; only summing basePrice/RatePlan per night, as BookingWriter.computeTotalPrice
+        // does, gets it right.
+        RatePlanEntity override = new RatePlanEntity();
+        override.setRoomId(room.getId());
+        override.setDate(checkOut); // the new night added by extending checkOut by one day
+        override.setPrice(new BigDecimal("9000.00"));
+        ratePlanRepository.saveAndFlush(override);
+
+        Booking extended = updateSchedule(booking.getId(), checkIn, checkOut.plusDays(1), null);
+
+        // 2 nights at basePrice (1000.00 each, see createRoom) + 1 night at the override (9000.00).
+        assertThat(new BigDecimal(extended.getTotalPrice())).isEqualByComparingTo("11000.00");
+    }
+
+    @Test
+    void updateSchedule_extendIntoOccupiedDates_isRejected() {
+        RoomEntity room = createRoom(1);
+        LocalDate checkIn = LocalDate.now().plusDays(120);
+        LocalDate turnoverDay = checkIn.plusDays(2);
+        Booking booking = bookingService.createBooking(bookingInput(room.getId(), checkIn, turnoverDay));
+        // Occupies the room's only unit right where `booking` would need to extend into.
+        bookingService.createBooking(bookingInput(room.getId(), turnoverDay, turnoverDay.plusDays(2)));
+
+        assertThatThrownBy(() -> updateSchedule(booking.getId(), checkIn, turnoverDay.plusDays(2), null))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void updateSchedule_transferToDifferentRoomType_isRejectedWithReason() {
+        RoomEntity room = createRoom(1);
+        RoomEntity otherRoom = createRoom(1);
+        LocalDate checkIn = LocalDate.now().plusDays(130);
+        Booking booking = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkIn.plusDays(1)));
+        RoomUnitEntity otherUnit = roomUnitRepository.findByRoomId(otherRoom.getId()).get(0);
+
+        assertThatThrownBy(() -> updateSchedule(booking.getId(), checkIn, checkIn.plusDays(1), otherUnit.getId()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("different room type");
+    }
+
+    @Test
+    void updateSchedule_transferToBlockedUnit_isRejected() {
+        RoomEntity room = createRoom(2);
+        LocalDate checkIn = LocalDate.now().plusDays(140);
+        LocalDate checkOut = checkIn.plusDays(2);
+        Booking booking = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkOut));
+        RoomUnitEntity targetUnit = roomUnitRepository.findByRoomId(room.getId()).get(1);
+
+        RoomUnitBlockEntity block = new RoomUnitBlockEntity();
+        block.setRoomUnitId(targetUnit.getId());
+        block.setFromDate(checkIn);
+        block.setToDate(checkOut);
+        block.setReason("Plumbing repair");
+        roomUnitBlockRepository.saveAndFlush(block);
+
+        assertThatThrownBy(() -> updateSchedule(booking.getId(), checkIn, checkOut, targetUnit.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Plumbing repair");
+    }
+
+    @Test
+    void updateSchedule_backToBackTransfers_bothSucceed() {
+        RoomEntity room = createRoom(1);
+        LocalDate checkIn = LocalDate.now().plusDays(150);
+        LocalDate turnoverDay = checkIn.plusDays(2);
+        RoomUnitEntity unit = roomUnitRepository.findByRoomId(room.getId()).get(0);
+
+        Booking first = bookingService.createBooking(bookingInput(room.getId(), checkIn, turnoverDay));
+        Booking second = bookingService.createBooking(bookingInput(room.getId(), turnoverDay, turnoverDay.plusDays(2)));
+
+        Booking firstAssigned = updateSchedule(first.getId(), checkIn, turnoverDay, unit.getId());
+        Booking secondAssigned = updateSchedule(second.getId(), turnoverDay, turnoverDay.plusDays(2), unit.getId());
+
+        assertThat(firstAssigned.getRoomUnitId().get()).isEqualTo(unit.getId());
+        assertThat(secondAssigned.getRoomUnitId().get()).isEqualTo(unit.getId());
+    }
+
+    @Test
+    void updateSchedule_concurrentTransferOfTwoBookingsToSameFreeUnit_exactlyOneSucceeds() throws Exception {
+        RoomEntity room = createRoom(2);
+        LocalDate checkIn = LocalDate.now().plusDays(160);
+        LocalDate checkOut = checkIn.plusDays(2);
+        RoomUnitEntity unit1 = roomUnitRepository.findByRoomId(room.getId()).get(0);
+        RoomUnitEntity freeUnit = roomUnitRepository.findByRoomId(room.getId()).get(1);
+
+        // Two overlapping bookings the room's 2 units can both hold at the type level - occupy
+        // unit1 with one of them first so only `freeUnit` is actually up for grabs below.
+        Booking bookingA = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkOut));
+        Booking bookingB = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkOut));
+        assign(bookingA.getId(), unit1.getId());
+
+        // bookingA is already on unit1; race bookingA and bookingB for the one remaining unit via
+        // updateSchedule (not assignRoomUnit) - both attempt to (re)assign the same free unit.
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        Callable<Object> attemptA = () -> {
+            barrier.await();
+            try {
+                return updateSchedule(bookingA.getId(), checkIn, checkOut, freeUnit.getId());
+            } catch (Exception e) {
+                return e;
+            }
+        };
+        Callable<Object> attemptB = () -> {
+            barrier.await();
+            try {
+                return updateSchedule(bookingB.getId(), checkIn, checkOut, freeUnit.getId());
+            } catch (Exception e) {
+                return e;
+            }
+        };
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Object> results;
+        try {
+            Future<Object> f1 = pool.submit(attemptA);
+            Future<Object> f2 = pool.submit(attemptB);
+            results = List.of(f1.get(), f2.get());
+        } finally {
+            pool.shutdown();
+        }
+
+        long successCount = results.stream().filter(r -> r instanceof Booking).count();
+        long conflictCount = results.stream().filter(r -> r instanceof ConflictException).count();
+        assertThat(successCount).isEqualTo(1);
+        assertThat(conflictCount).isEqualTo(1);
+    }
+
+    @Test
+    void updateSchedule_withoutAssignedUnit_datesChange_staysUnassigned() {
+        RoomEntity room = createRoom(1);
+        LocalDate checkIn = LocalDate.now().plusDays(170);
+        LocalDate checkOut = checkIn.plusDays(1);
+        Booking booking = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkOut));
+        assertThat(booking.getRoomUnitId().get()).isNull();
+
+        Booking updated = updateSchedule(booking.getId(), checkIn.plusDays(1), checkOut.plusDays(3), null);
+
+        assertThat(updated.getRoomUnitId().get()).isNull();
+        assertThat(updated.getCheckIn().toLocalDate()).isEqualTo(checkIn.plusDays(1));
+        assertThat(updated.getCheckOut().toLocalDate()).isEqualTo(checkOut.plusDays(3));
+    }
+
+    @Test
+    void quoteSchedule_conflictingTransfer_reportsUnavailableWithReason_withoutThrowing() {
+        RoomEntity room = createRoom(2);
+        LocalDate checkIn = LocalDate.now().plusDays(180);
+        LocalDate checkOut = checkIn.plusDays(2);
+        RoomUnitEntity blockedUnit = roomUnitRepository.findByRoomId(room.getId()).get(0);
+        Booking booking = bookingService.createBooking(bookingInput(room.getId(), checkIn, checkOut));
+
+        RoomUnitBlockEntity block = new RoomUnitBlockEntity();
+        block.setRoomUnitId(blockedUnit.getId());
+        block.setFromDate(checkIn);
+        block.setToDate(checkOut);
+        block.setReason("Pest control");
+        roomUnitBlockRepository.saveAndFlush(block);
+
+        BookingScheduleQuote quote = quoteSchedule(booking.getId(), checkIn, checkOut, blockedUnit.getId());
+
+        assertThat(quote.getAvailable()).isFalse();
+        assertThat(quote.getReason().get()).contains("Pest control");
+        // totalPrice is still computed - it's pure arithmetic over dates, independent of
+        // whether the requested room assignment would actually succeed.
+        assertThat(new BigDecimal(quote.getTotalPrice())).isEqualByComparingTo("2000.00");
     }
 
     private AvailabilityDay dayFor(String roomId, LocalDate date) {

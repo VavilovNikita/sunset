@@ -21,7 +21,7 @@ import jakarta.annotation.Generated;
  * Safe projection returned by the API — &#x60;passwordHash&#x60; is never included.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-29T20:42:01.613848400+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class User {
 
   private String id;
@@ -29,6 +29,8 @@ public class User {
   private String email;
 
   private Role role;
+
+  private Boolean active;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
@@ -40,10 +42,11 @@ public class User {
   /**
    * Constructor with only required parameters
    */
-  public User(String id, String email, Role role, OffsetDateTime createdAt) {
+  public User(String id, String email, Role role, Boolean active, OffsetDateTime createdAt) {
     this.id = id;
     this.email = email;
     this.role = role;
+    this.active = active;
     this.createdAt = createdAt;
   }
 
@@ -104,6 +107,25 @@ public class User {
     this.role = role;
   }
 
+  public User active(Boolean active) {
+    this.active = active;
+    return this;
+  }
+
+  /**
+   * Whether this account can currently authenticate. A disabled account's already-issued tokens are rejected on their very next request regardless of remaining validity - see `PATCH /users/{id}/active`. 
+   * @return active
+   */
+  @NotNull 
+  @JsonProperty("active")
+  public Boolean getActive() {
+    return active;
+  }
+
+  public void setActive(Boolean active) {
+    this.active = active;
+  }
+
   public User createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -135,12 +157,13 @@ public class User {
     return Objects.equals(this.id, user.id) &&
         Objects.equals(this.email, user.email) &&
         Objects.equals(this.role, user.role) &&
+        Objects.equals(this.active, user.active) &&
         Objects.equals(this.createdAt, user.createdAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, email, role, createdAt);
+    return Objects.hash(id, email, role, active, createdAt);
   }
 
   @Override
@@ -150,6 +173,7 @@ public class User {
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    email: ").append(toIndentedString(email)).append("\n");
     sb.append("    role: ").append(toIndentedString(role)).append("\n");
+    sb.append("    active: ").append(toIndentedString(active)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();

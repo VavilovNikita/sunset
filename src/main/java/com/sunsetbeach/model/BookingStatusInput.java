@@ -112,7 +112,8 @@ public class BookingStatusInput {
     StringBuilder sb = new StringBuilder();
     sb.append("class BookingStatusInput {\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
-    sb.append("    paymentNote: ").append(toIndentedString(paymentNote)).append("\n");
+    // Redacted (hand-edited after codegen, reapply on regeneration) - see Booking.java's toString.
+    sb.append("    paymentNote: [REDACTED]\n");
     sb.append("}");
     return sb.toString();
   }

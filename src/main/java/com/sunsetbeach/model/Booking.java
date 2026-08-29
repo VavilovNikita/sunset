@@ -23,7 +23,7 @@ import jakarta.annotation.Generated;
  * Raw Prisma &#x60;Booking&#x60; row with &#x60;room&#x60; included. &#x60;totalPrice&#x60; serializes as a **string** (Prisma &#x60;Decimal&#x60;). &#x60;checkIn&#x60;, &#x60;checkOut&#x60;, &#x60;createdAt&#x60;, &#x60;updatedAt&#x60; serialize as ISO-8601 datetime strings (&#x60;checkIn&#x60;/&#x60;checkOut&#x60; are date-only columns but still render with a &#x60;T00:00:00.000Z&#x60; time component since Prisma returns &#x60;Date&#x60; objects). &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60; are null until a physical room is assigned via &#x60;PUT /bookings/{id}/room-unit&#x60; - &#x60;roomId&#x60;/&#x60;room&#x60; (the room *type*) stay the source of truth for what was booked either way. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T21:43:17.277610500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class Booking {
 
   private String id;
@@ -243,7 +243,7 @@ public class Booking {
   }
 
   /**
-   * Get checkIn
+   * ⚠ Datetime string with a legacy `T00:00:00.000Z` time component (Prisma artifact), NOT the same format as `CalendarBooking.checkIn` (plain date). Frontend code must go through `dateOnlyUTC()` (`lib/bookings.ts`), never slice/parse manually - a prior bug here silently zeroed dashboard revenue/occupancy numbers. 
    * @return checkIn
    */
   @NotNull @Valid 
@@ -262,7 +262,7 @@ public class Booking {
   }
 
   /**
-   * Get checkOut
+   * ⚠ Datetime string with a legacy `T00:00:00.000Z` time component (Prisma artifact), NOT the same format as `CalendarBooking.checkOut` (plain date). Frontend code must go through `dateOnlyUTC()` (`lib/bookings.ts`), never slice/parse manually - a prior bug here silently zeroed dashboard revenue/occupancy numbers. 
    * @return checkOut
    */
   @NotNull @Valid 
@@ -411,13 +411,18 @@ public class Booking {
     sb.append("    roomUnitId: ").append(toIndentedString(roomUnitId)).append("\n");
     sb.append("    roomUnit: ").append(toIndentedString(roomUnit)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
-    sb.append("    guestEmail: ").append(toIndentedString(guestEmail)).append("\n");
-    sb.append("    guestPhone: ").append(toIndentedString(guestPhone)).append("\n");
+    // guestEmail/guestPhone are redacted here (hand-edited after codegen, reapply on
+    // regeneration): guest personal data must not leak into a stray log.debug/log.info that
+    // logs this object, which toString() would otherwise make trivial to do by accident.
+    sb.append("    guestEmail: [REDACTED]\n");
+    sb.append("    guestPhone: [REDACTED]\n");
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
-    sb.append("    paymentNote: ").append(toIndentedString(paymentNote)).append("\n");
+    // Redacted for the same reason as guestEmail/guestPhone above - paymentNote is free text
+    // staff enters and may (against guidance) contain something sensitive.
+    sb.append("    paymentNote: [REDACTED]\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("}");

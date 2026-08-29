@@ -6,13 +6,18 @@
 package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingCalendarResponse;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingPosOrder;
+import com.sunsetbeach.model.BookingScheduleInput;
+import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
+import com.sunsetbeach.model.SetRoomPricing400Response;
+import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -29,7 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T20:15:43.239949+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T21:43:17.277610500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface BookingsApi {
 
@@ -129,6 +134,67 @@ public interface BookingsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /bookings/staff : Create a booking as staff (front-desk / walk-in), optionally assigning a room immediately
+     * Requires CASHIER or above. Distinct from the public &#x60;POST /bookings&#x60; guest-inquiry flow: no new-booking notification email is sent, guest email/phone are optional (a walk-in may not have one on hand), and if &#x60;roomUnitId&#x60; is given the room is assigned in the same &#x60;Serializable&#x60; transaction as the booking - never a separate call, so there is no window where the booking exists without the room the staff member asked for. &#x60;totalPrice&#x60; is always server-computed from &#x60;Room.basePrice&#x60;/&#x60;RatePlan&#x60;, same as every other booking creation path. 
+     *
+     * @param staffBookingCreateInput  (required)
+     * @return Booking created (and room assigned, if &#x60;roomUnitId&#x60; was given). (status code 201)
+     *         or Body failed validation, or &#x60;roomUnitId&#x60; belongs to a different room type / is not active. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Room (or room unit) not found. (status code 404)
+     *         or Requested dates are no longer available at the type level, or &#x60;roomUnitId&#x60; is blocked or already booked for an overlapping stay - either found up front or from a concurrent conflicting request (Postgres serialization failure, SQLSTATE &#x60;40001&#x60;). The whole operation is atomic: on conflict, no booking is created at all.  (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/bookings/staff",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<Booking> createStaffBooking(
+         @Valid @RequestBody StaffBookingCreateInput staffBookingCreateInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -274,6 +340,50 @@ public interface BookingsApi {
 
 
     /**
+     * GET /bookings/calendar : Get everything the booking calendar grid needs for a date range
+     * Requires CASHIER or above. Answers a different question than &#x60;GET /availability/{roomId}&#x60; - that endpoint is a per-room-type, per-month occupancy/pricing matrix (booleans and counts); this one is a booking-identity read model across every room type at once (guest name, status, exact &#x60;bookingId&#x60; per stay) for rendering and driving the drag/resize calendar grid. Deliberately a new purpose-built endpoint rather than a third way to compute availability: it does not duplicate &#x60;GET /availability/{roomId}&#x60;&#39;s per-day occupancy formula (the shared server-side computation both endpoints rely on for &#x60;availableCount&#x60; lives in one place, see &#x60;RoomTypeDailyAvailability&#x60;), it just also returns booking/guest identity that endpoint never has. &#x60;from&#x60;/&#x60;to&#x60; accept an arbitrary range (not just a calendar month) capped at 92 days. 
+     *
+     * @param from  (required)
+     * @param to Exclusive end of the range (same &#x60;[from, to)&#x60; convention as a stay). (required)
+     * @return Calendar data for &#x60;[from, to)&#x60;. (status code 200)
+     *         or Malformed dates, &#x60;from &gt;&#x3D; to&#x60;, or range exceeds 92 days. (status code 400)
+     *         or No valid JWT. (status code 401)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/bookings/calendar",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<BookingCalendarResponse> getBookingsCalendar(
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = true) String from,
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = true) String to
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"roomTypes\" : [ { \"roomUnits\" : [ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" } ], \"dailyAvailable\" : [ { \"date\" : \"date\", \"availableCount\" : 0 }, { \"date\" : \"date\", \"availableCount\" : 0 } ], \"roomId\" : \"roomId\", \"roomName\" : \"roomName\" }, { \"roomUnits\" : [ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" } ], \"dailyAvailable\" : [ { \"date\" : \"date\", \"availableCount\" : 0 }, { \"date\" : \"date\", \"availableCount\" : 0 } ], \"roomId\" : \"roomId\", \"roomName\" : \"roomName\" } ], \"blocks\" : [ { \"fromDate\" : \"fromDate\", \"reason\" : \"reason\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"toDate\" : \"toDate\", \"id\" : \"id\", \"roomUnitId\" : \"roomUnitId\" }, { \"fromDate\" : \"fromDate\", \"reason\" : \"reason\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"toDate\" : \"toDate\", \"id\" : \"id\", \"roomUnitId\" : \"roomUnitId\" } ], \"from\" : \"from\", \"to\" : \"to\", \"bookings\" : [ { \"checkIn\" : \"checkIn\", \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"status\" : \"NEW\" }, { \"checkIn\" : \"checkIn\", \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"status\" : \"NEW\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * GET /bookings/{id}/pos-orders : List POS orders charged to a booking&#39;s room folio
      * Requires any authenticated staff session. One entry per &#x60;Order&#x60; that has a &#x60;Payment&#x60; with &#x60;method&#x3D;ROOM_CHARGE&#x60; and &#x60;bookingId&#x60; equal to this booking (built from the same underlying query &#x60;BookingService.computeFolio&#x60; sums over - see that method&#39;s Javadoc). Each entry carries a short item breakdown so the admin \&quot;Room charges\&quot; view can render without a follow-up &#x60;GET /orders/{id}&#x60; per row. 
      *
@@ -340,6 +450,126 @@ public interface BookingsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "[ { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /bookings/{id}/schedule/quote : Preview the price/availability of a schedule change without applying it
+     * Requires CASHIER or above. Non-mutating preview for &#x60;PATCH /bookings/{id}/schedule&#x60; - same request body, no &#x60;Serializable&#x60; transaction (nothing is written), so this is advisory only: the apply call re-validates from scratch and is the sole source of truth. A separate operation rather than a &#x60;dryRun&#x60; flag on the PATCH above, so the two contracts stay simple - one always mutates and returns the updated &#x60;Booking&#x60;, the other never mutates and always returns a quote, instead of one endpoint whose response shape depends on a flag. Used by the booking calendar grid to show the recalculated price and a would-this-succeed signal before the user confirms a drag/resize. 
+     *
+     * @param id  (required)
+     * @param bookingScheduleInput  (required)
+     * @return Computed price and availability for the requested schedule. Returned even when &#x60;available: false&#x60; - this is a successful computation whose answer is \&quot;no\&quot;, not an error.  (status code 200)
+     *         or Body failed validation (includes &#x60;checkIn &lt; checkOut&#x60;). (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Booking not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/bookings/{id}/schedule/quote",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<BookingScheduleQuote> quoteBookingSchedule(
+         @PathVariable("id") String id,
+         @Valid @RequestBody BookingScheduleInput bookingScheduleInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"reason\" : \"reason\", \"totalPrice\" : \"totalPrice\", \"nights\" : 0, \"available\" : true }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /bookings/{id}/schedule : Change a booking&#39;s dates and/or physical room in one operation
+     * Requires CASHIER or above. One operation for what the booking calendar grid does with a mouse - extend/shorten a stay, move to a different room, or both at once - rather than three separate endpoints: dragging a reservation to a new row *and* new dates at the same time must not pass through an intermediate state where only one has changed. &#x60;totalPrice&#x60; is always recomputed server-side from &#x60;Room.basePrice&#x60;/&#x60;RatePlan&#x60; for the new dates, never accepted from the client. Re-validates availability with the same &#x60;Serializable&#x60; race-safety as &#x60;POST /bookings&#x60; / &#x60;PUT /bookings/{id}/room-unit&#x60;, correctly excluding the booking&#39;s own current reservation from the conflict check (so extending a stay is never blocked by the booking&#39;s own prior dates). See &#x60;POST /bookings/{id}/schedule/quote&#x60; to preview the new price/availability before calling this. 
+     *
+     * @param id  (required)
+     * @param bookingScheduleInput  (required)
+     * @return Updated booking. (status code 200)
+     *         or Body failed validation (includes &#x60;checkIn &lt; checkOut&#x60;), or &#x60;roomUnitId&#x60; belongs to a different room type / is not active. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Booking or room unit not found. (status code 404)
+     *         or The new dates are no longer available at the type level, or &#x60;roomUnitId&#x60; is blocked or already booked for an overlapping stay - either found up front or from a concurrent conflicting change (Postgres serialization failure, SQLSTATE &#x60;40001&#x60;).  (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/bookings/{id}/schedule",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<Booking> updateBookingSchedule(
+         @PathVariable("id") String id,
+         @Valid @RequestBody BookingScheduleInput bookingScheduleInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

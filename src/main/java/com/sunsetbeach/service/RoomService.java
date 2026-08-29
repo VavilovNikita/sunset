@@ -167,17 +167,40 @@ public class RoomService {
         room.setImages(remaining.toArray(new String[0]));
         RoomEntity saved = roomRepository.save(room);
 
-        String prefix = "/uploads/rooms/" + room.getId() + "/";
-        if (imagePath.startsWith(prefix)) {
-            String filename = imagePath.substring(prefix.length());
-            try {
-                Files.deleteIfExists(uploadsRoot.resolve("rooms").resolve(room.getId()).resolve(filename));
-            } catch (IOException ignored) {
-                // best-effort, matches the JS route's .catch(() => {})
-            }
-        }
+        deleteFileIfWithinRoomDirectory(room.getId(), imagePath);
 
         return roomMapper.toDto(saved);
+    }
+
+    /**
+     * Best-effort disk cleanup for an image path just removed from {@code Room.images}. Mirrors
+     * {@link RoomImageService#resolve}'s containment check (reject any path segment separator in
+     * the filename outright, then require the resolved, normalized path to still live under this
+     * room's own directory) rather than the plain string-prefix check this used to do, which a
+     * path like {@code /uploads/rooms/{id}/../../../some-other-file} would pass without ever
+     * actually resolving under this room's directory.
+     */
+    private void deleteFileIfWithinRoomDirectory(String roomId, String imagePath) {
+        String prefix = "/uploads/rooms/" + roomId + "/";
+        if (!imagePath.startsWith(prefix)) {
+            return;
+        }
+        String filename = imagePath.substring(prefix.length());
+        if (filename.contains("/") || filename.contains("\\")) {
+            return;
+        }
+
+        Path roomDir = uploadsRoot.resolve("rooms").resolve(roomId).normalize();
+        Path file = roomDir.resolve(filename).normalize();
+        if (!file.startsWith(roomDir)) {
+            return;
+        }
+
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException ignored) {
+            // best-effort, matches the JS route's .catch(() => {})
+        }
     }
 
     private static String randomFilename(String extension) {

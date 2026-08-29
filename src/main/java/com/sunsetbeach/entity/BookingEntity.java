@@ -56,6 +56,11 @@ public class BookingEntity {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private BookingStatus status;
 
+    // Never serialized to the API - see BookingSource's javadoc.
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private BookingSource source = BookingSource.PUBLIC;
+
     private String paymentNote;
 
     @CreationTimestamp
@@ -158,6 +163,14 @@ public class BookingEntity {
 
     public void setPaymentNote(String paymentNote) {
         this.paymentNote = paymentNote;
+    }
+
+    public BookingSource getSource() {
+        return source;
+    }
+
+    public void setSource(BookingSource source) {
+        this.source = source;
     }
 
     public LocalDateTime getCreatedAt() {

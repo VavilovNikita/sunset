@@ -259,11 +259,12 @@ class ShiftExportTests {
 
     @Test
     void exportCsv_summary_roomChargeExcludedFromReceivedAndExpectedCash() {
+        // A separate order per payment - Payment.orderId is now unique (one payment closes one
+        // order, no partial-payment model), so three payments against a shift means three orders.
         ShiftEntity shift = persistShift(new BigDecimal("1000.00"), null);
-        OrderEntity order = persistOrder(null);
-        persistPayment(shift, PaymentMethod.CASH, "200.00", order, null);
-        persistPayment(shift, PaymentMethod.CARD, "300.00", order, null);
-        persistPayment(shift, PaymentMethod.ROOM_CHARGE, "5000.00", order, null);
+        persistPayment(shift, PaymentMethod.CASH, "200.00", persistOrder(null), null);
+        persistPayment(shift, PaymentMethod.CARD, "300.00", persistOrder(null), null);
+        persistPayment(shift, PaymentMethod.ROOM_CHARGE, "5000.00", persistOrder(null), null);
 
         String csv = shiftService.exportCsv(shift.getId());
 
@@ -337,11 +338,11 @@ class ShiftExportTests {
 
     @Test
     void exportCsv_paymentCount_matchesNumberOfPayments() {
+        // Separate order per payment - see exportCsv_summary_roomChargeExcludedFromReceivedAndExpectedCash.
         ShiftEntity shift = persistShift(new BigDecimal("0.00"), null);
-        OrderEntity order = persistOrder(null);
-        persistPayment(shift, PaymentMethod.CASH, "10.00", order, null);
-        persistPayment(shift, PaymentMethod.CARD, "20.00", order, null);
-        persistPayment(shift, PaymentMethod.OTHER, "5.00", order, null);
+        persistPayment(shift, PaymentMethod.CASH, "10.00", persistOrder(null), null);
+        persistPayment(shift, PaymentMethod.CARD, "20.00", persistOrder(null), null);
+        persistPayment(shift, PaymentMethod.OTHER, "5.00", persistOrder(null), null);
 
         String csv = shiftService.exportCsv(shift.getId());
 

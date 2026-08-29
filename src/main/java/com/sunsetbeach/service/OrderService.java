@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -248,7 +249,16 @@ public class OrderService {
         payment.setBookingId(bookingId);
         payment.setRecordedByUserId(cashierUserId);
         payment.setShiftId(shift.getId());
-        paymentRepository.save(payment);
+        try {
+            // Flushed immediately (not left for the save-and-flush below) so the unique
+            // constraint on Payment.orderId - the real guard against two concurrent closes of
+            // the same order both passing the CLOSED_STATUSES check above before either commits -
+            // is checked right here, in this method's own try/catch, rather than surfacing later
+            // as an unrelated-looking failure.
+            paymentRepository.saveAndFlush(payment);
+        } catch (DataIntegrityViolationException e) {
+            throw new ConflictException("This order was already closed by another request.");
+        }
 
         order.setStatus(OrderStatus.PAID);
         OrderEntity saved = orderRepository.saveAndFlush(order);

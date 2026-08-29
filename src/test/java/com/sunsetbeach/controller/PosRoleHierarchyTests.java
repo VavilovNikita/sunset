@@ -12,9 +12,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sunsetbeach.config.JacksonConfig;
+import com.sunsetbeach.entity.UserEntity;
+import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.model.AvailabilityResponse;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingCalendarResponse;
+import com.sunsetbeach.model.BookingScheduleInput;
+import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.MenuItem;
@@ -54,6 +60,8 @@ import com.sunsetbeach.service.UserService;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -84,7 +92,8 @@ import tools.jackson.databind.json.JsonMapper;
             PricingController.class,
             AvailabilityController.class
         })
-@Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class})
+@Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
+        com.sunsetbeach.security.BookingRateLimiter.class})
 class PosRoleHierarchyTests {
 
     private static final String JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long!!";
@@ -123,6 +132,9 @@ class PosRoleHierarchyTests {
     private BookingService bookingService;
 
     @MockitoBean
+    private com.sunsetbeach.service.BookingCalendarService bookingCalendarService;
+
+    @MockitoBean
     private RoomService roomService;
 
     @MockitoBean
@@ -131,10 +143,25 @@ class PosRoleHierarchyTests {
     @MockitoBean
     private AvailabilityService availabilityService;
 
+    // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
+    // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
+    // "user-1" regardless of role, so one stub covers every test.
+    @MockitoBean
+    private UserRepository userRepository;
+
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("app.security.jwt-secret", () -> JWT_SECRET);
         registry.add("app.security.jwt-ttl-days", () -> "7");
+    }
+
+    @BeforeEach
+    void stubActiveUser() {
+        UserEntity entity = new UserEntity();
+        entity.setId("user-1");
+        entity.setEmail("user-1@example.com");
+        entity.setActive(true);
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(entity));
     }
 
     private String token(Role role) {
@@ -161,6 +188,44 @@ class PosRoleHierarchyTests {
     @Test
     void usersList_withWaiterToken_isForbidden() throws Exception {
         mockMvc.perform(get("/users").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void resetUserPassword_withManagerToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/users/user-2/password")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\":\"a-new-password1\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void resetUserPassword_withAdminToken_isOk() throws Exception {
+        when(userService.resetPassword(eq("user-2"), anyString())).thenReturn(sampleUser());
+        mockMvc.perform(patch("/users/user-2/password")
+                        .header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\":\"a-new-password1\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void updateUserActive_withManagerToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/users/user-2/active")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"active\":false}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateUserActive_withAdminToken_isOk() throws Exception {
+        when(userService.setActive(eq("user-2"), anyString(), eq(false))).thenReturn(sampleUser());
+        mockMvc.perform(patch("/users/user-2/active")
+                        .header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"active\":false}"))
+                .andExpect(status().isOk());
     }
 
     // --- POST /menu requires MANAGER or above ---
@@ -394,7 +459,7 @@ class PosRoleHierarchyTests {
         mockMvc.perform(put("/bookings/booking-1/room-unit")
                         .header("Authorization", token(Role.WAITER))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RoomUnitAssignmentInput("unit-1"))))
+                        .content(objectMapper.writeValueAsString(new RoomUnitAssignmentInput().roomUnitId("unit-1"))))
                 .andExpect(status().isForbidden());
     }
 
@@ -404,7 +469,28 @@ class PosRoleHierarchyTests {
         mockMvc.perform(put("/bookings/booking-1/room-unit")
                         .header("Authorization", token(Role.CASHIER))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RoomUnitAssignmentInput("unit-1"))))
+                        .content(objectMapper.writeValueAsString(new RoomUnitAssignmentInput().roomUnitId("unit-1"))))
+                .andExpect(status().isOk());
+    }
+
+    /**
+     * Regression test for a real bug this endpoint had: {@code roomUnitId} used to be listed
+     * under {@code required} in openapi.yaml (nullable but required-present), which made the
+     * generator emit {@code @NotNull} on the {@code JsonNullable<String>} getter. Because
+     * {@code org.openapitools:jackson-databind-nullable}'s Jakarta integration registers an
+     * {@code @UnwrapByDefault ValueExtractor} for {@code JsonNullable}, that {@code @NotNull}
+     * validated the *unwrapped* value - silently rejecting the exact {@code roomUnitId: null}
+     * payload this endpoint exists to accept, with a 400 instead of clearing the assignment. No
+     * prior test sent an explicit JSON {@code null} through the real {@code @Valid} pipeline
+     * (existing coverage only exercised non-null assignment), so this went uncaught.
+     */
+    @Test
+    void assignBookingRoomUnit_withExplicitNull_unassigns() throws Exception {
+        when(bookingService.assignRoomUnit(eq("booking-1"), any())).thenReturn(sampleBooking());
+        mockMvc.perform(put("/bookings/booking-1/room-unit")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomUnitId\":null}"))
                 .andExpect(status().isOk());
     }
 
@@ -420,6 +506,15 @@ class PosRoleHierarchyTests {
         mockMvc.perform(get("/rooms").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
     }
 
+    // CASHIER+ (not just MANAGER+): a CASHIER quoting a room type to a walk-in via
+    // POST /bookings/staff needs to read this list through an authenticated endpoint - see
+    // SecurityConfig's GET /rooms, /rooms/* rule and openapi.yaml's updated description.
+    @Test
+    void listRooms_withCashierToken_isOk() throws Exception {
+        when(roomService.list()).thenReturn(List.of());
+        mockMvc.perform(get("/rooms").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
+    }
+
     @Test
     void listRooms_withManagerToken_isOk() throws Exception {
         when(roomService.list()).thenReturn(List.of());
@@ -427,14 +522,42 @@ class PosRoleHierarchyTests {
     }
 
     @Test
-    void getRoomPricing_withCashierToken_isForbidden() throws Exception {
-        mockMvc.perform(get("/pricing/room-1").header("Authorization", token(Role.CASHIER))).andExpect(status().isForbidden());
+    void createRoom_withCashierToken_isForbidden() throws Exception {
+        // Reads are CASHIER+, writes stay MANAGER-only - same read/write split as RoomUnits.
+        mockMvc.perform(post("/rooms")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"x\",\"description\":\"x\",\"capacity\":1,\"quantity\":1,\"basePrice\":\"100.00\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getRoomPricing_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/pricing/room-1").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    // CASHIER+ (not just MANAGER+): same reasoning as GET /rooms above - a CASHIER needs to
+    // quote a price to a walk-in guest through an authenticated endpoint.
+    @Test
+    void getRoomPricing_withCashierToken_isOk() throws Exception {
+        when(pricingService.getPricing(eq("room-1"), any())).thenReturn(new PricingResponse(BigDecimal.TEN, List.of()));
+        mockMvc.perform(get("/pricing/room-1").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
     }
 
     @Test
     void getRoomPricing_withManagerToken_isOk() throws Exception {
         when(pricingService.getPricing(eq("room-1"), any())).thenReturn(new PricingResponse(BigDecimal.TEN, List.of()));
         mockMvc.perform(get("/pricing/room-1").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void setRoomPricing_withCashierToken_isForbidden() throws Exception {
+        // PATCH (setting a price override) stays MANAGER-only even though GET is now CASHIER+.
+        mockMvc.perform(patch("/pricing/room-1")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"from\":\"2031-01-01\",\"to\":\"2031-01-02\",\"price\":100}"))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -481,12 +604,93 @@ class PosRoleHierarchyTests {
         mockMvc.perform(get("/bookings/export").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
     }
 
+    // --- POST /bookings/staff, GET /bookings/calendar, PATCH /bookings/{id}/schedule and
+    // POST /bookings/{id}/schedule/quote all require CASHIER or above - front-desk operations
+    // for the booking calendar grid, same role as the other single-booking Bookings endpoints
+    // above. ---
+
+    @Test
+    void createStaffBooking_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/bookings/staff")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new StaffBookingCreateInput("room-1", "Guest", "2031-01-01", "2031-01-02"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createStaffBooking_withCashierToken_isCreated() throws Exception {
+        when(bookingService.createStaffBooking(any())).thenReturn(sampleBooking());
+        mockMvc.perform(post("/bookings/staff")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new StaffBookingCreateInput("room-1", "Guest", "2031-01-01", "2031-01-02"))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void getBookingsCalendar_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/bookings/calendar?from=2031-01-01&to=2031-01-08").header("Authorization", token(Role.WAITER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getBookingsCalendar_withCashierToken_isOk() throws Exception {
+        when(bookingCalendarService.getCalendar(any(), any())).thenReturn(new BookingCalendarResponse(
+                "2031-01-01", "2031-01-08", List.of(), List.of(), List.of()));
+        mockMvc.perform(get("/bookings/calendar?from=2031-01-01&to=2031-01-08").header("Authorization", token(Role.CASHIER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void updateBookingSchedule_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/bookings/booking-1/schedule")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new BookingScheduleInput("2031-01-01", "2031-01-02").roomUnitId(null))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateBookingSchedule_withCashierToken_isOk() throws Exception {
+        when(bookingService.updateSchedule(eq("booking-1"), any())).thenReturn(sampleBooking());
+        mockMvc.perform(patch("/bookings/booking-1/schedule")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new BookingScheduleInput("2031-01-01", "2031-01-02").roomUnitId(null))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void quoteBookingSchedule_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/bookings/booking-1/schedule/quote")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new BookingScheduleInput("2031-01-01", "2031-01-02").roomUnitId(null))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void quoteBookingSchedule_withCashierToken_isOk() throws Exception {
+        when(bookingService.quoteSchedule(eq("booking-1"), any()))
+                .thenReturn(new BookingScheduleQuote("1500.00", 1, true, null));
+        mockMvc.perform(post("/bookings/booking-1/schedule/quote")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new BookingScheduleInput("2031-01-01", "2031-01-02").roomUnitId(null))))
+                .andExpect(status().isOk());
+    }
+
     private static RoomUnit sampleRoomUnit() {
         return new RoomUnit("unit-1", "room-1", "203", true, OffsetDateTime.now());
     }
 
     private static Room sampleRoom() {
         return new Room("room-1", "Ocean View Suite", "A lovely room", 2, 3, "1500.00", List.of(), OffsetDateTime.now());
+    }
+
+    private static com.sunsetbeach.model.User sampleUser() {
+        return new com.sunsetbeach.model.User("user-2", "user-2@example.com", Role.CASHIER, true, OffsetDateTime.now());
     }
 
     private static Booking sampleBooking() {

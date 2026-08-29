@@ -5,8 +5,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.Room;
+import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.security.JwtService;
 import com.sunsetbeach.security.RestAccessDeniedHandler;
 import com.sunsetbeach.security.RestAuthEntryPoint;
@@ -22,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -65,6 +68,11 @@ class PublicAndStaffAccessTests {
     @MockitoBean
     private AvailabilityService availabilityService;
 
+    // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
+    // request - see PosRoleHierarchyTests for the same setup and why one stub (id "user-1") is enough.
+    @MockitoBean
+    private UserRepository userRepository;
+
     @TempDir
     static Path uploadsRoot;
 
@@ -80,6 +88,12 @@ class PublicAndStaffAccessTests {
         Path roomDir = uploadsRoot.resolve("rooms").resolve("room-1");
         Files.createDirectories(roomDir);
         Files.writeString(roomDir.resolve("photo.jpg"), "fake-jpeg-bytes");
+
+        UserEntity entity = new UserEntity();
+        entity.setId("user-1");
+        entity.setEmail("manager@example.com");
+        entity.setActive(true);
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(entity));
     }
 
     private String managerBearerToken() {

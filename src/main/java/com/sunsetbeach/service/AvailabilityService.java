@@ -74,10 +74,10 @@ public class AvailabilityService {
         return new PublicAvailabilityResponse(days);
     }
 
-    /** availableCount is deliberately not clamped at 0 - a negative remainder is a real signal (e.g. after units are deactivated), not noise to hide. */
+    /** availableCount is deliberately not clamped at 0 - a negative remainder is a real signal (e.g. after units are deactivated), not noise to hide. See {@link InventoryMath}, the one shared implementation of this formula. */
     private record DayInventory(LocalDate date, int unitCount, int blockedCount, int bookedCount, List<RoomUnitAvailability> units) {
         int availableCount() {
-            return unitCount - blockedCount - bookedCount;
+            return InventoryMath.availableCount(unitCount, blockedCount, bookedCount);
         }
     }
 

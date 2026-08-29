@@ -17,6 +17,12 @@ public interface RoomUnitBlockRepository extends JpaRepository<RoomUnitBlockEnti
             List<String> roomUnitIds, LocalDate rangeEnd, LocalDate rangeStart);
 
     /**
+     * Blocks of every unit (any room type) overlapping [rangeStart, rangeEnd] (both inclusive) -
+     * used by {@code GET /bookings/calendar}, which spans every room type at once.
+     */
+    List<RoomUnitBlockEntity> findByFromDateLessThanEqualAndToDateGreaterThanEqual(LocalDate rangeEnd, LocalDate rangeStart);
+
+    /**
      * Blocks of one unit overlapping a booking's half-open stay [checkIn, checkOut) - used by
      * the room-assignment race check in {@link com.sunsetbeach.service.BookingWriter}.
      */

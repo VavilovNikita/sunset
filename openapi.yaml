@@ -181,12 +181,56 @@ paths:
         "204":
           description: Always succeeds.
 
+  /auth/password:
+    patch:
+      operationId: changeOwnPassword
+      tags: [Auth]
+      summary: Change your own password
+      description: >
+        Requires a valid `Authorization: Bearer` JWT for any staff role. Verifies
+        `currentPassword` against the caller's own `passwordHash` before accepting
+        `newPassword`, then increments the user's `tokenVersion` - every other token
+        already issued to this account (other devices/tabs, or a token that leaked)
+        is rejected on its very next request. The response carries a fresh token so
+        the session making this call keeps working without a re-login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordInput"
+      responses:
+        "200":
+          description: Password changed - a fresh token is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Missing/invalid token, or `currentPassword` is incorrect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Current password is incorrect
+
   /rooms:
     get:
       operationId: listRooms
       tags: [Rooms]
       summary: List all rooms
-      description: Requires any authenticated staff session (ADMIN or MANAGER). No pagination (small hotel).
+      description: >
+        Requires CASHIER or above - a CASHIER quoting a room type for a walk-in via
+        `POST /bookings/staff` needs to read this list, not just create against it (the same
+        "action allowed, prerequisite read blocked" fix already applied to RoomUnits/Availability).
+        Writes (create/update/delete, images) stay MANAGER-only. No pagination (small hotel).
       responses:
         "200":
           description: All rooms.
@@ -236,7 +280,9 @@ paths:
       operationId: getRoom
       tags: [Rooms]
       summary: Get a room by id
-      description: Requires any authenticated staff session (ADMIN or MANAGER). Used to prefill the admin edit form.
+      description: >
+        Requires CASHIER or above (see `GET /rooms`). Also used to prefill the admin edit form
+        for MANAGER/ADMIN.
       responses:
         "200":
           description: The room.
@@ -437,7 +483,10 @@ paths:
       operationId: getRoomPricing
       tags: [Pricing]
       summary: Get per-day prices for a room for a given month
-      description: Requires any authenticated staff session (ADMIN or MANAGER).
+      description: >
+        Requires CASHIER or above - a CASHIER needs to quote a price to a walk-in guest
+        through an authenticated endpoint rather than the public site (see `GET /rooms`
+        for the same reasoning). Setting a price override (`PATCH`, below) stays MANAGER-only.
       parameters:
         - name: month
           in: query
@@ -1064,6 +1113,234 @@ paths:
                   value: { error: "Room 5 is already booked for an overlapping stay" }
                 raceLost:
                   value: { error: "Someone just assigned this room — please try again." }
+
+  /bookings/staff:
+    post:
+      operationId: createStaffBooking
+      tags: [Bookings]
+      summary: Create a booking as staff (front-desk / walk-in), optionally assigning a room immediately
+      description: >
+        Requires CASHIER or above. Distinct from the public `POST /bookings` guest-inquiry flow:
+        no new-booking notification email is sent, guest email/phone are optional (a walk-in may
+        not have one on hand), and if `roomUnitId` is given the room is assigned in the same
+        `Serializable` transaction as the booking - never a separate call, so there is no window
+        where the booking exists without the room the staff member asked for. `totalPrice` is
+        always server-computed from `Room.basePrice`/`RatePlan`, same as every other booking
+        creation path.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffBookingCreateInput"
+      responses:
+        "201":
+          description: Booking created (and room assigned, if `roomUnitId` was given).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: Body failed validation, or `roomUnitId` belongs to a different room type / is not active.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                wrongType:
+                  value: { error: "Room 5 is a different room type than this booking" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Room (or room unit) not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            Requested dates are no longer available at the type level, or `roomUnitId` is blocked
+            or already booked for an overlapping stay - either found up front or from a
+            concurrent conflicting request (Postgres serialization failure, SQLSTATE `40001`).
+            The whole operation is atomic: on conflict, no booking is created at all.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /bookings/calendar:
+    get:
+      operationId: getBookingsCalendar
+      tags: [Bookings]
+      summary: Get everything the booking calendar grid needs for a date range
+      description: >
+        Requires CASHIER or above. Answers a different question than
+        `GET /availability/{roomId}` - that endpoint is a per-room-type, per-month
+        occupancy/pricing matrix (booleans and counts); this one is a booking-identity read
+        model across every room type at once (guest name, status, exact `bookingId` per stay) for
+        rendering and driving the drag/resize calendar grid. Deliberately a new purpose-built
+        endpoint rather than a third way to compute availability: it does not duplicate
+        `GET /availability/{roomId}`'s per-day occupancy formula (the shared server-side
+        computation both endpoints rely on for `availableCount` lives in one place, see
+        `RoomTypeDailyAvailability`), it just also returns booking/guest identity that endpoint
+        never has. `from`/`to` accept an arbitrary range (not just a calendar month) capped at
+        92 days.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Exclusive end of the range (same `[from, to)` convention as a stay).
+      responses:
+        "200":
+          description: Calendar data for `[from, to)`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingCalendarResponse"
+        "400":
+          description: Malformed dates, `from >= to`, or range exceeds 92 days.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "Range too large (max 92 days)"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /bookings/{id}/schedule:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateBookingSchedule
+      tags: [Bookings]
+      summary: Change a booking's dates and/or physical room in one operation
+      description: >
+        Requires CASHIER or above. One operation for what the booking calendar grid does with a
+        mouse - extend/shorten a stay, move to a different room, or both at once - rather than
+        three separate endpoints: dragging a reservation to a new row *and* new dates at the same
+        time must not pass through an intermediate state where only one has changed. `totalPrice`
+        is always recomputed server-side from `Room.basePrice`/`RatePlan` for the new dates,
+        never accepted from the client. Re-validates availability with the same `Serializable`
+        race-safety as `POST /bookings` / `PUT /bookings/{id}/room-unit`, correctly excluding the
+        booking's own current reservation from the conflict check (so extending a stay is never
+        blocked by the booking's own prior dates). See `POST /bookings/{id}/schedule/quote` to
+        preview the new price/availability before calling this.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingScheduleInput"
+      responses:
+        "200":
+          description: Updated booking.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: Body failed validation (includes `checkIn < checkOut`), or `roomUnitId` belongs to a different room type / is not active.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking or room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            The new dates are no longer available at the type level, or `roomUnitId` is blocked
+            or already booked for an overlapping stay - either found up front or from a
+            concurrent conflicting change (Postgres serialization failure, SQLSTATE `40001`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                unavailable:
+                  value: { error: "Selected dates are no longer available" }
+                raceLost:
+                  value: { error: "Someone just changed this booking's schedule — please try again." }
+
+  /bookings/{id}/schedule/quote:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: quoteBookingSchedule
+      tags: [Bookings]
+      summary: Preview the price/availability of a schedule change without applying it
+      description: >
+        Requires CASHIER or above. Non-mutating preview for `PATCH /bookings/{id}/schedule` -
+        same request body, no `Serializable` transaction (nothing is written), so this is
+        advisory only: the apply call re-validates from scratch and is the sole source of truth.
+        A separate operation rather than a `dryRun` flag on the PATCH above, so the two contracts
+        stay simple - one always mutates and returns the updated `Booking`, the other never
+        mutates and always returns a quote, instead of one endpoint whose response shape depends
+        on a flag. Used by the booking calendar grid to show the recalculated price and a
+        would-this-succeed signal before the user confirms a drag/resize.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookingScheduleInput"
+      responses:
+        "200":
+          description: >
+            Computed price and availability for the requested schedule. Returned even when
+            `available: false` - this is a successful computation whose answer is "no", not an
+            error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingScheduleQuote"
+        "400":
+          description: Body failed validation (includes `checkIn < checkOut`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /bookings/{id}/folio:
     parameters:
@@ -2578,6 +2855,110 @@ paths:
               example:
                 error: User not found
 
+  /users/{id}/password:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: resetUserPassword
+      tags: [Users]
+      summary: Reset another staff user's password
+      description: >
+        Requires an authenticated session with role `ADMIN`. No `currentPassword` check -
+        this is an administrative reset for when the current password can't be trusted
+        (e.g. a suspected compromise), not a self-service change (see `PATCH /auth/password`
+        for that). Increments the target user's `tokenVersion`, immediately invalidating
+        every token already issued to them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordInput"
+      responses:
+        "200":
+          description: Password reset.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: User not found
+
+  /users/{id}/active:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateUserActive
+      tags: [Users]
+      summary: Enable or disable a staff user
+      description: >
+        Requires an authenticated session with role `ADMIN`. Disabling a user
+        (`active: false`) rejects every request bearing one of their tokens on the very
+        next request, regardless of that token's remaining validity window - the closest
+        thing this stateless-JWT system has to revoking access on termination. An admin
+        cannot disable their own account (blocked before any DB write, same guard as
+        `PATCH /users/{id}` for role changes).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserActiveUpdateInput"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: '`id` in the path is the caller''s own id, or body failed validation.'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                selfDisable:
+                  value: { error: "You can't disable your own account" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: User not found
+
   /public/rooms:
     get:
       operationId: listPublicRooms
@@ -3172,13 +3553,216 @@ components:
 
     RoomUnitAssignmentInput:
       type: object
-      description: Body of `PUT /bookings/{id}/room-unit`.
-      required: [roomUnitId]
+      description: >
+        Body of `PUT /bookings/{id}/room-unit`. `roomUnitId` must be present in the payload
+        (either a string or explicit `null`) - deliberately NOT listed under `required` below
+        despite that, because `org.openapitools:jackson-databind-nullable`'s Jakarta Bean
+        Validation integration registers an `@UnwrapByDefault` `ValueExtractor` for
+        `JsonNullable<T>`: a generated `@NotNull` on a `nullable: true` + `required` property
+        would validate the *unwrapped* value, rejecting the exact `null` this field exists to
+        accept. Presence is checked manually in `BookingService`, the same way other rules Bean
+        Validation can't correctly express are handled elsewhere in this API (see
+        `ValidationException`).
       properties:
         roomUnitId:
           type: string
           nullable: true
           description: The room unit to assign, or `null` to clear the current assignment.
+
+    StaffBookingCreateInput:
+      type: object
+      description: >
+        Body of `POST /bookings/staff`. Front-desk booking creation (walk-in guest at the
+        counter), distinct from the public `POST /bookings` guest inquiry flow: no
+        new-booking notification email is sent (that email exists to tell ADMIN/MANAGER about
+        a guest-submitted request, not every reservation staff makes at the counter), and guest
+        contact details are optional - a walk-in may not have an email address on hand. If
+        `roomUnitId` is given, the physical room is assigned atomically in the same
+        `Serializable` transaction as the booking itself: unlike `POST /bookings` followed by
+        `PUT /bookings/{id}/room-unit`, there is no window where the booking exists without the
+        room that was requested for it - either both succeed or neither does.
+      required: [roomId, guestName, checkIn, checkOut]
+      properties:
+        roomId:
+          type: string
+          minLength: 1
+        guestName:
+          type: string
+          minLength: 2
+          maxLength: 120
+        guestEmail:
+          type: string
+          format: email
+          nullable: true
+        guestPhone:
+          type: string
+          minLength: 5
+          maxLength: 40
+          nullable: true
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        roomUnitId:
+          type: string
+          nullable: true
+          description: Physical room to assign immediately, or omit/null to leave the booking unassigned (same as a `POST /bookings` booking today).
+      # Cross-field rule enforced server-side, not expressible in JSON Schema: checkIn must be strictly before checkOut.
+
+    BookingScheduleInput:
+      type: object
+      description: >
+        Body of `PATCH /bookings/{id}/schedule` and `POST /bookings/{id}/schedule/quote` - the
+        booking's full desired schedule (dates and physical room together), not a partial patch.
+        Used for extending/shortening a stay, moving a booking to a different physical room, or
+        both at once (e.g. dragging a reservation to a different row and different dates on the
+        booking calendar grid). The room *type* (`roomId`) cannot be changed this way - only
+        `checkIn`/`checkOut`/`roomUnitId`. `roomUnitId: null` leaves (or makes) the booking
+        unassigned; a non-null value must belong to the same room type as the booking.
+        `roomUnitId` must be present in the payload (string or explicit `null`) but is
+        deliberately not listed under `required` - see `RoomUnitAssignmentInput`'s description
+        for why a generated `@NotNull` on this field would incorrectly reject `null`; presence is
+        checked manually in `BookingService` instead.
+      required: [checkIn, checkOut]
+      properties:
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        roomUnitId:
+          type: string
+          nullable: true
+          description: The room unit to assign, or `null` to leave/make the booking unassigned.
+
+    BookingScheduleQuote:
+      type: object
+      description: >
+        Response of `POST /bookings/{id}/schedule/quote` - a non-mutating preview of what
+        `PATCH /bookings/{id}/schedule` would do with the same request body. `totalPrice` is
+        always computed (pure arithmetic over `RatePlan`/`Room.basePrice` for the requested
+        dates, independent of availability); `available`/`reason` report whether applying this
+        exact change would currently succeed. This is advisory, not a lock - the apply call
+        re-validates from scratch inside its own `Serializable` transaction, so a `true` here can
+        still lose a race to a concurrent change made between preview and apply.
+      required: [totalPrice, nights, available, reason]
+      properties:
+        totalPrice:
+          type: string
+          description: Decimal(10,2) rendered as a string, recomputed for the requested `checkIn`/`checkOut`.
+        nights:
+          type: integer
+        available:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+          description: Set when `available` is `false` - the same wording `PATCH /bookings/{id}/schedule` would reject with.
+
+    RoomTypeDailyAvailability:
+      type: object
+      description: >
+        One day's remaining-unit count for a room type, from the same server-side formula as
+        `AvailabilityDay.availableCount` (`activeUnitCount - blockedUnits - bookedUnits` for that
+        day) - deliberately **not** clamped at zero. A negative value is a real signal (e.g. more
+        bookings/blocks than currently-active units, after a unit was deactivated), not noise -
+        clients must render it distinctly, not hide or floor it.
+      required: [date, availableCount]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        availableCount:
+          type: integer
+
+    RoomTypeCalendar:
+      type: object
+      description: One room type's rows on the booking calendar grid - its physical units, and its per-day remaining-availability count.
+      required: [roomId, roomName, roomUnits, dailyAvailable]
+      properties:
+        roomId:
+          type: string
+        roomName:
+          type: string
+        roomUnits:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomUnit"
+        dailyAvailable:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomTypeDailyAvailability"
+
+    CalendarBooking:
+      type: object
+      description: >
+        A booking as rendered on the booking calendar grid - a lighter projection than `Booking`
+        (no nested `room`/`roomUnit`; cross-reference against `BookingCalendarResponse.roomTypes`
+        instead), returned only for non-`CANCELLED` bookings. `roomUnitId: null` means the
+        booking occupies a unit of its room type but has no specific physical room assigned yet -
+        the grid renders it in an unassigned row for that type.
+
+
+        ⚠ `checkIn`/`checkOut` here are plain date-only strings (`YYYY-MM-DD`), **unlike**
+        `Booking.checkIn`/`checkOut` which carry a legacy `T00:00:00.000Z` time component (a
+        Prisma serialization artifact `Booking` inherited that this new schema deliberately does
+        not repeat). Do not assume the two formats match when comparing values sourced from both
+        endpoints - frontend code must go through `dateOnlyUTC()` (`lib/bookings.ts`) either way,
+        never a manual string slice/parse.
+      required: [id, roomId, roomUnitId, guestName, checkIn, checkOut, status, totalPrice]
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        roomUnitId:
+          type: string
+          nullable: true
+        guestName:
+          type: string
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        status:
+          $ref: "#/components/schemas/BookingStatus"
+        totalPrice:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+
+    BookingCalendarResponse:
+      type: object
+      description: >
+        Everything the booking calendar grid needs for one `[from, to)` date range in a single
+        request: room types with their physical units and per-day availability counts, every
+        overlapping non-cancelled booking, and every overlapping `RoomUnitBlock` (returned raw -
+        overlapping blocks on the same unit are not merged or deduplicated server-side, same as
+        `GET /room-units/{id}/blocks`; rendering the overlap is a client concern).
+      required: [from, to, roomTypes, bookings, blocks]
+      properties:
+        from:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        to:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        roomTypes:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomTypeCalendar"
+        bookings:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarBooking"
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomUnitBlock"
 
     Booking:
       type: object
@@ -3229,9 +3813,19 @@ components:
         checkIn:
           type: string
           format: date-time
+          description: >
+            ⚠ Datetime string with a legacy `T00:00:00.000Z` time component (Prisma artifact),
+            NOT the same format as `CalendarBooking.checkIn` (plain date). Frontend code must go
+            through `dateOnlyUTC()` (`lib/bookings.ts`), never slice/parse manually - a prior bug
+            here silently zeroed dashboard revenue/occupancy numbers.
         checkOut:
           type: string
           format: date-time
+          description: >
+            ⚠ Datetime string with a legacy `T00:00:00.000Z` time component (Prisma artifact),
+            NOT the same format as `CalendarBooking.checkOut` (plain date). Frontend code must go
+            through `dateOnlyUTC()` (`lib/bookings.ts`), never slice/parse manually - a prior bug
+            here silently zeroed dashboard revenue/occupancy numbers.
         totalPrice:
           type: string
           description: Decimal(10,2) rendered as a string, e.g. `"4500.00"`. Always server-computed, never taken from the request.
@@ -3290,7 +3884,7 @@ components:
     User:
       type: object
       description: Safe projection returned by the API — `passwordHash` is never included.
-      required: [id, email, role, createdAt]
+      required: [id, email, role, active, createdAt]
       properties:
         id:
           type: string
@@ -3298,6 +3892,12 @@ components:
           type: string
         role:
           $ref: "#/components/schemas/Role"
+        active:
+          type: boolean
+          description: >
+            Whether this account can currently authenticate. A disabled account's already-issued
+            tokens are rejected on their very next request regardless of remaining validity -
+            see `PATCH /users/{id}/active`.
         createdAt:
           type: string
           format: date-time
@@ -3346,6 +3946,37 @@ components:
       properties:
         role:
           $ref: "#/components/schemas/Role"
+
+    ChangePasswordInput:
+      type: object
+      description: Body of `PATCH /auth/password`.
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          description: Verified against the caller's own `passwordHash` before the change is accepted.
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 200
+
+    ResetPasswordInput:
+      type: object
+      description: Body of `PATCH /users/{id}/password` - an administrative reset, no current password required.
+      required: [newPassword]
+      properties:
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 200
+
+    UserActiveUpdateInput:
+      type: object
+      description: Body of `PATCH /users/{id}/active`.
+      required: [active]
+      properties:
+        active:
+          type: boolean
 
     PriceRangeInput:
       type: object

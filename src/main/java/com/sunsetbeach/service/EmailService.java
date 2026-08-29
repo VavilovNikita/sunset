@@ -93,7 +93,14 @@ public class EmailService {
 
     private void send(List<String> to, String subject, String html) {
         if (resendApiKey == null || resendApiKey.isBlank()) {
-            log.info("[email:dev-log] to={} subject=\"{}\"\n{}", String.join(", ", to), subject, html);
+            // Deliberately does not log `to` or `html`: both can carry guest personal data
+            // (email/phone/name/amount - see the callers above), and RESEND_API_KEY being blank
+            // is the default in application.properties, not an exceptional state - any
+            // environment where someone forgot to configure it would otherwise silently start
+            // writing guest PII to the application log on every booking. Set RESEND_API_KEY to
+            // send (and see) real email content.
+            log.info("[email:dev-log] Would send \"{}\" to {} recipient(s) - RESEND_API_KEY not configured, email not sent.",
+                    subject, to.size());
             return;
         }
         restClient.post()

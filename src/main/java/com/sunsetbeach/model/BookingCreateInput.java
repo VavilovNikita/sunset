@@ -190,8 +190,9 @@ public class BookingCreateInput {
     sb.append("class BookingCreateInput {\n");
     sb.append("    roomId: ").append(toIndentedString(roomId)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
-    sb.append("    guestEmail: ").append(toIndentedString(guestEmail)).append("\n");
-    sb.append("    guestPhone: ").append(toIndentedString(guestPhone)).append("\n");
+    // Redacted (hand-edited after codegen, reapply on regeneration) - see Booking.java's toString.
+    sb.append("    guestEmail: [REDACTED]\n");
+    sb.append("    guestPhone: [REDACTED]\n");
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("}");

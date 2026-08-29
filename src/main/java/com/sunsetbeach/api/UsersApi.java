@@ -6,8 +6,10 @@
 package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.ErrorMessage;
+import com.sunsetbeach.model.ResetPasswordInput;
 import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.User;
+import com.sunsetbeach.model.UserActiveUpdateInput;
 import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
 import com.sunsetbeach.model.ValidationError;
@@ -26,7 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-03T20:50:04.328032600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-29T20:42:01.613848400+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface UsersApi {
 
@@ -41,8 +43,8 @@ public interface UsersApi {
      * @param userCreateInput  (required)
      * @return User created. (status code 201)
      *         or Body failed &#x60;userCreateSchema&#x60; validation. (status code 400)
-     *         or No valid session cookie. (status code 401)
-     *         or Session is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      *         or Email already in use (Prisma &#x60;P2002&#x60; unique constraint). (status code 409)
      */
     @RequestMapping(
@@ -58,7 +60,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -95,8 +97,8 @@ public interface UsersApi {
      *
      * @param id  (required)
      * @return The staff user (no &#x60;passwordHash&#x60;). (status code 200)
-     *         or No valid session cookie. (status code 401)
-     *         or Session is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      *         or User not found. (status code 404)
      */
     @RequestMapping(
@@ -111,7 +113,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -142,8 +144,8 @@ public interface UsersApi {
      * Requires an authenticated session with role &#x60;ADMIN&#x60;.
      *
      * @return All staff users (no &#x60;passwordHash&#x60;). (status code 200)
-     *         or No valid session cookie. (status code 401)
-     *         or Session is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      */
     @RequestMapping(
         method = RequestMethod.GET,
@@ -157,7 +159,121 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"id\" : \"id\", \"email\" : \"email\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"id\" : \"id\", \"email\" : \"email\" } ]";
+                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /users/{id}/password : Reset another staff user&#39;s password
+     * Requires an authenticated session with role &#x60;ADMIN&#x60;. No &#x60;currentPassword&#x60; check - this is an administrative reset for when the current password can&#39;t be trusted (e.g. a suspected compromise), not a self-service change (see &#x60;PATCH /auth/password&#x60; for that). Increments the target user&#39;s &#x60;tokenVersion&#x60;, immediately invalidating every token already issued to them. 
+     *
+     * @param id  (required)
+     * @param resetPasswordInput  (required)
+     * @return Password reset. (status code 200)
+     *         or Body failed validation. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or User not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/users/{id}/password",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<User> resetUserPassword(
+         @PathVariable("id") String id,
+         @Valid @RequestBody ResetPasswordInput resetPasswordInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /users/{id}/active : Enable or disable a staff user
+     * Requires an authenticated session with role &#x60;ADMIN&#x60;. Disabling a user (&#x60;active: false&#x60;) rejects every request bearing one of their tokens on the very next request, regardless of that token&#39;s remaining validity window - the closest thing this stateless-JWT system has to revoking access on termination. An admin cannot disable their own account (blocked before any DB write, same guard as &#x60;PATCH /users/{id}&#x60; for role changes). 
+     *
+     * @param id  (required)
+     * @param userActiveUpdateInput  (required)
+     * @return Updated user. (status code 200)
+     *         or &#x60;id&#x60; in the path is the caller&#39;s own id, or body failed validation. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or User not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/users/{id}/active",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<User> updateUserActive(
+         @PathVariable("id") String id,
+         @Valid @RequestBody UserActiveUpdateInput userActiveUpdateInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -186,8 +302,8 @@ public interface UsersApi {
      * @param userRoleUpdateInput  (required)
      * @return Updated user. (status code 200)
      *         or &#x60;id&#x60; in the path is the caller&#39;s own id, or body failed &#x60;userRoleUpdateSchema&#x60; validation. (status code 400)
-     *         or No valid session cookie. (status code 401)
-     *         or Session is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      *         or User not found (Prisma &#x60;P2025&#x60;). (status code 404)
      */
     @RequestMapping(
@@ -204,7 +320,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

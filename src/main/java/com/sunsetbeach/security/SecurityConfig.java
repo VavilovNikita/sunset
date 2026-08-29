@@ -1,5 +1,6 @@
 package com.sunsetbeach.security;
 
+import com.sunsetbeach.repository.UserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -27,6 +28,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtService jwtService,
+            UserRepository userRepository,
             RestAuthEntryPoint authEntryPoint,
             RestAccessDeniedHandler accessDeniedHandler) throws Exception {
         http
@@ -40,16 +42,28 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/bookings").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/logout").permitAll()
+                        // Self-service password change: any authenticated staff role, no ADMIN
+                        // needed - this is the one account-security action every user can take
+                        // on their own account without help. See PATCH /users/{id}/password for
+                        // the ADMIN-only counterpart that resets *someone else's* password.
+                        .requestMatchers(HttpMethod.PATCH, "/auth/password").authenticated()
                         .requestMatchers(HttpMethod.POST, "/auth/register").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
                         // Hard-restricted to ADMIN regardless of RoleHierarchy - MANAGER/CASHIER/WAITER
                         // never get here even though the hierarchy grants them everything below ADMIN
                         // elsewhere (see PosRoleHierarchyTests for the regression test).
                         .requestMatchers("/users/**").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
-                        // Room *type* management (Rooms/Pricing tags) - defining/pricing a room type is
-                        // a MANAGER-level task, not a front-desk one, and unlike RoomUnit below there is
-                        // no lower-role action anywhere that depends on reading these, so no read/write
-                        // split is needed: the whole surface, GET included, is MANAGER-only.
+                        // Room *type* management (Rooms/Pricing tags): reads are CASHIER+ - a CASHIER
+                        // creating a walk-in booking via POST /bookings/staff needs to be able to name
+                        // the room type and quote its price through an authenticated endpoint, rather
+                        // than being forced to the public, unauthenticated GET /public/rooms/** to do
+                        // their own job (the same "action allowed, prerequisite read blocked" asymmetry
+                        // already fixed for RoomUnits/Availability below). Writes (create/update/delete
+                        // a room type, upload/delete images, set price overrides) stay MANAGER-only.
+                        // GET matchers must come first - more specific (method + path) than the general
+                        // rule below, same ordering requirement as /room-units.
+                        .requestMatchers(HttpMethod.GET, "/rooms", "/rooms/*").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers("/rooms/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers(HttpMethod.GET, "/pricing/*").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers("/pricing/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Physical room CRUD (RoomUnit): reads are WAITER+ (room numbers aren't
                         // sensitive - and a CASHIER assigning a room to a booking via PUT
@@ -87,12 +101,26 @@ public class SecurityConfig {
                         // literal path segment "export".
                         .requestMatchers(HttpMethod.GET, "/bookings/*/folio", "/bookings/*/pos-orders").authenticated()
                         .requestMatchers(HttpMethod.GET, "/bookings/export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // GET /bookings/calendar is matched by the general GET /bookings/* rule
+                        // below (same CASHIER+ role, no reason to loosen/tighten it separately) -
+                        // Ant-style "*" matches exactly one path segment, same as how
+                        // GET /bookings/export above already coexists with it. Left unlisted here
+                        // deliberately; EndpointCoverageTests confirms it isn't falling through to
+                        // the anyRequest() catch-all.
                         .requestMatchers(HttpMethod.GET, "/bookings", "/bookings/*").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/bookings/*").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Assigning/unassigning a booking's physical room is a front-desk (CASHIER+)
                         // operation - explicitly matched (rather than left to a general /bookings/**
                         // rule) since it has its own role independent of the PATCH above.
                         .requestMatchers(HttpMethod.PUT, "/bookings/*/room-unit").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Front-desk booking creation (POST /bookings/staff) and the booking
+                        // calendar grid's schedule-change operations - all CASHIER+, all
+                        // two-segment-plus paths past "/bookings/" so none of them are covered by
+                        // the single-segment "/bookings/*" wildcard above and each needs its own
+                        // explicit rule (same reasoning as PUT /bookings/*/room-unit).
+                        .requestMatchers(HttpMethod.POST, "/bookings/staff").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/schedule/quote").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.PATCH, "/bookings/*/schedule").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // POS module: read endpoints (GET /menu, /tables, /orders/**) are open to any
                         // authenticated staff role, including WAITER - explicitly matched below rather
                         // than left to fall through to anyRequest(), so the EndpointCoverageTests
@@ -134,7 +162,7 @@ public class SecurityConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
-                .addFilterBefore(new JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new JwtAuthFilter(jwtService, userRepository), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

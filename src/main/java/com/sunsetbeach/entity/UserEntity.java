@@ -28,6 +28,17 @@ public class UserEntity {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private Role role = Role.MANAGER;
 
+    // Whether this account can currently authenticate - see JwtAuthFilter, which rejects every
+    // request bearing a disabled user's token regardless of the token's own expiry. Named
+    // isActive (not active), matching RoomUnitEntity's convention, since the DB column is
+    // "isActive" and this project's naming strategy maps a field to a column of the same name.
+    private boolean isActive = true;
+
+    // Bumped on password change, role change, an admin password reset, or a disable/enable -
+    // see JwtAuthFilter, which rejects any token whose tokenVersion claim doesn't match the
+    // current value here. This is the only way a stateless JWT gets revoked before it expires.
+    private int tokenVersion = 0;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -65,5 +76,21 @@ public class UserEntity {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public boolean isActive() {
+        return isActive;
+    }
+
+    public void setActive(boolean active) {
+        isActive = active;
+    }
+
+    public int getTokenVersion() {
+        return tokenVersion;
+    }
+
+    public void setTokenVersion(int tokenVersion) {
+        this.tokenVersion = tokenVersion;
     }
 }

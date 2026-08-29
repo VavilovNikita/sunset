@@ -96,4 +96,59 @@ class RoomServiceUploadTests {
 
         assertThat(Files.exists(uploadsRoot.resolve("rooms").resolve("room-1"))).isFalse();
     }
+
+    // --- deleteImage: path traversal via a crafted `path` value ---
+
+    @Test
+    void deleteImage_pathTraversalOutsideRoomDirectory_doesNotDeleteTheEscapedFile(@TempDir Path uploadsRoot) throws IOException {
+        RoomRepository roomRepository = Mockito.mock(RoomRepository.class);
+        RoomEntity room = new RoomEntity();
+        room.setId("room-1");
+        room.setBasePrice(BigDecimal.TEN);
+        ReflectionTestUtils.setField(room, "createdAt", LocalDateTime.now());
+        room.setImages(new String[] {"/uploads/rooms/room-1/../../../secret.txt"});
+        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(roomRepository.save(any(RoomEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // A file sitting just outside uploadsRoot - the traversal path's actual target once
+        // resolved - must survive the delete call.
+        Path secretFile = uploadsRoot.getParent().resolve("secret-" + System.nanoTime() + ".txt");
+        Files.writeString(secretFile, "should not be touched");
+        // Rewrite room.images to point at this run's actual escaped filename so the test isn't
+        // sensitive to how many ".." segments happen to reach the temp dir's parent.
+        String traversal = "/uploads/rooms/room-1/../../../" + secretFile.getFileName();
+        room.setImages(new String[] {traversal});
+
+        try {
+            RoomService service = newService(uploadsRoot, roomRepository);
+
+            service.deleteImage("room-1", traversal);
+
+            assertThat(Files.exists(secretFile)).isTrue();
+        } finally {
+            Files.deleteIfExists(secretFile);
+        }
+    }
+
+    @Test
+    void deleteImage_ordinaryPath_deletesTheFileWithinTheRoomDirectory(@TempDir Path uploadsRoot) throws IOException {
+        RoomRepository roomRepository = Mockito.mock(RoomRepository.class);
+        RoomEntity room = new RoomEntity();
+        room.setId("room-1");
+        room.setBasePrice(BigDecimal.TEN);
+        ReflectionTestUtils.setField(room, "createdAt", LocalDateTime.now());
+        String imagePath = "/uploads/rooms/room-1/photo.jpg";
+        room.setImages(new String[] {imagePath});
+        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(roomRepository.save(any(RoomEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Path roomDir = uploadsRoot.resolve("rooms").resolve("room-1");
+        Files.createDirectories(roomDir);
+        Files.writeString(roomDir.resolve("photo.jpg"), "fake-jpeg-bytes");
+
+        RoomService service = newService(uploadsRoot, roomRepository);
+        service.deleteImage("room-1", imagePath);
+
+        assertThat(Files.exists(roomDir.resolve("photo.jpg"))).isFalse();
+    }
 }

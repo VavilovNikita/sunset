@@ -17,10 +17,13 @@ import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingPosOrder;
 import com.sunsetbeach.model.BookingPosOrderItem;
+import com.sunsetbeach.model.BookingScheduleInput;
+import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
+import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.OrderItemRepository;
@@ -28,6 +31,7 @@ import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import jakarta.persistence.criteria.Predicate;
+import org.openapitools.jackson.nullable.JsonNullable;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -102,6 +106,43 @@ public class BookingService {
         return bookingMapper.toDto(saved, room, null);
     }
 
+    /**
+     * Front-desk counterpart of {@link #createBooking} for {@code POST /bookings/staff}: same
+     * server-computed pricing and race-safety, but no new-booking notification email (that email
+     * is for a guest-submitted inquiry, not every reservation staff makes at the counter), and,
+     * if {@code roomUnitId} is given, the physical room is assigned atomically alongside the
+     * booking itself - see {@link BookingWriter#insertStaff}.
+     */
+    public Booking createStaffBooking(StaffBookingCreateInput input) {
+        LocalDate checkIn = LocalDate.parse(input.getCheckIn());
+        LocalDate checkOut = LocalDate.parse(input.getCheckOut());
+        if (!checkIn.isBefore(checkOut)) {
+            throw ValidationException.field("checkOut", "checkIn must be before checkOut");
+        }
+
+        RoomEntity room = roomRepository.findById(input.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        String roomUnitId = input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
+
+        BookingEntity saved;
+        try {
+            saved = bookingWriter.insertStaff(
+                    room,
+                    input.getGuestName(),
+                    input.getGuestEmail().isPresent() ? input.getGuestEmail().get() : null,
+                    input.getGuestPhone().isPresent() ? input.getGuestPhone().get() : null,
+                    checkIn,
+                    checkOut,
+                    roomUnitId);
+        } catch (DataAccessException | TransactionSystemException e) {
+            if (isSerializationFailure(e)) {
+                throw new ConflictException("Someone just booked these dates — please try again.");
+            }
+            throw e;
+        }
+
+        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()));
+    }
+
     @Transactional
     public Booking updateStatus(String id, BookingStatusInput input) {
         BookingEntity booking = bookingRepository.findById(id).orElseThrow(() -> new NotFoundException("Booking not found"));
@@ -110,7 +151,14 @@ public class BookingService {
         // (matches Prisma skipping `undefined` update data), an explicit null clears it.
         if (input.getPaymentNote().isPresent()) {
             String note = input.getPaymentNote().get();
-            booking.setPaymentNote(note != null ? note.trim() : null);
+            String trimmed = note != null ? note.trim() : null;
+            if (PaymentNoteValidator.looksLikeCardNumber(trimmed)) {
+                throw ValidationException.field(
+                        "paymentNote",
+                        "This looks like it contains a payment card number. Don't store full card numbers here - "
+                                + "use a reference number or the last 4 digits instead.");
+            }
+            booking.setPaymentNote(trimmed);
         }
         // flush so @UpdateTimestamp (regenerated on every save) is on the object before mapping
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
@@ -142,7 +190,7 @@ public class BookingService {
      * creation.
      */
     public Booking assignRoomUnit(String bookingId, RoomUnitAssignmentInput input) {
-        String roomUnitId = input.getRoomUnitId().get();
+        String roomUnitId = requireRoomUnitIdPresent(input.getRoomUnitId());
 
         BookingEntity saved;
         try {
@@ -156,6 +204,70 @@ public class BookingService {
 
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()));
+    }
+
+    /**
+     * Changes a booking's dates and/or physical room in one operation - the write path behind
+     * {@code PATCH /bookings/{id}/schedule}. Mirrors {@link #createBooking}'s race-safety story:
+     * the actual validation/write happens in {@link BookingWriter#updateSchedule}, which runs
+     * SERIALIZABLE and excludes this booking's own current reservation from every conflict
+     * check; a serialization failure here is translated to the same "try again" conflict as
+     * booking creation.
+     */
+    public Booking updateSchedule(String bookingId, BookingScheduleInput input) {
+        LocalDate checkIn = LocalDate.parse(input.getCheckIn());
+        LocalDate checkOut = LocalDate.parse(input.getCheckOut());
+        if (!checkIn.isBefore(checkOut)) {
+            throw ValidationException.field("checkOut", "checkIn must be before checkOut");
+        }
+        String roomUnitId = requireRoomUnitIdPresent(input.getRoomUnitId());
+
+        BookingEntity saved;
+        try {
+            saved = bookingWriter.updateSchedule(bookingId, checkIn, checkOut, roomUnitId);
+        } catch (DataAccessException | TransactionSystemException e) {
+            if (isSerializationFailure(e)) {
+                throw new ConflictException("Someone just changed this booking's schedule — please try again.");
+            }
+            throw e;
+        }
+
+        RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()));
+    }
+
+    /**
+     * Non-mutating preview for {@code POST /bookings/{id}/schedule/quote} - see
+     * {@link BookingWriter#quoteSchedule}. No serialization-failure handling needed here: this
+     * read never writes, so there is nothing for Postgres to report a conflict on.
+     */
+    @Transactional(readOnly = true)
+    public BookingScheduleQuote quoteSchedule(String bookingId, BookingScheduleInput input) {
+        LocalDate checkIn = LocalDate.parse(input.getCheckIn());
+        LocalDate checkOut = LocalDate.parse(input.getCheckOut());
+        if (!checkIn.isBefore(checkOut)) {
+            throw ValidationException.field("checkOut", "checkIn must be before checkOut");
+        }
+        String roomUnitId = requireRoomUnitIdPresent(input.getRoomUnitId());
+
+        BookingWriter.ScheduleQuote quote = bookingWriter.quoteSchedule(bookingId, checkIn, checkOut, roomUnitId);
+        return new BookingScheduleQuote(PriceFormat.asDecimalString(quote.totalPrice()), quote.nights(), quote.available(), quote.reason());
+    }
+
+    /**
+     * {@code roomUnitId} must be present in the request body (a string or explicit {@code null})
+     * for {@code RoomUnitAssignmentInput}/{@code BookingScheduleInput} - deliberately checked
+     * here rather than via a generated {@code @NotNull}, because
+     * {@code org.openapitools:jackson-databind-nullable}'s {@code @UnwrapByDefault} Jakarta
+     * {@code ValueExtractor} for {@code JsonNullable} would make {@code @NotNull} validate the
+     * *unwrapped* value instead, incorrectly rejecting the exact {@code null} this field exists
+     * to accept (see both schemas' descriptions in openapi.yaml).
+     */
+    private static String requireRoomUnitIdPresent(JsonNullable<String> roomUnitId) {
+        if (!roomUnitId.isPresent()) {
+            throw ValidationException.field("roomUnitId", "roomUnitId is required (send null to unassign)");
+        }
+        return roomUnitId.get();
     }
 
     private RoomUnitEntity findRoomUnit(String roomUnitId) {

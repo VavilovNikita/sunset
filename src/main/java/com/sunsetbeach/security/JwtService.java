@@ -31,19 +31,36 @@ public class JwtService {
         this.ttl = Duration.ofDays(ttlDays);
     }
 
+    /** Convenience overload for callers that don't track tokenVersion (e.g. tests) - issues a token as if tokenVersion were 0. */
     public String issue(StaffPrincipal principal) {
+        return issue(principal, 0);
+    }
+
+    /**
+     * {@code tokenVersion} must match the issuing user's current {@code User.tokenVersion} at
+     * verification time (see {@link JwtAuthFilter}) - it's how an otherwise-stateless,
+     * not-yet-expired JWT gets revoked: a password change, role change, admin reset, or
+     * disable/enable all bump the stored value, which immediately invalidates every token
+     * issued before that point.
+     */
+    public String issue(StaffPrincipal principal, int tokenVersion) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(principal.id())
                 .claim("email", principal.email())
                 .claim("role", principal.role().getValue())
+                .claim("tokenVersion", tokenVersion)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(ttl)))
                 .signWith(key)
                 .compact();
     }
 
-    public Optional<StaffPrincipal> parse(String token) {
+    /** A verified token's claims, split into the identity ({@link StaffPrincipal}) and the revocation check ({@code tokenVersion}). */
+    public record ParsedToken(StaffPrincipal principal, int tokenVersion) {
+    }
+
+    public Optional<ParsedToken> parse(String token) {
         if (token == null || token.isBlank()) {
             return Optional.empty();
         }
@@ -64,7 +81,11 @@ public class JwtService {
                 return Optional.empty();
             }
 
-            return Optional.of(new StaffPrincipal(id, email, role));
+            // Absent only for a token issued before tokenVersion existed - treated as version 0,
+            // which is also every current user's starting value, so such a token still validates
+            // normally against a never-bumped account.
+            Integer tokenVersion = claims.get("tokenVersion", Integer.class);
+            return Optional.of(new ParsedToken(new StaffPrincipal(id, email, role), tokenVersion != null ? tokenVersion : 0));
         } catch (JwtException e) {
             return Optional.empty();
         }

@@ -1,9 +1,11 @@
 package com.sunsetbeach.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -24,6 +26,7 @@ import com.sunsetbeach.service.UserService;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -67,6 +70,22 @@ class AuthControllerTests {
         registry.add("app.security.jwt-ttl-days", () -> "7");
     }
 
+    /**
+     * JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on
+     * every request. Tests that need a specific entity (e.g. to assert its email/role in a
+     * response) re-stub {@code findById} for that id afterwards - Mockito uses the
+     * most-recently-defined matching stub, so that override wins over this generic fallback.
+     */
+    @BeforeEach
+    void stubActiveUserForAnyId() {
+        when(userRepository.findById(anyString())).thenAnswer(invocation -> {
+            UserEntity entity = new UserEntity();
+            entity.setId(invocation.getArgument(0));
+            entity.setActive(true);
+            return Optional.of(entity);
+        });
+    }
+
     private UserEntity managerEntity() {
         UserEntity entity = new UserEntity();
         entity.setId("user-1");
@@ -101,6 +120,19 @@ class AuthControllerTests {
         mockMvc.perform(post("/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"manager@example.com\",\"password\":\"wrong-password\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("Invalid email or password"));
+    }
+
+    @Test
+    void login_disabledUser_isUnauthorized() throws Exception {
+        UserEntity disabled = managerEntity();
+        disabled.setActive(false);
+        when(userRepository.findByEmail("manager@example.com")).thenReturn(Optional.of(disabled));
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"manager@example.com\",\"password\":\"correct-password\"}"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("Invalid email or password"));
     }
@@ -163,7 +195,7 @@ class AuthControllerTests {
     @Test
     void register_withAdminToken_delegatesToUserService() throws Exception {
         String adminToken = "Bearer " + jwtService.issue(new StaffPrincipal("admin-1", "admin@example.com", Role.ADMIN));
-        User created = new User("user-2", "new@example.com", Role.MANAGER, OffsetDateTime.now());
+        User created = new User("user-2", "new@example.com", Role.MANAGER, true, OffsetDateTime.now());
         when(userService.create(any(UserCreateInput.class))).thenReturn(created);
 
         mockMvc.perform(post("/auth/register")
@@ -179,5 +211,30 @@ class AuthControllerTests {
     @Test
     void logout_isNoContent() throws Exception {
         mockMvc.perform(post("/auth/logout")).andExpect(status().isNoContent());
+    }
+
+    @Test
+    void changeOwnPassword_withoutToken_isUnauthorized() throws Exception {
+        mockMvc.perform(patch("/auth/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"old\",\"newPassword\":\"a-new-password1\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void changeOwnPassword_delegatesToUserServiceAndReturnsFreshToken() throws Exception {
+        UserEntity updated = managerEntity();
+        updated.setTokenVersion(1);
+        when(userService.changeOwnPassword("user-1", "correct-password", "a-new-password1")).thenReturn(updated);
+
+        mockMvc.perform(patch("/auth/password")
+                        .header("Authorization", managerBearerToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"correct-password\",\"newPassword\":\"a-new-password1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty())
+                .andExpect(jsonPath("$.user.email").value("manager@example.com"));
+
+        verify(userService).changeOwnPassword("user-1", "correct-password", "a-new-password1");
     }
 }

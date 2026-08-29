@@ -1,7 +1,9 @@
 package com.sunsetbeach.controller;
 
 import com.sunsetbeach.api.UsersApi;
+import com.sunsetbeach.model.ResetPasswordInput;
 import com.sunsetbeach.model.User;
+import com.sunsetbeach.model.UserActiveUpdateInput;
 import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
 import com.sunsetbeach.security.StaffPrincipal;
@@ -38,7 +40,22 @@ public class UserController implements UsersApi {
 
     @Override
     public ResponseEntity<User> updateUserRole(String id, UserRoleUpdateInput userRoleUpdateInput) {
-        String callerId = ((StaffPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).id();
+        String callerId = callerId();
         return ResponseEntity.ok(userService.updateRole(id, callerId, userRoleUpdateInput));
+    }
+
+    @Override
+    public ResponseEntity<User> resetUserPassword(String id, ResetPasswordInput resetPasswordInput) {
+        return ResponseEntity.ok(userService.resetPassword(id, resetPasswordInput.getNewPassword()));
+    }
+
+    @Override
+    public ResponseEntity<User> updateUserActive(String id, UserActiveUpdateInput userActiveUpdateInput) {
+        String callerId = callerId();
+        return ResponseEntity.ok(userService.setActive(id, callerId, userActiveUpdateInput.getActive()));
+    }
+
+    private static String callerId() {
+        return ((StaffPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).id();
     }
 }
