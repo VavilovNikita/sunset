@@ -2,11 +2,15 @@ package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSource;
+import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,13 +44,20 @@ import org.springframework.transaction.annotation.Transactional;
  * automated "your booking has been cancelled" notice can reach a guest whose request simply
  * wasn't reviewed yet because it arrived right before a closed period - which reads as a
  * considered rejection, not what actually happened. The fix is to make the auto-cancellation a
- * rare event in practice: {@link EmailService#sendBookingExpiringReminderEmail} nudges ADMIN/
- * MANAGER one business day before the deadline, so a human has a real chance to act (confirm,
- * decline, or extend the hold by touching the booking) before it ever reaches the cutoff. Given
- * that safety net, the actual auto-cancellation - now the exception, not the norm - deliberately
- * does NOT notify the guest (see {@link #sweepUnconfirmedPublicBookings()}): an automated
- * rejection is the wrong tone for "staff missed the reminder too", and {@link BookingService#updateStatus}
- * (the real, human-decided cancellation path) still emails the guest exactly as before.
+ * rare event in practice: {@link EmailService#sendBookingExpiringReminderDigestEmail} nudges
+ * ADMIN/MANAGER one business day before the deadline, so a human has a real chance to act
+ * (confirm, decline, or extend the hold by touching the booking) before it ever reaches the
+ * cutoff. Given that safety net, the actual auto-cancellation - now the exception, not the norm -
+ * deliberately does NOT notify the guest (see {@link #sweepUnconfirmedPublicBookings()}): an
+ * automated rejection is the wrong tone for "staff missed the reminder too", and
+ * {@link BookingService#updateStatus} (the real, human-decided cancellation path) still emails
+ * the guest exactly as before.
+ *
+ * <p>The reminder is one digest email per sweep, covering every booking that crossed the
+ * threshold this run, not one email per booking - see
+ * {@link EmailService#sendBookingExpiringReminderDigestEmail}'s javadoc for why a per-booking
+ * email would turn the reminder into an amplification channel for the same flood attack this
+ * class exists to contain.
  *
  * <p>Reuses {@link PrintService}'s {@code @Scheduled} background-sweep shape (a fixed-delay job
  * over a small filtered query, re-run periodically) rather than introducing a second scheduling
@@ -95,6 +106,9 @@ public class BookingExpiryService {
         }
 
         LocalDate today = LocalDate.now();
+        List<BookingEntity> toRemind = new ArrayList<>();
+        Map<String, RoomEntity> roomsByRoomId = new HashMap<>();
+
         for (BookingEntity booking : candidates) {
             int businessDaysWaiting = BusinessDayCounter.countBusinessDaysBetween(booking.getCreatedAt().toLocalDate(), today);
 
@@ -111,12 +125,20 @@ public class BookingExpiryService {
                 // move for a request the hotel simply never got to, as opposed to one a human
                 // actually declined via BookingService.updateStatus.
             } else if (businessDaysWaiting >= expiryBusinessDays - 1 && !booking.isExpiryReminderSent()) {
-                roomRepository.findById(booking.getRoomId()).ifPresent(room -> {
-                    emailService.sendBookingExpiringReminderEmail(booking, room);
-                    booking.setExpiryReminderSent(true);
-                    bookingRepository.save(booking);
-                });
+                // Collected, not emailed immediately - see the class javadoc and
+                // EmailService#sendBookingExpiringReminderDigestEmail for why every booking that
+                // crosses the threshold this sweep goes into one email, not one each.
+                toRemind.add(booking);
+                roomRepository.findById(booking.getRoomId()).ifPresent(room -> roomsByRoomId.put(booking.getRoomId(), room));
             }
+        }
+
+        if (!toRemind.isEmpty()) {
+            emailService.sendBookingExpiringReminderDigestEmail(toRemind, roomsByRoomId);
+            for (BookingEntity booking : toRemind) {
+                booking.setExpiryReminderSent(true);
+            }
+            bookingRepository.saveAll(toRemind);
         }
     }
 }

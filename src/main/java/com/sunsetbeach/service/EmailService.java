@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -71,14 +72,26 @@ public class EmailService {
     }
 
     /**
-     * Staff-facing (never guest-facing) nudge for {@link BookingExpiryService}: an unconfirmed
-     * public booking is one business day away from being auto-cancelled and still needs a human
-     * decision. Deliberately the same ADMIN/MANAGER audience as {@link #sendNewBookingEmail} -
-     * this is the safety net meant to make the actual auto-cancellation a non-event in practice,
-     * not a replacement for the guest-facing "cancelled" email {@link #sendGuestStatusEmail}
-     * sends for a real, considered cancellation.
+     * Staff-facing (never guest-facing) nudge for {@link BookingExpiryService}: one email per
+     * sweep listing every unconfirmed public booking that's one business day away from being
+     * auto-cancelled, not one email per booking. A per-booking email would turn the reminder
+     * itself into an amplification channel for the exact flood this system defends against with
+     * {@link com.sunsetbeach.security.BookingRateLimiter} and the auto-expiry sweep: N fake
+     * bookings crossing the reminder threshold in the same 15-minute sweep would otherwise mean N
+     * emails landing in ADMIN/MANAGER inboxes at once - the protection becoming the attack
+     * surface. It also degrades gracefully on an ordinary busy weekend, where a dozen genuine
+     * inquiries piling up should read as one clear list, not a dozen separate notifications.
+     *
+     * <p>Deliberately the same ADMIN/MANAGER audience as {@link #sendNewBookingEmail} - this is
+     * the safety net meant to make the actual auto-cancellation a non-event in practice, not a
+     * replacement for the guest-facing "cancelled" email {@link #sendGuestStatusEmail} sends for
+     * a real, considered cancellation. Does nothing if {@code bookings} is empty - callers are
+     * not required to check first.
      */
-    public void sendBookingExpiringReminderEmail(BookingEntity booking, RoomEntity room) {
+    public void sendBookingExpiringReminderDigestEmail(List<BookingEntity> bookings, Map<String, RoomEntity> roomsByRoomId) {
+        if (bookings.isEmpty()) {
+            return;
+        }
         try {
             List<String> to = userRepository.findByRoleIn(List.of(Role.ADMIN, Role.MANAGER)).stream()
                     .map(u -> u.getEmail())
@@ -87,19 +100,36 @@ public class EmailService {
                 return;
             }
 
-            String html = "<p>This booking request is still unconfirmed and will be automatically cancelled "
-                    + "after one more business day with no action.</p>"
-                    + "<ul>"
-                    + "<li>Room: " + room.getName() + "</li>"
-                    + "<li>Guest: " + booking.getGuestName() + " (" + booking.getGuestEmail() + ", " + booking.getGuestPhone() + ")</li>"
-                    + "<li>Check-in: " + booking.getCheckIn() + "</li>"
-                    + "<li>Check-out: " + booking.getCheckOut() + "</li>"
-                    + "</ul>"
-                    + "<p><a href=\"" + siteUrl + "/admin/bookings/" + booking.getId() + "\">Review in admin</a></p>";
+            StringBuilder items = new StringBuilder();
+            for (BookingEntity booking : bookings) {
+                RoomEntity room = roomsByRoomId.get(booking.getRoomId());
+                String roomName = room != null ? room.getName() : booking.getRoomId();
+                items.append("<li>")
+                        .append(roomName)
+                        .append(" — ")
+                        .append(booking.getGuestName())
+                        .append(" (")
+                        .append(booking.getGuestEmail())
+                        .append(", ")
+                        .append(booking.getGuestPhone())
+                        .append("), ")
+                        .append(booking.getCheckIn())
+                        .append(" → ")
+                        .append(booking.getCheckOut())
+                        .append(" — <a href=\"")
+                        .append(siteUrl)
+                        .append("/admin/bookings/")
+                        .append(booking.getId())
+                        .append("\">review</a></li>");
+            }
 
-            send(to, "Action needed: unconfirmed booking expiring soon — " + room.getName(), html);
+            String html = "<p>" + bookings.size() + " unconfirmed booking request(s) will be automatically cancelled "
+                    + "after one more business day with no action:</p>"
+                    + "<ul>" + items + "</ul>";
+
+            send(to, bookings.size() + " unconfirmed booking request(s) expiring soon", html);
         } catch (Exception e) {
-            log.error("sendBookingExpiringReminderEmail failed:", e);
+            log.error("sendBookingExpiringReminderDigestEmail failed:", e);
         }
     }
 

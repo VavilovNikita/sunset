@@ -130,7 +130,7 @@ class BookingExpiryServiceTests {
         BookingEntity reloaded = bookingRepository.findById(fresh.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(BookingStatus.NEW);
         assertThat(reloaded.isExpiryReminderSent()).isFalse();
-        verify(emailService, never()).sendBookingExpiringReminderEmail(any(), any());
+        verify(emailService, never()).sendBookingExpiringReminderDigestEmail(any(), any());
     }
 
     @Test
@@ -144,7 +144,7 @@ class BookingExpiryServiceTests {
         BookingEntity reloaded = bookingRepository.findById(staleStaffBooking.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(BookingStatus.NEW);
         assertThat(reloaded.isExpiryReminderSent()).isFalse();
-        verify(emailService, never()).sendBookingExpiringReminderEmail(any(), any());
+        verify(emailService, never()).sendBookingExpiringReminderDigestEmail(any(), any());
     }
 
     // The reminder-fires-once-then-stops behavior needs a controlled threshold to test without
