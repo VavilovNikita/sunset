@@ -6,6 +6,8 @@ import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.UnauthorizedException;
 import com.sunsetbeach.mapper.UserMapper;
+import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.User;
 import com.sunsetbeach.model.UserCreateInput;
@@ -23,11 +25,13 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final AuditLogService auditLogService;
 
-    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder, AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -48,11 +52,15 @@ public class UserService {
         entity.setPasswordHash(passwordEncoder.encode(input.getPassword()));
         entity.setRole(input.getRole() != null ? input.getRole() : Role.MANAGER);
 
+        UserEntity saved;
         try {
-            return userMapper.toDto(userRepository.saveAndFlush(entity));
+            saved = userRepository.saveAndFlush(entity);
         } catch (DataIntegrityViolationException e) {
             throw new ConflictException("A user with that email already exists");
         }
+        auditLogService.record(
+                AuditAction.USER_CREATED, AuditEntityType.USER, saved.getId(), "User " + saved.getEmail() + " created with role " + saved.getRole().getValue());
+        return userMapper.toDto(saved);
     }
 
     @Transactional
@@ -62,13 +70,20 @@ public class UserService {
         }
 
         UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        Role oldRole = entity.getRole();
         entity.setRole(input.getRole());
         // A token issued before this change still carries the old role in its own "role" claim
         // (JwtAuthFilter builds authorities from the token, not a fresh DB read) - bumping
         // tokenVersion is what forces that token to fail verification on its next request so a
         // re-login is required to pick up the new role.
         entity.setTokenVersion(entity.getTokenVersion() + 1);
-        return userMapper.toDto(userRepository.save(entity));
+        UserEntity saved = userRepository.save(entity);
+        auditLogService.record(
+                AuditAction.USER_ROLE_CHANGED,
+                AuditEntityType.USER,
+                saved.getId(),
+                "Role for " + saved.getEmail() + " changed from " + oldRole.getValue() + " to " + saved.getRole().getValue());
+        return userMapper.toDto(saved);
     }
 
     /**
@@ -99,7 +114,10 @@ public class UserService {
         UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
         entity.setPasswordHash(passwordEncoder.encode(newPassword));
         entity.setTokenVersion(entity.getTokenVersion() + 1);
-        return userMapper.toDto(userRepository.save(entity));
+        UserEntity saved = userRepository.save(entity);
+        auditLogService.record(
+                AuditAction.USER_PASSWORD_RESET, AuditEntityType.USER, saved.getId(), "Password reset for " + saved.getEmail() + " by an administrator");
+        return userMapper.toDto(saved);
     }
 
     /**
@@ -118,6 +136,12 @@ public class UserService {
         UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
         entity.setActive(active);
         entity.setTokenVersion(entity.getTokenVersion() + 1);
-        return userMapper.toDto(userRepository.save(entity));
+        UserEntity saved = userRepository.save(entity);
+        auditLogService.record(
+                AuditAction.USER_ACTIVE_CHANGED,
+                AuditEntityType.USER,
+                saved.getId(),
+                "User " + saved.getEmail() + " " + (active ? "re-enabled" : "disabled"));
+        return userMapper.toDto(saved);
     }
 }

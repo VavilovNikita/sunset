@@ -137,6 +137,14 @@ public class EmailService {
         if (booking.getStatus() != BookingStatus.PAID && booking.getStatus() != BookingStatus.CANCELLED) {
             return;
         }
+        // A walk-in booking (POST /bookings/staff without contact info) legitimately has no
+        // guestEmail - that's a normal, expected case, not a failure. Returning here avoids both
+        // an NPE (List.of(null) throws) and, more importantly, an ERROR-level log entry that
+        // would misleadingly look like a real send failure every single time a walk-in's booking
+        // is marked PAID/CANCELLED.
+        if (booking.getGuestEmail() == null) {
+            return;
+        }
         try {
             String stay = room.getName() + " (" + booking.getCheckIn() + " → " + booking.getCheckOut() + ")";
             String subject = booking.getStatus() == BookingStatus.PAID

@@ -12,6 +12,8 @@ import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.BookingMapper;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.TimestampFormat;
+import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
@@ -39,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.jpa.domain.Specification;
@@ -60,6 +63,7 @@ public class BookingService {
     private final PaymentRepository paymentRepository;
     private final OrderItemRepository orderItemRepository;
     private final MenuItemRepository menuItemRepository;
+    private final AuditLogService auditLogService;
 
     public BookingService(
             RoomRepository roomRepository,
@@ -70,7 +74,8 @@ public class BookingService {
             EmailService emailService,
             PaymentRepository paymentRepository,
             OrderItemRepository orderItemRepository,
-            MenuItemRepository menuItemRepository) {
+            MenuItemRepository menuItemRepository,
+            AuditLogService auditLogService) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.bookingRepository = bookingRepository;
@@ -80,6 +85,7 @@ public class BookingService {
         this.paymentRepository = paymentRepository;
         this.orderItemRepository = orderItemRepository;
         this.menuItemRepository = menuItemRepository;
+        this.auditLogService = auditLogService;
     }
 
     public Booking createBooking(BookingCreateInput input) {
@@ -140,15 +146,25 @@ public class BookingService {
             throw e;
         }
 
-        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()));
+        RoomUnitEntity assignedUnit = findRoomUnit(saved.getRoomUnitId());
+        auditLogService.record(
+                AuditAction.BOOKING_CREATED,
+                AuditEntityType.BOOKING,
+                saved.getId(),
+                "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + checkIn + " to " + checkOut + ")"
+                        + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : ""));
+        return bookingMapper.toDto(saved, room, assignedUnit);
     }
 
     @Transactional
     public Booking updateStatus(String id, BookingStatusInput input) {
         BookingEntity booking = bookingRepository.findById(id).orElseThrow(() -> new NotFoundException("Booking not found"));
+        BookingStatus oldStatus = booking.getStatus();
+        String oldPaymentNote = booking.getPaymentNote();
         booking.setStatus(input.getStatus());
         // paymentNote is optional+nullable: an omitted field leaves the existing value alone
         // (matches Prisma skipping `undefined` update data), an explicit null clears it.
+        boolean paymentNoteChanged = false;
         if (input.getPaymentNote().isPresent()) {
             String note = input.getPaymentNote().get();
             String trimmed = note != null ? note.trim() : null;
@@ -158,6 +174,7 @@ public class BookingService {
                         "This looks like it contains a payment card number. Don't store full card numbers here - "
                                 + "use a reference number or the last 4 digits instead.");
             }
+            paymentNoteChanged = !Objects.equals(oldPaymentNote, trimmed);
             booking.setPaymentNote(trimmed);
         }
         // flush so @UpdateTimestamp (regenerated on every save) is on the object before mapping
@@ -165,6 +182,27 @@ public class BookingService {
 
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         emailService.sendGuestStatusEmail(saved, room);
+
+        if (oldStatus != saved.getStatus()) {
+            auditLogService.record(
+                    AuditAction.BOOKING_STATUS_CHANGED,
+                    AuditEntityType.BOOKING,
+                    saved.getId(),
+                    "Status changed from " + oldStatus.getValue() + " to " + saved.getStatus().getValue() + " for "
+                            + saved.getGuestName() + " in " + room.getName());
+        }
+        // Content is deliberately never included in the summary - paymentNote is free text staff
+        // may (against guidance) use for something sensitive; recording that it changed is
+        // enough for the audit trail without duplicating that risk into a second table.
+        if (paymentNoteChanged) {
+            auditLogService.record(
+                    AuditAction.BOOKING_PAYMENT_NOTE_CHANGED,
+                    AuditEntityType.BOOKING,
+                    saved.getId(),
+                    "Payment note " + (saved.getPaymentNote() != null ? "updated" : "cleared") + " for " + saved.getGuestName()
+                            + " in " + room.getName());
+        }
+
         return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()));
     }
 
@@ -191,6 +229,8 @@ public class BookingService {
      */
     public Booking assignRoomUnit(String bookingId, RoomUnitAssignmentInput input) {
         String roomUnitId = requireRoomUnitIdPresent(input.getRoomUnitId());
+        String oldRoomUnitId =
+                bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found")).getRoomUnitId();
 
         BookingEntity saved;
         try {
@@ -203,7 +243,16 @@ public class BookingService {
         }
 
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
-        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()));
+        RoomUnitEntity oldUnit = findRoomUnit(oldRoomUnitId);
+        RoomUnitEntity newUnit = findRoomUnit(saved.getRoomUnitId());
+        auditLogService.record(
+                AuditAction.BOOKING_ROOM_ASSIGNED,
+                AuditEntityType.BOOKING,
+                saved.getId(),
+                "Room " + (oldUnit != null ? oldUnit.getLabel() : "unassigned") + " → "
+                        + (newUnit != null ? newUnit.getLabel() : "unassigned") + " for " + saved.getGuestName() + " (" + room.getName()
+                        + ")");
+        return bookingMapper.toDto(saved, room, newUnit);
     }
 
     /**
@@ -222,6 +271,11 @@ public class BookingService {
         }
         String roomUnitId = requireRoomUnitIdPresent(input.getRoomUnitId());
 
+        BookingEntity before = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        LocalDate oldCheckIn = before.getCheckIn();
+        LocalDate oldCheckOut = before.getCheckOut();
+        String oldRoomUnitId = before.getRoomUnitId();
+
         BookingEntity saved;
         try {
             saved = bookingWriter.updateSchedule(bookingId, checkIn, checkOut, roomUnitId);
@@ -233,7 +287,30 @@ public class BookingService {
         }
 
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
-        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()));
+        RoomUnitEntity newUnit = findRoomUnit(saved.getRoomUnitId());
+
+        StringBuilder summary = new StringBuilder("Schedule changed for ")
+                .append(saved.getGuestName())
+                .append(" in ")
+                .append(room.getName())
+                .append(": dates ")
+                .append(oldCheckIn)
+                .append(" – ")
+                .append(oldCheckOut)
+                .append(" → ")
+                .append(checkIn)
+                .append(" – ")
+                .append(checkOut);
+        if (!Objects.equals(oldRoomUnitId, saved.getRoomUnitId())) {
+            RoomUnitEntity oldUnit = findRoomUnit(oldRoomUnitId);
+            summary.append("; room ")
+                    .append(oldUnit != null ? oldUnit.getLabel() : "unassigned")
+                    .append(" → ")
+                    .append(newUnit != null ? newUnit.getLabel() : "unassigned");
+        }
+        auditLogService.record(AuditAction.BOOKING_SCHEDULE_CHANGED, AuditEntityType.BOOKING, saved.getId(), summary.toString());
+
+        return bookingMapper.toDto(saved, room, newUnit);
     }
 
     /**
@@ -364,6 +441,13 @@ public class BookingService {
     @Transactional(readOnly = true)
     public String exportCsv(String from, String to, BookingStatus status) {
         List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status));
+        auditLogService.record(
+                AuditAction.BOOKINGS_EXPORTED,
+                AuditEntityType.BOOKING,
+                null,
+                "Exported " + bookings.size() + " booking(s)"
+                        + (from != null || to != null ? " for " + (from != null ? from : "…") + " to " + (to != null ? to : "…") : "")
+                        + (status != null ? ", status=" + status.getValue() : ""));
         return buildCsv(bookings);
     }
 

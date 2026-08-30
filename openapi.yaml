@@ -60,6 +60,17 @@ tags:
       background and retriable by hand from here.
   - name: Users
     description: Staff account management (ADMIN only).
+  - name: AuditLog
+    description: >
+      Read-only, append-only record of significant staff actions - money and guest-data
+      operations (booking status/schedule/price changes, order close/cancel, shift open/close,
+      exports, user/room-unit management). Written internally from the service layer on the
+      relevant write path, never through a dedicated write endpoint - there is no POST, PATCH,
+      or DELETE here for any role. Requires MANAGER or above: the operational disputes this
+      exists to resolve (a cash discrepancy, a guest billing question, a suspected misuse of a
+      role) are exactly the kind of thing a manager needs to investigate without escalating to
+      an admin first, the same reasoning already applied to `GET /payments/summary` and the
+      booking/shift CSV exports.
   - name: Public
     description: >
       Unauthenticated, guest-facing reads for the public site (room listing,
@@ -2724,6 +2735,92 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /audit-log:
+    get:
+      operationId: listAuditLog
+      tags: [AuditLog]
+      summary: Search the audit log
+      description: >
+        Requires MANAGER or above. Every filter is optional and combines with AND; with none
+        given, returns the most recent entries across the whole system, newest first.
+        `entityType`+`entityId` together is how a specific booking's or order's own history is
+        found (e.g. the booking detail page's History section calls this with
+        `entityType=BOOKING&entityId={id}`) - `entityId` alone without `entityType` is rejected,
+        since the same id string has no meaning without knowing which kind of record it names.
+      parameters:
+        - name: actorEmail
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >
+            Case-insensitive substring match against the actor's email as it was recorded at the
+            time of the action (not a live lookup against the current `User` table - see
+            `AuditLogEntry.actorEmail`). Filtering by email rather than user id avoids forcing a
+            MANAGER caller through the ADMIN-only `GET /users` just to find an id to filter by.
+        - name: action
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/AuditAction"
+        - name: entityType
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/AuditEntityType"
+        - name: entityId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Requires `entityType` to also be given.
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Inclusive start date (by `createdAt`).
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Inclusive end date (by `createdAt`).
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: A page of matching entries, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogPage"
+        "400":
+          description: '`entityId` given without `entityType`, an invalid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /users:
     get:
       operationId: listUsers
@@ -4539,3 +4636,112 @@ components:
         grandTotal:
           type: string
           description: '`totals.cash + totals.card + totals.other` - decimal(10,2) rendered as a string. Deliberately excludes `totals.roomCharge`.'
+
+    AuditAction:
+      type: string
+      description: >
+        The fixed vocabulary of significant staff actions this system records. Deliberately not
+        open-ended (a free-text action name) - a closed set is what makes "filter by action
+        type" on `GET /audit-log` and a fixed dropdown in the admin UI possible at all. Adding a
+        new kind of audited action means adding a value here (a plain `ALTER TYPE ... ADD VALUE`
+        migration, same pattern already used for `Role`/`PrintDocumentType`), not widening this
+        into a string.
+      enum:
+        - BOOKING_CREATED
+        - BOOKING_STATUS_CHANGED
+        - BOOKING_PAYMENT_NOTE_CHANGED
+        - BOOKING_SCHEDULE_CHANGED
+        - BOOKING_ROOM_ASSIGNED
+        - BOOKINGS_EXPORTED
+        - ROOM_PRICE_CHANGED
+        - RATE_OVERRIDE_CHANGED
+        - ORDER_CLOSED
+        - ORDER_CANCELLED
+        - ROOM_CHARGE_POSTED
+        - SHIFT_OPENED
+        - SHIFT_CLOSED
+        - SHIFT_EXPORTED
+        - USER_CREATED
+        - USER_ROLE_CHANGED
+        - USER_ACTIVE_CHANGED
+        - USER_PASSWORD_RESET
+        - ROOM_UNIT_CREATED
+        - ROOM_UNIT_UPDATED
+        - ROOM_UNIT_DELETED
+        - ROOM_UNIT_BLOCK_CREATED
+        - ROOM_UNIT_BLOCK_DELETED
+
+    AuditEntityType:
+      type: string
+      description: >
+        Which kind of record `AuditLogEntry.entityId` refers to. Paired with `entityId` to look
+        up one record's own history (e.g. a booking's). Values are SCREAMING_SNAKE_CASE, not the
+        PascalCase entity class names, deliberately: Spring MVC's default `@RequestParam` enum
+        conversion for a query parameter (unlike Jackson's JSON body deserialization) uses the
+        enum constant's own `name()`, not a custom `@JsonValue` - a PascalCase value here would
+        deserialize correctly in a JSON response body but fail to bind as a query parameter
+        (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
+        asymmetry every other enum in this API avoids by keeping its JSON value identical to its
+        Java constant name.
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT]
+
+    AuditLogEntry:
+      type: object
+      description: >
+        One row from the append-only audit log - see the AuditLog tag description for what gets
+        recorded and why. `summary` is written in plain language by the service action that
+        triggered it, meant to be read directly by a hotel manager, not reconstructed by the
+        client from raw before/after field values - deliberately not a generic entity diff (see
+        the backend's `AuditLogService` for the reasoning: a diff of every field is both harder
+        to read and, for the fields that actually matter here, no more precise than a sentence
+        written at the one point in the code that already knows what changed and why it
+        matters).
+      required: [id, actorUserId, actorEmail, actorRole, action, entityType, summary, createdAt]
+      properties:
+        id:
+          type: string
+        actorUserId:
+          type: string
+          description: 'The acting user''s id at the time of the action. Not guaranteed to still resolve via `GET /users/{id}` - see `actorEmail`.'
+        actorEmail:
+          type: string
+          description: >
+            The acting user's email *as it was at the time of the action* - a snapshot, not a
+            live join to the current `User` row. This is deliberate: the acting user's account
+            may since have had its email changed, or (if account deletion is ever added - today
+            accounts are only disabled, never deleted) no longer exist at all, and this row must
+            still say who did it.
+        actorRole:
+          $ref: "#/components/schemas/Role"
+          description: The acting user's role at the time of the action - also a snapshot, for the same reason as `actorEmail`.
+        action:
+          $ref: "#/components/schemas/AuditAction"
+        entityType:
+          $ref: "#/components/schemas/AuditEntityType"
+        entityId:
+          type: string
+          nullable: true
+          description: 'Absent for an action with no single-record target (e.g. `BOOKINGS_EXPORTED`, a query over many bookings at once).'
+        summary:
+          type: string
+          description: Human-readable description of what happened, written by the code that performed the action. Never contains a guest's email, phone, or payment note - see the tag description.
+        createdAt:
+          type: string
+          format: date-time
+
+    AuditLogPage:
+      type: object
+      description: One page of `GET /audit-log` results, newest first.
+      required: [items, page, pageSize, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalCount:
+          type: integer
+          description: Total number of matching entries across all pages, for rendering pagination controls - not just `items.length`.

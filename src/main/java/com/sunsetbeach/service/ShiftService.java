@@ -14,6 +14,8 @@ import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.ShiftMapper;
 import com.sunsetbeach.mapper.TimestampFormat;
+import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.PrintDocumentType;
@@ -66,6 +68,7 @@ public class ShiftService {
     private final UserRepository userRepository;
     private final ShiftMapper shiftMapper;
     private final PrintService printService;
+    private final AuditLogService auditLogService;
 
     public ShiftService(
             ShiftRepository shiftRepository,
@@ -78,7 +81,8 @@ public class ShiftService {
             RoomRepository roomRepository,
             UserRepository userRepository,
             ShiftMapper shiftMapper,
-            PrintService printService) {
+            PrintService printService,
+            AuditLogService auditLogService) {
         this.shiftRepository = shiftRepository;
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
@@ -90,6 +94,7 @@ public class ShiftService {
         this.userRepository = userRepository;
         this.shiftMapper = shiftMapper;
         this.printService = printService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -109,13 +114,21 @@ public class ShiftService {
         ShiftEntity entity = new ShiftEntity();
         entity.setOpenedByUserId(userId);
         entity.setOpeningCashFloat(input.getOpeningCashFloat());
+        ShiftEntity saved;
         try {
-            return shiftMapper.toDto(shiftRepository.saveAndFlush(entity));
+            saved = shiftRepository.saveAndFlush(entity);
         } catch (DataIntegrityViolationException e) {
             // Belt-and-suspenders: the unique partial index (Shift_one_open_per_user) is the
             // real guard against a race between two concurrent opens for the same user.
             throw new ConflictException("You already have an open shift");
         }
+        auditLogService.record(
+                AuditAction.SHIFT_OPENED,
+                AuditEntityType.SHIFT,
+                saved.getId(),
+                "Shift opened with opening float "
+                        + (saved.getOpeningCashFloat() != null ? PriceFormat.asDecimalString(saved.getOpeningCashFloat()) : "0.00"));
+        return shiftMapper.toDto(saved);
     }
 
     @Transactional
@@ -138,7 +151,37 @@ public class ShiftService {
         shift.setStatus(ShiftStatus.CLOSED);
         ShiftEntity saved = shiftRepository.saveAndFlush(shift);
         printZReport(saved);
+
+        auditLogService.record(AuditAction.SHIFT_CLOSED, AuditEntityType.SHIFT, saved.getId(), describeShiftClose(saved));
+
         return shiftMapper.toDto(saved);
+    }
+
+    /**
+     * Same reconciliation arithmetic as {@link #buildZReportPayload}/{@link #appendSummary} -
+     * opening float + cash payments = expected cash, compared against what was physically
+     * counted. Called out explicitly in the audit summary because a cash discrepancy at shift
+     * close is exactly the kind of thing this audit trail exists to make traceable back to who
+     * closed the drawer.
+     */
+    private String describeShiftClose(ShiftEntity shift) {
+        PaymentAggregation.Totals totals = PaymentAggregation.aggregate(paymentRepository.findByShiftId(shift.getId()));
+        BigDecimal openingFloat = shift.getOpeningCashFloat() != null ? shift.getOpeningCashFloat() : BigDecimal.ZERO;
+        BigDecimal expectedCash = openingFloat.add(totals.cash());
+        BigDecimal closingCounted = shift.getClosingCashCounted();
+
+        String summary = "Shift closed, received " + PriceFormat.asDecimalString(totals.receivedTotal()) + " (cash "
+                + PriceFormat.asDecimalString(totals.cash()) + ", card " + PriceFormat.asDecimalString(totals.card()) + ", other "
+                + PriceFormat.asDecimalString(totals.other()) + ")";
+        if (closingCounted != null) {
+            BigDecimal discrepancy = closingCounted.subtract(expectedCash);
+            summary += ", counted cash " + PriceFormat.asDecimalString(closingCounted);
+            if (discrepancy.compareTo(BigDecimal.ZERO) != 0) {
+                summary += " — discrepancy of " + PriceFormat.asDecimalString(discrepancy) + " vs. expected "
+                        + PriceFormat.asDecimalString(expectedCash);
+            }
+        }
+        return summary;
     }
 
     /**
@@ -255,6 +298,13 @@ public class ShiftService {
         }
 
         appendSummary(csv, shift, PaymentAggregation.aggregate(payments));
+
+        auditLogService.record(
+                AuditAction.SHIFT_EXPORTED,
+                AuditEntityType.SHIFT,
+                shift.getId(),
+                "Exported shift report (" + payments.size() + " payment(s))");
+
         return csv.toString();
     }
 

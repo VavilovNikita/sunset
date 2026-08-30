@@ -11,6 +11,8 @@ import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.OrderMapper;
+import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.Order;
@@ -56,6 +58,7 @@ public class OrderService {
     private final PaymentRepository paymentRepository;
     private final OrderMapper orderMapper;
     private final OrderPrintingService orderPrintingService;
+    private final AuditLogService auditLogService;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -66,7 +69,8 @@ public class OrderService {
             ShiftRepository shiftRepository,
             PaymentRepository paymentRepository,
             OrderMapper orderMapper,
-            OrderPrintingService orderPrintingService) {
+            OrderPrintingService orderPrintingService,
+            AuditLogService auditLogService) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.menuItemRepository = menuItemRepository;
@@ -76,6 +80,7 @@ public class OrderService {
         this.paymentRepository = paymentRepository;
         this.orderMapper = orderMapper;
         this.orderPrintingService = orderPrintingService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -264,6 +269,21 @@ public class OrderService {
         OrderEntity saved = orderRepository.saveAndFlush(order);
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
         orderPrintingService.printGuestReceipt(saved, items, payment, booking);
+
+        auditLogService.record(
+                AuditAction.ORDER_CLOSED,
+                AuditEntityType.ORDER,
+                saved.getId(),
+                "Order closed with " + input.getMethod().getValue() + " payment of " + saved.getTotal()
+                        + (booking != null ? " (charged to " + booking.getGuestName() + "'s room)" : ""));
+        if (booking != null) {
+            auditLogService.record(
+                    AuditAction.ROOM_CHARGE_POSTED,
+                    AuditEntityType.BOOKING,
+                    booking.getId(),
+                    "Room charge of " + saved.getTotal() + " posted to " + booking.getGuestName() + "'s folio from order " + saved.getId());
+        }
+
         return orderMapper.toDto(saved, items);
     }
 
@@ -282,6 +302,8 @@ public class OrderService {
         }
         order.setStatus(OrderStatus.CANCELLED);
         OrderEntity saved = orderRepository.saveAndFlush(order);
+        auditLogService.record(
+                AuditAction.ORDER_CANCELLED, AuditEntityType.ORDER, saved.getId(), "Order cancelled (total was " + saved.getTotal() + ")");
         return orderMapper.toDto(saved, orderItemRepository.findByOrderId(id));
     }
 

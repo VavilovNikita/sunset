@@ -6,6 +6,8 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.PriceFormat;
+import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.PriceRangeInput;
 import com.sunsetbeach.model.PricingDay;
 import com.sunsetbeach.model.PricingResponse;
@@ -26,10 +28,12 @@ public class PricingService {
 
     private final RoomRepository roomRepository;
     private final RatePlanRepository ratePlanRepository;
+    private final AuditLogService auditLogService;
 
-    public PricingService(RoomRepository roomRepository, RatePlanRepository ratePlanRepository) {
+    public PricingService(RoomRepository roomRepository, RatePlanRepository ratePlanRepository, AuditLogService auditLogService) {
         this.roomRepository = roomRepository;
         this.ratePlanRepository = ratePlanRepository;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -82,6 +86,13 @@ public class PricingService {
             plan.setPrice(input.getPrice());
             ratePlanRepository.save(plan);
         }
+
+        auditLogService.record(
+                AuditAction.RATE_OVERRIDE_CHANGED,
+                AuditEntityType.ROOM,
+                room.getId(),
+                "Price override set to " + input.getPrice() + " for " + room.getName() + " from " + from + " to " + to + " ("
+                        + dates.size() + " day(s))");
 
         return dates.size();
     }

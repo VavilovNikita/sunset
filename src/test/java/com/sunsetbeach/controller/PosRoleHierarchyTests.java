@@ -90,7 +90,8 @@ import tools.jackson.databind.json.JsonMapper;
             BookingController.class,
             RoomController.class,
             PricingController.class,
-            AvailabilityController.class
+            AvailabilityController.class,
+            com.sunsetbeach.controller.AuditLogController.class
         })
 @Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
         com.sunsetbeach.security.BookingRateLimiter.class})
@@ -142,6 +143,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private AvailabilityService availabilityService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.AuditLogService auditLogService;
 
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
     // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
@@ -339,6 +343,21 @@ class PosRoleHierarchyTests {
     @Test
     void paymentsSummary_missingFromParam_isBadRequest() throws Exception {
         mockMvc.perform(get("/payments/summary?to=2031-01-31").header("Authorization", token(Role.MANAGER))).andExpect(status().isBadRequest());
+    }
+
+    // --- GET /audit-log requires MANAGER or above - same reasoning as /payments/summary above:
+    // the disputes it exists to resolve need to be investigable without escalating to an admin. ---
+
+    @Test
+    void auditLog_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/audit-log").header("Authorization", token(Role.CASHIER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void auditLog_withManagerToken_isOk() throws Exception {
+        when(auditLogService.search(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new com.sunsetbeach.model.AuditLogPage(List.of(), 0, 50, 0));
+        mockMvc.perform(get("/audit-log").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
     }
 
     // --- /printers and /print-jobs require MANAGER or above ---

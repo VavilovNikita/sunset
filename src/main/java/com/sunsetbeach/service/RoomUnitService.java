@@ -7,6 +7,8 @@ import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.RoomUnitMapper;
+import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.RoomUnitBlock;
@@ -19,6 +21,7 @@ import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,18 +34,21 @@ public class RoomUnitService {
     private final RoomUnitBlockRepository roomUnitBlockRepository;
     private final BookingRepository bookingRepository;
     private final RoomUnitMapper roomUnitMapper;
+    private final AuditLogService auditLogService;
 
     public RoomUnitService(
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             RoomUnitBlockRepository roomUnitBlockRepository,
             BookingRepository bookingRepository,
-            RoomUnitMapper roomUnitMapper) {
+            RoomUnitMapper roomUnitMapper,
+            AuditLogService auditLogService) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
         this.bookingRepository = bookingRepository;
         this.roomUnitMapper = roomUnitMapper;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -64,29 +70,46 @@ public class RoomUnitService {
 
         RoomUnitEntity entity = new RoomUnitEntity();
         roomUnitMapper.applyInput(entity, input);
+        RoomUnitEntity saved;
         try {
             // flush so @CreationTimestamp (populated at insert time) is on the object before mapping,
             // and so the label's unique-constraint violation (if any) surfaces here, not later.
-            return roomUnitMapper.toDto(roomUnitRepository.saveAndFlush(entity));
+            saved = roomUnitRepository.saveAndFlush(entity);
         } catch (DataIntegrityViolationException e) {
             throw new ConflictException("This label is already in use by another room.");
         }
+        auditLogService.record(AuditAction.ROOM_UNIT_CREATED, AuditEntityType.ROOM_UNIT, saved.getId(), "Room unit " + saved.getLabel() + " created");
+        return roomUnitMapper.toDto(saved);
     }
 
     @Transactional
     public RoomUnit update(String id, RoomUnitUpdateInput input) {
         RoomUnitEntity entity = findEntity(id);
+        String oldLabel = entity.getLabel();
+        boolean oldActive = entity.isActive();
 
         if (entity.isActive() && !input.getIsActive() && hasUpcomingBooking(id)) {
             throw new ConflictException("Room " + entity.getLabel() + " has an upcoming booking assigned and can't be deactivated.");
         }
 
         roomUnitMapper.applyUpdate(entity, input);
+        RoomUnitEntity saved;
         try {
-            return roomUnitMapper.toDto(roomUnitRepository.saveAndFlush(entity));
+            saved = roomUnitRepository.saveAndFlush(entity);
         } catch (DataIntegrityViolationException e) {
             throw new ConflictException("This label is already in use by another room.");
         }
+
+        StringBuilder summary = new StringBuilder("Room unit ").append(oldLabel).append(" updated");
+        if (!Objects.equals(oldLabel, saved.getLabel())) {
+            summary.append(" (renamed to ").append(saved.getLabel()).append(")");
+        }
+        if (oldActive != saved.isActive()) {
+            summary.append(saved.isActive() ? "; reactivated" : "; deactivated");
+        }
+        auditLogService.record(AuditAction.ROOM_UNIT_UPDATED, AuditEntityType.ROOM_UNIT, saved.getId(), summary.toString());
+
+        return roomUnitMapper.toDto(saved);
     }
 
     @Transactional
@@ -104,6 +127,7 @@ public class RoomUnitService {
         } catch (DataIntegrityViolationException e) {
             throw new ConflictException("Room " + entity.getLabel() + " has bookings on record and can't be deleted.");
         }
+        auditLogService.record(AuditAction.ROOM_UNIT_DELETED, AuditEntityType.ROOM_UNIT, id, "Room unit " + entity.getLabel() + " deleted");
     }
 
     /** A non-cancelled booking assigned to this unit whose stay hasn't ended yet - deactivating/deleting would silently orphan it. */
@@ -119,7 +143,7 @@ public class RoomUnitService {
 
     @Transactional
     public RoomUnitBlock createBlock(String roomUnitId, RoomUnitBlockInput input) {
-        findEntity(roomUnitId);
+        RoomUnitEntity unit = findEntity(roomUnitId);
 
         LocalDate fromDate = LocalDate.parse(input.getFromDate());
         LocalDate toDate = LocalDate.parse(input.getToDate());
@@ -132,7 +156,15 @@ public class RoomUnitService {
         entity.setFromDate(fromDate);
         entity.setToDate(toDate);
         entity.setReason(input.getReason().trim());
-        return roomUnitMapper.toDto(roomUnitBlockRepository.saveAndFlush(entity));
+        RoomUnitBlockEntity saved = roomUnitBlockRepository.saveAndFlush(entity);
+
+        auditLogService.record(
+                AuditAction.ROOM_UNIT_BLOCK_CREATED,
+                AuditEntityType.ROOM_UNIT,
+                roomUnitId,
+                "Room " + unit.getLabel() + " blocked " + fromDate + " to " + toDate + " (" + entity.getReason() + ")");
+
+        return roomUnitMapper.toDto(saved);
     }
 
     @Transactional
@@ -140,6 +172,13 @@ public class RoomUnitService {
         RoomUnitBlockEntity block = roomUnitBlockRepository.findByIdAndRoomUnitId(blockId, roomUnitId)
                 .orElseThrow(() -> new NotFoundException("Room unit or block not found"));
         roomUnitBlockRepository.delete(block);
+
+        RoomUnitEntity unit = findEntity(roomUnitId);
+        auditLogService.record(
+                AuditAction.ROOM_UNIT_BLOCK_DELETED,
+                AuditEntityType.ROOM_UNIT,
+                roomUnitId,
+                "Block on room " + unit.getLabel() + " (" + block.getFromDate() + " to " + block.getToDate() + ") removed");
     }
 
     private RoomUnitEntity findEntity(String id) {

@@ -143,6 +143,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/shifts/*/export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/shifts/**").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.GET, "/payments/summary").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Audit log: read-only, MANAGER+ - the disputes it exists to resolve (a
+                        // cash discrepancy, a guest billing question, a suspected misuse of a
+                        // role) are exactly what a manager needs to investigate without
+                        // escalating to an admin, same reasoning as /payments/summary above and
+                        // the booking/shift CSV exports. There is no write route for any role -
+                        // every entry is written internally by AuditLogService, never through
+                        // this API.
+                        .requestMatchers(HttpMethod.GET, "/audit-log").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Printer CRUD/test (registering, editing, deleting, test-printing a physical
                         // printer) is MANAGER-only. The print-job queue is WAITER+ - any staff role may
                         // view/retry it, but PrinterService itself filters what a non-MANAGER caller can

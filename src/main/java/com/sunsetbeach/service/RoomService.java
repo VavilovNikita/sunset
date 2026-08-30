@@ -5,11 +5,14 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.mapper.RoomMapper;
+import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Room;
 import com.sunsetbeach.model.RoomInput;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
@@ -41,16 +44,19 @@ public class RoomService {
     private final RoomUnitRepository roomUnitRepository;
     private final RoomMapper roomMapper;
     private final Path uploadsRoot;
+    private final AuditLogService auditLogService;
 
     public RoomService(
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             RoomMapper roomMapper,
-            @Value("${app.uploads.root}") String uploadsRoot) {
+            @Value("${app.uploads.root}") String uploadsRoot,
+            AuditLogService auditLogService) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomMapper = roomMapper;
         this.uploadsRoot = Path.of(uploadsRoot);
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -79,8 +85,19 @@ public class RoomService {
     @Transactional
     public Room update(String id, RoomInput input) {
         RoomEntity entity = roomRepository.findById(id).orElseThrow(() -> new NotFoundException("Room not found"));
+        BigDecimal oldBasePrice = entity.getBasePrice();
         roomMapper.applyInput(entity, input);
-        return roomMapper.toDto(roomRepository.save(entity));
+        RoomEntity saved = roomRepository.save(entity);
+
+        if (oldBasePrice.compareTo(saved.getBasePrice()) != 0) {
+            auditLogService.record(
+                    AuditAction.ROOM_PRICE_CHANGED,
+                    AuditEntityType.ROOM,
+                    saved.getId(),
+                    "Base price for " + saved.getName() + " changed from " + oldBasePrice + " to " + saved.getBasePrice());
+        }
+
+        return roomMapper.toDto(saved);
     }
 
     @Transactional
