@@ -4184,17 +4184,24 @@ components:
         `T00:00:00.000Z` time component (a Prisma `Date`-object artifact), which caused three
         separate incidents (a dashboard revenue bug, and two near-misses while building the
         booking calendar) before the format was unified here. `roomUnitId`/`roomUnit` are null
-        until a physical room is assigned via `PUT /bookings/{id}/room-unit` - `roomId`/`room`
-        (the room *type*) stay the source of truth for what was booked either way.
+        until a physical room is assigned via `PUT /bookings/{id}/room-unit`, or after a
+        relocation that didn't name a specific unit for the new leg.
 
 
         `roomId`/`room`/`roomUnitId`/`roomUnit`/`checkIn`/`checkOut`/`totalPrice` are all
         derived from `segments` (the *last* segment's room, for roomId/roomUnitId/room/roomUnit;
         the first segment's checkIn and the last segment's checkOut; the sum of every segment's
         totalPrice) - they exist so every reader that only cares about "what room is this guest
-        in right now" doesn't need to know segments exist at all. A booking that has never been
-        relocated has exactly one segment and these values equal that segment's own fields
-        exactly - segments are not a special case that only shows up for split bookings.
+        in right now" doesn't need to know segments exist at all. `roomId`/`room` are **not**
+        "what was originally booked" - `POST /bookings/{id}/relocate` can move a booking to a
+        different room *type* mid-stay (an upgrade, downgrade, or a move off a broken room, all
+        ordinary front-desk operations), and once that happens these fields track the guest's
+        current/most recent room, not their first one. Anything that needs the room at a
+        specific point in the stay - a report broken out by leg, an original-type audit trail -
+        must read `segments` directly; nothing else on this object preserves that history. A
+        booking that has never been relocated has exactly one segment and these values equal
+        that segment's own fields exactly - segments are not a special case that only shows up
+        for split bookings.
       required:
         - id
         - roomId

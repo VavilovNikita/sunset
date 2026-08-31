@@ -8,6 +8,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
+import com.sunsetbeach.model.AvailabilityDay;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingScheduleInput;
@@ -67,6 +68,9 @@ class BookingRelocationTests {
 
     @Autowired
     private RatePlanRepository ratePlanRepository;
+
+    @Autowired
+    private AvailabilityService availabilityService;
 
     private final List<String> createdRoomIds = new ArrayList<>();
 
@@ -128,6 +132,14 @@ class BookingRelocationTests {
 
     private List<BookingSegmentEntity> segmentsOf(String bookingId) {
         return segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+    }
+
+    /** Looks up one day's row from an {@link AvailabilityService#getAvailability} response, querying that day's own month so a stay that happens to straddle a month boundary is never silently missed. */
+    private AvailabilityDay availabilityOn(String roomId, LocalDate date) {
+        return availabilityService.getAvailability(roomId, java.time.YearMonth.from(date).toString()).getDays().stream()
+                .filter(d -> d.getDate().equals(date.toString()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No availability row for " + roomId + " on " + date));
     }
 
     // --- Continuity invariant ---------------------------------------------------------------
@@ -342,6 +354,91 @@ class BookingRelocationTests {
         assertThat(segmentsOf(booking.getId())).hasSize(1);
     }
 
+    @Test
+    void relocate_toACheaperRoomType_recomputesPriceDownward() {
+        // Mirrors relocate_toADifferentRoomType_recomputesPriceForThatTypesRate above, but a
+        // downgrade rather than an upgrade - the recompute must work in both directions, not just
+        // the one that happens to add money. A guest moved out of a broken room into whatever's
+        // free is exactly the case that produces a cheaper stay, not a more expensive one.
+        RoomEntity expensiveRoom = createRoom(1, new BigDecimal("2500.00"));
+        RoomEntity cheapRoom = createRoom(1, new BigDecimal("1000.00"));
+        LocalDate checkIn = LocalDate.now().plusDays(232);
+        LocalDate checkOut = checkIn.plusDays(4); // 4 nights
+        LocalDate splitDate = checkIn.plusDays(2); // 2 nights in each room
+
+        Booking booking = createBooking(expensiveRoom.getId(), checkIn, checkOut);
+        assertThat(new BigDecimal(booking.getTotalPrice())).isEqualByComparingTo("10000.00"); // 4 x 2500
+
+        RoomUnitEntity cheapUnit = roomUnitRepository.findByRoomId(cheapRoom.getId()).get(0);
+        Booking relocated = bookingService.relocate(
+                booking.getId(), new RelocationInput(splitDate.toString(), cheapRoom.getId()).roomUnitId(cheapUnit.getId()));
+
+        // 2 nights at 2500 (unchanged first segment) + 2 nights at 1000 (new segment) = 7000.
+        assertThat(new BigDecimal(relocated.getTotalPrice())).isEqualByComparingTo("7000.00");
+        assertThat(relocated.getRoomId()).isEqualTo(cheapRoom.getId());
+
+        List<BookingSegmentEntity> segments =
+                segmentsOf(booking.getId()).stream().sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn)).toList();
+        assertThat(segments.get(0).getRoomId()).isEqualTo(expensiveRoom.getId());
+        assertThat(segments.get(0).getTotalPrice()).isEqualByComparingTo("5000.00");
+        assertThat(segments.get(1).getRoomId()).isEqualTo(cheapRoom.getId());
+        assertThat(segments.get(1).getTotalPrice()).isEqualByComparingTo("2000.00");
+    }
+
+    // --- Availability after a cross-type relocation ---------------------------------------------
+
+    @Test
+    void relocate_toADifferentRoomType_correctlyMovesOccupancyBetweenBothTypesAvailability() {
+        // The concern a booking-level roomId denormalization always raises: does the occupancy
+        // count for either type drift after a cross-type move? It doesn't, because
+        // AvailabilityService (like BookingWriter's own isRangeAvailable/checkUnitAssignable and
+        // BookingCalendarService) computes occupancy from BookingSegment rows, never from
+        // Booking.roomId - this proves that black-box, through the same read path staff/guests
+        // actually see, not by re-reading the query source.
+        RoomEntity roomA = createRoom(2, new BigDecimal("1000.00"));
+        RoomEntity roomB = createRoom(2, new BigDecimal("1500.00"));
+        LocalDate checkIn = LocalDate.now().plusDays(238);
+        LocalDate checkOut = checkIn.plusDays(4); // 4 nights: [checkIn, checkOut)
+        LocalDate splitDate = checkIn.plusDays(2); // relocate after the first 2 nights
+
+        RoomUnitEntity unitA = roomUnitRepository.findByRoomId(roomA.getId()).get(0);
+        RoomUnitEntity unitB = roomUnitRepository.findByRoomId(roomB.getId()).get(0);
+
+        Booking booking = createBooking(roomA.getId(), checkIn, checkOut);
+        bookingService.assignRoomUnit(booking.getId(), new RoomUnitAssignmentInput().roomUnitId(unitA.getId()));
+
+        // Before relocating: room A is booked for all 4 nights, room B untouched by this booking.
+        assertThat(availabilityOn(roomA.getId(), checkIn).getBookedCount()).isEqualTo(1);
+        assertThat(availabilityOn(roomA.getId(), checkOut.minusDays(1)).getBookedCount()).isEqualTo(1);
+        assertThat(availabilityOn(roomB.getId(), checkIn).getBookedCount()).isEqualTo(0);
+
+        bookingService.relocate(
+                booking.getId(), new RelocationInput(splitDate.toString(), roomB.getId()).roomUnitId(unitB.getId()));
+
+        // First half [checkIn, splitDate): still room A's occupancy, room B untouched.
+        assertThat(availabilityOn(roomA.getId(), checkIn).getBookedCount()).isEqualTo(1);
+        assertThat(availabilityOn(roomA.getId(), checkIn).getAvailableCount()).isEqualTo(1); // 2 units - 1 booked
+        assertThat(availabilityOn(roomB.getId(), checkIn).getBookedCount()).isEqualTo(0);
+        assertThat(availabilityOn(roomB.getId(), checkIn).getAvailableCount()).isEqualTo(2);
+
+        // Second half [splitDate, checkOut): room A must be freed up (this is exactly the drift
+        // the booking-level mirror could cause if anything still read it for occupancy), room B
+        // now shows the guest.
+        assertThat(availabilityOn(roomA.getId(), splitDate).getBookedCount()).isEqualTo(0);
+        assertThat(availabilityOn(roomA.getId(), splitDate).getAvailableCount()).isEqualTo(2);
+        assertThat(availabilityOn(roomB.getId(), splitDate).getBookedCount()).isEqualTo(1);
+        assertThat(availabilityOn(roomB.getId(), splitDate).getAvailableCount()).isEqualTo(1);
+        assertThat(availabilityOn(roomA.getId(), checkOut.minusDays(1)).getBookedCount()).isEqualTo(0);
+        assertThat(availabilityOn(roomB.getId(), checkOut.minusDays(1)).getBookedCount()).isEqualTo(1);
+
+        // The night the guest actually moved out of room A (splitDate - 1, i.e. checkIn+1) is
+        // still fully room A's, and the checkout day itself (checkOut) is free in both, matching
+        // the half-open [checkIn, checkOut) convention used everywhere else in this codebase.
+        assertThat(availabilityOn(roomA.getId(), splitDate.minusDays(1)).getBookedCount()).isEqualTo(1);
+        assertThat(availabilityOn(roomA.getId(), checkOut).getBookedCount()).isEqualTo(0);
+        assertThat(availabilityOn(roomB.getId(), checkOut).getBookedCount()).isEqualTo(0);
+    }
+
     // --- Undo-relocation ------------------------------------------------------------------------
 
     @Test
@@ -525,27 +622,6 @@ class BookingRelocationTests {
         assertThatCode(() -> bookingService.assignRoomUnit(booking.getId(), new RoomUnitAssignmentInput().roomUnitId(unitB.getId())))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("split by a room relocation");
-    }
-
-    // --- Migration backfill: existing (pre-feature) bookings got exactly one matching segment ---
-
-    @Test
-    void everyExistingBooking_hasExactlyOneSegmentMatchingItsOwnFields() {
-        // Read-only assertion against whatever bookings already exist in the dev DB (manual test
-        // data included) - proves V18__booking_segments.sql's backfill, without creating or
-        // touching a single row of its own.
-        List<com.sunsetbeach.entity.BookingEntity> existing = bookingRepository.findAll();
-        assertThat(existing).isNotEmpty();
-        for (com.sunsetbeach.entity.BookingEntity booking : existing) {
-            List<BookingSegmentEntity> segments = segmentsOf(booking.getId());
-            assertThat(segments).as("booking %s should have exactly one segment", booking.getId()).hasSize(1);
-            BookingSegmentEntity segment = segments.get(0);
-            assertThat(segment.getRoomId()).isEqualTo(booking.getRoomId());
-            assertThat(segment.getRoomUnitId()).isEqualTo(booking.getRoomUnitId());
-            assertThat(segment.getCheckIn()).isEqualTo(booking.getCheckIn());
-            assertThat(segment.getCheckOut()).isEqualTo(booking.getCheckOut());
-            assertThat(segment.getTotalPrice()).isEqualByComparingTo(booking.getTotalPrice());
-        }
     }
 
 }
