@@ -16,6 +16,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.model.AvailabilityResponse;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingCalendarResponse;
 import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
@@ -597,7 +598,7 @@ class PosRoleHierarchyTests {
 
     @Test
     void listBookings_withCashierToken_isOk() throws Exception {
-        when(bookingService.list(any(), any(), any())).thenReturn(List.of());
+        when(bookingService.list(any(), any(), any(), any())).thenReturn(List.of());
         mockMvc.perform(get("/bookings").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
     }
 
@@ -712,6 +713,10 @@ class PosRoleHierarchyTests {
         return new com.sunsetbeach.model.User("user-2", "user-2@example.com", Role.CASHIER, true, OffsetDateTime.now());
     }
 
+    private static BookingSegment sampleBookingSegment() {
+        return new BookingSegment("segment-1", "room-1", sampleRoom(), "unit-1", sampleRoomUnit(), "2026-01-01", "2026-01-02", "1500.00");
+    }
+
     private static Booking sampleBooking() {
         return new Booking(
                 "booking-1",
@@ -722,11 +727,12 @@ class PosRoleHierarchyTests {
                 "Guest",
                 "guest@example.com",
                 "+66800000000",
-                OffsetDateTime.now(),
-                OffsetDateTime.now().plusDays(1),
+                "2026-01-01",
+                "2026-01-02",
                 "1500.00",
                 BookingStatus.NEW,
                 null,
+                List.of(sampleBookingSegment()),
                 OffsetDateTime.now(),
                 OffsetDateTime.now());
     }

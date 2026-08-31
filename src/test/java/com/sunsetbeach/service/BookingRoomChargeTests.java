@@ -97,9 +97,13 @@ class BookingRoomChargeTests {
     }
 
     private BookingEntity persistBooking(LocalDate checkIn, LocalDate checkOut) {
+        return persistBooking(checkIn, checkOut, "Guest");
+    }
+
+    private BookingEntity persistBooking(LocalDate checkIn, LocalDate checkOut, String guestName) {
         BookingEntity booking = new BookingEntity();
         booking.setRoomId(room.getId());
-        booking.setGuestName("Guest");
+        booking.setGuestName(guestName);
         booking.setGuestEmail("guest@example.com");
         booking.setGuestPhone("+66800000000");
         booking.setCheckIn(checkIn);
@@ -124,7 +128,7 @@ class BookingRoomChargeTests {
         LocalDate today = LocalDate.now();
         BookingEntity booking = persistBooking(today.minusDays(1), today.plusDays(1));
 
-        List<Booking> results = bookingService.list(today.toString(), today.toString(), null);
+        List<Booking> results = bookingService.list(today.toString(), today.toString(), null, null);
 
         assertThat(results).extracting(Booking::getId).contains(booking.getId());
     }
@@ -136,7 +140,7 @@ class BookingRoomChargeTests {
         LocalDate today = LocalDate.now();
         BookingEntity booking = persistBooking(today, today.plusDays(1));
 
-        List<Booking> results = bookingService.list(today.toString(), today.toString(), null);
+        List<Booking> results = bookingService.list(today.toString(), today.toString(), null, null);
 
         assertThat(results).extracting(Booking::getId).contains(booking.getId());
     }
@@ -148,9 +152,40 @@ class BookingRoomChargeTests {
         LocalDate today = LocalDate.now();
         BookingEntity booking = persistBooking(today.minusDays(5), today.minusDays(3));
 
-        List<Booking> results = bookingService.list(today.toString(), today.toString(), null);
+        List<Booking> results = bookingService.list(today.toString(), today.toString(), null, null);
 
         assertThat(results).extracting(Booking::getId).doesNotContain(booking.getId());
+    }
+
+    // --- GET /bookings?guestName - the mobile "charge to room" search ---
+
+    @Test
+    void list_guestNameSubstring_isCaseInsensitiveAndMatchesPartial() {
+        LocalDate today = LocalDate.now();
+        BookingEntity booking = persistBooking(today, today.plusDays(1), "Somchai Testworth-" + UUID.randomUUID());
+
+        List<Booking> results = bookingService.list(null, null, null, "testworth");
+
+        assertThat(results).extracting(Booking::getId).contains(booking.getId());
+    }
+
+    @Test
+    void list_guestNameSubstring_combinesWithDateRange() {
+        LocalDate today = LocalDate.now();
+        String uniqueName = "Napat Riverstone-" + UUID.randomUUID();
+        BookingEntity inRange = persistBooking(today, today.plusDays(1), uniqueName);
+        BookingEntity outOfRange = persistBooking(today.minusDays(10), today.minusDays(8), uniqueName);
+
+        List<Booking> results = bookingService.list(today.toString(), today.toString(), null, "riverstone");
+
+        assertThat(results).extracting(Booking::getId).contains(inRange.getId()).doesNotContain(outOfRange.getId());
+    }
+
+    @Test
+    void list_guestNameWithNoMatch_isEmpty() {
+        List<Booking> results = bookingService.list(null, null, null, "no-such-guest-" + UUID.randomUUID());
+
+        assertThat(results).isEmpty();
     }
 
     // --- GET /bookings/{id}/pos-orders ---

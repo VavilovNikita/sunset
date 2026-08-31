@@ -19,7 +19,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  * The fixed vocabulary of significant staff actions this system records. Deliberately not open-ended (a free-text action name) - a closed set is what makes \"filter by action type\" on `GET /audit-log` and a fixed dropdown in the admin UI possible at all. Adding a new kind of audited action means adding a value here (a plain `ALTER TYPE ... ADD VALUE` migration, same pattern already used for `Role`/`PrintDocumentType`), not widening this into a string. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T12:20:31.062819400+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T18:13:29.409061300+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public enum AuditAction {
   
   BOOKING_CREATED("BOOKING_CREATED"),
@@ -31,6 +31,10 @@ public enum AuditAction {
   BOOKING_SCHEDULE_CHANGED("BOOKING_SCHEDULE_CHANGED"),
   
   BOOKING_ROOM_ASSIGNED("BOOKING_ROOM_ASSIGNED"),
+  
+  BOOKING_RELOCATED("BOOKING_RELOCATED"),
+  
+  BOOKING_RELOCATION_UNDONE("BOOKING_RELOCATION_UNDONE"),
   
   BOOKINGS_EXPORTED("BOOKINGS_EXPORTED"),
   

@@ -10,6 +10,8 @@ import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
+import com.sunsetbeach.model.RelocationInput;
+import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.security.BookingRateLimiter;
@@ -46,8 +48,8 @@ public class BookingController implements BookingsApi {
     }
 
     @Override
-    public ResponseEntity<List<Booking>> listBookings(String from, String to, BookingStatus status) {
-        return ResponseEntity.ok(bookingService.list(from, to, status));
+    public ResponseEntity<List<Booking>> listBookings(String from, String to, BookingStatus status, String guestName) {
+        return ResponseEntity.ok(bookingService.list(from, to, status, guestName));
     }
 
     @Override
@@ -91,6 +93,21 @@ public class BookingController implements BookingsApi {
     @Override
     public ResponseEntity<BookingScheduleQuote> quoteBookingSchedule(String id, BookingScheduleInput bookingScheduleInput) {
         return ResponseEntity.ok(bookingService.quoteSchedule(id, bookingScheduleInput));
+    }
+
+    @Override
+    public ResponseEntity<Booking> relocateBooking(String id, RelocationInput relocationInput) {
+        return ResponseEntity.ok(bookingService.relocate(id, relocationInput));
+    }
+
+    @Override
+    public ResponseEntity<BookingScheduleQuote> quoteBookingRelocation(String id, RelocationInput relocationInput) {
+        return ResponseEntity.ok(bookingService.quoteRelocation(id, relocationInput));
+    }
+
+    @Override
+    public ResponseEntity<Booking> undoBookingRelocation(String id, RelocationUndoInput relocationUndoInput) {
+        return ResponseEntity.ok(bookingService.undoRelocation(id, relocationUndoInput));
     }
 
     @Override

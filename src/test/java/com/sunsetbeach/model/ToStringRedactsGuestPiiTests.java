@@ -34,11 +34,12 @@ class ToStringRedactsGuestPiiTests {
                 "Jane Doe",
                 REAL_EMAIL,
                 REAL_PHONE,
-                OffsetDateTime.now(),
-                OffsetDateTime.now().plusDays(1),
+                "2026-01-01",
+                "2026-01-02",
                 "1500.00",
                 BookingStatus.NEW,
                 REAL_PAYMENT_NOTE,
+                java.util.List.of(),
                 OffsetDateTime.now(),
                 OffsetDateTime.now());
 

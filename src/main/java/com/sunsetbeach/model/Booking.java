@@ -5,10 +5,14 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.Room;
 import com.sunsetbeach.model.RoomUnit;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -20,10 +24,10 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Raw Prisma &#x60;Booking&#x60; row with &#x60;room&#x60; included. &#x60;totalPrice&#x60; serializes as a **string** (Prisma &#x60;Decimal&#x60;). &#x60;checkIn&#x60;, &#x60;checkOut&#x60;, &#x60;createdAt&#x60;, &#x60;updatedAt&#x60; serialize as ISO-8601 datetime strings (&#x60;checkIn&#x60;/&#x60;checkOut&#x60; are date-only columns but still render with a &#x60;T00:00:00.000Z&#x60; time component since Prisma returns &#x60;Date&#x60; objects). &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60; are null until a physical room is assigned via &#x60;PUT /bookings/{id}/room-unit&#x60; - &#x60;roomId&#x60;/&#x60;room&#x60; (the room *type*) stay the source of truth for what was booked either way. 
+ * Raw Prisma &#x60;Booking&#x60; row with &#x60;room&#x60; included. &#x60;totalPrice&#x60; serializes as a **string** (Prisma &#x60;Decimal&#x60;). &#x60;createdAt&#x60;/&#x60;updatedAt&#x60; are ISO-8601 datetime strings (real timestamps, not calendar days). &#x60;checkIn&#x60;/&#x60;checkOut&#x60; are plain &#x60;YYYY-MM-DD&#x60; dates, the same convention as &#x60;BookingSegment&#x60;/&#x60;CalendarBooking&#x60;/every other schema below that names a stay date - they used to serialize as a datetime with a legacy &#x60;T00:00:00.000Z&#x60; time component (a Prisma &#x60;Date&#x60;-object artifact), which caused three separate incidents (a dashboard revenue bug, and two near-misses while building the booking calendar) before the format was unified here. &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60; are null until a physical room is assigned via &#x60;PUT /bookings/{id}/room-unit&#x60; - &#x60;roomId&#x60;/&#x60;room&#x60; (the room *type*) stay the source of truth for what was booked either way.  &#x60;roomId&#x60;/&#x60;room&#x60;/&#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60;/&#x60;checkIn&#x60;/&#x60;checkOut&#x60;/&#x60;totalPrice&#x60; are all derived from &#x60;segments&#x60; (the *last* segment&#39;s room, for roomId/roomUnitId/room/roomUnit; the first segment&#39;s checkIn and the last segment&#39;s checkOut; the sum of every segment&#39;s totalPrice) - they exist so every reader that only cares about \&quot;what room is this guest in right now\&quot; doesn&#39;t need to know segments exist at all. A booking that has never been relocated has exactly one segment and these values equal that segment&#39;s own fields exactly - segments are not a special case that only shows up for split bookings. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T21:43:17.277610500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T22:52:49.532858600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class Booking {
 
   private String id;
@@ -42,17 +46,18 @@ public class Booking {
 
   private String guestPhone;
 
-  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-  private OffsetDateTime checkIn;
+  private String checkIn;
 
-  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-  private OffsetDateTime checkOut;
+  private String checkOut;
 
   private String totalPrice;
 
   private BookingStatus status;
 
   private JsonNullable<String> paymentNote = JsonNullable.<String>undefined();
+
+  @Valid
+  private List<@Valid BookingSegment> segments = new ArrayList<>();
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
@@ -67,7 +72,7 @@ public class Booking {
   /**
    * Constructor with only required parameters
    */
-  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, OffsetDateTime checkIn, OffsetDateTime checkOut, String totalPrice, BookingStatus status, String paymentNote, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String checkIn, String checkOut, String totalPrice, BookingStatus status, String paymentNote, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.roomId = roomId;
     this.room = room;
@@ -81,6 +86,7 @@ public class Booking {
     this.totalPrice = totalPrice;
     this.status = status;
     this.paymentNote = JsonNullable.of(paymentNote);
+    this.segments = segments;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
@@ -237,41 +243,41 @@ public class Booking {
     this.guestPhone = guestPhone;
   }
 
-  public Booking checkIn(OffsetDateTime checkIn) {
+  public Booking checkIn(String checkIn) {
     this.checkIn = checkIn;
     return this;
   }
 
   /**
-   * ⚠ Datetime string with a legacy `T00:00:00.000Z` time component (Prisma artifact), NOT the same format as `CalendarBooking.checkIn` (plain date). Frontend code must go through `dateOnlyUTC()` (`lib/bookings.ts`), never slice/parse manually - a prior bug here silently zeroed dashboard revenue/occupancy numbers. 
+   * Plain date, same format as `BookingSegment.checkIn`/`CalendarBooking.checkIn` - see this schema's own description.
    * @return checkIn
    */
-  @NotNull @Valid 
+  @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") 
   @JsonProperty("checkIn")
-  public OffsetDateTime getCheckIn() {
+  public String getCheckIn() {
     return checkIn;
   }
 
-  public void setCheckIn(OffsetDateTime checkIn) {
+  public void setCheckIn(String checkIn) {
     this.checkIn = checkIn;
   }
 
-  public Booking checkOut(OffsetDateTime checkOut) {
+  public Booking checkOut(String checkOut) {
     this.checkOut = checkOut;
     return this;
   }
 
   /**
-   * ⚠ Datetime string with a legacy `T00:00:00.000Z` time component (Prisma artifact), NOT the same format as `CalendarBooking.checkOut` (plain date). Frontend code must go through `dateOnlyUTC()` (`lib/bookings.ts`), never slice/parse manually - a prior bug here silently zeroed dashboard revenue/occupancy numbers. 
+   * Plain date, same format as `BookingSegment.checkOut`/`CalendarBooking.checkOut` - see this schema's own description.
    * @return checkOut
    */
-  @NotNull @Valid 
+  @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") 
   @JsonProperty("checkOut")
-  public OffsetDateTime getCheckOut() {
+  public String getCheckOut() {
     return checkOut;
   }
 
-  public void setCheckOut(OffsetDateTime checkOut) {
+  public void setCheckOut(String checkOut) {
     this.checkOut = checkOut;
   }
 
@@ -330,6 +336,33 @@ public class Booking {
 
   public void setPaymentNote(JsonNullable<String> paymentNote) {
     this.paymentNote = paymentNote;
+  }
+
+  public Booking segments(List<@Valid BookingSegment> segments) {
+    this.segments = segments;
+    return this;
+  }
+
+  public Booking addSegmentsItem(BookingSegment segmentsItem) {
+    if (this.segments == null) {
+      this.segments = new ArrayList<>();
+    }
+    this.segments.add(segmentsItem);
+    return this;
+  }
+
+  /**
+   * The booking's stay broken into room legs, ordered by `checkIn` ascending. See `BookingSegment`'s description.
+   * @return segments
+   */
+  @NotNull @Valid @Size(min = 1) 
+  @JsonProperty("segments")
+  public List<@Valid BookingSegment> getSegments() {
+    return segments;
+  }
+
+  public void setSegments(List<@Valid BookingSegment> segments) {
+    this.segments = segments;
   }
 
   public Booking createdAt(OffsetDateTime createdAt) {
@@ -392,13 +425,14 @@ public class Booking {
         Objects.equals(this.totalPrice, booking.totalPrice) &&
         Objects.equals(this.status, booking.status) &&
         Objects.equals(this.paymentNote, booking.paymentNote) &&
+        Objects.equals(this.segments, booking.segments) &&
         Objects.equals(this.createdAt, booking.createdAt) &&
         Objects.equals(this.updatedAt, booking.updatedAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, checkIn, checkOut, totalPrice, status, paymentNote, createdAt, updatedAt);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, checkIn, checkOut, totalPrice, status, paymentNote, segments, createdAt, updatedAt);
   }
 
   @Override
@@ -423,6 +457,7 @@ public class Booking {
     // Redacted for the same reason as guestEmail/guestPhone above - paymentNote is free text
     // staff enters and may (against guidance) contain something sensitive.
     sb.append("    paymentNote: [REDACTED]\n");
+    sb.append("    segments: ").append(toIndentedString(segments)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("}");

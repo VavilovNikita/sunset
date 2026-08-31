@@ -15,7 +15,7 @@ import com.sunsetbeach.model.RoomUnitBlock;
 import com.sunsetbeach.model.RoomUnitBlockInput;
 import com.sunsetbeach.model.RoomUnitInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
-import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
@@ -32,7 +32,7 @@ public class RoomUnitService {
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
     private final RoomUnitBlockRepository roomUnitBlockRepository;
-    private final BookingRepository bookingRepository;
+    private final BookingSegmentRepository segmentRepository;
     private final RoomUnitMapper roomUnitMapper;
     private final AuditLogService auditLogService;
 
@@ -40,13 +40,13 @@ public class RoomUnitService {
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             RoomUnitBlockRepository roomUnitBlockRepository,
-            BookingRepository bookingRepository,
+            BookingSegmentRepository segmentRepository,
             RoomUnitMapper roomUnitMapper,
             AuditLogService auditLogService) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
-        this.bookingRepository = bookingRepository;
+        this.segmentRepository = segmentRepository;
         this.roomUnitMapper = roomUnitMapper;
         this.auditLogService = auditLogService;
     }
@@ -132,7 +132,7 @@ public class RoomUnitService {
 
     /** A non-cancelled booking assigned to this unit whose stay hasn't ended yet - deactivating/deleting would silently orphan it. */
     private boolean hasUpcomingBooking(String roomUnitId) {
-        return bookingRepository.existsByRoomUnitIdAndStatusNotAndCheckOutGreaterThan(roomUnitId, BookingStatus.CANCELLED, LocalDate.now());
+        return segmentRepository.existsByRoomUnitIdAndBooking_StatusNotAndCheckOutGreaterThan(roomUnitId, BookingStatus.CANCELLED, LocalDate.now());
     }
 
     @Transactional(readOnly = true)

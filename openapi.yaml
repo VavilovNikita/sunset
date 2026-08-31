@@ -63,8 +63,8 @@ tags:
   - name: AuditLog
     description: >
       Read-only, append-only record of significant staff actions - money and guest-data
-      operations (booking status/schedule/price changes, order close/cancel, shift open/close,
-      exports, user/room-unit management). Written internally from the service layer on the
+      operations (booking status/schedule/price changes, relocation, order close/cancel, shift
+      open/close, exports, user/room-unit management). Written internally from the service layer on the
       relevant write path, never through a dedicated write endpoint - there is no POST, PATCH,
       or DELETE here for any role. Requires MANAGER or above: the operational disputes this
       exists to resolve (a cash discrepancy, a guest billing question, a suspected misuse of a
@@ -902,7 +902,8 @@ paths:
         Requires CASHIER or above - finding a guest's booking is front-desk work, not a
         MANAGER-only report (contrast with `GET /bookings/export`, which stays MANAGER+: a
         single-booking lookup and a bulk CSV of every guest's contact details are different risk
-        profiles). Filters mirror `GET /bookings/export`. Ordered by `checkIn` ascending.
+        profiles). Filters mirror `GET /bookings/export` (`guestName` is the one exception - see
+        below). Ordered by `checkIn` ascending.
       parameters:
         - name: from
           in: query
@@ -923,6 +924,16 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/BookingStatus"
+        - name: guestName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >
+            Case-insensitive substring match against `guestName` - lets a phone-sized "charge to
+            room" picker search by typing instead of scrolling a long list of same-day bookings.
+            Not available on `GET /bookings/export` (that stays a bulk date-range report, not a
+            guest lookup tool).
       responses:
         "200":
           description: Matching bookings, ordered by `checkIn` ascending.
@@ -1073,7 +1084,10 @@ paths:
         assigns that physical room to the booking, `null` clears the assignment. Deliberately
         not part of `PATCH /bookings/{id}` - room assignment has its own validation (same room
         type, active, free for the whole stay) and its own race-safety story (SERIALIZABLE,
-        same pattern as `POST /bookings`), so it gets its own operation.
+        same pattern as `POST /bookings`), so it gets its own operation. Only legal while the
+        booking has exactly one segment (see `Booking.segments`) - once a booking has been split
+        by `POST /bookings/{id}/relocate`, "the room" is no longer a single well-defined value
+        this endpoint's one `roomUnitId` can express; use `relocate`/`undo-relocation` instead.
       requestBody:
         required: true
         content:
@@ -1124,6 +1138,8 @@ paths:
                   value: { error: "Room 5 is already booked for an overlapping stay" }
                 raceLost:
                   value: { error: "Someone just assigned this room — please try again." }
+                multiSegment:
+                  value: { error: "This booking has been split by a room relocation — change dates or rooms per segment via relocate/undo-relocate instead." }
 
   /bookings/staff:
     post:
@@ -1198,8 +1214,10 @@ paths:
         `GET /availability/{roomId}`'s per-day occupancy formula (the shared server-side
         computation both endpoints rely on for `availableCount` lives in one place, see
         `RoomTypeDailyAvailability`), it just also returns booking/guest identity that endpoint
-        never has. `from`/`to` accept an arbitrary range (not just a calendar month) capped at
-        92 days.
+        never has. `from`/`to` accept an arbitrary range (not just a calendar month), capped at
+        366 days so the grid can show up to a year on one screen - still capped, not unbounded,
+        so a request for an arbitrarily large range is rejected with a clear error rather than
+        made to time out or exhaust memory.
       parameters:
         - name: from
           in: query
@@ -1222,13 +1240,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/BookingCalendarResponse"
         "400":
-          description: Malformed dates, `from >= to`, or range exceeds 92 days.
+          description: Malformed dates, `from >= to`, or range exceeds 366 days.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
-                error: "Range too large (max 92 days)"
+                error: "Range too large (max 366 days)"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -1254,6 +1272,19 @@ paths:
         booking's own current reservation from the conflict check (so extending a stay is never
         blocked by the booking's own prior dates). See `POST /bookings/{id}/schedule/quote` to
         preview the new price/availability before calling this.
+
+
+        For a booking split across more than one room by `POST /bookings/{id}/relocate` (see
+        `Booking.segments`), a single `checkIn`/`checkOut`/`roomUnitId` triple only has a
+        well-defined meaning when it moves exactly one outer edge of the stay: `checkIn` alone
+        (an earlier/later arrival, applied to the first segment) or `checkOut` alone (extending
+        or shortening the stay, applied to the last segment - the most common front-desk request
+        on an already-relocated booking), each without crossing into the segment next to it. Any
+        other combination - both dates moving at once, or neither (a bare room change with no
+        segment named to apply it to) - has no single segment this shape can address, and is
+        rejected with 409 in favor of `relocate`/`undo-relocation`, the operations built to name
+        one explicitly. A date that crosses into the neighboring segment is rejected with 400
+        instead - it is a genuinely invalid request, not a race or an ambiguity.
       requestBody:
         required: true
         content:
@@ -1268,13 +1299,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/Booking"
         "400":
-          description: Body failed validation (includes `checkIn < checkOut`), or `roomUnitId` belongs to a different room type / is not active.
+          description: >
+            Body failed validation (includes `checkIn < checkOut`), `roomUnitId` belongs to a
+            different room type / is not active, or (multi-segment booking only) the requested
+            date crosses into the neighboring segment.
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: "#/components/schemas/ValidationError"
                   - $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                boundaryCrossing:
+                  value: { error: "New check-out must stay after 2026-09-08 - crossing into the previous segment isn't a schedule change, it's an undo-relocation." }
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1287,9 +1324,10 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
           description: >
-            The new dates are no longer available at the type level, or `roomUnitId` is blocked
-            or already booked for an overlapping stay - either found up front or from a
-            concurrent conflicting change (Postgres serialization failure, SQLSTATE `40001`).
+            The new dates are no longer available at the type level, `roomUnitId` is blocked or
+            already booked for an overlapping stay, a concurrent conflicting change was detected
+            (Postgres serialization failure, SQLSTATE `40001`), or (multi-segment booking only)
+            the change would touch more than one segment (both dates moving, or neither).
           content:
             application/json:
               schema:
@@ -1299,6 +1337,8 @@ paths:
                   value: { error: "Selected dates are no longer available" }
                 raceLost:
                   value: { error: "Someone just changed this booking's schedule — please try again." }
+                multiSegment:
+                  value: { error: "This booking has been split by a room relocation — change dates or rooms per segment via relocate/undo-relocate instead." }
 
   /bookings/{id}/schedule/quote:
     parameters:
@@ -1352,6 +1392,198 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
+
+  /bookings/{id}/relocate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: relocateBooking
+      tags: [Bookings]
+      summary: Move a guest to a different room partway through their stay
+      description: >
+        Requires CASHIER or above. Splits the segment covering `effectiveDate` into two: the
+        existing room/unit keeps `[that segment's checkIn, effectiveDate)`, and a new segment
+        for `[effectiveDate, that segment's checkOut)` takes `roomId`/`roomUnitId` - the new room
+        may be a different room *type* than the one being left, at that type's own price.
+        `effectiveDate` must fall strictly after the containing segment's own checkIn (relocating
+        on a segment's first night is "assign this segment a different room", i.e.
+        `PUT /bookings/{id}/room-unit` or `PATCH /bookings/{id}/schedule` when there is only one
+        segment - not a mid-stay move). Same three checks on the *new* room/unit as
+        `PUT /bookings/{id}/room-unit` (same type, active, free for the new segment's dates), same
+        `Serializable` race-safety as `POST /bookings`. See `POST /bookings/{id}/relocate/quote`
+        to preview the recalculated total before calling this, and
+        `POST /bookings/{id}/undo-relocation` to reverse it. Recorded in the audit log with who,
+        from which room, to which room, and effective from which date.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RelocationInput"
+      responses:
+        "200":
+          description: Updated booking, now with an extra segment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: >
+            Body failed validation, `effectiveDate` does not fall strictly inside an existing
+            segment, or `roomUnitId` belongs to a different room type / is not active.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking, room, or room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            The new room type/unit has no availability for the new segment's dates - either found
+            up front or from a concurrent conflicting change (Postgres serialization failure,
+            SQLSTATE `40001`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                unavailable:
+                  value: { error: "Selected room type has no availability for that period" }
+                booked:
+                  value: { error: "Room 5 is already booked for an overlapping stay" }
+                raceLost:
+                  value: { error: "Someone just booked these dates — please try again." }
+
+  /bookings/{id}/relocate/quote:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: quoteBookingRelocation
+      tags: [Bookings]
+      summary: Preview the price/availability of a relocation without applying it
+      description: >
+        Requires CASHIER or above. Non-mutating preview for `POST /bookings/{id}/relocate` - same
+        request body, no `Serializable` transaction. `totalPrice` in the response is the whole
+        booking's *new* total (every unaffected segment's price, plus the shrunk old segment's
+        recomputed price, plus the new segment's price) - the same shape
+        `POST /bookings/{id}/schedule/quote` returns, reused rather than a second near-identical
+        response schema; `nights` describes the *new* segment being created.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RelocationInput"
+      responses:
+        "200":
+          description: >
+            Computed whole-booking total and availability for the requested relocation. Returned
+            even when `available: false`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingScheduleQuote"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking or room not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /bookings/{id}/undo-relocation:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: undoBookingRelocation
+      tags: [Bookings]
+      summary: Reverse a relocation, merging two segments back into one
+      description: >
+        Requires CASHIER or above. The inverse of `POST /bookings/{id}/relocate`: merges the two
+        segments meeting at `splitDate` back into one, keeping the *earlier* segment's room -
+        undoing a relocation means "this move didn't happen," so the room reverts to what covered
+        that whole span before it. `splitDate` must be an existing boundary (some segment's
+        `checkOut` equal to the next segment's `checkIn`) - not a no-op write: the earlier room's
+        unit/type may no longer be free for the range it is about to re-absorb (something else
+        may have booked it in the meantime, since the relocation made it look free), so this
+        re-runs the same availability check `relocate` does, under the same `Serializable`
+        isolation. Recorded in the audit log the same way `relocate` is.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RelocationUndoInput"
+      responses:
+        "200":
+          description: Updated booking, with the two segments merged into one.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: Body failed validation, or `splitDate` is not an existing segment boundary.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            The earlier room's type/unit no longer has availability for the merged period - either
+            found up front or from a concurrent conflicting change (Postgres serialization
+            failure, SQLSTATE `40001`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                unavailable:
+                  value: { error: "Cannot undo — the earlier room type has no availability for the merged period" }
+                raceLost:
+                  value: { error: "Someone just booked these dates — please try again." }
 
   /bookings/{id}/folio:
     parameters:
@@ -3722,6 +3954,11 @@ components:
         deliberately not listed under `required` - see `RoomUnitAssignmentInput`'s description
         for why a generated `@NotNull` on this field would incorrectly reject `null`; presence is
         checked manually in `BookingService` instead.
+
+
+        On a booking with more than one segment (see `Booking.segments`), only a change that
+        moves exactly one outer edge of the stay is accepted - see the PATCH endpoint's own
+        description for exactly which changes that covers and which are rejected.
       required: [checkIn, checkOut]
       properties:
         checkIn:
@@ -3735,16 +3972,49 @@ components:
           nullable: true
           description: The room unit to assign, or `null` to leave/make the booking unassigned.
 
+    RelocationInput:
+      type: object
+      description: >
+        Body of `POST /bookings/{id}/relocate` and `POST /bookings/{id}/relocate/quote`. Unlike
+        `BookingScheduleInput`, `roomId` (the room *type*) can change here - a relocation is
+        exactly the operation that lets a guest move to a different type of room mid-stay, at
+        that type's own price. `roomUnitId: null` is legal (relocate to "this type, unit not yet
+        chosen").
+      required: [effectiveDate, roomId]
+      properties:
+        effectiveDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The first night of the new segment. Must fall strictly after the start of the segment currently covering it.
+        roomId:
+          type: string
+        roomUnitId:
+          type: string
+          nullable: true
+
+    RelocationUndoInput:
+      type: object
+      description: Body of `POST /bookings/{id}/undo-relocation`.
+      required: [splitDate]
+      properties:
+        splitDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The boundary date between the two segments to merge - some segment's `checkOut` equal to the next segment's `checkIn`.
+
     BookingScheduleQuote:
       type: object
       description: >
         Response of `POST /bookings/{id}/schedule/quote` - a non-mutating preview of what
-        `PATCH /bookings/{id}/schedule` would do with the same request body. `totalPrice` is
-        always computed (pure arithmetic over `RatePlan`/`Room.basePrice` for the requested
-        dates, independent of availability); `available`/`reason` report whether applying this
-        exact change would currently succeed. This is advisory, not a lock - the apply call
-        re-validates from scratch inside its own `Serializable` transaction, so a `true` here can
-        still lose a race to a concurrent change made between preview and apply.
+        `PATCH /bookings/{id}/schedule` would do with the same request body - and of
+        `POST /bookings/{id}/relocate/quote`, reused as-is rather than duplicated: there,
+        `totalPrice` is the whole booking's new total after the relocation and `nights` describes
+        the new segment being created. `totalPrice` is always computed (pure arithmetic over
+        `RatePlan`/`Room.basePrice` for the requested dates, independent of availability);
+        `available`/`reason` report whether applying this exact change would currently succeed.
+        This is advisory, not a lock - the apply call re-validates from scratch inside its own
+        `Serializable` transaction, so a `true` here can still lose a race to a concurrent change
+        made between preview and apply.
       required: [totalPrice, nights, available, reason]
       properties:
         totalPrice:
@@ -3796,23 +4066,28 @@ components:
     CalendarBooking:
       type: object
       description: >
-        A booking as rendered on the booking calendar grid - a lighter projection than `Booking`
-        (no nested `room`/`roomUnit`; cross-reference against `BookingCalendarResponse.roomTypes`
-        instead), returned only for non-`CANCELLED` bookings. `roomUnitId: null` means the
-        booking occupies a unit of its room type but has no specific physical room assigned yet -
-        the grid renders it in an unassigned row for that type.
-
-
-        ⚠ `checkIn`/`checkOut` here are plain date-only strings (`YYYY-MM-DD`), **unlike**
-        `Booking.checkIn`/`checkOut` which carry a legacy `T00:00:00.000Z` time component (a
-        Prisma serialization artifact `Booking` inherited that this new schema deliberately does
-        not repeat). Do not assume the two formats match when comparing values sourced from both
-        endpoints - frontend code must go through `dateOnlyUTC()` (`lib/bookings.ts`) either way,
-        never a manual string slice/parse.
-      required: [id, roomId, roomUnitId, guestName, checkIn, checkOut, status, totalPrice]
+        One booking *segment* as rendered on the booking calendar grid - a lighter projection
+        than `BookingSegment` (no nested `room`/`roomUnit`; cross-reference against
+        `BookingCalendarResponse.roomTypes` instead), returned only for non-`CANCELLED`
+        bookings. `segmentId` is the *segment's* id, not the booking's - a relocated booking
+        produces more than one `CalendarBooking` entry, sharing the same `bookingId`, rendered as
+        separate bars (different rows and/or date ranges) that all open the same booking's card
+        on click. Any call that needs to act on the booking itself (open the card panel, quote or
+        apply a schedule change, relocate) must use `bookingId`, never `segmentId` - the field is
+        named for exactly what it identifies specifically because a same-named-but-different-
+        meaning `id` here once caused every drag-to-edit handler to send the wrong id and get a
+        silent 404. `roomUnitId: null` means this segment occupies a unit of its room type but has
+        no specific physical room assigned yet - the grid renders it in an unassigned row for
+        that type. `checkIn`/`checkOut` are plain date-only strings (`YYYY-MM-DD`), the same
+        format `Booking.checkIn`/`checkOut` now use too.
+      required: [segmentId, bookingId, roomId, roomUnitId, guestName, checkIn, checkOut, status, totalPrice, segmentCount]
       properties:
-        id:
+        segmentId:
           type: string
+          description: This segment's own id (`BookingSegment.id`). Not the booking's id - use `bookingId` for anything that acts on the booking.
+        bookingId:
+          type: string
+          description: Groups segments belonging to the same booking, and is what the card panel opens by, and what every schedule/relocate call must be addressed to.
         roomId:
           type: string
         roomUnitId:
@@ -3830,7 +4105,10 @@ components:
           $ref: "#/components/schemas/BookingStatus"
         totalPrice:
           type: string
-          description: Decimal(10,2) rendered as a string.
+          description: Decimal(10,2) rendered as a string - this segment's own price, not the whole booking's total.
+        segmentCount:
+          type: integer
+          description: How many segments the parent booking has in total - `1` for the overwhelmingly common never-relocated case. The grid uses this to decide whether drag-resize/drag-move is offered on this bar at all (see `PATCH /bookings/{id}/schedule`'s description) without a second round trip to fetch the full booking.
 
     BookingCalendarResponse:
       type: object
@@ -3861,17 +4139,62 @@ components:
           items:
             $ref: "#/components/schemas/RoomUnitBlock"
 
+    BookingSegment:
+      type: object
+      description: >
+        One "room X from date A to date B" leg of a booking's stay. A booking's segments always
+        cover `[Booking.checkIn, Booking.checkOut)` with no gap and no overlap - a booking that
+        has never been relocated has exactly one segment identical to the booking's own
+        roomId/roomUnitId/checkIn/checkOut/totalPrice; that is the common case, not a special
+        one. See `POST /bookings/{id}/relocate`'s description for how a second segment appears.
+        `checkIn`/`checkOut` are plain date-only strings (`YYYY-MM-DD`), the same format
+        `Booking.checkIn`/`checkOut` now use too.
+      required: [id, roomId, room, roomUnitId, roomUnit, checkIn, checkOut, totalPrice]
+      properties:
+        id:
+          type: string
+        roomId:
+          type: string
+        room:
+          $ref: "#/components/schemas/Room"
+        roomUnitId:
+          type: string
+          nullable: true
+        roomUnit:
+          $ref: "#/components/schemas/RoomUnit"
+          nullable: true
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        totalPrice:
+          type: string
+          description: Decimal(10,2) rendered as a string - this segment's own share of the booking's total, server-computed from `Room.basePrice`/`RatePlan` for its own dates/room.
+
     Booking:
       type: object
       description: >
-        Raw Prisma `Booking` row with `room` included. `totalPrice`
-        serializes as a **string** (Prisma `Decimal`). `checkIn`, `checkOut`,
-        `createdAt`, `updatedAt` serialize as ISO-8601 datetime strings
-        (`checkIn`/`checkOut` are date-only columns but still render with a
-        `T00:00:00.000Z` time component since Prisma returns `Date` objects).
-        `roomUnitId`/`roomUnit` are null until a physical room is assigned via
-        `PUT /bookings/{id}/room-unit` - `roomId`/`room` (the room *type*) stay the source of
-        truth for what was booked either way.
+        Raw Prisma `Booking` row with `room` included. `totalPrice` serializes as a **string**
+        (Prisma `Decimal`). `createdAt`/`updatedAt` are ISO-8601 datetime strings (real
+        timestamps, not calendar days). `checkIn`/`checkOut` are plain `YYYY-MM-DD` dates,
+        the same convention as `BookingSegment`/`CalendarBooking`/every other schema below that
+        names a stay date - they used to serialize as a datetime with a legacy
+        `T00:00:00.000Z` time component (a Prisma `Date`-object artifact), which caused three
+        separate incidents (a dashboard revenue bug, and two near-misses while building the
+        booking calendar) before the format was unified here. `roomUnitId`/`roomUnit` are null
+        until a physical room is assigned via `PUT /bookings/{id}/room-unit` - `roomId`/`room`
+        (the room *type*) stay the source of truth for what was booked either way.
+
+
+        `roomId`/`room`/`roomUnitId`/`roomUnit`/`checkIn`/`checkOut`/`totalPrice` are all
+        derived from `segments` (the *last* segment's room, for roomId/roomUnitId/room/roomUnit;
+        the first segment's checkIn and the last segment's checkOut; the sum of every segment's
+        totalPrice) - they exist so every reader that only cares about "what room is this guest
+        in right now" doesn't need to know segments exist at all. A booking that has never been
+        relocated has exactly one segment and these values equal that segment's own fields
+        exactly - segments are not a special case that only shows up for split bookings.
       required:
         - id
         - roomId
@@ -3886,6 +4209,7 @@ components:
         - totalPrice
         - status
         - paymentNote
+        - segments
         - createdAt
         - updatedAt
       properties:
@@ -3909,20 +4233,12 @@ components:
           type: string
         checkIn:
           type: string
-          format: date-time
-          description: >
-            ⚠ Datetime string with a legacy `T00:00:00.000Z` time component (Prisma artifact),
-            NOT the same format as `CalendarBooking.checkIn` (plain date). Frontend code must go
-            through `dateOnlyUTC()` (`lib/bookings.ts`), never slice/parse manually - a prior bug
-            here silently zeroed dashboard revenue/occupancy numbers.
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Plain date, same format as `BookingSegment.checkIn`/`CalendarBooking.checkIn` - see this schema's own description.
         checkOut:
           type: string
-          format: date-time
-          description: >
-            ⚠ Datetime string with a legacy `T00:00:00.000Z` time component (Prisma artifact),
-            NOT the same format as `CalendarBooking.checkOut` (plain date). Frontend code must go
-            through `dateOnlyUTC()` (`lib/bookings.ts`), never slice/parse manually - a prior bug
-            here silently zeroed dashboard revenue/occupancy numbers.
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Plain date, same format as `BookingSegment.checkOut`/`CalendarBooking.checkOut` - see this schema's own description.
         totalPrice:
           type: string
           description: Decimal(10,2) rendered as a string, e.g. `"4500.00"`. Always server-computed, never taken from the request.
@@ -3931,6 +4247,12 @@ components:
         paymentNote:
           type: string
           nullable: true
+        segments:
+          type: array
+          minItems: 1
+          description: The booking's stay broken into room legs, ordered by `checkIn` ascending. See `BookingSegment`'s description.
+          items:
+            $ref: "#/components/schemas/BookingSegment"
         createdAt:
           type: string
           format: date-time
@@ -4652,6 +4974,8 @@ components:
         - BOOKING_PAYMENT_NOTE_CHANGED
         - BOOKING_SCHEDULE_CHANGED
         - BOOKING_ROOM_ASSIGNED
+        - BOOKING_RELOCATED
+        - BOOKING_RELOCATION_UNDONE
         - BOOKINGS_EXPORTED
         - ROOM_PRICE_CHANGED
         - RATE_OVERRIDE_CHANGED

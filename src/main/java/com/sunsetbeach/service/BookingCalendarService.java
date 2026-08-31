@@ -1,6 +1,6 @@
 package com.sunsetbeach.service;
 
-import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitBlockEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
@@ -13,7 +13,7 @@ import com.sunsetbeach.model.CalendarBooking;
 import com.sunsetbeach.model.RoomTypeCalendar;
 import com.sunsetbeach.model.RoomTypeDailyAvailability;
 import com.sunsetbeach.model.RoomUnitBlock;
-import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
@@ -39,28 +39,30 @@ import org.springframework.transaction.annotation.Transactional;
 public class BookingCalendarService {
 
     /**
-     * A month-scale UI grid has no reason to ask for more than this at once.
-     * {@link DateRangeUtil#MAX_RANGE_DAYS} (366, used by {@link PricingService}) is a much
-     * larger cap for a coarser-grained, single-room-type endpoint - not reused here on purpose.
+     * Up to a year on one screen (the calendar's own zoom-out requirement), same cap as
+     * {@link DateRangeUtil#MAX_RANGE_DAYS} - still bounded, not unbounded: an arbitrarily large
+     * request is rejected with a clear error rather than made to time out. Was 92 days before
+     * the grid grew day/week/month zoom levels; reusing the shared constant now rather than
+     * keeping a second, smaller one that would need to track it.
      */
-    public static final int MAX_CALENDAR_RANGE_DAYS = 92;
+    public static final int MAX_CALENDAR_RANGE_DAYS = DateRangeUtil.MAX_RANGE_DAYS;
 
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
     private final RoomUnitBlockRepository roomUnitBlockRepository;
-    private final BookingRepository bookingRepository;
+    private final BookingSegmentRepository segmentRepository;
     private final RoomUnitMapper roomUnitMapper;
 
     public BookingCalendarService(
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             RoomUnitBlockRepository roomUnitBlockRepository,
-            BookingRepository bookingRepository,
+            BookingSegmentRepository segmentRepository,
             RoomUnitMapper roomUnitMapper) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
-        this.bookingRepository = bookingRepository;
+        this.segmentRepository = segmentRepository;
         this.roomUnitMapper = roomUnitMapper;
     }
 
@@ -84,20 +86,30 @@ public class BookingCalendarService {
                 : roomUnitBlockRepository.findByFromDateLessThanEqualAndToDateGreaterThanEqual(to.minusDays(1), from);
         Map<String, List<RoomUnitBlockEntity>> blocksByUnitId = blocks.stream().collect(Collectors.groupingBy(RoomUnitBlockEntity::getRoomUnitId));
 
-        List<BookingEntity> bookings = bookingRepository.findByStatusNotAndCheckInLessThanAndCheckOutGreaterThan(BookingStatus.CANCELLED, to, from);
-        Map<String, List<BookingEntity>> bookingsByRoomId = bookings.stream().collect(Collectors.groupingBy(BookingEntity::getRoomId));
+        List<BookingSegmentEntity> segments = segmentRepository.findByBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThan(BookingStatus.CANCELLED, to, from);
+        Map<String, List<BookingSegmentEntity>> segmentsByRoomId = segments.stream().collect(Collectors.groupingBy(BookingSegmentEntity::getRoomId));
+
+        // segmentCount on each CalendarBooking is the *whole* booking's segment count, not just
+        // how many fall inside [from, to) - the grid needs to know "has this booking ever been
+        // relocated" (to decide whether drag-resize/move is offered) even when only one of its
+        // segments is visible in the current view.
+        List<String> bookingIds = segments.stream().map(BookingSegmentEntity::getBookingId).distinct().toList();
+        Map<String, Long> segmentCountByBookingId = bookingIds.isEmpty()
+                ? Map.of()
+                : segmentRepository.findByBookingIdIn(bookingIds).stream()
+                        .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId, Collectors.counting()));
 
         List<LocalDate> days = DateRangeUtil.eachDateInRange(from, to.minusDays(1));
 
         List<RoomTypeCalendar> roomTypes = rooms.stream()
                 .sorted(Comparator.comparing(RoomEntity::getName))
                 .map(room -> toRoomTypeCalendar(room, unitsByRoomId.getOrDefault(room.getId(), List.of()),
-                        bookingsByRoomId.getOrDefault(room.getId(), List.of()), blocksByUnitId, days))
+                        segmentsByRoomId.getOrDefault(room.getId(), List.of()), blocksByUnitId, days))
                 .toList();
 
-        List<CalendarBooking> calendarBookings = bookings.stream()
-                .sorted(Comparator.comparing(BookingEntity::getCheckIn))
-                .map(BookingCalendarService::toCalendarBooking)
+        List<CalendarBooking> calendarBookings = segments.stream()
+                .sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn))
+                .map(s -> toCalendarBooking(s, segmentCountByBookingId.getOrDefault(s.getBookingId(), 1L).intValue()))
                 .toList();
 
         List<RoomUnitBlock> blockDtos = blocks.stream().map(roomUnitMapper::toDto).toList();
@@ -108,7 +120,7 @@ public class BookingCalendarService {
     private RoomTypeCalendar toRoomTypeCalendar(
             RoomEntity room,
             List<RoomUnitEntity> units,
-            List<BookingEntity> roomBookings,
+            List<BookingSegmentEntity> roomSegments,
             Map<String, List<RoomUnitBlockEntity>> blocksByUnitId,
             List<LocalDate> days) {
         List<RoomUnitEntity> activeUnits = units.stream().filter(RoomUnitEntity::isActive).toList();
@@ -120,7 +132,7 @@ public class BookingCalendarService {
                                     .anyMatch(b -> !date.isBefore(b.getFromDate()) && !date.isAfter(b.getToDate())))
                             .count();
                     long bookedToday =
-                            roomBookings.stream().filter(b -> !date.isBefore(b.getCheckIn()) && date.isBefore(b.getCheckOut())).count();
+                            roomSegments.stream().filter(s -> !date.isBefore(s.getCheckIn()) && date.isBefore(s.getCheckOut())).count();
                     int available = InventoryMath.availableCount(activeUnits.size(), (int) blockedUnitsToday, (int) bookedToday);
                     return new RoomTypeDailyAvailability(date.toString(), available);
                 })
@@ -134,15 +146,18 @@ public class BookingCalendarService {
         return new RoomTypeCalendar(room.getId(), room.getName(), roomUnitDtos, dailyAvailable);
     }
 
-    private static CalendarBooking toCalendarBooking(BookingEntity b) {
+    /** One bar per *segment* - see {@code CalendarBooking}'s schema description for why. */
+    private static CalendarBooking toCalendarBooking(BookingSegmentEntity s, int segmentCount) {
         return new CalendarBooking(
-                b.getId(),
-                b.getRoomId(),
-                b.getRoomUnitId(),
-                b.getGuestName(),
-                b.getCheckIn().toString(),
-                b.getCheckOut().toString(),
-                b.getStatus(),
-                PriceFormat.asDecimalString(b.getTotalPrice()));
+                s.getId(),
+                s.getBookingId(),
+                s.getRoomId(),
+                s.getRoomUnitId(),
+                s.getBooking().getGuestName(),
+                s.getCheckIn().toString(),
+                s.getCheckOut().toString(),
+                s.getBooking().getStatus(),
+                PriceFormat.asDecimalString(s.getTotalPrice()),
+                segmentCount);
     }
 }

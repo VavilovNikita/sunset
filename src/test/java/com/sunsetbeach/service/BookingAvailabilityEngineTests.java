@@ -500,8 +500,8 @@ class BookingAvailabilityEngineTests {
         Booking updated = updateSchedule(booking.getId(), checkIn.plusDays(1), checkOut.plusDays(3), null);
 
         assertThat(updated.getRoomUnitId().get()).isNull();
-        assertThat(updated.getCheckIn().toLocalDate()).isEqualTo(checkIn.plusDays(1));
-        assertThat(updated.getCheckOut().toLocalDate()).isEqualTo(checkOut.plusDays(3));
+        assertThat(updated.getCheckIn()).isEqualTo(checkIn.plusDays(1).toString());
+        assertThat(updated.getCheckOut()).isEqualTo(checkOut.plusDays(3).toString());
     }
 
     @Test

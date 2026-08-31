@@ -121,6 +121,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/bookings/staff").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/bookings/*/schedule/quote").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/bookings/*/schedule").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Mid-stay room relocation (a guest moving to a different room, possibly a
+                        // different room type) - same CASHIER+ tier as the rest of front-desk
+                        // reservation work above, same explicit-rule requirement (multi-segment paths
+                        // past "/bookings/" aren't covered by "/bookings/*"). The quote path has one
+                        // extra segment ("relocate/quote") than "relocate"/"undo-relocation" - Ant "*"
+                        // matches exactly one segment, so it needs its own matcher, not a shared one.
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/relocate/quote").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/relocate").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/undo-relocation").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // POS module: read endpoints (GET /menu, /tables, /orders/**) are open to any
                         // authenticated staff role, including WAITER - explicitly matched below rather
                         // than left to fall through to anyRequest(), so the EndpointCoverageTests

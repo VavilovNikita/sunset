@@ -15,6 +15,8 @@ import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.ErrorMessage;
+import com.sunsetbeach.model.RelocationInput;
+import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.StaffBookingCreateInput;
@@ -34,7 +36,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T21:43:17.277610500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-31T01:56:45.624850400+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 @Validated
 public interface BookingsApi {
 
@@ -44,7 +46,7 @@ public interface BookingsApi {
 
     /**
      * PUT /bookings/{id}/room-unit : Assign or unassign the physical room for a booking
-     * Requires CASHIER or above. One endpoint for both directions: a non-null &#x60;roomUnitId&#x60; assigns that physical room to the booking, &#x60;null&#x60; clears the assignment. Deliberately not part of &#x60;PATCH /bookings/{id}&#x60; - room assignment has its own validation (same room type, active, free for the whole stay) and its own race-safety story (SERIALIZABLE, same pattern as &#x60;POST /bookings&#x60;), so it gets its own operation. 
+     * Requires CASHIER or above. One endpoint for both directions: a non-null &#x60;roomUnitId&#x60; assigns that physical room to the booking, &#x60;null&#x60; clears the assignment. Deliberately not part of &#x60;PATCH /bookings/{id}&#x60; - room assignment has its own validation (same room type, active, free for the whole stay) and its own race-safety story (SERIALIZABLE, same pattern as &#x60;POST /bookings&#x60;), so it gets its own operation. Only legal while the booking has exactly one segment (see &#x60;Booking.segments&#x60;) - once a booking has been split by &#x60;POST /bookings/{id}/relocate&#x60;, \&quot;the room\&quot; is no longer a single well-defined value this endpoint&#39;s one &#x60;roomUnitId&#x60; can express; use &#x60;relocate&#x60;/&#x60;undo-relocation&#x60; instead. 
      *
      * @param id  (required)
      * @param roomUnitAssignmentInput  (required)
@@ -69,7 +71,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -128,7 +130,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -179,7 +181,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -276,7 +278,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -341,12 +343,12 @@ public interface BookingsApi {
 
     /**
      * GET /bookings/calendar : Get everything the booking calendar grid needs for a date range
-     * Requires CASHIER or above. Answers a different question than &#x60;GET /availability/{roomId}&#x60; - that endpoint is a per-room-type, per-month occupancy/pricing matrix (booleans and counts); this one is a booking-identity read model across every room type at once (guest name, status, exact &#x60;bookingId&#x60; per stay) for rendering and driving the drag/resize calendar grid. Deliberately a new purpose-built endpoint rather than a third way to compute availability: it does not duplicate &#x60;GET /availability/{roomId}&#x60;&#39;s per-day occupancy formula (the shared server-side computation both endpoints rely on for &#x60;availableCount&#x60; lives in one place, see &#x60;RoomTypeDailyAvailability&#x60;), it just also returns booking/guest identity that endpoint never has. &#x60;from&#x60;/&#x60;to&#x60; accept an arbitrary range (not just a calendar month) capped at 92 days. 
+     * Requires CASHIER or above. Answers a different question than &#x60;GET /availability/{roomId}&#x60; - that endpoint is a per-room-type, per-month occupancy/pricing matrix (booleans and counts); this one is a booking-identity read model across every room type at once (guest name, status, exact &#x60;bookingId&#x60; per stay) for rendering and driving the drag/resize calendar grid. Deliberately a new purpose-built endpoint rather than a third way to compute availability: it does not duplicate &#x60;GET /availability/{roomId}&#x60;&#39;s per-day occupancy formula (the shared server-side computation both endpoints rely on for &#x60;availableCount&#x60; lives in one place, see &#x60;RoomTypeDailyAvailability&#x60;), it just also returns booking/guest identity that endpoint never has. &#x60;from&#x60;/&#x60;to&#x60; accept an arbitrary range (not just a calendar month), capped at 366 days so the grid can show up to a year on one screen - still capped, not unbounded, so a request for an arbitrarily large range is rejected with a clear error rather than made to time out or exhaust memory. 
      *
      * @param from  (required)
      * @param to Exclusive end of the range (same &#x60;[from, to)&#x60; convention as a stay). (required)
      * @return Calendar data for &#x60;[from, to)&#x60;. (status code 200)
-     *         or Malformed dates, &#x60;from &gt;&#x3D; to&#x60;, or range exceeds 92 days. (status code 400)
+     *         or Malformed dates, &#x60;from &gt;&#x3D; to&#x60;, or range exceeds 366 days. (status code 400)
      *         or No valid JWT. (status code 401)
      */
     @RequestMapping(
@@ -362,7 +364,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"roomTypes\" : [ { \"roomUnits\" : [ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" } ], \"dailyAvailable\" : [ { \"date\" : \"date\", \"availableCount\" : 0 }, { \"date\" : \"date\", \"availableCount\" : 0 } ], \"roomId\" : \"roomId\", \"roomName\" : \"roomName\" }, { \"roomUnits\" : [ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" } ], \"dailyAvailable\" : [ { \"date\" : \"date\", \"availableCount\" : 0 }, { \"date\" : \"date\", \"availableCount\" : 0 } ], \"roomId\" : \"roomId\", \"roomName\" : \"roomName\" } ], \"blocks\" : [ { \"fromDate\" : \"fromDate\", \"reason\" : \"reason\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"toDate\" : \"toDate\", \"id\" : \"id\", \"roomUnitId\" : \"roomUnitId\" }, { \"fromDate\" : \"fromDate\", \"reason\" : \"reason\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"toDate\" : \"toDate\", \"id\" : \"id\", \"roomUnitId\" : \"roomUnitId\" } ], \"from\" : \"from\", \"to\" : \"to\", \"bookings\" : [ { \"checkIn\" : \"checkIn\", \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"status\" : \"NEW\" }, { \"checkIn\" : \"checkIn\", \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"status\" : \"NEW\" } ] }";
+                    String exampleString = "{ \"roomTypes\" : [ { \"roomUnits\" : [ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" } ], \"dailyAvailable\" : [ { \"date\" : \"date\", \"availableCount\" : 0 }, { \"date\" : \"date\", \"availableCount\" : 0 } ], \"roomId\" : \"roomId\", \"roomName\" : \"roomName\" }, { \"roomUnits\" : [ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" } ], \"dailyAvailable\" : [ { \"date\" : \"date\", \"availableCount\" : 0 }, { \"date\" : \"date\", \"availableCount\" : 0 } ], \"roomId\" : \"roomId\", \"roomName\" : \"roomName\" } ], \"blocks\" : [ { \"fromDate\" : \"fromDate\", \"reason\" : \"reason\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"toDate\" : \"toDate\", \"id\" : \"id\", \"roomUnitId\" : \"roomUnitId\" }, { \"fromDate\" : \"fromDate\", \"reason\" : \"reason\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"toDate\" : \"toDate\", \"id\" : \"id\", \"roomUnitId\" : \"roomUnitId\" } ], \"from\" : \"from\", \"to\" : \"to\", \"bookings\" : [ { \"checkIn\" : \"checkIn\", \"totalPrice\" : \"totalPrice\", \"segmentId\" : \"segmentId\", \"checkOut\" : \"checkOut\", \"bookingId\" : \"bookingId\", \"roomId\" : \"roomId\", \"segmentCount\" : 6, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"status\" : \"NEW\" }, { \"checkIn\" : \"checkIn\", \"totalPrice\" : \"totalPrice\", \"segmentId\" : \"segmentId\", \"checkOut\" : \"checkOut\", \"bookingId\" : \"bookingId\", \"roomId\" : \"roomId\", \"segmentCount\" : 6, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"status\" : \"NEW\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -427,11 +429,12 @@ public interface BookingsApi {
 
     /**
      * GET /bookings : List bookings
-     * Requires CASHIER or above - finding a guest&#39;s booking is front-desk work, not a MANAGER-only report (contrast with &#x60;GET /bookings/export&#x60;, which stays MANAGER+: a single-booking lookup and a bulk CSV of every guest&#39;s contact details are different risk profiles). Filters mirror &#x60;GET /bookings/export&#x60;. Ordered by &#x60;checkIn&#x60; ascending. 
+     * Requires CASHIER or above - finding a guest&#39;s booking is front-desk work, not a MANAGER-only report (contrast with &#x60;GET /bookings/export&#x60;, which stays MANAGER+: a single-booking lookup and a bulk CSV of every guest&#39;s contact details are different risk profiles). Filters mirror &#x60;GET /bookings/export&#x60; (&#x60;guestName&#x60; is the one exception - see below). Ordered by &#x60;checkIn&#x60; ascending. 
      *
      * @param from Include bookings whose &#x60;checkOut&#x60; is after this date (i.e. still relevant on/after &#x60;from&#x60;). (optional)
      * @param to Include bookings whose &#x60;checkIn&#x60; is on or before this date - together with &#x60;from&#x60;, a proper closed-range/half-open-stay overlap test (so &#x60;from&#x3D;to&#x3D;&lt;today&gt;&#x60; finds a booking checking in today). (optional)
      * @param status  (optional)
+     * @param guestName Case-insensitive substring match against &#x60;guestName&#x60; - lets a phone-sized \&quot;charge to room\&quot; picker search by typing instead of scrolling a long list of same-day bookings. Not available on &#x60;GET /bookings/export&#x60; (that stays a bulk date-range report, not a guest lookup tool).  (optional)
      * @return Matching bookings, ordered by &#x60;checkIn&#x60; ascending. (status code 200)
      *         or No valid JWT. (status code 401)
      */
@@ -444,12 +447,70 @@ public interface BookingsApi {
     default ResponseEntity<List<Booking>> listBookings(
         @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = false) String from,
         @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = false) String to,
-         @Valid @RequestParam(value = "status", required = false) BookingStatus status
+         @Valid @RequestParam(value = "status", required = false) BookingStatus status,
+         @Valid @RequestParam(value = "guestName", required = false) String guestName
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
+                    String exampleString = "[ { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /bookings/{id}/relocate/quote : Preview the price/availability of a relocation without applying it
+     * Requires CASHIER or above. Non-mutating preview for &#x60;POST /bookings/{id}/relocate&#x60; - same request body, no &#x60;Serializable&#x60; transaction. &#x60;totalPrice&#x60; in the response is the whole booking&#39;s *new* total (every unaffected segment&#39;s price, plus the shrunk old segment&#39;s recomputed price, plus the new segment&#39;s price) - the same shape &#x60;POST /bookings/{id}/schedule/quote&#x60; returns, reused rather than a second near-identical response schema; &#x60;nights&#x60; describes the *new* segment being created. 
+     *
+     * @param id  (required)
+     * @param relocationInput  (required)
+     * @return Computed whole-booking total and availability for the requested relocation. Returned even when &#x60;available: false&#x60;.  (status code 200)
+     *         or Body failed validation. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Booking or room not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/bookings/{id}/relocate/quote",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<BookingScheduleQuote> quoteBookingRelocation(
+         @PathVariable("id") String id,
+         @Valid @RequestBody RelocationInput relocationInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"reason\" : \"reason\", \"totalPrice\" : \"totalPrice\", \"nights\" : 0, \"available\" : true }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -523,17 +584,143 @@ public interface BookingsApi {
 
 
     /**
+     * POST /bookings/{id}/relocate : Move a guest to a different room partway through their stay
+     * Requires CASHIER or above. Splits the segment covering &#x60;effectiveDate&#x60; into two: the existing room/unit keeps &#x60;[that segment&#39;s checkIn, effectiveDate)&#x60;, and a new segment for &#x60;[effectiveDate, that segment&#39;s checkOut)&#x60; takes &#x60;roomId&#x60;/&#x60;roomUnitId&#x60; - the new room may be a different room *type* than the one being left, at that type&#39;s own price. &#x60;effectiveDate&#x60; must fall strictly after the containing segment&#39;s own checkIn (relocating on a segment&#39;s first night is \&quot;assign this segment a different room\&quot;, i.e. &#x60;PUT /bookings/{id}/room-unit&#x60; or &#x60;PATCH /bookings/{id}/schedule&#x60; when there is only one segment - not a mid-stay move). Same three checks on the *new* room/unit as &#x60;PUT /bookings/{id}/room-unit&#x60; (same type, active, free for the new segment&#39;s dates), same &#x60;Serializable&#x60; race-safety as &#x60;POST /bookings&#x60;. See &#x60;POST /bookings/{id}/relocate/quote&#x60; to preview the recalculated total before calling this, and &#x60;POST /bookings/{id}/undo-relocation&#x60; to reverse it. Recorded in the audit log with who, from which room, to which room, and effective from which date. 
+     *
+     * @param id  (required)
+     * @param relocationInput  (required)
+     * @return Updated booking, now with an extra segment. (status code 200)
+     *         or Body failed validation, &#x60;effectiveDate&#x60; does not fall strictly inside an existing segment, or &#x60;roomUnitId&#x60; belongs to a different room type / is not active.  (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Booking, room, or room unit not found. (status code 404)
+     *         or The new room type/unit has no availability for the new segment&#39;s dates - either found up front or from a concurrent conflicting change (Postgres serialization failure, SQLSTATE &#x60;40001&#x60;).  (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/bookings/{id}/relocate",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<Booking> relocateBooking(
+         @PathVariable("id") String id,
+         @Valid @RequestBody RelocationInput relocationInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /bookings/{id}/undo-relocation : Reverse a relocation, merging two segments back into one
+     * Requires CASHIER or above. The inverse of &#x60;POST /bookings/{id}/relocate&#x60;: merges the two segments meeting at &#x60;splitDate&#x60; back into one, keeping the *earlier* segment&#39;s room - undoing a relocation means \&quot;this move didn&#39;t happen,\&quot; so the room reverts to what covered that whole span before it. &#x60;splitDate&#x60; must be an existing boundary (some segment&#39;s &#x60;checkOut&#x60; equal to the next segment&#39;s &#x60;checkIn&#x60;) - not a no-op write: the earlier room&#39;s unit/type may no longer be free for the range it is about to re-absorb (something else may have booked it in the meantime, since the relocation made it look free), so this re-runs the same availability check &#x60;relocate&#x60; does, under the same &#x60;Serializable&#x60; isolation. Recorded in the audit log the same way &#x60;relocate&#x60; is. 
+     *
+     * @param id  (required)
+     * @param relocationUndoInput  (required)
+     * @return Updated booking, with the two segments merged into one. (status code 200)
+     *         or Body failed validation, or &#x60;splitDate&#x60; is not an existing segment boundary. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Booking not found. (status code 404)
+     *         or The earlier room&#39;s type/unit no longer has availability for the merged period - either found up front or from a concurrent conflicting change (Postgres serialization failure, SQLSTATE &#x60;40001&#x60;).  (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/bookings/{id}/undo-relocation",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<Booking> undoBookingRelocation(
+         @PathVariable("id") String id,
+         @Valid @RequestBody RelocationUndoInput relocationUndoInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * PATCH /bookings/{id}/schedule : Change a booking&#39;s dates and/or physical room in one operation
-     * Requires CASHIER or above. One operation for what the booking calendar grid does with a mouse - extend/shorten a stay, move to a different room, or both at once - rather than three separate endpoints: dragging a reservation to a new row *and* new dates at the same time must not pass through an intermediate state where only one has changed. &#x60;totalPrice&#x60; is always recomputed server-side from &#x60;Room.basePrice&#x60;/&#x60;RatePlan&#x60; for the new dates, never accepted from the client. Re-validates availability with the same &#x60;Serializable&#x60; race-safety as &#x60;POST /bookings&#x60; / &#x60;PUT /bookings/{id}/room-unit&#x60;, correctly excluding the booking&#39;s own current reservation from the conflict check (so extending a stay is never blocked by the booking&#39;s own prior dates). See &#x60;POST /bookings/{id}/schedule/quote&#x60; to preview the new price/availability before calling this. 
+     * Requires CASHIER or above. One operation for what the booking calendar grid does with a mouse - extend/shorten a stay, move to a different room, or both at once - rather than three separate endpoints: dragging a reservation to a new row *and* new dates at the same time must not pass through an intermediate state where only one has changed. &#x60;totalPrice&#x60; is always recomputed server-side from &#x60;Room.basePrice&#x60;/&#x60;RatePlan&#x60; for the new dates, never accepted from the client. Re-validates availability with the same &#x60;Serializable&#x60; race-safety as &#x60;POST /bookings&#x60; / &#x60;PUT /bookings/{id}/room-unit&#x60;, correctly excluding the booking&#39;s own current reservation from the conflict check (so extending a stay is never blocked by the booking&#39;s own prior dates). See &#x60;POST /bookings/{id}/schedule/quote&#x60; to preview the new price/availability before calling this.  For a booking split across more than one room by &#x60;POST /bookings/{id}/relocate&#x60; (see &#x60;Booking.segments&#x60;), a single &#x60;checkIn&#x60;/&#x60;checkOut&#x60;/&#x60;roomUnitId&#x60; triple only has a well-defined meaning when it moves exactly one outer edge of the stay: &#x60;checkIn&#x60; alone (an earlier/later arrival, applied to the first segment) or &#x60;checkOut&#x60; alone (extending or shortening the stay, applied to the last segment - the most common front-desk request on an already-relocated booking), each without crossing into the segment next to it. Any other combination - both dates moving at once, or neither (a bare room change with no segment named to apply it to) - has no single segment this shape can address, and is rejected with 409 in favor of &#x60;relocate&#x60;/&#x60;undo-relocation&#x60;, the operations built to name one explicitly. A date that crosses into the neighboring segment is rejected with 400 instead - it is a genuinely invalid request, not a race or an ambiguity. 
      *
      * @param id  (required)
      * @param bookingScheduleInput  (required)
      * @return Updated booking. (status code 200)
-     *         or Body failed validation (includes &#x60;checkIn &lt; checkOut&#x60;), or &#x60;roomUnitId&#x60; belongs to a different room type / is not active. (status code 400)
+     *         or Body failed validation (includes &#x60;checkIn &lt; checkOut&#x60;), &#x60;roomUnitId&#x60; belongs to a different room type / is not active, or (multi-segment booking only) the requested date crosses into the neighboring segment.  (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
      *         or Booking or room unit not found. (status code 404)
-     *         or The new dates are no longer available at the type level, or &#x60;roomUnitId&#x60; is blocked or already booked for an overlapping stay - either found up front or from a concurrent conflicting change (Postgres serialization failure, SQLSTATE &#x60;40001&#x60;).  (status code 409)
+     *         or The new dates are no longer available at the type level, &#x60;roomUnitId&#x60; is blocked or already booked for an overlapping stay, a concurrent conflicting change was detected (Postgres serialization failure, SQLSTATE &#x60;40001&#x60;), or (multi-segment booking only) the change would touch more than one segment (both dates moving, or neither).  (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.PATCH,
@@ -549,7 +736,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -610,7 +797,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

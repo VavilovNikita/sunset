@@ -14,10 +14,10 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Response of &#x60;POST /bookings/{id}/schedule/quote&#x60; - a non-mutating preview of what &#x60;PATCH /bookings/{id}/schedule&#x60; would do with the same request body. &#x60;totalPrice&#x60; is always computed (pure arithmetic over &#x60;RatePlan&#x60;/&#x60;Room.basePrice&#x60; for the requested dates, independent of availability); &#x60;available&#x60;/&#x60;reason&#x60; report whether applying this exact change would currently succeed. This is advisory, not a lock - the apply call re-validates from scratch inside its own &#x60;Serializable&#x60; transaction, so a &#x60;true&#x60; here can still lose a race to a concurrent change made between preview and apply. 
+ * Response of &#x60;POST /bookings/{id}/schedule/quote&#x60; - a non-mutating preview of what &#x60;PATCH /bookings/{id}/schedule&#x60; would do with the same request body - and of &#x60;POST /bookings/{id}/relocate/quote&#x60;, reused as-is rather than duplicated: there, &#x60;totalPrice&#x60; is the whole booking&#39;s new total after the relocation and &#x60;nights&#x60; describes the new segment being created. &#x60;totalPrice&#x60; is always computed (pure arithmetic over &#x60;RatePlan&#x60;/&#x60;Room.basePrice&#x60; for the requested dates, independent of availability); &#x60;available&#x60;/&#x60;reason&#x60; report whether applying this exact change would currently succeed. This is advisory, not a lock - the apply call re-validates from scratch inside its own &#x60;Serializable&#x60; transaction, so a &#x60;true&#x60; here can still lose a race to a concurrent change made between preview and apply. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T21:43:17.277610500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T18:13:29.409061300+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class BookingScheduleQuote {
 
   private String totalPrice;

@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PaymentEntity;
@@ -24,9 +25,12 @@ import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.PaymentMethod;
+import com.sunsetbeach.model.RelocationInput;
+import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.PaymentRepository;
@@ -57,6 +61,7 @@ public class BookingService {
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
     private final BookingRepository bookingRepository;
+    private final BookingSegmentRepository segmentRepository;
     private final BookingWriter bookingWriter;
     private final BookingMapper bookingMapper;
     private final EmailService emailService;
@@ -69,6 +74,7 @@ public class BookingService {
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             BookingRepository bookingRepository,
+            BookingSegmentRepository segmentRepository,
             BookingWriter bookingWriter,
             BookingMapper bookingMapper,
             EmailService emailService,
@@ -79,6 +85,7 @@ public class BookingService {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.bookingRepository = bookingRepository;
+        this.segmentRepository = segmentRepository;
         this.bookingWriter = bookingWriter;
         this.bookingMapper = bookingMapper;
         this.emailService = emailService;
@@ -86,6 +93,10 @@ public class BookingService {
         this.orderItemRepository = orderItemRepository;
         this.menuItemRepository = menuItemRepository;
         this.auditLogService = auditLogService;
+    }
+
+    private List<BookingSegmentEntity> loadSegments(String bookingId) {
+        return segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
     }
 
     public Booking createBooking(BookingCreateInput input) {
@@ -109,7 +120,7 @@ public class BookingService {
         }
 
         emailService.sendNewBookingEmail(saved, room);
-        return bookingMapper.toDto(saved, room, null);
+        return bookingMapper.toDto(saved, room, null, loadSegments(saved.getId()));
     }
 
     /**
@@ -153,7 +164,7 @@ public class BookingService {
                 saved.getId(),
                 "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + checkIn + " to " + checkOut + ")"
                         + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : ""));
-        return bookingMapper.toDto(saved, room, assignedUnit);
+        return bookingMapper.toDto(saved, room, assignedUnit, loadSegments(saved.getId()));
     }
 
     @Transactional
@@ -203,20 +214,26 @@ public class BookingService {
                             + " in " + room.getName());
         }
 
-        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()));
+        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()), loadSegments(saved.getId()));
     }
 
     @Transactional(readOnly = true)
-    public List<Booking> list(String from, String to, BookingStatus status) {
-        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status));
-        return bookings.stream().map(b -> bookingMapper.toDto(b, b.getRoom(), b.getRoomUnit())).toList();
+    public List<Booking> list(String from, String to, BookingStatus status, String guestName) {
+        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status, guestName));
+        Map<String, List<BookingSegmentEntity>> segmentsByBookingId = bookings.isEmpty()
+                ? Map.of()
+                : segmentRepository.findByBookingIdIn(bookings.stream().map(BookingEntity::getId).toList()).stream()
+                        .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+        return bookings.stream()
+                .map(b -> bookingMapper.toDto(b, b.getRoom(), b.getRoomUnit(), segmentsByBookingId.getOrDefault(b.getId(), List.of())))
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public Booking getById(String id) {
         BookingEntity booking = bookingRepository.findById(id).orElseThrow(() -> new NotFoundException("Booking not found"));
         RoomEntity room = roomRepository.findById(booking.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
-        return bookingMapper.toDto(booking, room, findRoomUnit(booking.getRoomUnitId()));
+        return bookingMapper.toDto(booking, room, findRoomUnit(booking.getRoomUnitId()), loadSegments(id));
     }
 
     /**
@@ -252,7 +269,7 @@ public class BookingService {
                 "Room " + (oldUnit != null ? oldUnit.getLabel() : "unassigned") + " → "
                         + (newUnit != null ? newUnit.getLabel() : "unassigned") + " for " + saved.getGuestName() + " (" + room.getName()
                         + ")");
-        return bookingMapper.toDto(saved, room, newUnit);
+        return bookingMapper.toDto(saved, room, newUnit, loadSegments(saved.getId()));
     }
 
     /**
@@ -310,7 +327,7 @@ public class BookingService {
         }
         auditLogService.record(AuditAction.BOOKING_SCHEDULE_CHANGED, AuditEntityType.BOOKING, saved.getId(), summary.toString());
 
-        return bookingMapper.toDto(saved, room, newUnit);
+        return bookingMapper.toDto(saved, room, newUnit, loadSegments(saved.getId()));
     }
 
     /**
@@ -329,6 +346,81 @@ public class BookingService {
 
         BookingWriter.ScheduleQuote quote = bookingWriter.quoteSchedule(bookingId, checkIn, checkOut, roomUnitId);
         return new BookingScheduleQuote(PriceFormat.asDecimalString(quote.totalPrice()), quote.nights(), quote.available(), quote.reason());
+    }
+
+    /**
+     * Moves a guest to a different room (possibly a different room *type*) partway through
+     * their stay - the write path behind {@code POST /bookings/{id}/relocate}. Mirrors
+     * {@link #createBooking}'s race-safety story: the actual validation/write happens in
+     * {@link BookingWriter#relocate}, which runs SERIALIZABLE.
+     */
+    public Booking relocate(String bookingId, RelocationInput input) {
+        LocalDate effectiveDate = LocalDate.parse(input.getEffectiveDate());
+        String newRoomUnitId = input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
+
+        BookingWriter.RelocationResult result;
+        try {
+            result = bookingWriter.relocate(bookingId, effectiveDate, input.getRoomId(), newRoomUnitId);
+        } catch (DataAccessException | TransactionSystemException e) {
+            if (isSerializationFailure(e)) {
+                throw new ConflictException("Someone just booked these dates — please try again.");
+            }
+            throw e;
+        }
+
+        BookingEntity saved = result.booking();
+        RoomEntity newRoom = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        auditLogService.record(
+                AuditAction.BOOKING_RELOCATED,
+                AuditEntityType.BOOKING,
+                saved.getId(),
+                "Relocated " + saved.getGuestName() + " from " + result.oldRoom().getName()
+                        + (result.oldUnitLabel() != null ? " (" + result.oldUnitLabel() + ")" : "") + " to " + result.newRoom().getName()
+                        + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + ", effective " + effectiveDate);
+        return bookingMapper.toDto(saved, newRoom, result.newUnit(), loadSegments(saved.getId()));
+    }
+
+    /**
+     * Non-mutating preview for {@code POST /bookings/{id}/relocate/quote} - see
+     * {@link BookingWriter#quoteRelocation}.
+     */
+    @Transactional(readOnly = true)
+    public BookingScheduleQuote quoteRelocation(String bookingId, RelocationInput input) {
+        LocalDate effectiveDate = LocalDate.parse(input.getEffectiveDate());
+        String newRoomUnitId = input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
+
+        BookingWriter.ScheduleQuote quote = bookingWriter.quoteRelocation(bookingId, effectiveDate, input.getRoomId(), newRoomUnitId);
+        return new BookingScheduleQuote(PriceFormat.asDecimalString(quote.totalPrice()), quote.nights(), quote.available(), quote.reason());
+    }
+
+    /**
+     * Reverses a relocation, merging two segments back into one - the write path behind
+     * {@code POST /bookings/{id}/undo-relocation}. Same race-safety story as {@link #relocate}:
+     * the earlier room may no longer be free for the range it is about to re-absorb.
+     */
+    public Booking undoRelocation(String bookingId, RelocationUndoInput input) {
+        LocalDate splitDate = LocalDate.parse(input.getSplitDate());
+
+        BookingWriter.RelocationResult result;
+        try {
+            result = bookingWriter.undoRelocation(bookingId, splitDate);
+        } catch (DataAccessException | TransactionSystemException e) {
+            if (isSerializationFailure(e)) {
+                throw new ConflictException("Someone just booked these dates — please try again.");
+            }
+            throw e;
+        }
+
+        BookingEntity saved = result.booking();
+        RoomEntity currentRoom = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        auditLogService.record(
+                AuditAction.BOOKING_RELOCATION_UNDONE,
+                AuditEntityType.BOOKING,
+                saved.getId(),
+                "Undid relocation for " + saved.getGuestName() + " — discarded move to " + result.oldRoom().getName()
+                        + (result.oldUnitLabel() != null ? " (" + result.oldUnitLabel() + ")" : "") + ", back to " + result.newRoom().getName()
+                        + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + " from " + splitDate);
+        return bookingMapper.toDto(saved, currentRoom, result.newUnit(), loadSegments(saved.getId()));
     }
 
     /**
@@ -440,7 +532,9 @@ public class BookingService {
 
     @Transactional(readOnly = true)
     public String exportCsv(String from, String to, BookingStatus status) {
-        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status));
+        // guestName search is deliberately not offered on the bulk CSV export - see
+        // GET /bookings/export's own description for why that stays a plain date-range report.
+        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status, null));
         auditLogService.record(
                 AuditAction.BOOKINGS_EXPORTED,
                 AuditEntityType.BOOKING,
@@ -451,10 +545,15 @@ public class BookingService {
         return buildCsv(bookings);
     }
 
-    /** Shared by {@link #list} and {@link #exportCsv} - same filters, same `checkIn` ascending order. */
-    private static Specification<BookingEntity> buildSpecification(String from, String to, BookingStatus status) {
+    /**
+     * Shared by {@link #list} and {@link #exportCsv} - same filters, same `checkIn` ascending
+     * order. {@code guestName} (case-insensitive substring) is passed as {@code null} from
+     * {@link #exportCsv} - it's a `GET /bookings`-only filter, see that operation's description.
+     */
+    private static Specification<BookingEntity> buildSpecification(String from, String to, BookingStatus status, String guestName) {
         LocalDate fromDate = from != null ? LocalDate.parse(from) : null;
         LocalDate toDate = to != null ? LocalDate.parse(to) : null;
+        String guestNamePattern = guestName != null && !guestName.isBlank() ? "%" + guestName.toLowerCase().trim() + "%" : null;
 
         return (root, query, cb) -> {
             if (Long.class != query.getResultType()) {
@@ -473,6 +572,9 @@ public class BookingService {
                 // on `to` (e.g. from=to=today, checkIn=today) must still match. A strict "<"
                 // here would silently drop same-day check-ins from range queries.
                 predicates.add(cb.lessThanOrEqualTo(root.get("checkIn"), toDate));
+            }
+            if (guestNamePattern != null) {
+                predicates.add(cb.like(cb.lower(root.get("guestName")), guestNamePattern));
             }
             query.orderBy(cb.asc(root.get("checkIn")));
             return cb.and(predicates.toArray(new Predicate[0]));

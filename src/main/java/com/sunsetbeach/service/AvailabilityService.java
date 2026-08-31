@@ -1,6 +1,6 @@
 package com.sunsetbeach.service;
 
-import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitBlockEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
@@ -11,7 +11,7 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.PublicAvailabilityDay;
 import com.sunsetbeach.model.PublicAvailabilityResponse;
 import com.sunsetbeach.model.RoomUnitAvailability;
-import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
@@ -31,17 +31,17 @@ public class AvailabilityService {
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
     private final RoomUnitBlockRepository roomUnitBlockRepository;
-    private final BookingRepository bookingRepository;
+    private final BookingSegmentRepository segmentRepository;
 
     public AvailabilityService(
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             RoomUnitBlockRepository roomUnitBlockRepository,
-            BookingRepository bookingRepository) {
+            BookingSegmentRepository segmentRepository) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
-        this.bookingRepository = bookingRepository;
+        this.segmentRepository = segmentRepository;
     }
 
     @Transactional(readOnly = true)
@@ -93,7 +93,7 @@ public class AvailabilityService {
                 ? List.of()
                 : roomUnitBlockRepository.findByRoomUnitIdInAndFromDateLessThanEqualAndToDateGreaterThanEqual(unitIds, monthEnd, monthStart);
 
-        List<BookingEntity> bookings = bookingRepository.findByRoomIdAndStatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
+        List<BookingSegmentEntity> segments = segmentRepository.findByRoomIdAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
                 room.getId(), BookingStatus.CANCELLED, monthEnd, monthStart);
 
         return DateRangeUtil.eachDateInRange(monthStart, monthEnd).stream()
@@ -104,19 +104,19 @@ public class AvailabilityService {
                     Map<String, String> blockReasonByUnitId = blockedToday.stream()
                             .collect(Collectors.toMap(RoomUnitBlockEntity::getRoomUnitId, RoomUnitBlockEntity::getReason, (a, b) -> a));
 
-                    List<BookingEntity> bookedToday =
-                            bookings.stream().filter(b -> !date.isBefore(b.getCheckIn()) && date.isBefore(b.getCheckOut())).toList();
-                    Map<String, BookingEntity> bookingByUnitId = bookedToday.stream()
-                            .filter(b -> b.getRoomUnitId() != null)
-                            .collect(Collectors.toMap(BookingEntity::getRoomUnitId, b -> b, (a, b) -> a));
+                    List<BookingSegmentEntity> bookedToday =
+                            segments.stream().filter(s -> !date.isBefore(s.getCheckIn()) && date.isBefore(s.getCheckOut())).toList();
+                    Map<String, BookingSegmentEntity> segmentByUnitId = bookedToday.stream()
+                            .filter(s -> s.getRoomUnitId() != null)
+                            .collect(Collectors.toMap(BookingSegmentEntity::getRoomUnitId, s -> s, (a, b) -> a));
 
                     List<RoomUnitAvailability> units = activeUnits.stream()
                             .map(unit -> {
                                 boolean blocked = blockedUnitIds.contains(unit.getId());
-                                BookingEntity booking = bookingByUnitId.get(unit.getId());
-                                boolean booked = booking != null;
+                                BookingSegmentEntity segment = segmentByUnitId.get(unit.getId());
+                                boolean booked = segment != null;
                                 return new RoomUnitAvailability(unit.getId(), unit.getLabel(), blocked, booked, !blocked && !booked,
-                                        booking != null ? booking.getId() : null, blocked ? blockReasonByUnitId.get(unit.getId()) : null);
+                                        segment != null ? segment.getBookingId() : null, blocked ? blockReasonByUnitId.get(unit.getId()) : null);
                             })
                             .toList();
 
