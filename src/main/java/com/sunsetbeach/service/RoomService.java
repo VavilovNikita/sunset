@@ -13,6 +13,7 @@ import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
@@ -90,11 +91,17 @@ public class RoomService {
         RoomEntity saved = roomRepository.save(entity);
 
         if (oldBasePrice.compareTo(saved.getBasePrice()) != 0) {
+            // Both sides scaled to 2 decimal places before formatting: oldBasePrice comes off the
+            // entity (DB numeric(_,2), always "1550.00"), but saved.getBasePrice() at this point is
+            // still the raw value applyInput() copied from the request body (e.g. a bare "1500"
+            // from JSON) - without normalizing, the summary read "changed from 1550.00 to 1500".
             auditLogService.record(
                     AuditAction.ROOM_PRICE_CHANGED,
                     AuditEntityType.ROOM,
                     saved.getId(),
-                    "Base price for " + saved.getName() + " changed from " + oldBasePrice + " to " + saved.getBasePrice());
+                    "Base price for " + saved.getName() + " changed from "
+                            + oldBasePrice.setScale(2, RoundingMode.HALF_UP) + " to "
+                            + saved.getBasePrice().setScale(2, RoundingMode.HALF_UP));
         }
 
         return roomMapper.toDto(saved);
