@@ -24,6 +24,7 @@ import com.sunsetbeach.model.PrinterDepartment;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.Shift;
 import com.sunsetbeach.model.ShiftCloseInput;
+import com.sunsetbeach.model.ShiftListItem;
 import com.sunsetbeach.model.ShiftOpenInput;
 import com.sunsetbeach.model.ShiftStatus;
 import com.sunsetbeach.model.ShiftSummary;
@@ -38,15 +39,21 @@ import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.ShiftRepository;
 import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
+import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -310,6 +317,70 @@ public class ShiftService {
 
     private ShiftTotals computeTotals(String shiftId) {
         return PaymentAggregation.toShiftTotals(PaymentAggregation.aggregate(paymentRepository.findByShiftId(shiftId)));
+    }
+
+    /**
+     * {@code GET /shifts} - the till-reconciliation overview {@link #exportCsv} lacks across more
+     * than one shift at a time. Same reconciliation arithmetic as {@link #describeShiftClose}/
+     * {@link #buildZReportPayload}/{@link #appendSummary}, computed per shift (shift volume here
+     * is front-desk-staff-count-per-day, not order/booking scale, so one totals query per shift
+     * is the same tradeoff several other manager-facing reads in this service already make, not
+     * a new one). {@code from}/{@code to} are inclusive on both ends against {@code openedAt};
+     * {@code staffId} narrows to one opener. Newest first, so the shift a manager most likely
+     * wants (today's, or the one just closed) is always at the top.
+     */
+    @Transactional(readOnly = true)
+    public List<ShiftListItem> list(String from, String to, String staffId) {
+        List<ShiftEntity> shifts =
+                shiftRepository.findAll(buildListSpecification(from, to, staffId), Sort.by(Sort.Direction.DESC, "openedAt"));
+
+        List<String> userIds = shifts.stream()
+                .flatMap(s -> Stream.of(s.getOpenedByUserId(), s.getClosedByUserId()))
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<String, String> emailsById =
+                userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
+
+        return shifts.stream()
+                .map(shift -> {
+                    ShiftTotals totals = computeTotals(shift.getId());
+                    BigDecimal openingFloat = shift.getOpeningCashFloat() != null ? shift.getOpeningCashFloat() : BigDecimal.ZERO;
+                    BigDecimal expectedCash = openingFloat.add(new BigDecimal(totals.getCash()));
+                    BigDecimal discrepancy =
+                            shift.getClosingCashCounted() != null ? shift.getClosingCashCounted().subtract(expectedCash) : null;
+                    return shiftMapper.toListItemDto(
+                            shift,
+                            emailsById.get(shift.getOpenedByUserId()),
+                            shift.getClosedByUserId() != null ? emailsById.get(shift.getClosedByUserId()) : null,
+                            totals,
+                            expectedCash,
+                            discrepancy);
+                })
+                .toList();
+    }
+
+    private static Specification<ShiftEntity> buildListSpecification(String from, String to, String staffId) {
+        LocalDate fromDate = from != null ? LocalDate.parse(from) : null;
+        LocalDate toDate = to != null ? LocalDate.parse(to) : null;
+
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (fromDate != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("openedAt"), fromDate.atStartOfDay()));
+            }
+            if (toDate != null) {
+                // Exclusive upper bound one day past `to`, so a shift opened any time on the `to`
+                // date itself is still included - the closed-on-both-ends date range every other
+                // filter in this API promises is about calendar days, not a literal <= on a
+                // datetime column, which would silently drop same-day matches after midnight.
+                predicates.add(cb.lessThan(root.get("openedAt"), toDate.plusDays(1).atStartOfDay()));
+            }
+            if (staffId != null && !staffId.isBlank()) {
+                predicates.add(cb.equal(root.get("openedByUserId"), staffId));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
     }
 
     /** "Zone – table label: 2× Mojito; 1× Caesar salad", or a fallback when there's no table. */

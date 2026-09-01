@@ -8,8 +8,10 @@ package com.sunsetbeach.api;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.Shift;
 import com.sunsetbeach.model.ShiftCloseInput;
+import com.sunsetbeach.model.ShiftListItem;
 import com.sunsetbeach.model.ShiftOpenInput;
 import com.sunsetbeach.model.ShiftSummary;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -257,6 +260,52 @@ public interface ShiftsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /shifts : List shifts for till reconciliation review
+     * Requires role &#x60;MANAGER&#x60; or above. One row per shift, reconciliation numbers (&#x60;expectedCash&#x60;/&#x60;discrepancy&#x60;) already computed - previously the only way to see this across more than one shift was paging through the general audit log for &#x60;SHIFT_CLOSED&#x60; entries and reading the discrepancy back out of free text. &#x60;GET /shifts/{id}/export&#x60; is the single-shift CSV detail underneath this; this operation is what points a manager at *which* shift needs a closer look, or export, next.  &#x60;from&#x60;/&#x60;to&#x60; bound &#x60;openedAt&#x60; (closed on both ends, matching every other date-range filter in this API), &#x60;staffId&#x60; narrows to shifts opened by one user. All filters are optional; with none given, every shift ever opened comes back, newest first, so a full audit doesn&#39;t require guessing a date range first.
+     *
+     * @param from  (optional)
+     * @param to  (optional)
+     * @param staffId  (optional)
+     * @return Shifts matching the filters, newest first. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/shifts",
+        produces = { "application/json" }
+    )
+
+    default ResponseEntity<List<ShiftListItem>> listShifts(
+         @Valid @RequestParam(value = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+         @Valid @RequestParam(value = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+         @Valid @RequestParam(value = "staffId", required = false) String staffId
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"expectedCash\" : \"expectedCash\", \"openedByEmail\" : \"openedByEmail\", \"totals\" : { \"other\" : \"other\", \"roomCharge\" : \"roomCharge\", \"cash\" : \"cash\", \"paymentCount\" : 0, \"card\" : \"card\" }, \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"discrepancy\" : \"discrepancy\", \"closedByEmail\" : \"closedByEmail\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"status\" : \"OPEN\" }, { \"expectedCash\" : \"expectedCash\", \"openedByEmail\" : \"openedByEmail\", \"totals\" : { \"other\" : \"other\", \"roomCharge\" : \"roomCharge\", \"cash\" : \"cash\", \"paymentCount\" : 0, \"card\" : \"card\" }, \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"discrepancy\" : \"discrepancy\", \"closedByEmail\" : \"closedByEmail\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"status\" : \"OPEN\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

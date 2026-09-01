@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.OrderItem;
 import com.sunsetbeach.model.OrderStatus;
+import com.sunsetbeach.model.PaymentMethod;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -22,10 +23,10 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * &#x60;total&#x60; is always server-computed from &#x60;items&#x60; — never taken from the client (same rule as &#x60;Booking.totalPrice&#x60;). 
+ * &#x60;total&#x60; is always server-computed from &#x60;items&#x60; — never taken from the client (same rule as &#x60;Booking.totalPrice&#x60;). &#x60;paymentMethod&#x60; is a convenience denormalization of the &#x60;Payment&#x60; this order settled with (there&#39;s at most one - see &#x60;Payment_unique_per_order&#x60;); it&#39;s &#x60;null&#x60; for anything still &#x60;OPEN&#x60;/&#x60;SENT&#x60;/&#x60;CANCELLED&#x60;, and set once and never changed once the order is &#x60;PAID&#x60;. Exists so a closed-order list/detail view can show how it was paid without a second round trip - there&#39;s no &#x60;GET /payments/{id}&#x60; or &#x60;?orderId&#x3D;&#x60; filter on &#x60;Payment&#x60; to fetch it separately. &#x60;openedByEmail&#x60; is the same kind of denormalization of &#x60;openedByUserId&#x60; that &#x60;ShiftListItem.openedByEmail&#x60; is of &#x60;Shift.openedByUserId&#x60; - a MANAGER building the staff filter on &#x60;GET /orders&#x60; can&#39;t fall back to &#x60;GET /users&#x60; (ADMIN-only) the way a CASHIER+ page elsewhere in this API can. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-31T21:14:23.537659300+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class Order {
 
   private String id;
@@ -40,6 +41,8 @@ public class Order {
 
   private String openedByUserId;
 
+  private String openedByEmail;
+
   private String total;
 
   private JsonNullable<String> note = JsonNullable.<String>undefined();
@@ -53,6 +56,8 @@ public class Order {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime updatedAt;
 
+  private JsonNullable<PaymentMethod> paymentMethod = JsonNullable.<PaymentMethod>undefined();
+
   public Order() {
     super();
   }
@@ -60,18 +65,20 @@ public class Order {
   /**
    * Constructor with only required parameters
    */
-  public Order(String id, String tableId, String bookingId, String guestName, OrderStatus status, String openedByUserId, String total, String note, List<@Valid OrderItem> items, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public Order(String id, String tableId, String bookingId, String guestName, OrderStatus status, String openedByUserId, String openedByEmail, String total, String note, List<@Valid OrderItem> items, OffsetDateTime createdAt, OffsetDateTime updatedAt, PaymentMethod paymentMethod) {
     this.id = id;
     this.tableId = JsonNullable.of(tableId);
     this.bookingId = JsonNullable.of(bookingId);
     this.guestName = JsonNullable.of(guestName);
     this.status = status;
     this.openedByUserId = openedByUserId;
+    this.openedByEmail = openedByEmail;
     this.total = total;
     this.note = JsonNullable.of(note);
     this.items = items;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
+    this.paymentMethod = JsonNullable.of(paymentMethod);
   }
 
   public Order id(String id) {
@@ -188,6 +195,25 @@ public class Order {
     this.openedByUserId = openedByUserId;
   }
 
+  public Order openedByEmail(String openedByEmail) {
+    this.openedByEmail = openedByEmail;
+    return this;
+  }
+
+  /**
+   * Get openedByEmail
+   * @return openedByEmail
+   */
+  @NotNull 
+  @JsonProperty("openedByEmail")
+  public String getOpenedByEmail() {
+    return openedByEmail;
+  }
+
+  public void setOpenedByEmail(String openedByEmail) {
+    this.openedByEmail = openedByEmail;
+  }
+
   public Order total(String total) {
     this.total = total;
     return this;
@@ -291,6 +317,25 @@ public class Order {
     this.updatedAt = updatedAt;
   }
 
+  public Order paymentMethod(PaymentMethod paymentMethod) {
+    this.paymentMethod = JsonNullable.of(paymentMethod);
+    return this;
+  }
+
+  /**
+   * Get paymentMethod
+   * @return paymentMethod
+   */
+  @NotNull @Valid 
+  @JsonProperty("paymentMethod")
+  public JsonNullable<PaymentMethod> getPaymentMethod() {
+    return paymentMethod;
+  }
+
+  public void setPaymentMethod(JsonNullable<PaymentMethod> paymentMethod) {
+    this.paymentMethod = paymentMethod;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -306,16 +351,18 @@ public class Order {
         Objects.equals(this.guestName, order.guestName) &&
         Objects.equals(this.status, order.status) &&
         Objects.equals(this.openedByUserId, order.openedByUserId) &&
+        Objects.equals(this.openedByEmail, order.openedByEmail) &&
         Objects.equals(this.total, order.total) &&
         Objects.equals(this.note, order.note) &&
         Objects.equals(this.items, order.items) &&
         Objects.equals(this.createdAt, order.createdAt) &&
-        Objects.equals(this.updatedAt, order.updatedAt);
+        Objects.equals(this.updatedAt, order.updatedAt) &&
+        Objects.equals(this.paymentMethod, order.paymentMethod);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, tableId, bookingId, guestName, status, openedByUserId, total, note, items, createdAt, updatedAt);
+    return Objects.hash(id, tableId, bookingId, guestName, status, openedByUserId, openedByEmail, total, note, items, createdAt, updatedAt, paymentMethod);
   }
 
   @Override
@@ -328,11 +375,13 @@ public class Order {
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    openedByUserId: ").append(toIndentedString(openedByUserId)).append("\n");
+    sb.append("    openedByEmail: ").append(toIndentedString(openedByEmail)).append("\n");
     sb.append("    total: ").append(toIndentedString(total)).append("\n");
     sb.append("    note: ").append(toIndentedString(note)).append("\n");
     sb.append("    items: ").append(toIndentedString(items)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
+    sb.append("    paymentMethod: ").append(toIndentedString(paymentMethod)).append("\n");
     sb.append("}");
     return sb.toString();
   }

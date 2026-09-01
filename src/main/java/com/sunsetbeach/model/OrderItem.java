@@ -16,10 +16,10 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A single line of an Order. &#x60;unitPrice&#x60; is a snapshot of &#x60;MenuItem.price&#x60; at the moment the item was added — later menu price changes never retroactively affect it.
+ * A single line of an Order. &#x60;unitPrice&#x60; is a snapshot of &#x60;MenuItem.price&#x60; at the moment the item was added — later menu price changes never retroactively affect it. &#x60;sentAt&#x60; is set the moment this line is included in a kitchen/bar ticket print (the original send, or a later re-order print — see &#x60;POST /orders/{id}/items&#x60;); it&#39;s set regardless of whether that print actually reached the printer, same \&quot;dispatched, not delivered\&quot; contract as &#x60;Order.status&#x60; transitioning to &#x60;SENT&#x60;. Two lines are candidates for merging (see &#x60;POST /orders/{id}/items&#x60;) only when both have &#x60;sentAt: null&#x60;. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-31T20:56:12.946003700+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
 public class OrderItem {
 
   private String id;
@@ -37,6 +37,9 @@ public class OrderItem {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private JsonNullable<OffsetDateTime> sentAt = JsonNullable.<OffsetDateTime>undefined();
+
   public OrderItem() {
     super();
   }
@@ -44,7 +47,7 @@ public class OrderItem {
   /**
    * Constructor with only required parameters
    */
-  public OrderItem(String id, String orderId, String menuItemId, Integer quantity, String unitPrice, String note, OffsetDateTime createdAt) {
+  public OrderItem(String id, String orderId, String menuItemId, Integer quantity, String unitPrice, String note, OffsetDateTime createdAt, OffsetDateTime sentAt) {
     this.id = id;
     this.orderId = orderId;
     this.menuItemId = menuItemId;
@@ -52,6 +55,7 @@ public class OrderItem {
     this.unitPrice = unitPrice;
     this.note = JsonNullable.of(note);
     this.createdAt = createdAt;
+    this.sentAt = JsonNullable.of(sentAt);
   }
 
   public OrderItem id(String id) {
@@ -187,6 +191,25 @@ public class OrderItem {
     this.createdAt = createdAt;
   }
 
+  public OrderItem sentAt(OffsetDateTime sentAt) {
+    this.sentAt = JsonNullable.of(sentAt);
+    return this;
+  }
+
+  /**
+   * Get sentAt
+   * @return sentAt
+   */
+  @NotNull @Valid 
+  @JsonProperty("sentAt")
+  public JsonNullable<OffsetDateTime> getSentAt() {
+    return sentAt;
+  }
+
+  public void setSentAt(JsonNullable<OffsetDateTime> sentAt) {
+    this.sentAt = sentAt;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -202,12 +225,13 @@ public class OrderItem {
         Objects.equals(this.quantity, orderItem.quantity) &&
         Objects.equals(this.unitPrice, orderItem.unitPrice) &&
         Objects.equals(this.note, orderItem.note) &&
-        Objects.equals(this.createdAt, orderItem.createdAt);
+        Objects.equals(this.createdAt, orderItem.createdAt) &&
+        Objects.equals(this.sentAt, orderItem.sentAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, orderId, menuItemId, quantity, unitPrice, note, createdAt);
+    return Objects.hash(id, orderId, menuItemId, quantity, unitPrice, note, createdAt, sentAt);
   }
 
   @Override
@@ -221,6 +245,7 @@ public class OrderItem {
     sb.append("    unitPrice: ").append(toIndentedString(unitPrice)).append("\n");
     sb.append("    note: ").append(toIndentedString(note)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
+    sb.append("    sentAt: ").append(toIndentedString(sentAt)).append("\n");
     sb.append("}");
     return sb.toString();
   }

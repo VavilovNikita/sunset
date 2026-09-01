@@ -11,6 +11,7 @@ import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.security.CurrentUser;
 import com.sunsetbeach.service.OrderService;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,8 +27,9 @@ public class OrderController implements OrdersApi {
     }
 
     @Override
-    public ResponseEntity<List<Order>> listOrders(OrderStatus status, Zone zone, String tableId, String bookingId) {
-        return ResponseEntity.ok(orderService.list(status, zone, tableId, bookingId));
+    public ResponseEntity<List<Order>> listOrders(
+            OrderStatus status, Zone zone, String tableId, String bookingId, String staffId, LocalDate from, LocalDate to, String shiftId) {
+        return ResponseEntity.ok(orderService.list(status, zone, tableId, bookingId, staffId, from, to, shiftId));
     }
 
     @Override

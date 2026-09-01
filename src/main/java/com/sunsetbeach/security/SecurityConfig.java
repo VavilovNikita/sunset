@@ -148,8 +148,11 @@ public class SecurityConfig {
                         // authorizeHttpRequests matches in declaration order.
                         .requestMatchers(HttpMethod.POST, "/orders/*/close").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers("/orders/**").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())
-                        // Same ordering requirement: /shifts/*/export before the general /shifts/** rule.
+                        // Same ordering requirement: /shifts/*/export and the bare /shifts list
+                        // (till reconciliation across many shifts, same tier as the export and
+                        // the audit log below) before the general /shifts/** rule.
                         .requestMatchers(HttpMethod.GET, "/shifts/*/export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers(HttpMethod.GET, "/shifts").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/shifts/**").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.GET, "/payments/summary").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Audit log: read-only, MANAGER+ - the disputes it exists to resolve (a

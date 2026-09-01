@@ -15,6 +15,7 @@ public class OrderItemMapper {
                 entity.getQuantity(),
                 PriceFormat.asDecimalString(entity.getUnitPrice()),
                 entity.getNote(),
-                TimestampFormat.toUtc(entity.getCreatedAt()));
+                TimestampFormat.toUtc(entity.getCreatedAt()),
+                entity.getSentAt() != null ? TimestampFormat.toUtc(entity.getSentAt()) : null);
     }
 }

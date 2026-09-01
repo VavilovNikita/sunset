@@ -7,6 +7,7 @@ import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.ShiftEntity;
 import com.sunsetbeach.entity.TableEntity;
+import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
@@ -31,11 +32,15 @@ import com.sunsetbeach.repository.OrderRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.ShiftRepository;
 import com.sunsetbeach.repository.TableRepository;
+import com.sunsetbeach.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -56,6 +61,7 @@ public class OrderService {
     private final BookingRepository bookingRepository;
     private final ShiftRepository shiftRepository;
     private final PaymentRepository paymentRepository;
+    private final UserRepository userRepository;
     private final OrderMapper orderMapper;
     private final OrderPrintingService orderPrintingService;
     private final AuditLogService auditLogService;
@@ -68,6 +74,7 @@ public class OrderService {
             BookingRepository bookingRepository,
             ShiftRepository shiftRepository,
             PaymentRepository paymentRepository,
+            UserRepository userRepository,
             OrderMapper orderMapper,
             OrderPrintingService orderPrintingService,
             AuditLogService auditLogService) {
@@ -78,13 +85,22 @@ public class OrderService {
         this.bookingRepository = bookingRepository;
         this.shiftRepository = shiftRepository;
         this.paymentRepository = paymentRepository;
+        this.userRepository = userRepository;
         this.orderMapper = orderMapper;
         this.orderPrintingService = orderPrintingService;
         this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
-    public List<Order> list(OrderStatus status, Zone zone, String tableId, String bookingId) {
+    public List<Order> list(
+            OrderStatus status,
+            Zone zone,
+            String tableId,
+            String bookingId,
+            String staffId,
+            LocalDate from,
+            LocalDate to,
+            String shiftId) {
         List<String> zoneTableIds = null;
         if (zone != null) {
             zoneTableIds = tableRepository.findByZone(zone).stream().map(TableEntity::getId).toList();
@@ -92,15 +108,27 @@ public class OrderService {
                 return List.of();
             }
         }
+        // Order carries no shiftId (only Payment does, and only once the order is closed - see
+        // ShiftsApi) - resolve the membership the same way ShiftService's own reconciliation
+        // does, then filter on Order.id, rather than a Criteria subquery.
+        List<String> shiftOrderIds = null;
+        if (shiftId != null) {
+            shiftOrderIds = paymentRepository.findByShiftId(shiftId).stream().map(PaymentEntity::getOrderId).distinct().toList();
+            if (shiftOrderIds.isEmpty()) {
+                return List.of();
+            }
+        }
 
-        List<OrderEntity> orders = orderRepository.findAll(buildSpecification(status, zoneTableIds, tableId, bookingId));
+        List<OrderEntity> orders =
+                orderRepository.findAll(buildSpecification(status, zoneTableIds, tableId, bookingId, staffId, from, to, shiftOrderIds));
         return toDtos(orders);
     }
 
     @Transactional(readOnly = true)
     public Order getById(String id) {
         OrderEntity order = findOrThrow(id);
-        return orderMapper.toDto(order, orderItemRepository.findByOrderId(id));
+        PaymentMethod paymentMethod = paymentRepository.findByOrderId(id).map(PaymentEntity::getMethod).orElse(null);
+        return orderMapper.toDto(order, orderItemRepository.findByOrderId(id), resolveEmail(order.getOpenedByUserId()), paymentMethod);
     }
 
     @Transactional
@@ -120,7 +148,7 @@ public class OrderService {
         entity.setGuestName(input.getGuestName().orElse(null));
         entity.setOpenedByUserId(openedByUserId);
         OrderEntity saved = orderRepository.saveAndFlush(entity);
-        return orderMapper.toDto(saved, List.of());
+        return orderMapper.toDto(saved, List.of(), resolveEmail(openedByUserId), null);
     }
 
     @Transactional
@@ -150,9 +178,10 @@ public class OrderService {
         OrderEntity saved = orderRepository.saveAndFlush(order);
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
         if (transitionedToSent) {
-            orderPrintingService.printTickets(saved, items);
+            dispatchUnsentTickets(saved);
+            items = orderItemRepository.findByOrderId(id);
         }
-        return orderMapper.toDto(saved, items);
+        return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), null); // never PAID through this endpoint
     }
 
     @Transactional
@@ -160,29 +189,56 @@ public class OrderService {
         OrderEntity order = findOrThrow(id);
         // Unlike updateItem/deleteItem, adding new lines is allowed on a SENT order too - a
         // guest ordering another round after the ticket went to the kitchen is normal, and it's
-        // purely additive (nothing already sent is touched). See openapi.yaml for why this
-        // can't be told apart from the original ticket after the fact.
+        // purely additive (nothing already sent is touched). See openapi.yaml for the merge and
+        // re-order-printing rules that make this safe.
         if (!ADDABLE_STATUSES.contains(order.getStatus())) {
             throw new ConflictException("Order is not open or sent");
         }
 
+        List<OrderItemEntity> existing = orderItemRepository.findByOrderId(id);
         for (OrderItemInput input : inputs) {
             MenuItemEntity menuItem = menuItemRepository
                     .findById(input.getMenuItemId())
                     .orElseThrow(() -> new NotFoundException("Menu item not found: " + input.getMenuItemId()));
-            OrderItemEntity item = new OrderItemEntity();
-            item.setOrderId(order.getId());
-            item.setMenuItemId(menuItem.getId());
-            item.setQuantity(input.getQuantity());
-            item.setUnitPrice(menuItem.getPrice());
-            item.setNote(input.getNote().orElse(null));
-            orderItemRepository.save(item);
+            String note = normalizeNote(input.getNote().orElse(null));
+
+            // Only merge into a line that hasn't gone out yet (sentAt == null) - a line already
+            // on a printed ticket must never have its quantity silently bumped on-screen with no
+            // matching change on the paper the kitchen is holding.
+            OrderItemEntity mergeTarget = existing.stream()
+                    .filter(i -> i.getSentAt() == null)
+                    .filter(i -> i.getMenuItemId().equals(menuItem.getId()))
+                    .filter(i -> Objects.equals(normalizeNote(i.getNote()), note))
+                    .findFirst()
+                    .orElse(null);
+
+            if (mergeTarget != null) {
+                mergeTarget.setQuantity(mergeTarget.getQuantity() + input.getQuantity());
+                orderItemRepository.save(mergeTarget);
+            } else {
+                OrderItemEntity item = new OrderItemEntity();
+                item.setOrderId(order.getId());
+                item.setMenuItemId(menuItem.getId());
+                item.setQuantity(input.getQuantity());
+                item.setUnitPrice(menuItem.getPrice());
+                item.setNote(note);
+                existing.add(orderItemRepository.save(item));
+            }
         }
 
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
         order.setTotal(sumTotal(items));
         OrderEntity saved = orderRepository.saveAndFlush(order);
-        return orderMapper.toDto(saved, items);
+
+        // The order was already dispatched at least once - there's no "send" button left for
+        // staff to press for this round, so the ticket for whatever just became unsent goes out
+        // now, not never. See openapi.yaml's addOrderItems description.
+        if (saved.getStatus() == OrderStatus.SENT) {
+            dispatchUnsentTickets(saved);
+            items = orderItemRepository.findByOrderId(id);
+        }
+
+        return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), null); // never PAID through this endpoint
     }
 
     @Transactional
@@ -200,7 +256,7 @@ public class OrderService {
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
         order.setTotal(sumTotal(items));
         OrderEntity saved = orderRepository.saveAndFlush(order);
-        return orderMapper.toDto(saved, items);
+        return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), null); // OPEN-only endpoint, never PAID
     }
 
     @Transactional
@@ -216,7 +272,7 @@ public class OrderService {
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
         order.setTotal(sumTotal(items));
         OrderEntity saved = orderRepository.saveAndFlush(order);
-        return orderMapper.toDto(saved, items);
+        return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), null); // OPEN-only endpoint, never PAID
     }
 
     @Transactional
@@ -284,7 +340,7 @@ public class OrderService {
                     "Room charge of " + saved.getTotal() + " posted to " + booking.getGuestName() + "'s folio from order " + saved.getId());
         }
 
-        return orderMapper.toDto(saved, items);
+        return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), payment.getMethod());
     }
 
     @Transactional
@@ -304,7 +360,38 @@ public class OrderService {
         OrderEntity saved = orderRepository.saveAndFlush(order);
         auditLogService.record(
                 AuditAction.ORDER_CANCELLED, AuditEntityType.ORDER, saved.getId(), "Order cancelled (total was " + saved.getTotal() + ")");
-        return orderMapper.toDto(saved, orderItemRepository.findByOrderId(id));
+        return orderMapper.toDto(
+                saved, orderItemRepository.findByOrderId(id), resolveEmail(saved.getOpenedByUserId()), null); // cancelled, never paid
+    }
+
+    /**
+     * Prints a kitchen/bar ticket for every currently-unsent line on the order (department-split,
+     * same as the original send) and marks them {@code sentAt}, regardless of whether the print
+     * itself reached the printer - same fail-open contract as everywhere else in
+     * {@link OrderPrintingService}. Called both by the original {@code OPEN -> SENT} transition
+     * and by {@link #addItems} when items are added to an order that's already {@code SENT}, so a
+     * re-order ticket only ever carries the delta, never a repeat of lines already printed.
+     */
+    private void dispatchUnsentTickets(OrderEntity order) {
+        List<OrderItemEntity> unsent =
+                orderItemRepository.findByOrderId(order.getId()).stream().filter(i -> i.getSentAt() == null).toList();
+        if (unsent.isEmpty()) {
+            return;
+        }
+        orderPrintingService.printTickets(order, unsent);
+        LocalDateTime now = LocalDateTime.now();
+        for (OrderItemEntity item : unsent) {
+            item.setSentAt(now);
+        }
+        orderItemRepository.saveAll(unsent);
+    }
+
+    /** Blank and {@code null} are the same "no note" for merge-matching purposes. */
+    private static String normalizeNote(String note) {
+        if (note == null || note.isBlank()) {
+            return null;
+        }
+        return note.trim();
     }
 
     private void requireOpen(OrderEntity order) {
@@ -332,12 +419,36 @@ public class OrderService {
         List<String> orderIds = orders.stream().map(OrderEntity::getId).toList();
         Map<String, List<OrderItemEntity>> itemsByOrderId = orderItemRepository.findByOrderIdIn(orderIds).stream()
                 .collect(Collectors.groupingBy(OrderItemEntity::getOrderId));
-        return orders.stream().map(o -> orderMapper.toDto(o, itemsByOrderId.getOrDefault(o.getId(), List.of()))).toList();
+        // One batched lookup, not one query per row - same pattern as itemsByOrderId above.
+        Map<String, PaymentMethod> paymentMethodByOrderId = paymentRepository.findByOrderIdIn(orderIds).stream()
+                .collect(Collectors.toMap(PaymentEntity::getOrderId, PaymentEntity::getMethod));
+        List<String> userIds = orders.stream().map(OrderEntity::getOpenedByUserId).distinct().toList();
+        Map<String, String> emailsById =
+                userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
+        return orders.stream()
+                .map(o -> orderMapper.toDto(
+                        o,
+                        itemsByOrderId.getOrDefault(o.getId(), List.of()),
+                        emailsById.getOrDefault(o.getOpenedByUserId(), o.getOpenedByUserId()),
+                        paymentMethodByOrderId.get(o.getId())))
+                .toList();
+    }
+
+    /** Falls back to the raw id if the user was since deleted - same convention as {@code OrderPrintingService.resolveWaiterLabel}. */
+    private String resolveEmail(String userId) {
+        return userRepository.findById(userId).map(UserEntity::getEmail).orElse(userId);
     }
 
     /** Shared by {@link #list}. */
     private static Specification<OrderEntity> buildSpecification(
-            OrderStatus status, List<String> zoneTableIds, String tableId, String bookingId) {
+            OrderStatus status,
+            List<String> zoneTableIds,
+            String tableId,
+            String bookingId,
+            String staffId,
+            LocalDate from,
+            LocalDate to,
+            List<String> shiftOrderIds) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (status != null) {
@@ -352,7 +463,19 @@ public class OrderService {
             if (zoneTableIds != null) {
                 predicates.add(root.get("tableId").in(zoneTableIds));
             }
-            query.orderBy(cb.asc(root.get("createdAt")));
+            if (staffId != null && !staffId.isBlank()) {
+                predicates.add(cb.equal(root.get("openedByUserId"), staffId));
+            }
+            if (from != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from.atStartOfDay()));
+            }
+            if (to != null) {
+                predicates.add(cb.lessThan(root.get("createdAt"), to.plusDays(1).atStartOfDay()));
+            }
+            if (shiftOrderIds != null) {
+                predicates.add(root.get("id").in(shiftOrderIds));
+            }
+            query.orderBy(cb.desc(root.get("createdAt")));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
     }

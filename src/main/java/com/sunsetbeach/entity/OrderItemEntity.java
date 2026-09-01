@@ -31,6 +31,8 @@ public class OrderItemEntity {
     @CreationTimestamp
     private LocalDateTime createdAt;
 
+    private LocalDateTime sentAt;
+
     public String getId() {
         return id;
     }
@@ -77,5 +79,13 @@ public class OrderItemEntity {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public LocalDateTime getSentAt() {
+        return sentAt;
+    }
+
+    public void setSentAt(LocalDateTime sentAt) {
+        this.sentAt = sentAt;
     }
 }

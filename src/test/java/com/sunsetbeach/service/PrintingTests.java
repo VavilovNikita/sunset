@@ -185,6 +185,67 @@ class PrintingTests {
         }
     }
 
+    // --- Re-order after send: the second ticket carries only the delta, never the whole order again ---
+
+    @Test
+    void reorderAfterSend_secondTicketContainsOnlyTheNewlyAddedItem_notTheWholeOrderAgain() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            // Tapping the same item three times, one at a time - mirrors the exact staff workflow
+            // this covers, and exercises the merge from OrderItemMergingTests along the way.
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+            sendOrder(order.getId());
+
+            List<PrintJobEntity> afterFirstSend = jobsFor(order.getId());
+            assertThat(afterFirstSend).hasSize(1);
+            assertThat(decode(afterFirstSend.get(0))).contains("3x Caesar Salad");
+
+            // A round after the ticket already went out - no "Send to kitchen" button exists for
+            // this in the UI at all; the backend must dispatch it on its own.
+            Order reordered = orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+            assertThat(reordered.getItems()).hasSize(2); // the sent 3x line, plus a new unsent 1x line
+
+            List<PrintJobEntity> afterReorder = jobsFor(order.getId());
+            assertThat(afterReorder).hasSize(2); // one ticket per send, not one growing job
+            PrintJobEntity secondTicket = afterReorder.stream()
+                    .filter(j -> !j.getId().equals(afterFirstSend.get(0).getId()))
+                    .findFirst()
+                    .orElseThrow();
+            String secondText = decode(secondTicket);
+            assertThat(secondText).contains("1x Caesar Salad");
+            // The critical assertion: the kitchen must not be told to re-cook the original three.
+            assertThat(secondText).doesNotContain("3x Caesar Salad");
+            assertThat(secondText).doesNotContain("4x Caesar Salad");
+        }
+    }
+
+    @Test
+    void reorderAfterSend_departmentSplitStillAppliesToTheDelta() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            PrinterEntity kitchenPrinter = persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+            PrinterEntity barPrinter = persistPrinter(PrinterDepartment.BAR, fake.port());
+
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+            sendOrder(order.getId()); // 1 kitchen ticket
+
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(barItem.getId(), 1))); // triggers its own dispatch
+
+            List<PrintJobEntity> jobs = jobsFor(order.getId());
+            assertThat(jobs).hasSize(2);
+            PrintJobEntity barJob =
+                    jobs.stream().filter(j -> j.getPrinterId().equals(barPrinter.getId())).findFirst().orElseThrow();
+            PrintJobEntity kitchenJob =
+                    jobs.stream().filter(j -> j.getPrinterId().equals(kitchenPrinter.getId())).findFirst().orElseThrow();
+            assertThat(decode(barJob)).contains("1x Mojito").doesNotContain("Caesar Salad");
+            assertThat(decode(kitchenJob)).contains("1x Caesar Salad").doesNotContain("Mojito");
+        }
+    }
+
     // --- Fail-open: an unreachable printer never blocks the order operation ---
 
     @Test

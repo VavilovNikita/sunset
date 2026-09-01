@@ -320,6 +320,19 @@ class PosRoleHierarchyTests {
         mockMvc.perform(get("/shifts/shift-1/export").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
     }
 
+    // --- GET /shifts requires MANAGER or above - CASHIER is not enough ---
+
+    @Test
+    void listShifts_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/shifts").header("Authorization", token(Role.CASHIER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listShifts_withManagerToken_isOk() throws Exception {
+        when(shiftService.list(any(), any(), any())).thenReturn(List.of());
+        mockMvc.perform(get("/shifts").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
     // --- GET /payments/summary requires MANAGER or above - CASHIER is not enough ---
 
     @Test
@@ -761,7 +774,19 @@ class PosRoleHierarchyTests {
 
     private static Order sampleOrder() {
         return new Order(
-                "order-1", null, null, "Walk-in", OrderStatus.OPEN, "user-1", "0.00", null, List.of(), OffsetDateTime.now(), OffsetDateTime.now());
+                "order-1",
+                null,
+                null,
+                "Walk-in",
+                OrderStatus.OPEN,
+                "user-1",
+                "user-1@example.com",
+                "0.00",
+                null,
+                List.of(),
+                OffsetDateTime.now(),
+                OffsetDateTime.now(),
+                null);
     }
 
     private static PaymentsSummary samplePaymentsSummary() {

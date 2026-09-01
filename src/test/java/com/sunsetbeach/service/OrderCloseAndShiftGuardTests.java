@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderEntity;
+import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
@@ -19,10 +20,12 @@ import com.sunsetbeach.model.Shift;
 import com.sunsetbeach.model.ShiftCloseInput;
 import com.sunsetbeach.model.ShiftOpenInput;
 import com.sunsetbeach.repository.MenuItemRepository;
+import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.OrderRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,6 +57,9 @@ class OrderCloseAndShiftGuardTests {
 
     @Autowired
     private OrderRepository orderRepository;
+
+    @Autowired
+    private OrderItemRepository orderItemRepository;
 
     @Autowired
     private PaymentRepository paymentRepository;
@@ -168,9 +174,22 @@ class OrderCloseAndShiftGuardTests {
                 .isInstanceOf(ConflictException.class);
     }
 
+    /**
+     * A raw-repository shortcut standing in for {@code PATCH /orders/{id}} {@code status: SENT}
+     * (which additionally dispatches tickets and is covered end to end in {@link PrintingTests}) -
+     * marks every current line {@code sentAt} too, same as the real transition, so that a
+     * subsequent {@link OrderService#addItems} call in these tests sees a genuinely already-
+     * dispatched order (an unsent-line merge target would be a fixture bug, not the behavior
+     * under test).
+     */
     private void markSent(String orderId) {
         OrderEntity entity = orderRepository.findById(orderId).orElseThrow();
         entity.setStatus(OrderStatus.SENT);
         orderRepository.saveAndFlush(entity);
+
+        LocalDateTime now = LocalDateTime.now();
+        List<OrderItemEntity> items = orderItemRepository.findByOrderId(orderId);
+        items.forEach(item -> item.setSentAt(now));
+        orderItemRepository.saveAll(items);
     }
 }

@@ -242,6 +242,11 @@ paths:
         `POST /bookings/staff` needs to read this list, not just create against it (the same
         "action allowed, prerequisite read blocked" fix already applied to RoomUnits/Availability).
         Writes (create/update/delete, images) stay MANAGER-only. No pagination (small hotel).
+        Broader context: at this property CASHIER is a combined cashier/front-desk role (see
+        `POST /bookings/staff`'s description) - this is a deliberate scoping decision covering
+        this operation and `GET /pricing/{roomId}`, `GET /bookings`, `GET /bookings/calendar`,
+        and `GET /availability/{roomId}` together, not five independent oversights to flag one
+        by one in review.
       responses:
         "200":
           description: All rooms.
@@ -498,6 +503,8 @@ paths:
         Requires CASHIER or above - a CASHIER needs to quote a price to a walk-in guest
         through an authenticated endpoint rather than the public site (see `GET /rooms`
         for the same reasoning). Setting a price override (`PATCH`, below) stays MANAGER-only.
+        Part of the same deliberate combined cashier/front-desk role scoping - see
+        `POST /bookings/staff`'s description for the full reasoning.
       parameters:
         - name: month
           in: query
@@ -578,7 +585,9 @@ paths:
       tags: [Availability]
       summary: Get day-by-day, type- and unit-level availability for a room for a given month
       description: >
-        Requires CASHIER or above. Returns the full per-day inventory breakdown at the
+        Requires CASHIER or above - part of the same deliberate combined cashier/front-desk role
+        scoping as `GET /rooms`/`GET /bookings`/`GET /bookings/calendar` (see
+        `POST /bookings/staff`'s description for the full reasoning). Returns the full per-day inventory breakdown at the
         room-type level (`unitCount`, `blockedCount`, `bookedCount`, `availableCount`) *and* a
         per-unit breakdown (`units[]`) so staff can see exactly which physical room is
         blocked/booked/free on each day - the data both the future booking calendar grid and
@@ -903,7 +912,9 @@ paths:
         MANAGER-only report (contrast with `GET /bookings/export`, which stays MANAGER+: a
         single-booking lookup and a bulk CSV of every guest's contact details are different risk
         profiles). Filters mirror `GET /bookings/export` (`guestName` is the one exception - see
-        below). Ordered by `checkIn` ascending.
+        below). Ordered by `checkIn` ascending. Part of the same deliberate combined
+        cashier/front-desk role scoping as `GET /rooms`/`GET /pricing/{roomId}` - see
+        `POST /bookings/staff`'s description for the full reasoning.
       parameters:
         - name: from
           in: query
@@ -1154,6 +1165,16 @@ paths:
         where the booking exists without the room the staff member asked for. `totalPrice` is
         always server-computed from `Room.basePrice`/`RatePlan`, same as every other booking
         creation path.
+
+
+        This is also the anchor for a broader, deliberate role-scoping decision: at this
+        property, CASHIER is a combined cashier/front-desk reception role, not a payments-only
+        till operator. Creating this kind of booking requires reading room types and their
+        prices to quote a walk-in, and requires reading existing bookings/the calendar/
+        availability to know what can even be offered - so `GET /rooms`, `GET /pricing/{roomId}`,
+        `GET /bookings`, `GET /bookings/calendar`, and `GET /availability/{roomId}` are all
+        CASHIER+ too. That is intentional breadth in support of this endpoint's own job, not five
+        separate oversights to flag in review.
       requestBody:
         required: true
         content:
@@ -1205,7 +1226,10 @@ paths:
       tags: [Bookings]
       summary: Get everything the booking calendar grid needs for a date range
       description: >
-        Requires CASHIER or above. Answers a different question than
+        Requires CASHIER or above - part of the same deliberate combined cashier/front-desk role
+        scoping as `GET /rooms`/`GET /bookings` (see `POST /bookings/staff`'s description for the
+        full reasoning: a CASHIER checking a guest in needs to see what's booked and available,
+        not just create against it). Answers a different question than
         `GET /availability/{roomId}` - that endpoint is a per-room-type, per-month
         occupancy/pricing matrix (booleans and counts); this one is a booking-identity read
         model across every room type at once (guest name, status, exact `bookingId` per stay) for
@@ -2295,7 +2319,13 @@ paths:
       operationId: listOrders
       tags: [Orders]
       summary: List orders
-      description: Requires any authenticated staff session. Filters combine with AND.
+      description: >
+        Requires any authenticated staff session - same as `GET /orders/{id}`, order visibility
+        has no ownership boundary between staff (the whole floor already needs to see every
+        table). Filters combine with AND; this is the one endpoint that covers both the live
+        floor board (`status=OPEN`/`SENT`) and looking up a closed order (`status=PAID`/
+        `CANCELLED`) for a dispute or a till reconciliation - there's no separate "history"
+        endpoint.
       parameters:
         - name: status
           in: query
@@ -2318,6 +2348,35 @@ paths:
           required: false
           schema:
             type: string
+        - name: staffId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Exact match against `Order.openedByUserId`.
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Inclusive lower bound on `Order.createdAt` (whole day, local to the server).
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Inclusive upper bound on `Order.createdAt` (whole day, local to the server).
+        - name: shiftId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >
+            Orders paid during the given `Shift` - joins through `Payment.shiftId`, since `Order`
+            itself carries no `shiftId` (see `ShiftsApi`). An order still `OPEN`/`SENT` (no
+            `Payment` yet) never matches, even if opened during that shift.
       responses:
         "200":
           description: Matching orders.
@@ -2441,10 +2500,24 @@ paths:
         from the client. Unlike this endpoint, `PATCH`/`DELETE` on an individual existing line
         (`/orders/{id}/items/{itemId}`) still require the order to be `OPEN` - editing or
         removing a line that may already be in progress in the kitchen is not offered here.
-        Note there is no separate "sent to kitchen" timestamp: `Order.updatedAt` is overwritten
-        by this call like any other mutation, so it cannot be used to tell which lines were on
-        the original ticket versus added afterward - a kitchen-facing view would need to diff
-        on `OrderItem.createdAt` for that.
+
+
+        **Merging**: an input line is merged into an existing line (quantity added, no new row)
+        when both `menuItemId` and the (trimmed, blank-as-null) `note` match an existing line
+        that has `OrderItem.sentAt: null` - i.e. a line still waiting to be dispatched. A line
+        that already has `sentAt` set is never merged into, even on an exact match: the kitchen
+        already has a physical ticket for that quantity, and silently bumping it on-screen would
+        leave the two out of sync with no way to tell. The new input becomes its own (unsent)
+        line instead, to go out on the next ticket.
+
+
+        **Re-order printing**: if the order is already `SENT` when this call adds line(s), every
+        currently-unsent line on the order (not just the ones just added - covers any earlier
+        line that for some reason never got marked sent) is immediately split by department and
+        printed exactly like the original `OPEN` -> `SENT` send (see `PATCH /orders/{id}`), then
+        marked `sentAt`. This only ever prints the delta: a kitchen ticket for a re-order never
+        repeats lines already on an earlier ticket. If the order is still `OPEN`, new lines stay
+        unsent and wait for the explicit send along with everything else.
       requestBody:
         required: true
         content:
@@ -2911,6 +2984,53 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Shift not found
+
+  /shifts:
+    get:
+      operationId: listShifts
+      tags: [Shifts]
+      summary: List shifts for till reconciliation review
+      description: >
+        Requires role `MANAGER` or above. One row per shift, reconciliation numbers
+        (`expectedCash`/`discrepancy`) already computed - previously the only way to see this
+        across more than one shift was paging through the general audit log for `SHIFT_CLOSED`
+        entries and reading the discrepancy back out of free text. `GET /shifts/{id}/export` is
+        the single-shift CSV detail underneath this; this operation is what points a manager at
+        *which* shift needs a closer look, or export, next.
+
+
+        `from`/`to` bound `openedAt` (closed on both ends, matching every other date-range
+        filter in this API), `staffId` narrows to shifts opened by one user. All filters are
+        optional; with none given, every shift ever opened comes back, newest first, so a full
+        audit doesn't require guessing a date range first.
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: staffId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shifts matching the filters, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShiftListItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
 
   /payments/summary:
     get:
@@ -4638,8 +4758,15 @@ components:
 
     OrderItem:
       type: object
-      description: A single line of an Order. `unitPrice` is a snapshot of `MenuItem.price` at the moment the item was added — later menu price changes never retroactively affect it.
-      required: [id, orderId, menuItemId, quantity, unitPrice, note, createdAt]
+      description: >
+        A single line of an Order. `unitPrice` is a snapshot of `MenuItem.price` at the moment
+        the item was added — later menu price changes never retroactively affect it. `sentAt`
+        is set the moment this line is included in a kitchen/bar ticket print (the original
+        send, or a later re-order print — see `POST /orders/{id}/items`); it's set regardless
+        of whether that print actually reached the printer, same "dispatched, not delivered"
+        contract as `Order.status` transitioning to `SENT`. Two lines are candidates for
+        merging (see `POST /orders/{id}/items`) only when both have `sentAt: null`.
+      required: [id, orderId, menuItemId, quantity, unitPrice, note, createdAt, sentAt]
       properties:
         id:
           type: string
@@ -4658,13 +4785,40 @@ components:
         createdAt:
           type: string
           format: date-time
+        sentAt:
+          type: string
+          format: date-time
+          nullable: true
 
     Order:
       type: object
       description: >
         `total` is always server-computed from `items` — never taken from the client (same
-        rule as `Booking.totalPrice`).
-      required: [id, tableId, bookingId, guestName, status, openedByUserId, total, note, items, createdAt, updatedAt]
+        rule as `Booking.totalPrice`). `paymentMethod` is a convenience denormalization of the
+        `Payment` this order settled with (there's at most one - see `Payment_unique_per_order`);
+        it's `null` for anything still `OPEN`/`SENT`/`CANCELLED`, and set once and never changed
+        once the order is `PAID`. Exists so a closed-order list/detail view can show how it was
+        paid without a second round trip - there's no `GET /payments/{id}` or `?orderId=` filter
+        on `Payment` to fetch it separately. `openedByEmail` is the same kind of denormalization
+        of `openedByUserId` that `ShiftListItem.openedByEmail` is of `Shift.openedByUserId` - a
+        MANAGER building the staff filter on `GET /orders` can't fall back to `GET /users`
+        (ADMIN-only) the way a CASHIER+ page elsewhere in this API can.
+      required:
+        [
+          id,
+          tableId,
+          bookingId,
+          guestName,
+          status,
+          openedByUserId,
+          openedByEmail,
+          total,
+          note,
+          items,
+          createdAt,
+          updatedAt,
+          paymentMethod,
+        ]
       properties:
         id:
           type: string
@@ -4680,6 +4834,8 @@ components:
         status:
           $ref: "#/components/schemas/OrderStatus"
         openedByUserId:
+          type: string
+        openedByEmail:
           type: string
         total:
           type: string
@@ -4697,6 +4853,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+        paymentMethod:
+          allOf:
+            - $ref: "#/components/schemas/PaymentMethod"
+          nullable: true
 
     OrderCreateInput:
       type: object
@@ -4896,6 +5056,72 @@ components:
           nullable: true
         totals:
           $ref: "#/components/schemas/ShiftTotals"
+
+    ShiftListItem:
+      type: object
+      description: >
+        One row of `GET /shifts` - the same fields as `ShiftSummary` plus what a manager
+        reviewing a period actually needs and would otherwise have to look up separately:
+        `openedByEmail`/`closedByEmail` (so this list doesn't require cross-referencing user
+        ids against `GET /users`) and the reconciliation numbers themselves,
+        `expectedCash`/`discrepancy` - the same arithmetic as the printed Z-report and the CSV
+        export (`ShiftService`): `expectedCash` = `openingCashFloat` (0 if unset) + this shift's
+        cash payments; `discrepancy` = `closingCashCounted` - `expectedCash`, positive meaning
+        more cash counted than expected, negative meaning less. `discrepancy` is `null` exactly
+        when `closingCashCounted` is - an open or never-recounted shift has nothing to compare.
+      required:
+        - id
+        - openedByUserId
+        - openedByEmail
+        - openedAt
+        - closedByUserId
+        - closedByEmail
+        - closedAt
+        - openingCashFloat
+        - closingCashCounted
+        - status
+        - totals
+        - expectedCash
+        - discrepancy
+      properties:
+        id:
+          type: string
+        openedByUserId:
+          type: string
+        openedByEmail:
+          type: string
+        openedAt:
+          type: string
+          format: date-time
+        closedByUserId:
+          type: string
+          nullable: true
+        closedByEmail:
+          type: string
+          nullable: true
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+        openingCashFloat:
+          type: string
+          nullable: true
+          description: Decimal(10,2) rendered as a string.
+        closingCashCounted:
+          type: string
+          nullable: true
+          description: Decimal(10,2) rendered as a string.
+        status:
+          $ref: "#/components/schemas/ShiftStatus"
+        totals:
+          $ref: "#/components/schemas/ShiftTotals"
+        expectedCash:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        discrepancy:
+          type: string
+          nullable: true
+          description: Decimal(10,2) rendered as a string, or null if closingCashCounted is null.
 
     BookingPosOrderItem:
       type: object

@@ -3,10 +3,13 @@ package com.sunsetbeach.controller;
 import com.sunsetbeach.api.ShiftsApi;
 import com.sunsetbeach.model.Shift;
 import com.sunsetbeach.model.ShiftCloseInput;
+import com.sunsetbeach.model.ShiftListItem;
 import com.sunsetbeach.model.ShiftOpenInput;
 import com.sunsetbeach.model.ShiftSummary;
 import com.sunsetbeach.security.CurrentUser;
 import com.sunsetbeach.service.ShiftService;
+import java.time.LocalDate;
+import java.util.List;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -41,6 +44,11 @@ public class ShiftController implements ShiftsApi {
     @Override
     public ResponseEntity<ShiftSummary> getShift(String id) {
         return ResponseEntity.ok(shiftService.getSummary(id, CurrentUser.id(), CurrentUser.role()));
+    }
+
+    @Override
+    public ResponseEntity<List<ShiftListItem>> listShifts(LocalDate from, LocalDate to, String staffId) {
+        return ResponseEntity.ok(shiftService.list(from != null ? from.toString() : null, to != null ? to.toString() : null, staffId));
     }
 
     @Override
