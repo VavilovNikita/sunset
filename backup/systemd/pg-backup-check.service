@@ -1,0 +1,12 @@
+[Unit]
+Description=Check that the Sunset Beach Postgres backup is not stale
+After=pg-backup.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/sunsetbeach-backup.env
+ExecStart=/opt/sunsetbeach/backup/check_backup_freshness.sh
+# A failed run of this unit is what you want to alert on (e.g. via
+# `OnFailure=` pointed at a notification unit, or a systemd journal alert
+# rule) if you are not using HEALTHCHECK_URL in pg_backup.sh, or want a
+# second independent path to the same alert.

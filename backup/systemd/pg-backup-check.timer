@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Sunset Beach backup freshness check daily, offset from the backup itself
+
+[Timer]
+# Backup runs at 03:30; check at noon, so there's been plenty of time for it
+# to finish and this doesn't just race the backup job.
+OnCalendar=*-*-* 12:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

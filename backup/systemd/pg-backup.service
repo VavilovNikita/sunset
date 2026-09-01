@@ -1,0 +1,13 @@
+[Unit]
+Description=Sunset Beach Postgres backup
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/sunsetbeach-backup.env
+ExecStart=/opt/sunsetbeach/backup/pg_backup.sh
+# Belt and suspenders on top of the script's own healthcheck ping: if the
+# script itself crashes before it can even log, systemd's own journal still
+# has the failure, and `systemctl status pg-backup.service` after the fact
+# shows a clear failed run.

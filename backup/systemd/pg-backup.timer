@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Sunset Beach Postgres backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+# If the server was off (power cut, reboot) at 03:30, run as soon as it's
+# back up instead of silently skipping the whole day.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
