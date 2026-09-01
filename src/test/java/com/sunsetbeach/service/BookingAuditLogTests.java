@@ -1,4 +1,5 @@
 package com.sunsetbeach.service;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -41,7 +42,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * in this package (e.g. {@code BookingAvailabilityEngineTests}).
  */
 @SpringBootTest
-class BookingAuditLogTests {
+class BookingAuditLogTests extends AbstractIntegrationTest {
 
     @Autowired
     private BookingService bookingService;

@@ -1,4 +1,5 @@
 package com.sunsetbeach.service;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -46,7 +47,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * {@code ON DELETE CASCADE} - see V18__booking_segments.sql), never touching manual dev-DB data.
  */
 @SpringBootTest
-class BookingRelocationTests {
+class BookingRelocationTests extends AbstractIntegrationTest {
 
     @Autowired
     private BookingService bookingService;

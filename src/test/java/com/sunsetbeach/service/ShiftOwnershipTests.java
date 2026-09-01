@@ -1,4 +1,5 @@
 package com.sunsetbeach.service;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,7 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @SpringBootTest
 @Transactional
-class ShiftOwnershipTests {
+class ShiftOwnershipTests extends AbstractIntegrationTest {
 
     @Autowired
     private ShiftService shiftService;

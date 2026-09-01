@@ -1,4 +1,5 @@
 package com.sunsetbeach.service;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -44,7 +45,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * actual guard; this proves it holds under real concurrency, not just that the code compiles.
  */
 @SpringBootTest
-class OrderDoubleCloseRaceTests {
+class OrderDoubleCloseRaceTests extends AbstractIntegrationTest {
 
     @Autowired
     private OrderService orderService;

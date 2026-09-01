@@ -1,4 +1,5 @@
 package com.sunsetbeach.service;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -54,7 +55,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * is allowed to sell or a room unit is allowed to be assigned.
  */
 @SpringBootTest
-class BookingAvailabilityEngineTests {
+class BookingAvailabilityEngineTests extends AbstractIntegrationTest {
 
     @Autowired
     private BookingService bookingService;

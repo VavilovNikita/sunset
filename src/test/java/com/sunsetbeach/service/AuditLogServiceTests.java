@@ -1,4 +1,5 @@
 package com.sunsetbeach.service;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -34,7 +35,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * writes would outlive a rollback anyway, so cleanup here is manual, by id, in {@link #tearDown()}.
  */
 @SpringBootTest
-class AuditLogServiceTests {
+class AuditLogServiceTests extends AbstractIntegrationTest {
 
     @Autowired
     private AuditLogService auditLogService;

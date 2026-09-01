@@ -1,4 +1,5 @@
 package com.sunsetbeach.contract;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -87,7 +88,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-class DateOnlyFieldsContractTests {
+class DateOnlyFieldsContractTests extends AbstractIntegrationTest {
 
     // Field names that mean "a calendar day" anywhere in this API - see the class javadoc. Not
     // "date" fields in general: createdAt/updatedAt/paidAt/openedAt/closedAt are deliberately not

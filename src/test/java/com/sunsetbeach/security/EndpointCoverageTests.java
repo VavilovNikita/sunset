@@ -1,4 +1,5 @@
 package com.sunsetbeach.security;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -55,7 +56,7 @@ import org.yaml.snakeyaml.Yaml;
  * listing every such path/method so the fix is a five-second diff, not an investigation.
  */
 @SpringBootTest
-class EndpointCoverageTests {
+class EndpointCoverageTests extends AbstractIntegrationTest {
 
     private static final Set<String> HTTP_METHOD_KEYS = Set.of("get", "post", "put", "patch", "delete");
 

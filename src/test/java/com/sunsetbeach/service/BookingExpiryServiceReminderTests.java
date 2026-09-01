@@ -1,4 +1,5 @@
 package com.sunsetbeach.service;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -37,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @SpringBootTest
 @Transactional
-class BookingExpiryServiceReminderTests {
+class BookingExpiryServiceReminderTests extends AbstractIntegrationTest {
 
     @Autowired
     private BookingExpiryService bookingExpiryService;

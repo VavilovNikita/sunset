@@ -1,4 +1,5 @@
 package com.sunsetbeach.service;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -51,7 +52,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * test's own rollback anyway, so cleanup is manual, by id, in {@link #cleanUp()}.
  */
 @SpringBootTest
-class OrderShiftAuditLogTests {
+class OrderShiftAuditLogTests extends AbstractIntegrationTest {
 
     @Autowired
     private OrderService orderService;

@@ -1,4 +1,5 @@
 package com.sunsetbeach.service;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -39,7 +40,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * javadoc for why (AuditLogService.record commits independently of this test's transaction).
  */
 @SpringBootTest
-class UserRoomUnitAuditLogTests {
+class UserRoomUnitAuditLogTests extends AbstractIntegrationTest {
 
     @Autowired
     private UserService userService;

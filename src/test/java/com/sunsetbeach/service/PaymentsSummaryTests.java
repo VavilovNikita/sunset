@@ -1,4 +1,5 @@
 package com.sunsetbeach.service;
+import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -41,7 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @SpringBootTest
 @Transactional
-class PaymentsSummaryTests {
+class PaymentsSummaryTests extends AbstractIntegrationTest {
 
     private static final LocalDate FROM = LocalDate.of(2031, 3, 10);
     private static final LocalDate TO = LocalDate.of(2031, 3, 12);
