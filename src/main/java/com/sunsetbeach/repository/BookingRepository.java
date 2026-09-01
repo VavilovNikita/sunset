@@ -47,12 +47,6 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
             String roomUnitId, BookingStatus excludedStatus, LocalDate checkOut, LocalDate checkIn);
 
     /**
-     * Used by {@link com.sunsetbeach.service.RoomUnitService} to reject deleting/deactivating a
-     * unit that's still promised to a future guest.
-     */
-    boolean existsByRoomUnitIdAndStatusNotAndCheckOutGreaterThan(String roomUnitId, BookingStatus excludedStatus, LocalDate from);
-
-    /**
      * Every unconfirmed public booking, regardless of age - {@link com.sunsetbeach.service.BookingExpiryService}
      * needs to run its own business-day-aware date math per row (skipping weekends), which isn't
      * expressible as a single SQL cutoff predicate. This table is small for a hotel of this size,

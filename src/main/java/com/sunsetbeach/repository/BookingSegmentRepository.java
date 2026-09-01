@@ -13,8 +13,6 @@ public interface BookingSegmentRepository extends JpaRepository<BookingSegmentEn
     /** Bulk counterpart of {@link #findByBookingIdOrderByCheckInAsc} for {@code GET /bookings} - one query for a whole listed page, not one per row. */
     List<BookingSegmentEntity> findByBookingIdIn(List<String> bookingIds);
 
-    void deleteByBookingId(String bookingId);
-
     /** Type-level overlap test, replacing the old Booking-based query of the same name/shape. */
     List<BookingSegmentEntity> findByRoomIdAndBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThan(
             String roomId, BookingStatus excludedStatus, LocalDate checkOut, LocalDate checkIn);
