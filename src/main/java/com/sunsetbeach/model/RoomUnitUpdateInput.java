@@ -17,7 +17,7 @@ import jakarta.annotation.Generated;
  * Body of &#x60;PATCH /room-units/{id}&#x60;. Full replacement of &#x60;label&#x60;/&#x60;isActive&#x60; — &#x60;roomId&#x60; is immutable after creation.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RoomUnitUpdateInput {
 
   private String label;

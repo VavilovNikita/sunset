@@ -19,7 +19,7 @@ import jakarta.annotation.Generated;
  * A single physical room (\&quot;203\&quot;, \&quot;Garden Bungalow 4\&quot;) - one sellable unit of a Room type.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RoomUnit {
 
   private String id;

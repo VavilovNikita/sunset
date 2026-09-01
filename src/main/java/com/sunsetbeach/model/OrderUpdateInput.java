@@ -22,7 +22,7 @@ import jakarta.annotation.Generated;
  * Partial update (unlike &#x60;RoomInput&#x60;/&#x60;MenuItemInput&#x60;/&#x60;TableInput&#x60;): an omitted field leaves the existing value alone, an explicit &#x60;null&#x60; on &#x60;note&#x60;/&#x60;tableId&#x60; clears it. The only legal &#x60;status&#x60; transition through this endpoint is &#x60;OPEN&#x60; -&gt; &#x60;SENT&#x60;; any other value (including trying to set &#x60;PAID&#x60;/&#x60;CANCELLED&#x60; here instead of through &#x60;/close&#x60; or &#x60;/cancel&#x60;) is rejected with 400. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class OrderUpdateInput {
 
   private JsonNullable<@Size(max = 1000) String> note = JsonNullable.<String>undefined();

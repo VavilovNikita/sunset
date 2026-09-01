@@ -18,7 +18,7 @@ import jakarta.annotation.Generated;
  * Body of &#x60;roomSchema&#x60;. Full replacement on PATCH — no partial update. Does not include a unit count - a room type has zero sellable units until &#x60;RoomUnit&#x60;s are added for it via &#x60;POST /room-units&#x60;. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RoomInput {
 
   private String name;

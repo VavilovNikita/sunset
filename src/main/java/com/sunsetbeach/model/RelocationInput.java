@@ -20,7 +20,7 @@ import jakarta.annotation.Generated;
  * Body of &#x60;POST /bookings/{id}/relocate&#x60; and &#x60;POST /bookings/{id}/relocate/quote&#x60;. Unlike &#x60;BookingScheduleInput&#x60;, &#x60;roomId&#x60; (the room *type*) can change here - a relocation is exactly the operation that lets a guest move to a different type of room mid-stay, at that type&#39;s own price. &#x60;roomUnitId: null&#x60; is legal (relocate to \&quot;this type, unit not yet chosen\&quot;). 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T18:13:29.409061300+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RelocationInput {
 
   private String effectiveDate;

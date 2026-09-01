@@ -20,7 +20,7 @@ import jakarta.annotation.Generated;
  * Full replacement on PATCH — no partial update (same convention as &#x60;RoomInput&#x60;). &#x60;department&#x60; defaults to &#x60;KITCHEN&#x60; (most menu items are food) - existing rows migrated the same way; staff reassign drinks to &#x60;BAR&#x60; explicitly. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class MenuItemInput {
 
   private String name;

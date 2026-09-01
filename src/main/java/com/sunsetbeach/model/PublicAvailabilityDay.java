@@ -17,7 +17,7 @@ import jakarta.annotation.Generated;
  * Like &#x60;AvailabilityDay&#x60; but collapsed to a yes/no signal - guests get neither the block/booking split nor the exact remaining count (revealing occupancy load to competitors), just whether at least one unit is still sellable. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T18:39:34.635637100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class PublicAvailabilityDay {
 
   private String date;

@@ -21,7 +21,7 @@ import jakarta.annotation.Generated;
  * Safe projection returned by the API — &#x60;passwordHash&#x60; is never included.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-29T20:42:01.613848400+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class User {
 
   private String id;

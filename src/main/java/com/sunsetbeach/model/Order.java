@@ -26,7 +26,7 @@ import jakarta.annotation.Generated;
  * &#x60;total&#x60; is always server-computed from &#x60;items&#x60; — never taken from the client (same rule as &#x60;Booking.totalPrice&#x60;). &#x60;paymentMethod&#x60; is a convenience denormalization of the &#x60;Payment&#x60; this order settled with (there&#39;s at most one - see &#x60;Payment_unique_per_order&#x60;); it&#39;s &#x60;null&#x60; for anything still &#x60;OPEN&#x60;/&#x60;SENT&#x60;/&#x60;CANCELLED&#x60;, and set once and never changed once the order is &#x60;PAID&#x60;. Exists so a closed-order list/detail view can show how it was paid without a second round trip - there&#39;s no &#x60;GET /payments/{id}&#x60; or &#x60;?orderId&#x3D;&#x60; filter on &#x60;Payment&#x60; to fetch it separately. &#x60;openedByEmail&#x60; is the same kind of denormalization of &#x60;openedByUserId&#x60; that &#x60;ShiftListItem.openedByEmail&#x60; is of &#x60;Shift.openedByUserId&#x60; - a MANAGER building the staff filter on &#x60;GET /orders&#x60; can&#39;t fall back to &#x60;GET /users&#x60; (ADMIN-only) the way a CASHIER+ page elsewhere in this API can. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-31T21:14:23.537659300+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class Order {
 
   private String id;

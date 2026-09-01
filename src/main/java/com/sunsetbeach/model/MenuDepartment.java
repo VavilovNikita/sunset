@@ -19,7 +19,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  * Where a MenuItem's kitchen/bar ticket prints - independent of `category`, which is a free-text display grouping for the menu itself (e.g. \"Mains\", \"Cocktails\") and has no effect on print routing. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public enum MenuDepartment {
   
   KITCHEN("KITCHEN"),

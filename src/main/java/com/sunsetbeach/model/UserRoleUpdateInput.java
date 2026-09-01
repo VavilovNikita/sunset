@@ -19,7 +19,7 @@ import jakarta.annotation.Generated;
  * Body of &#x60;userRoleUpdateSchema&#x60;.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class UserRoleUpdateInput {
 
   private Role role;

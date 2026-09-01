@@ -17,7 +17,7 @@ import jakarta.annotation.Generated;
  * &#x60;folioTotal&#x60; &#x3D; &#x60;roomTotal&#x60; + &#x60;roomChargesTotal&#x60;, computed on the fly by &#x60;BookingService.computeFolio&#x60;/&#x60;getFolio&#x60; - see that method&#39;s Javadoc. Never stored. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T19:32:58.716822+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class BookingFolio {
 
   private String roomTotal;

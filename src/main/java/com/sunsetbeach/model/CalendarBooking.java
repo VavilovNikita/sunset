@@ -19,7 +19,7 @@ import jakarta.annotation.Generated;
  * One booking *segment* as rendered on the booking calendar grid - a lighter projection than &#x60;BookingSegment&#x60; (no nested &#x60;room&#x60;/&#x60;roomUnit&#x60;; cross-reference against &#x60;BookingCalendarResponse.roomTypes&#x60; instead), returned only for non-&#x60;CANCELLED&#x60; bookings. &#x60;segmentId&#x60; is the *segment&#39;s* id, not the booking&#39;s - a relocated booking produces more than one &#x60;CalendarBooking&#x60; entry, sharing the same &#x60;bookingId&#x60;, rendered as separate bars (different rows and/or date ranges) that all open the same booking&#39;s card on click. Any call that needs to act on the booking itself (open the card panel, quote or apply a schedule change, relocate) must use &#x60;bookingId&#x60;, never &#x60;segmentId&#x60; - the field is named for exactly what it identifies specifically because a same-named-but-different- meaning &#x60;id&#x60; here once caused every drag-to-edit handler to send the wrong id and get a silent 404. &#x60;roomUnitId: null&#x60; means this segment occupies a unit of its room type but has no specific physical room assigned yet - the grid renders it in an unassigned row for that type. &#x60;checkIn&#x60;/&#x60;checkOut&#x60; are plain date-only strings (&#x60;YYYY-MM-DD&#x60;), the same format &#x60;Booking.checkIn&#x60;/&#x60;checkOut&#x60; now use too. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T22:52:49.532858600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class CalendarBooking {
 
   private String segmentId;

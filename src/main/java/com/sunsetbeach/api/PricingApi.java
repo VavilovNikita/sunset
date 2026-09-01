@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 @Validated
 public interface PricingApi {
 
@@ -35,12 +35,12 @@ public interface PricingApi {
 
     /**
      * GET /pricing/{roomId} : Get per-day prices for a room for a given month
-     * Requires any authenticated staff session (ADMIN or MANAGER).
+     * Requires CASHIER or above - a CASHIER needs to quote a price to a walk-in guest through an authenticated endpoint rather than the public site (see &#x60;GET /rooms&#x60; for the same reasoning). Setting a price override (&#x60;PATCH&#x60;, below) stays MANAGER-only. Part of the same deliberate combined cashier/front-desk role scoping - see &#x60;POST /bookings/staff&#x60;&#39;s description for the full reasoning. 
      *
      * @param roomId  (required)
      * @param month Month key &#x60;YYYY-MM&#x60;. Defaults to the current UTC month. (optional)
      * @return Base price and the resolved price for every day of the month. (status code 200)
-     *         or No valid session cookie. (status code 401)
+     *         or No valid JWT. (status code 401)
      *         or Room not found. (status code 404)
      */
     @RequestMapping(
@@ -85,7 +85,7 @@ public interface PricingApi {
      * @param priceRangeInput  (required)
      * @return Number of days upserted. (status code 200)
      *         or Body failed &#x60;priceRangeSchema&#x60; validation, or the range exceeds 366 days. (status code 400)
-     *         or No valid session cookie. (status code 401)
+     *         or No valid JWT. (status code 401)
      *         or Room not found. (status code 404)
      */
     @RequestMapping(

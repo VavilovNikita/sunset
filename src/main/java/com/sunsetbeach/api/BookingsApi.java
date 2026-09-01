@@ -36,7 +36,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-31T01:56:45.624850400+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 @Validated
 public interface BookingsApi {
 
@@ -158,7 +158,7 @@ public interface BookingsApi {
 
     /**
      * POST /bookings/staff : Create a booking as staff (front-desk / walk-in), optionally assigning a room immediately
-     * Requires CASHIER or above. Distinct from the public &#x60;POST /bookings&#x60; guest-inquiry flow: no new-booking notification email is sent, guest email/phone are optional (a walk-in may not have one on hand), and if &#x60;roomUnitId&#x60; is given the room is assigned in the same &#x60;Serializable&#x60; transaction as the booking - never a separate call, so there is no window where the booking exists without the room the staff member asked for. &#x60;totalPrice&#x60; is always server-computed from &#x60;Room.basePrice&#x60;/&#x60;RatePlan&#x60;, same as every other booking creation path. 
+     * Requires CASHIER or above. Distinct from the public &#x60;POST /bookings&#x60; guest-inquiry flow: no new-booking notification email is sent, guest email/phone are optional (a walk-in may not have one on hand), and if &#x60;roomUnitId&#x60; is given the room is assigned in the same &#x60;Serializable&#x60; transaction as the booking - never a separate call, so there is no window where the booking exists without the room the staff member asked for. &#x60;totalPrice&#x60; is always server-computed from &#x60;Room.basePrice&#x60;/&#x60;RatePlan&#x60;, same as every other booking creation path.  This is also the anchor for a broader, deliberate role-scoping decision: at this property, CASHIER is a combined cashier/front-desk reception role, not a payments-only till operator. Creating this kind of booking requires reading room types and their prices to quote a walk-in, and requires reading existing bookings/the calendar/ availability to know what can even be offered - so &#x60;GET /rooms&#x60;, &#x60;GET /pricing/{roomId}&#x60;, &#x60;GET /bookings&#x60;, &#x60;GET /bookings/calendar&#x60;, and &#x60;GET /availability/{roomId}&#x60; are all CASHIER+ too. That is intentional breadth in support of this endpoint&#39;s own job, not five separate oversights to flag in review. 
      *
      * @param staffBookingCreateInput  (required)
      * @return Booking created (and room assigned, if &#x60;roomUnitId&#x60; was given). (status code 201)
@@ -343,7 +343,7 @@ public interface BookingsApi {
 
     /**
      * GET /bookings/calendar : Get everything the booking calendar grid needs for a date range
-     * Requires CASHIER or above. Answers a different question than &#x60;GET /availability/{roomId}&#x60; - that endpoint is a per-room-type, per-month occupancy/pricing matrix (booleans and counts); this one is a booking-identity read model across every room type at once (guest name, status, exact &#x60;bookingId&#x60; per stay) for rendering and driving the drag/resize calendar grid. Deliberately a new purpose-built endpoint rather than a third way to compute availability: it does not duplicate &#x60;GET /availability/{roomId}&#x60;&#39;s per-day occupancy formula (the shared server-side computation both endpoints rely on for &#x60;availableCount&#x60; lives in one place, see &#x60;RoomTypeDailyAvailability&#x60;), it just also returns booking/guest identity that endpoint never has. &#x60;from&#x60;/&#x60;to&#x60; accept an arbitrary range (not just a calendar month), capped at 366 days so the grid can show up to a year on one screen - still capped, not unbounded, so a request for an arbitrarily large range is rejected with a clear error rather than made to time out or exhaust memory. 
+     * Requires CASHIER or above - part of the same deliberate combined cashier/front-desk role scoping as &#x60;GET /rooms&#x60;/&#x60;GET /bookings&#x60; (see &#x60;POST /bookings/staff&#x60;&#39;s description for the full reasoning: a CASHIER checking a guest in needs to see what&#39;s booked and available, not just create against it). Answers a different question than &#x60;GET /availability/{roomId}&#x60; - that endpoint is a per-room-type, per-month occupancy/pricing matrix (booleans and counts); this one is a booking-identity read model across every room type at once (guest name, status, exact &#x60;bookingId&#x60; per stay) for rendering and driving the drag/resize calendar grid. Deliberately a new purpose-built endpoint rather than a third way to compute availability: it does not duplicate &#x60;GET /availability/{roomId}&#x60;&#39;s per-day occupancy formula (the shared server-side computation both endpoints rely on for &#x60;availableCount&#x60; lives in one place, see &#x60;RoomTypeDailyAvailability&#x60;), it just also returns booking/guest identity that endpoint never has. &#x60;from&#x60;/&#x60;to&#x60; accept an arbitrary range (not just a calendar month), capped at 366 days so the grid can show up to a year on one screen - still capped, not unbounded, so a request for an arbitrarily large range is rejected with a clear error rather than made to time out or exhaust memory. 
      *
      * @param from  (required)
      * @param to Exclusive end of the range (same &#x60;[from, to)&#x60; convention as a stay). (required)
@@ -429,7 +429,7 @@ public interface BookingsApi {
 
     /**
      * GET /bookings : List bookings
-     * Requires CASHIER or above - finding a guest&#39;s booking is front-desk work, not a MANAGER-only report (contrast with &#x60;GET /bookings/export&#x60;, which stays MANAGER+: a single-booking lookup and a bulk CSV of every guest&#39;s contact details are different risk profiles). Filters mirror &#x60;GET /bookings/export&#x60; (&#x60;guestName&#x60; is the one exception - see below). Ordered by &#x60;checkIn&#x60; ascending. 
+     * Requires CASHIER or above - finding a guest&#39;s booking is front-desk work, not a MANAGER-only report (contrast with &#x60;GET /bookings/export&#x60;, which stays MANAGER+: a single-booking lookup and a bulk CSV of every guest&#39;s contact details are different risk profiles). Filters mirror &#x60;GET /bookings/export&#x60; (&#x60;guestName&#x60; is the one exception - see below). Ordered by &#x60;checkIn&#x60; ascending. Part of the same deliberate combined cashier/front-desk role scoping as &#x60;GET /rooms&#x60;/&#x60;GET /pricing/{roomId}&#x60; - see &#x60;POST /bookings/staff&#x60;&#39;s description for the full reasoning. 
      *
      * @param from Include bookings whose &#x60;checkOut&#x60; is after this date (i.e. still relevant on/after &#x60;from&#x60;). (optional)
      * @param to Include bookings whose &#x60;checkIn&#x60; is on or before this date - together with &#x60;from&#x60;, a proper closed-range/half-open-stay overlap test (so &#x60;from&#x3D;to&#x3D;&lt;today&gt;&#x60; finds a booking checking in today). (optional)

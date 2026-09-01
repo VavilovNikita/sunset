@@ -17,7 +17,7 @@ import jakarta.annotation.Generated;
  * Body of &#x60;PATCH /users/{id}/password&#x60; - an administrative reset, no current password required.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-29T20:42:01.613848400+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class ResetPasswordInput {
 
   private String newPassword;

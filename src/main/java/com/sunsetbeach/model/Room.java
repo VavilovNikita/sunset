@@ -22,7 +22,7 @@ import jakarta.annotation.Generated;
  * Despite the name this is a **room type**, not a single physical room — individual sellable units are separate &#x60;RoomUnit&#x60; rows (see the RoomUnits tag). &#x60;activeUnitCount&#x60; is computed from those rows (&#x60;count(RoomUnit WHERE roomId &#x3D; id AND isActive)&#x60;), not stored. &#x60;basePrice&#x60; is a Prisma &#x60;Decimal&#x60; — it serializes to a **string**, not a JSON number. &#x60;createdAt&#x60; serializes as an ISO-8601 datetime string. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class Room {
 
   private String id;

@@ -19,7 +19,7 @@ import jakarta.annotation.Generated;
  * A physical room pulled off sale for a date range, with a reason. Replaces the old Room-level &#x60;Availability.blockedCount&#x60;. &#x60;fromDate&#x60;/&#x60;toDate&#x60; are both inclusive. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RoomUnitBlock {
 
   private String id;

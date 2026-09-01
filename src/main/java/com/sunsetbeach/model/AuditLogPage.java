@@ -21,7 +21,7 @@ import jakarta.annotation.Generated;
  * One page of &#x60;GET /audit-log&#x60; results, newest first.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T12:20:31.062819400+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class AuditLogPage {
 
   @Valid

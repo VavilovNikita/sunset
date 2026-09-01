@@ -26,7 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 @Validated
 public interface RoomsApi {
 
@@ -178,7 +178,7 @@ public interface RoomsApi {
 
     /**
      * GET /rooms/{id} : Get a room by id
-     * Requires any authenticated staff session (ADMIN or MANAGER). Used to prefill the admin edit form.
+     * Requires CASHIER or above (see &#x60;GET /rooms&#x60;). Also used to prefill the admin edit form for MANAGER/ADMIN. 
      *
      * @param id  (required)
      * @return The room. (status code 200)
@@ -220,7 +220,7 @@ public interface RoomsApi {
 
     /**
      * GET /rooms : List all rooms
-     * Requires any authenticated staff session (ADMIN or MANAGER). No pagination (small hotel).
+     * Requires CASHIER or above - a CASHIER quoting a room type for a walk-in via &#x60;POST /bookings/staff&#x60; needs to read this list, not just create against it (the same \&quot;action allowed, prerequisite read blocked\&quot; fix already applied to RoomUnits/Availability). Writes (create/update/delete, images) stay MANAGER-only. No pagination (small hotel). Broader context: at this property CASHIER is a combined cashier/front-desk role (see &#x60;POST /bookings/staff&#x60;&#39;s description) - this is a deliberate scoping decision covering this operation and &#x60;GET /pricing/{roomId}&#x60;, &#x60;GET /bookings&#x60;, &#x60;GET /bookings/calendar&#x60;, and &#x60;GET /availability/{roomId}&#x60; together, not five independent oversights to flag one by one in review. 
      *
      * @return All rooms. (status code 200)
      *         or No valid JWT. (status code 401)

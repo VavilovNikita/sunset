@@ -20,7 +20,7 @@ import jakarta.annotation.Generated;
  * Used both as the array body of &#x60;POST /orders/{id}/items&#x60; (create) and the single-object body of &#x60;PATCH /orders/{id}/items/{itemId}&#x60; (full replacement of &#x60;quantity&#x60;/&#x60;note&#x60; for that line — &#x60;menuItemId&#x60; is immutable after creation but still required in the body for symmetry with the create shape; the server ignores it on PATCH). 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class OrderItemInput {
 
   private String menuItemId;

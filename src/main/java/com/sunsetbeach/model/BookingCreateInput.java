@@ -17,7 +17,7 @@ import jakarta.annotation.Generated;
  * Body of &#x60;bookingCreateSchema&#x60;.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class BookingCreateInput {
 
   private String roomId;
@@ -190,9 +190,8 @@ public class BookingCreateInput {
     sb.append("class BookingCreateInput {\n");
     sb.append("    roomId: ").append(toIndentedString(roomId)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
-    // Redacted (hand-edited after codegen, reapply on regeneration) - see Booking.java's toString.
-    sb.append("    guestEmail: [REDACTED]\n");
-    sb.append("    guestPhone: [REDACTED]\n");
+    sb.append("    guestEmail: ").append("[REDACTED]").append("\n");
+    sb.append("    guestPhone: ").append("[REDACTED]").append("\n");
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("}");

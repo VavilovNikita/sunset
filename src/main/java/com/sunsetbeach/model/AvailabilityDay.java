@@ -21,7 +21,7 @@ import jakarta.annotation.Generated;
  * Per-day inventory breakdown for staff, at both the room-type level (&#x60;unitCount&#x60;, &#x60;blockedCount&#x60;, &#x60;bookedCount&#x60;, &#x60;availableCount&#x60;) and the physical-room level (&#x60;units[]&#x60;). &#x60;availableCount&#x60; is the derived remainder (&#x60;unitCount - blockedCount - bookedCount&#x60;) and can go negative - that&#39;s not clamped away, since a negative remainder (e.g. after room units are deactivated) is exactly the thing staff need to see, not hide. &#x60;blockedCount&#x60; counts *distinct* blocked active units for the day (an overlapping second block on the same unit doesn&#39;t double-count); &#x60;bookedCount&#x60; counts bookings covering the day regardless of whether they have an assigned unit - an unassigned booking still occupies one unit of the type. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class AvailabilityDay {
 
   private String date;

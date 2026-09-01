@@ -19,7 +19,7 @@ import jakarta.annotation.Generated;
  * One \&quot;room X from date A to date B\&quot; leg of a booking&#39;s stay. A booking&#39;s segments always cover &#x60;[Booking.checkIn, Booking.checkOut)&#x60; with no gap and no overlap - a booking that has never been relocated has exactly one segment identical to the booking&#39;s own roomId/roomUnitId/checkIn/checkOut/totalPrice; that is the common case, not a special one. See &#x60;POST /bookings/{id}/relocate&#x60;&#39;s description for how a second segment appears. &#x60;checkIn&#x60;/&#x60;checkOut&#x60; are plain date-only strings (&#x60;YYYY-MM-DD&#x60;), the same format &#x60;Booking.checkIn&#x60;/&#x60;checkOut&#x60; now use too. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T22:52:49.532858600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class BookingSegment {
 
   private String id;

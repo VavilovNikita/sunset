@@ -23,7 +23,7 @@ import jakarta.annotation.Generated;
  * One &#x60;Order&#x60; that was closed with &#x60;method&#x3D;ROOM_CHARGE&#x60; against this booking.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T16:23:36.900320800+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class BookingPosOrder {
 
   private String orderId;

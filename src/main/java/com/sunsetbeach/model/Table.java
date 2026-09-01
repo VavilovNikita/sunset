@@ -19,7 +19,7 @@ import jakarta.annotation.Generated;
  * A physical POS table/spot a guest tab can be opened against. Mapped to a &#x60;PosTable&#x60; database table (not &#x60;Table&#x60;) to sidestep the SQL keyword collision — the API schema name is unaffected. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class Table {
 
   private String id;

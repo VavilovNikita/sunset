@@ -5,13 +5,14 @@
  */
 package com.sunsetbeach.api;
 
+import org.springframework.format.annotation.DateTimeFormat;
 import com.sunsetbeach.model.ErrorMessage;
+import java.time.LocalDate;
 import com.sunsetbeach.model.Shift;
 import com.sunsetbeach.model.ShiftCloseInput;
 import com.sunsetbeach.model.ShiftListItem;
 import com.sunsetbeach.model.ShiftOpenInput;
 import com.sunsetbeach.model.ShiftSummary;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,13 +23,12 @@ import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T19:32:58.716822+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 @Validated
 public interface ShiftsApi {
 
@@ -95,10 +95,10 @@ public interface ShiftsApi {
 
     /**
      * GET /shifts/{id}/export : Export a shift&#39;s Z-report as CSV
-     * Requires role &#x60;MANAGER&#x60; or above. Human-readable till-reconciliation report (table/guest/cashier names, not raw UUIDs) ending in a totals block with the counted-vs-expected cash discrepancy - see the openapi.yaml description for the full column/summary layout.
+     * Requires role &#x60;MANAGER&#x60; or above. This is the till-reconciliation report, not a raw payment dump: identifiers that only make sense to a database (order/booking/cashier UUIDs) are replaced with what a manager actually needs to read - the order&#39;s table/zone and item composition (or a short fallback if there&#39;s no table), the guest name and room for ROOM_CHARGE payments, and the cashier&#39;s email. The underlying &#x60;Payment.id&#x60;/&#x60;Order.id&#x60; are kept as the last two columns for support/audit lookups, not as the first thing a human sees. Timestamps are seconds-precision (&#x60;yyyy-MM-dd HH:mm:ss \&quot;UTC\&quot;&#x60;), not the millisecond ISO instant used elsewhere in the API.  The file opens with a UTF-8 BOM and a &#x60;sep&#x3D;,&#x60; directive line - see &#x60;GET /bookings/export&#x60;&#39;s description for why.  After the payment rows, a blank line separates a totals block (label, value per row): &#x60;Cash&#x60;/&#x60;Card&#x60;/&#x60;Other&#x60;/&#x60;Room charge (posted to room folio - not received cash/card)&#x60; (same per-method split and the same ROOM_CHARGE exclusion as &#x60;GET /payments/summary&#x60; - see that operation&#39;s description for why ROOM_CHARGE isn&#39;t received revenue), &#x60;Received total (cash + card + other)&#x60;, &#x60;Payments&#x60; (count), &#x60;Opening cash float&#x60;, &#x60;Expected cash (float + cash payments)&#x60;, &#x60;Counted cash&#x60; (the shift&#39;s &#x60;closingCashCounted&#x60;, or &#x60;—&#x60; if the shift hasn&#39;t been closed/recounted yet), and finally &#x60;Discrepancy (counted - expected)&#x60; - positive means the drawer has more cash than it should, negative means it&#39;s short. This last figure is the actual point of closing a shift. 
      *
      * @param id  (required)
-     * @return CSV file: payment rows, a blank row, then the reconciliation totals block. (status code 200)
+     * @return CSV file: a header row, one row per payment recorded under this shift, a blank row, then the reconciliation totals block described above.  (status code 200)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
      *         or Shift not found. (status code 404)
@@ -114,6 +114,11 @@ public interface ShiftsApi {
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf(""))) {
+                    String exampleString = "";
+                    ApiUtil.setExampleResponse(request, "", exampleString);
+                    break;
+                }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
@@ -232,6 +237,52 @@ public interface ShiftsApi {
 
 
     /**
+     * GET /shifts : List shifts for till reconciliation review
+     * Requires role &#x60;MANAGER&#x60; or above. One row per shift, reconciliation numbers (&#x60;expectedCash&#x60;/&#x60;discrepancy&#x60;) already computed - previously the only way to see this across more than one shift was paging through the general audit log for &#x60;SHIFT_CLOSED&#x60; entries and reading the discrepancy back out of free text. &#x60;GET /shifts/{id}/export&#x60; is the single-shift CSV detail underneath this; this operation is what points a manager at *which* shift needs a closer look, or export, next.  &#x60;from&#x60;/&#x60;to&#x60; bound &#x60;openedAt&#x60; (closed on both ends, matching every other date-range filter in this API), &#x60;staffId&#x60; narrows to shifts opened by one user. All filters are optional; with none given, every shift ever opened comes back, newest first, so a full audit doesn&#39;t require guessing a date range first. 
+     *
+     * @param from  (optional)
+     * @param to  (optional)
+     * @param staffId  (optional)
+     * @return Shifts matching the filters, newest first. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/shifts",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<List<ShiftListItem>> listShifts(
+         @Valid @RequestParam(value = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+         @Valid @RequestParam(value = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+         @Valid @RequestParam(value = "staffId", required = false) String staffId
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"expectedCash\" : \"expectedCash\", \"openedByEmail\" : \"openedByEmail\", \"totals\" : { \"other\" : \"other\", \"roomCharge\" : \"roomCharge\", \"cash\" : \"cash\", \"paymentCount\" : 0, \"card\" : \"card\" }, \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"discrepancy\" : \"discrepancy\", \"closedByEmail\" : \"closedByEmail\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"status\" : \"OPEN\" }, { \"expectedCash\" : \"expectedCash\", \"openedByEmail\" : \"openedByEmail\", \"totals\" : { \"other\" : \"other\", \"roomCharge\" : \"roomCharge\", \"cash\" : \"cash\", \"paymentCount\" : 0, \"card\" : \"card\" }, \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"discrepancy\" : \"discrepancy\", \"closedByEmail\" : \"closedByEmail\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"status\" : \"OPEN\" } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * POST /shifts/open : Open a shift for the calling user
      * Requires role &#x60;CASHIER&#x60; or above. 409 if the calling user already has an open shift (enforced by a unique partial index, not just an application-level check).
      *
@@ -260,52 +311,6 @@ public interface ShiftsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-            }
-        });
-        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
-
-    }
-
-
-    /**
-     * GET /shifts : List shifts for till reconciliation review
-     * Requires role &#x60;MANAGER&#x60; or above. One row per shift, reconciliation numbers (&#x60;expectedCash&#x60;/&#x60;discrepancy&#x60;) already computed - previously the only way to see this across more than one shift was paging through the general audit log for &#x60;SHIFT_CLOSED&#x60; entries and reading the discrepancy back out of free text. &#x60;GET /shifts/{id}/export&#x60; is the single-shift CSV detail underneath this; this operation is what points a manager at *which* shift needs a closer look, or export, next.  &#x60;from&#x60;/&#x60;to&#x60; bound &#x60;openedAt&#x60; (closed on both ends, matching every other date-range filter in this API), &#x60;staffId&#x60; narrows to shifts opened by one user. All filters are optional; with none given, every shift ever opened comes back, newest first, so a full audit doesn&#39;t require guessing a date range first.
-     *
-     * @param from  (optional)
-     * @param to  (optional)
-     * @param staffId  (optional)
-     * @return Shifts matching the filters, newest first. (status code 200)
-     *         or No valid JWT. (status code 401)
-     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
-     */
-    @RequestMapping(
-        method = RequestMethod.GET,
-        value = "/shifts",
-        produces = { "application/json" }
-    )
-
-    default ResponseEntity<List<ShiftListItem>> listShifts(
-         @Valid @RequestParam(value = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-         @Valid @RequestParam(value = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-         @Valid @RequestParam(value = "staffId", required = false) String staffId
-    ) {
-        getRequest().ifPresent(request -> {
-            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"expectedCash\" : \"expectedCash\", \"openedByEmail\" : \"openedByEmail\", \"totals\" : { \"other\" : \"other\", \"roomCharge\" : \"roomCharge\", \"cash\" : \"cash\", \"paymentCount\" : 0, \"card\" : \"card\" }, \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"discrepancy\" : \"discrepancy\", \"closedByEmail\" : \"closedByEmail\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"status\" : \"OPEN\" }, { \"expectedCash\" : \"expectedCash\", \"openedByEmail\" : \"openedByEmail\", \"totals\" : { \"other\" : \"other\", \"roomCharge\" : \"roomCharge\", \"cash\" : \"cash\", \"paymentCount\" : 0, \"card\" : \"card\" }, \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"discrepancy\" : \"discrepancy\", \"closedByEmail\" : \"closedByEmail\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"status\" : \"OPEN\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

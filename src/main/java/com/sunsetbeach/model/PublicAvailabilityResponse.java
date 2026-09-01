@@ -21,7 +21,7 @@ import jakarta.annotation.Generated;
  * PublicAvailabilityResponse
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-03T20:50:04.328032600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class PublicAvailabilityResponse {
 
   @Valid

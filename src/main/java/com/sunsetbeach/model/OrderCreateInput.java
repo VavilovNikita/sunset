@@ -20,7 +20,7 @@ import jakarta.annotation.Generated;
  * At least one of &#x60;tableId&#x60;/&#x60;bookingId&#x60;/&#x60;guestName&#x60; is expected in practice (an order with none of them is a valid but untraceable tab), but this isn&#39;t enforced server-side — same \&quot;trust the caller on shape, not on price\&quot; spirit as elsewhere.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class OrderCreateInput {
 
   private JsonNullable<String> tableId = JsonNullable.<String>undefined();

@@ -24,10 +24,10 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Raw Prisma &#x60;Booking&#x60; row with &#x60;room&#x60; included. &#x60;totalPrice&#x60; serializes as a **string** (Prisma &#x60;Decimal&#x60;). &#x60;createdAt&#x60;/&#x60;updatedAt&#x60; are ISO-8601 datetime strings (real timestamps, not calendar days). &#x60;checkIn&#x60;/&#x60;checkOut&#x60; are plain &#x60;YYYY-MM-DD&#x60; dates, the same convention as &#x60;BookingSegment&#x60;/&#x60;CalendarBooking&#x60;/every other schema below that names a stay date - they used to serialize as a datetime with a legacy &#x60;T00:00:00.000Z&#x60; time component (a Prisma &#x60;Date&#x60;-object artifact), which caused three separate incidents (a dashboard revenue bug, and two near-misses while building the booking calendar) before the format was unified here. &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60; are null until a physical room is assigned via &#x60;PUT /bookings/{id}/room-unit&#x60;, or after a relocation that didn&#39;t name a specific unit for the new leg.  &#x60;roomId&#x60;/&#x60;room&#x60;/&#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60;/&#x60;checkIn&#x60;/&#x60;checkOut&#x60;/&#x60;totalPrice&#x60; are all derived from &#x60;segments&#x60; (the *last* segment&#39;s room, for roomId/roomUnitId/room/roomUnit; the first segment&#39;s checkIn and the last segment&#39;s checkOut; the sum of every segment&#39;s totalPrice) - they exist so every reader that only cares about \&quot;what room is this guest in right now\&quot; doesn&#39;t need to know segments exist at all. &#x60;roomId&#x60;/&#x60;room&#x60; are **not** \&quot;what was originally booked\&quot; - &#x60;POST /bookings/{id}/relocate&#x60; can move a booking to a different room *type* mid-stay (an upgrade, downgrade, or a move off a broken room, all ordinary front-desk operations), and once that happens these fields track the guest&#39;s current/most recent room, not their first one. Anything that needs the room at a specific point in the stay - a report broken out by leg, an original-type audit trail - must read &#x60;segments&#x60; directly; nothing else on this object preserves that history. A booking that has never been relocated has exactly one segment and these values equal that segment&#39;s own fields exactly - segments are not a special case that only shows up for split bookings.
+ * Raw Prisma &#x60;Booking&#x60; row with &#x60;room&#x60; included. &#x60;totalPrice&#x60; serializes as a **string** (Prisma &#x60;Decimal&#x60;). &#x60;createdAt&#x60;/&#x60;updatedAt&#x60; are ISO-8601 datetime strings (real timestamps, not calendar days). &#x60;checkIn&#x60;/&#x60;checkOut&#x60; are plain &#x60;YYYY-MM-DD&#x60; dates, the same convention as &#x60;BookingSegment&#x60;/&#x60;CalendarBooking&#x60;/every other schema below that names a stay date - they used to serialize as a datetime with a legacy &#x60;T00:00:00.000Z&#x60; time component (a Prisma &#x60;Date&#x60;-object artifact), which caused three separate incidents (a dashboard revenue bug, and two near-misses while building the booking calendar) before the format was unified here. &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60; are null until a physical room is assigned via &#x60;PUT /bookings/{id}/room-unit&#x60;, or after a relocation that didn&#39;t name a specific unit for the new leg.  &#x60;roomId&#x60;/&#x60;room&#x60;/&#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60;/&#x60;checkIn&#x60;/&#x60;checkOut&#x60;/&#x60;totalPrice&#x60; are all derived from &#x60;segments&#x60; (the *last* segment&#39;s room, for roomId/roomUnitId/room/roomUnit; the first segment&#39;s checkIn and the last segment&#39;s checkOut; the sum of every segment&#39;s totalPrice) - they exist so every reader that only cares about \&quot;what room is this guest in right now\&quot; doesn&#39;t need to know segments exist at all. &#x60;roomId&#x60;/&#x60;room&#x60; are **not** \&quot;what was originally booked\&quot; - &#x60;POST /bookings/{id}/relocate&#x60; can move a booking to a different room *type* mid-stay (an upgrade, downgrade, or a move off a broken room, all ordinary front-desk operations), and once that happens these fields track the guest&#39;s current/most recent room, not their first one. Anything that needs the room at a specific point in the stay - a report broken out by leg, an original-type audit trail - must read &#x60;segments&#x60; directly; nothing else on this object preserves that history. A booking that has never been relocated has exactly one segment and these values equal that segment&#39;s own fields exactly - segments are not a special case that only shows up for split bookings. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T22:52:49.532858600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class Booking {
 
   private String id;
@@ -445,18 +445,13 @@ public class Booking {
     sb.append("    roomUnitId: ").append(toIndentedString(roomUnitId)).append("\n");
     sb.append("    roomUnit: ").append(toIndentedString(roomUnit)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
-    // guestEmail/guestPhone are redacted here (hand-edited after codegen, reapply on
-    // regeneration): guest personal data must not leak into a stray log.debug/log.info that
-    // logs this object, which toString() would otherwise make trivial to do by accident.
-    sb.append("    guestEmail: [REDACTED]\n");
-    sb.append("    guestPhone: [REDACTED]\n");
+    sb.append("    guestEmail: ").append("[REDACTED]").append("\n");
+    sb.append("    guestPhone: ").append("[REDACTED]").append("\n");
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
-    // Redacted for the same reason as guestEmail/guestPhone above - paymentNote is free text
-    // staff enters and may (against guidance) contain something sensitive.
-    sb.append("    paymentNote: [REDACTED]\n");
+    sb.append("    paymentNote: ").append("[REDACTED]").append("\n");
     sb.append("    segments: ").append(toIndentedString(segments)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");

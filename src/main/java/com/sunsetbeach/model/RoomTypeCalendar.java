@@ -22,7 +22,7 @@ import jakarta.annotation.Generated;
  * One room type&#39;s rows on the booking calendar grid - its physical units, and its per-day remaining-availability count.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T21:43:17.277610500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RoomTypeCalendar {
 
   private String roomId;

@@ -19,7 +19,7 @@ import jakarta.annotation.Generated;
  * A single line of an Order. &#x60;unitPrice&#x60; is a snapshot of &#x60;MenuItem.price&#x60; at the moment the item was added — later menu price changes never retroactively affect it. &#x60;sentAt&#x60; is set the moment this line is included in a kitchen/bar ticket print (the original send, or a later re-order print — see &#x60;POST /orders/{id}/items&#x60;); it&#39;s set regardless of whether that print actually reached the printer, same \&quot;dispatched, not delivered\&quot; contract as &#x60;Order.status&#x60; transitioning to &#x60;SENT&#x60;. Two lines are candidates for merging (see &#x60;POST /orders/{id}/items&#x60;) only when both have &#x60;sentAt: null&#x60;. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-31T20:56:12.946003700+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class OrderItem {
 
   private String id;

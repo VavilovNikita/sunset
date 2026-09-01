@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T20:15:43.239949+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 @Validated
 public interface AvailabilityApi {
 
@@ -32,7 +32,7 @@ public interface AvailabilityApi {
 
     /**
      * GET /availability/{roomId} : Get day-by-day, type- and unit-level availability for a room for a given month
-     * Requires CASHIER or above. Returns the full per-day inventory breakdown at the room-type level (&#x60;unitCount&#x60;, &#x60;blockedCount&#x60;, &#x60;bookedCount&#x60;, &#x60;availableCount&#x60;) *and* a per-unit breakdown (&#x60;units[]&#x60;) so staff can see exactly which physical room is blocked/booked/free on each day - the data both the future booking calendar grid and &#x60;PUT /bookings/{id}/room-unit&#x60; (also CASHIER+) are built on. A day counts as booked if it is covered by a non-CANCELLED booking (&#x60;checkIn &lt;&#x3D; date &lt; checkOut&#x60;); a booking without an assigned unit still counts toward &#x60;bookedCount&#x60; but against no specific entry in &#x60;units[]&#x60;. Manual blocking is no longer done here - see the RoomUnits tag (&#x60;POST /room-units/{id}/blocks&#x60;). 
+     * Requires CASHIER or above - part of the same deliberate combined cashier/front-desk role scoping as &#x60;GET /rooms&#x60;/&#x60;GET /bookings&#x60;/&#x60;GET /bookings/calendar&#x60; (see &#x60;POST /bookings/staff&#x60;&#39;s description for the full reasoning). Returns the full per-day inventory breakdown at the room-type level (&#x60;unitCount&#x60;, &#x60;blockedCount&#x60;, &#x60;bookedCount&#x60;, &#x60;availableCount&#x60;) *and* a per-unit breakdown (&#x60;units[]&#x60;) so staff can see exactly which physical room is blocked/booked/free on each day - the data both the future booking calendar grid and &#x60;PUT /bookings/{id}/room-unit&#x60; (also CASHIER+) are built on. A day counts as booked if it is covered by a non-CANCELLED booking (&#x60;checkIn &lt;&#x3D; date &lt; checkOut&#x60;); a booking without an assigned unit still counts toward &#x60;bookedCount&#x60; but against no specific entry in &#x60;units[]&#x60;. Manual blocking is no longer done here - see the RoomUnits tag (&#x60;POST /room-units/{id}/blocks&#x60;). 
      *
      * @param roomId  (required)
      * @param month Month key &#x60;YYYY-MM&#x60;. Defaults to the current UTC month. (optional)

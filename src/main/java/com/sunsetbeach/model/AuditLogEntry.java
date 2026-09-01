@@ -26,7 +26,7 @@ import jakarta.annotation.Generated;
  * One row from the append-only audit log - see the AuditLog tag description for what gets recorded and why. &#x60;summary&#x60; is written in plain language by the service action that triggered it, meant to be read directly by a hotel manager, not reconstructed by the client from raw before/after field values - deliberately not a generic entity diff (see the backend&#39;s &#x60;AuditLogService&#x60; for the reasoning: a diff of every field is both harder to read and, for the fields that actually matter here, no more precise than a sentence written at the one point in the code that already knows what changed and why it matters). 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T12:20:31.062819400+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class AuditLogEntry {
 
   private String id;

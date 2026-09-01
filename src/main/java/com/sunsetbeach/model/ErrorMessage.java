@@ -18,7 +18,7 @@ import jakarta.annotation.Generated;
  * Generic error shape used by all hand-written &#x60;{ error: \&quot;...\&quot; }&#x60; responses.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class ErrorMessage implements SetRoomPricing400Response {
 
   private String error;

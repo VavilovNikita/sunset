@@ -22,7 +22,7 @@ import jakarta.annotation.Generated;
  * One row of &#x60;GET /shifts&#x60; - the same fields as &#x60;ShiftSummary&#x60; plus what a manager reviewing a period actually needs and would otherwise have to look up separately: &#x60;openedByEmail&#x60;/&#x60;closedByEmail&#x60; (so this list doesn&#39;t require cross-referencing user ids against &#x60;GET /users&#x60;) and the reconciliation numbers themselves, &#x60;expectedCash&#x60;/&#x60;discrepancy&#x60; - the same arithmetic as the printed Z-report and the CSV export (&#x60;ShiftService&#x60;): &#x60;expectedCash&#x60; &#x3D; &#x60;openingCashFloat&#x60; (0 if unset) + this shift&#39;s cash payments; &#x60;discrepancy&#x60; &#x3D; &#x60;closingCashCounted&#x60; - &#x60;expectedCash&#x60;, positive meaning more cash counted than expected, negative meaning less. &#x60;discrepancy&#x60; is &#x60;null&#x60; exactly when &#x60;closingCashCounted&#x60; is - an open or never-recounted shift has nothing to compare. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-31T20:06:53.285440500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class ShiftListItem {
 
   private String id;

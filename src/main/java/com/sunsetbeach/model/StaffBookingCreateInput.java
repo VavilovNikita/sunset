@@ -20,7 +20,7 @@ import jakarta.annotation.Generated;
  * Body of &#x60;POST /bookings/staff&#x60;. Front-desk booking creation (walk-in guest at the counter), distinct from the public &#x60;POST /bookings&#x60; guest inquiry flow: no new-booking notification email is sent (that email exists to tell ADMIN/MANAGER about a guest-submitted request, not every reservation staff makes at the counter), and guest contact details are optional - a walk-in may not have an email address on hand. If &#x60;roomUnitId&#x60; is given, the physical room is assigned atomically in the same &#x60;Serializable&#x60; transaction as the booking itself: unlike &#x60;POST /bookings&#x60; followed by &#x60;PUT /bookings/{id}/room-unit&#x60;, there is no window where the booking exists without the room that was requested for it - either both succeed or neither does. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T21:43:17.277610500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class StaffBookingCreateInput {
 
   private String roomId;
@@ -224,9 +224,8 @@ public class StaffBookingCreateInput {
     sb.append("class StaffBookingCreateInput {\n");
     sb.append("    roomId: ").append(toIndentedString(roomId)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
-    // Redacted (hand-edited after codegen, reapply on regeneration) - see Booking.java's toString.
-    sb.append("    guestEmail: [REDACTED]\n");
-    sb.append("    guestPhone: [REDACTED]\n");
+    sb.append("    guestEmail: ").append("[REDACTED]").append("\n");
+    sb.append("    guestPhone: ").append("[REDACTED]").append("\n");
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    roomUnitId: ").append(toIndentedString(roomUnitId)).append("\n");

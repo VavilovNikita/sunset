@@ -17,7 +17,7 @@ import jakarta.annotation.Generated;
  * Sum of this shift&#39;s &#x60;Payment.amount&#x60;, broken out by method — CASH/CARD/OTHER only; ROOM_CHARGE payments settle against the room folio, not this shift&#39;s cash/card reconciliation, so they&#39;re reported separately as &#x60;roomCharge&#x60;.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class ShiftTotals {
 
   private String cash;

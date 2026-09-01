@@ -19,7 +19,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  * PENDING = queued, either freshly created or waiting for the next automatic retry. SENT = delivered successfully (terminal). FAILED = automatic retries exhausted (terminal until a manual retry via `POST /print-jobs/{id}/retry` puts it back in play). 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public enum PrintJobStatus {
   
   PENDING("PENDING"),

@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T12:20:31.062819400+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 @Validated
 public interface AuditLogApi {
 
@@ -34,7 +34,7 @@ public interface AuditLogApi {
 
     /**
      * GET /audit-log : Search the audit log
-     * Requires MANAGER or above. Every filter is optional and combines with AND; with none given, returns the most recent entries across the whole system, newest first. &#x60;entityType&#x60;+&#x60;entityId&#x60; together is how a specific booking&#39;s or order&#39;s own history is found (e.g. the booking detail page&#39;s History section calls this with &#x60;entityType&#x3D;Booking&amp;entityId&#x3D;{id}&#x60;) - &#x60;entityId&#x60; alone without &#x60;entityType&#x60; is rejected, since the same id string has no meaning without knowing which kind of record it names. 
+     * Requires MANAGER or above. Every filter is optional and combines with AND; with none given, returns the most recent entries across the whole system, newest first. &#x60;entityType&#x60;+&#x60;entityId&#x60; together is how a specific booking&#39;s or order&#39;s own history is found (e.g. the booking detail page&#39;s History section calls this with &#x60;entityType&#x3D;BOOKING&amp;entityId&#x3D;{id}&#x60;) - &#x60;entityId&#x60; alone without &#x60;entityType&#x60; is rejected, since the same id string has no meaning without knowing which kind of record it names. 
      *
      * @param actorEmail Case-insensitive substring match against the actor&#39;s email as it was recorded at the time of the action (not a live lookup against the current &#x60;User&#x60; table - see &#x60;AuditLogEntry.actorEmail&#x60;). Filtering by email rather than user id avoids forcing a MANAGER caller through the ADMIN-only &#x60;GET /users&#x60; just to find an id to filter by.  (optional)
      * @param action  (optional)
@@ -68,7 +68,7 @@ public interface AuditLogApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"pageSize\" : 6, \"page\" : 0, \"totalCount\" : 1, \"items\" : [ { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"actorUserId\" : \"actorUserId\", \"entityType\" : \"Booking\", \"actorRole\" : \"ADMIN\", \"actorEmail\" : \"actorEmail\", \"action\" : \"BOOKING_CREATED\", \"entityId\" : \"entityId\", \"id\" : \"id\" }, { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"actorUserId\" : \"actorUserId\", \"entityType\" : \"Booking\", \"actorRole\" : \"ADMIN\", \"actorEmail\" : \"actorEmail\", \"action\" : \"BOOKING_CREATED\", \"entityId\" : \"entityId\", \"id\" : \"id\" } ] }";
+                    String exampleString = "{ \"pageSize\" : 6, \"page\" : 0, \"totalCount\" : 1, \"items\" : [ { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"actorUserId\" : \"actorUserId\", \"entityType\" : \"BOOKING\", \"actorRole\" : \"ADMIN\", \"actorEmail\" : \"actorEmail\", \"action\" : \"BOOKING_CREATED\", \"entityId\" : \"entityId\", \"id\" : \"id\" }, { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"actorUserId\" : \"actorUserId\", \"entityType\" : \"BOOKING\", \"actorRole\" : \"ADMIN\", \"actorEmail\" : \"actorEmail\", \"action\" : \"BOOKING_CREATED\", \"entityId\" : \"entityId\", \"id\" : \"id\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

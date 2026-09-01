@@ -19,7 +19,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  * CARD is a ledger entry recorded on the cashier's word, not a confirmation from a payment terminal/acquirer — there is no card-processing integration. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T15:38:53.433655500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public enum PaymentMethod {
   
   CASH("CASH"),

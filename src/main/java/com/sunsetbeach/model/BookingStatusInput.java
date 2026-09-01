@@ -22,7 +22,7 @@ import jakarta.annotation.Generated;
  * Body of &#x60;bookingStatusSchema&#x60;.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-07-17T16:01:20.967720600+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class BookingStatusInput {
 
   private BookingStatus status;
@@ -112,8 +112,7 @@ public class BookingStatusInput {
     StringBuilder sb = new StringBuilder();
     sb.append("class BookingStatusInput {\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
-    // Redacted (hand-edited after codegen, reapply on regeneration) - see Booking.java's toString.
-    sb.append("    paymentNote: [REDACTED]\n");
+    sb.append("    paymentNote: ").append("[REDACTED]").append("\n");
     sb.append("}");
     return sb.toString();
   }

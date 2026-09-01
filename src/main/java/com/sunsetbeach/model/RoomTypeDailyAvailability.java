@@ -17,7 +17,7 @@ import jakarta.annotation.Generated;
  * One day&#39;s remaining-unit count for a room type, from the same server-side formula as &#x60;AvailabilityDay.availableCount&#x60; (&#x60;activeUnitCount - blockedUnits - bookedUnits&#x60; for that day) - deliberately **not** clamped at zero. A negative value is a real signal (e.g. more bookings/blocks than currently-active units, after a unit was deactivated), not noise - clients must render it distinctly, not hide or floor it. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T21:43:17.277610500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RoomTypeDailyAvailability {
 
   private String date;

@@ -28,7 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 @Validated
 public interface PrintersApi {
 
@@ -147,7 +147,7 @@ public interface PrintersApi {
 
     /**
      * GET /print-jobs : List print jobs
-     * Requires role &#x60;WAITER&#x60; or above (i.e. any staff role) - but what comes back depends on who&#39;s asking. &#x60;ADMIN&#x60;/&#x60;MANAGER&#x60; see every document type. &#x60;CASHIER&#x60;/&#x60;WAITER&#x60; only see &#x60;KITCHEN_TICKET&#x60;/&#x60;PREBILL&#x60; jobs - &#x60;Z_REPORT&#x60; and &#x60;GUEST_RECEIPT&#x60; are filtered out rather than 403&#39;d. Ordered by &#x60;createdAt&#x60; descending (most recent first). Filter by &#x60;status&#x3D;FAILED&#x60; to see what needs manual attention, and/or by &#x60;documentType&#x60; to narrow to one kind of document.
+     * Requires role &#x60;WAITER&#x60; or above (i.e. any staff role) - but what comes back depends on who&#39;s asking. &#x60;ADMIN&#x60;/&#x60;MANAGER&#x60; see every document type. &#x60;CASHIER&#x60;/&#x60;WAITER&#x60; only see &#x60;KITCHEN_TICKET&#x60;/&#x60;BAR_TICKET&#x60;/&#x60;PREBILL&#x60; jobs - &#x60;Z_REPORT&#x60; (shift cash reconciliation) and &#x60;GUEST_RECEIPT&#x60; (booking/payment detail) are cashier/management information, filtered out rather than 403&#39;d so line staff still get the one thing they actually need this endpoint for: seeing that their own kitchen/bar ticket or pre-bill didn&#39;t go through. Ordered by &#x60;createdAt&#x60; descending (most recent first). Filter by &#x60;status&#x3D;FAILED&#x60; to see what needs manual attention - a silently lost kitchen ticket is a dish that never gets served - and/or by &#x60;documentType&#x60; to narrow to one kind of document (e.g. &#x60;documentType&#x3D;Z_REPORT&#x60; for a manager auditing shift closes). Both filters apply server-side; an unrecognized value for either is a 400, not a silently-ignored no-op. 
      *
      * @param status  (optional)
      * @param documentType  (optional)
@@ -159,7 +159,7 @@ public interface PrintersApi {
         value = "/print-jobs",
         produces = { "application/json" }
     )
-
+    
     default ResponseEntity<List<PrintJob>> listPrintJobs(
          @Valid @RequestParam(value = "status", required = false) PrintJobStatus status,
          @Valid @RequestParam(value = "documentType", required = false) PrintDocumentType documentType
@@ -169,43 +169,6 @@ public interface PrintersApi {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "[ { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-            }
-        });
-        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
-
-    }
-
-
-    /**
-     * GET /print-jobs/{id}/preview : Preview a print job's rendered content
-     * Requires role &#x60;WAITER&#x60; or above, subject to the same per-role document-type visibility as &#x60;GET /print-jobs&#x60; (404, not 403, for a job outside the caller&#39;s visible set). Returns the same text that would come out of the printer, with the ESC/POS control sequences (init, code page selection, bold, centering, paper cut) stripped out - not a hex dump of &#x60;payload&#x60;.
-     *
-     * @param id  (required)
-     * @return Plain-text rendering of the job's payload. (status code 200)
-     *         or No valid JWT. (status code 401)
-     *         or Print job not found, or its document type isn&#39;t visible to the caller&#39;s role. (status code 404)
-     */
-    @RequestMapping(
-        method = RequestMethod.GET,
-        value = "/print-jobs/{id}/preview",
-        produces = { "text/plain", "application/json" }
-    )
-
-    default ResponseEntity<String> previewPrintJob(
-         @PathVariable("id") String id
-    ) {
-        getRequest().ifPresent(request -> {
-            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
-                if (mediaType.isCompatibleWith(MediaType.valueOf("text/plain"))) {
-                    String exampleString = "KITCHEN TICKET\nRestaurant – Table 4\nTime: 2026-08-16 20:05:00 UTC\nWaiter: waiter@sunsetbeach.example\n------------------------------------------\n2x Caesar Salad\n   note: no croutons";
-                    ApiUtil.setExampleResponse(request, "text/plain", exampleString);
                     break;
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
@@ -262,8 +225,50 @@ public interface PrintersApi {
 
 
     /**
+     * GET /print-jobs/{id}/preview : Preview a print job&#39;s rendered content
+     * Requires role &#x60;WAITER&#x60; or above, subject to the same per-role document-type visibility as &#x60;GET /print-jobs&#x60; (404, not 403, for a job outside the caller&#39;s visible set - see that operation&#39;s description). Returns the same text that would come out of the printer, with the ESC/POS control sequences (init, code page selection, bold, centering, paper cut) stripped out - not a hex dump of &#x60;payload&#x60;. Useful both to check a document before it prints and to see what a &#x60;FAILED&#x60; job actually contained without walking over to a dead printer. 
+     *
+     * @param id  (required)
+     * @return Plain-text rendering of the job&#39;s payload. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Print job not found, or its document type isn&#39;t visible to the caller&#39;s role. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/print-jobs/{id}/preview",
+        produces = { "text/plain", "application/json" }
+    )
+    
+    default ResponseEntity<String> previewPrintJob(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf(""))) {
+                    String exampleString = "";
+                    ApiUtil.setExampleResponse(request, "", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * POST /print-jobs/{id}/retry : Manually retry a print job
-     * Requires role &#x60;WAITER&#x60; or above, subject to the same per-role document-type visibility as &#x60;GET /print-jobs&#x60;. Attempts delivery immediately regardless of the job&#39;s current &#x60;status&#x60; or &#x60;attempts&#x60; count (a human asking for a retry overrides the automatic-retry attempt ceiling). The original &#x60;payload&#x60; is replayed byte-for-byte - this re-sends exactly what was originally queued, it does not regenerate the document from current data. A job whose document type the caller&#39;s role can&#39;t see returns 404, not 403.
+     * Requires role &#x60;WAITER&#x60; or above, subject to the same per-role document-type visibility as &#x60;GET /print-jobs&#x60;. Attempts delivery immediately regardless of the job&#39;s current &#x60;status&#x60; or &#x60;attempts&#x60; count (a human asking for a retry overrides the automatic-retry attempt ceiling). The original &#x60;payload&#x60; is replayed byte-for-byte - this re-sends exactly what was originally queued, it does not regenerate the document from current data. A job whose document type the caller&#39;s role can&#39;t see (e.g. a &#x60;WAITER&#x60; targeting a &#x60;Z_REPORT&#x60; job id) returns 404, not 403 - the id must not be usable to confirm the job exists, let alone force a reprint of it. 
      *
      * @param id  (required)
      * @return The job after the retry attempt (&#x60;status: SENT&#x60; or &#x60;FAILED&#x60;). (status code 200)
@@ -275,7 +280,7 @@ public interface PrintersApi {
         value = "/print-jobs/{id}/retry",
         produces = { "application/json" }
     )
-
+    
     default ResponseEntity<PrintJob> retryPrintJob(
          @PathVariable("id") String id
     ) {

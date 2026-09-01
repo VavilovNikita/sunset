@@ -17,7 +17,7 @@ import jakarta.annotation.Generated;
  * Compact line-item summary - menu item name (not id) and quantity, nothing else.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T16:23:36.900320800+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class BookingPosOrderItem {
 
   private String name;

@@ -17,7 +17,7 @@ import jakarta.annotation.Generated;
  * Per-day status of one physical room - the data the booking calendar grid renders per cell.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T15:17:55.380996100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RoomUnitAvailability {
 
   private String roomUnitId;

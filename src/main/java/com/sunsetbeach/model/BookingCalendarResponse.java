@@ -23,7 +23,7 @@ import jakarta.annotation.Generated;
  * Everything the booking calendar grid needs for one &#x60;[from, to)&#x60; date range in a single request: room types with their physical units and per-day availability counts, every overlapping non-cancelled booking, and every overlapping &#x60;RoomUnitBlock&#x60; (returned raw - overlapping blocks on the same unit are not merged or deduplicated server-side, same as &#x60;GET /room-units/{id}/blocks&#x60;; rendering the overlap is a client concern). 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T21:43:17.277610500+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class BookingCalendarResponse {
 
   private String from;

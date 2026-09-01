@@ -19,7 +19,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  * What a Printer receives. `KITCHEN`/`BAR` get routed kitchen/bar tickets (split from order line items by `MenuItem.department`); `CASHIER` gets pre-bills, guest receipts, and shift Z-reports - nothing routed by menu department ever goes there. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public enum PrinterDepartment {
   
   KITCHEN("KITCHEN"),

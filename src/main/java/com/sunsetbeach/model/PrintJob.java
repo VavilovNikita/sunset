@@ -22,7 +22,7 @@ import jakarta.annotation.Generated;
  * A queued/attempted print. &#x60;payload&#x60; (the raw ESC/POS bytes actually sent) is intentionally not exposed here - it&#39;s binary and only meaningful to a printer. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-17T08:34:38.479759300+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class PrintJob {
 
   private String id;

@@ -17,7 +17,7 @@ import jakarta.annotation.Generated;
  * Body of &#x60;POST /bookings/{id}/undo-relocation&#x60;.
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-30T18:13:29.409061300+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RelocationUndoInput {
 
   private String splitDate;

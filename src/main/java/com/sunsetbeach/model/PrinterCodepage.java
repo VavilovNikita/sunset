@@ -19,7 +19,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
  * The single-byte ESC/POS code page text is encoded into before sending, since receipts can contain non-ASCII (guest names, menu item names) and Latin/Thai need different tables. `PC437` (the standard US/Latin ESC/POS code page) is the default; `TIS620` covers Thai. Not a hardcoded global setting - each Printer picks its own, since a hotel can have Latin-only and Thai-capable printers side by side. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-16T20:25:37.858402100+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public enum PrinterCodepage {
   
   PC437("PC437"),

@@ -18,7 +18,7 @@ import jakarta.annotation.Generated;
  * Response of &#x60;GET /payments/summary&#x60;. See that operation&#39;s description for why &#x60;totals.roomCharge&#x60; is excluded from &#x60;grandTotal&#x60; - do not sum &#x60;totals.*&#x60; yourself on the client, use &#x60;grandTotal&#x60; as-is for received revenue. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-08-07T20:13:52.916230300+03:00[Europe/Moscow]", comments = "Generator version: 7.10.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class PaymentsSummary {
 
   private String from;
