@@ -1,11 +1,16 @@
 package com.sunsetbeach.entity;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.type.SqlTypes;
+import com.sunsetbeach.model.HousekeepingStatus;
 
 @Entity
 @Table(name = "RoomUnit")
@@ -20,6 +25,12 @@ public class RoomUnitEntity {
     private String label;
 
     private boolean isActive = true;
+
+    // Cleaning state - deliberately separate from RoomUnitBlock (which pulls a unit off sale for
+    // a written reason) - see V24__room_unit_housekeeping_status.sql.
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private HousekeepingStatus housekeepingStatus = HousekeepingStatus.CLEAN;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
@@ -54,6 +65,14 @@ public class RoomUnitEntity {
 
     public void setActive(boolean active) {
         isActive = active;
+    }
+
+    public HousekeepingStatus getHousekeepingStatus() {
+        return housekeepingStatus;
+    }
+
+    public void setHousekeepingStatus(HousekeepingStatus housekeepingStatus) {
+        this.housekeepingStatus = housekeepingStatus;
     }
 
     public LocalDateTime getCreatedAt() {

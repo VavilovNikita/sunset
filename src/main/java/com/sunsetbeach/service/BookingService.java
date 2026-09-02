@@ -511,15 +511,33 @@ public class BookingService {
                 breakdown.roomChargeCount());
     }
 
+    /**
+     * What's actually left to collect right now - unlike {@link #computeFolio} (the whole
+     * room + room-charges value regardless of what's already been paid), this drops the room
+     * portion once {@code status} is {@code PAID}. This system has no separate payment record
+     * for the room itself (see {@code RoomChargeDebtBadge}'s own comment for that gap) -
+     * {@code PAID} is the only signal it was collected. Uncollected {@code ROOM_CHARGE} payments
+     * count either way, since "charged to room" specifically means not yet collected in cash.
+     * Used by {@code BookingOccupancyService} at check-out and on the today board - the two
+     * places staff need "what do I still need to collect," not "what does this booking add up
+     * to."
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal computeOutstandingBalance(String bookingId) {
+        FolioBreakdown breakdown = computeFolioBreakdown(bookingId);
+        BigDecimal roomOutstanding = breakdown.status() == BookingStatus.PAID ? BigDecimal.ZERO : breakdown.roomTotal();
+        return roomOutstanding.add(breakdown.roomChargesTotal());
+    }
+
     /** The one place booking.totalPrice + Σ ROOM_CHARGE Payment.amount is actually computed. */
     private FolioBreakdown computeFolioBreakdown(String bookingId) {
         BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         List<PaymentEntity> payments = roomChargePayments(bookingId);
         BigDecimal roomCharges = payments.stream().map(PaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        return new FolioBreakdown(booking.getTotalPrice(), roomCharges, payments.size());
+        return new FolioBreakdown(booking.getTotalPrice(), roomCharges, payments.size(), booking.getStatus());
     }
 
-    private record FolioBreakdown(BigDecimal roomTotal, BigDecimal roomChargesTotal, int roomChargeCount) {
+    private record FolioBreakdown(BigDecimal roomTotal, BigDecimal roomChargesTotal, int roomChargeCount, BookingStatus status) {
         BigDecimal folioTotal() {
             return roomTotal.add(roomChargesTotal);
         }

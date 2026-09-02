@@ -83,6 +83,9 @@ public class BookingMapper {
                 PriceFormat.asDecimalString(entity.getTotalPrice()),
                 entity.getStatus(),
                 entity.getPaymentNote(),
+                entity.getOccupancyStatus(),
+                entity.getCheckedInAt() != null ? TimestampFormat.toUtc(entity.getCheckedInAt()) : null,
+                entity.getCheckedOutAt() != null ? TimestampFormat.toUtc(entity.getCheckedOutAt()) : null,
                 sorted.stream()
                         .map(s -> segmentMapper.toDto(
                                 s, roomsById.get(s.getRoomId()), s.getRoomUnitId() != null ? roomUnitsById.get(s.getRoomUnitId()) : null))

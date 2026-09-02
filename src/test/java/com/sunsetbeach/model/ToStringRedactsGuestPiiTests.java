@@ -39,6 +39,9 @@ class ToStringRedactsGuestPiiTests {
                 "1500.00",
                 BookingStatus.NEW,
                 REAL_PAYMENT_NOTE,
+                OccupancyStatus.EXPECTED,
+                null,
+                null,
                 java.util.List.of(),
                 OffsetDateTime.now(),
                 OffsetDateTime.now());

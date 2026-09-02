@@ -10,15 +10,19 @@ import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
+import com.sunsetbeach.model.CheckInResult;
+import com.sunsetbeach.model.CheckOutResult;
 import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RepriceInput;
 import com.sunsetbeach.model.RepriceQuote;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.StaffBookingCreateInput;
+import com.sunsetbeach.model.TodayBoard;
 import com.sunsetbeach.security.BookingRateLimiter;
 import com.sunsetbeach.security.ClientIpResolver;
 import com.sunsetbeach.service.BookingCalendarService;
+import com.sunsetbeach.service.BookingOccupancyService;
 import com.sunsetbeach.service.BookingService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
@@ -35,16 +39,19 @@ public class BookingController implements BookingsApi {
 
     private final BookingService bookingService;
     private final BookingCalendarService bookingCalendarService;
+    private final BookingOccupancyService bookingOccupancyService;
     private final BookingRateLimiter bookingRateLimiter;
     private final HttpServletRequest request;
 
     public BookingController(
             BookingService bookingService,
             BookingCalendarService bookingCalendarService,
+            BookingOccupancyService bookingOccupancyService,
             BookingRateLimiter bookingRateLimiter,
             HttpServletRequest request) {
         this.bookingService = bookingService;
         this.bookingCalendarService = bookingCalendarService;
+        this.bookingOccupancyService = bookingOccupancyService;
         this.bookingRateLimiter = bookingRateLimiter;
         this.request = request;
     }
@@ -120,6 +127,26 @@ public class BookingController implements BookingsApi {
     @Override
     public ResponseEntity<RepriceQuote> quoteBookingReprice(String id, RepriceInput repriceInput) {
         return ResponseEntity.ok(bookingService.quoteReprice(id, repriceInput));
+    }
+
+    @Override
+    public ResponseEntity<TodayBoard> getTodayBoard() {
+        return ResponseEntity.ok(bookingOccupancyService.getTodayBoard());
+    }
+
+    @Override
+    public ResponseEntity<CheckInResult> checkInBooking(String id) {
+        return ResponseEntity.ok(bookingOccupancyService.checkIn(id));
+    }
+
+    @Override
+    public ResponseEntity<CheckOutResult> checkOutBooking(String id) {
+        return ResponseEntity.ok(bookingOccupancyService.checkOut(id));
+    }
+
+    @Override
+    public ResponseEntity<Booking> markBookingNoShow(String id) {
+        return ResponseEntity.ok(bookingOccupancyService.markNoShow(id));
     }
 
     @Override

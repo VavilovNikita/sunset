@@ -12,7 +12,13 @@ import org.springframework.stereotype.Component;
 public class RoomUnitMapper {
 
     public RoomUnit toDto(RoomUnitEntity entity) {
-        return new RoomUnit(entity.getId(), entity.getRoomId(), entity.getLabel(), entity.isActive(), TimestampFormat.toUtc(entity.getCreatedAt()));
+        return new RoomUnit(
+                entity.getId(),
+                entity.getRoomId(),
+                entity.getLabel(),
+                entity.isActive(),
+                entity.getHousekeepingStatus(),
+                TimestampFormat.toUtc(entity.getCreatedAt()));
     }
 
     public void applyInput(RoomUnitEntity entity, RoomUnitInput input) {

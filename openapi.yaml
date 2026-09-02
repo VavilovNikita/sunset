@@ -812,6 +812,53 @@ paths:
               example:
                 error: "Room 203 has an upcoming booking assigned and can't be deleted."
 
+  /room-units/{id}/housekeeping:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateRoomUnitHousekeeping
+      tags: [RoomUnits]
+      summary: Mark a physical room clean or dirty
+      description: >
+        Requires CASHIER or above - deliberately a lower bar than the rest of `/room-units/**`
+        (MANAGER+), since front desk is who actually needs to flip this day to day. Independent
+        of `PATCH /room-units/{id}` (label/isActive) and of `RoomUnitBlock` (which pulls a unit
+        off sale for a reason, not a cleaning state) - see `HousekeepingStatus`'s own
+        description.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HousekeepingStatusInput"
+      responses:
+        "200":
+          description: Updated room unit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomUnit"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /room-units/{id}/blocks:
     parameters:
       - name: id
@@ -1721,6 +1768,161 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
+
+  /bookings/today:
+    get:
+      operationId: getTodayBoard
+      tags: [Bookings]
+      summary: The front desk's daily working set - arriving, departing, and in-house
+      description: >
+        Requires CASHIER or above. See `TodayBoard`'s own description for exactly which bookings
+        land in which of the three lists. Read-only - nothing here is a snapshot of a past sweep,
+        it's computed fresh from current `checkIn`/`checkOut`/`occupancyStatus` on every call.
+      responses:
+        "200":
+          description: The three lists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodayBoard"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+
+  /bookings/{id}/check-in:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: checkInBooking
+      tags: [Bookings]
+      summary: Mark a guest as physically checked in
+      description: >
+        Requires CASHIER or above. Only legal once a physical room is assigned
+        (`booking.roomUnitId` - this is the moment a key is handed over) and while
+        `occupancyStatus` is `EXPECTED` or `NO_SHOW` (a guest who no-showed can still turn up
+        late and check in normally). Checking into a `DIRTY` room is allowed, not blocked - see
+        `CheckInResult.warning`. Recorded in the audit log.
+      responses:
+        "200":
+          description: Checked in, with a warning set if the room wasn't clean.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckInResult"
+        "400":
+          description: No room unit is assigned to this booking yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "Assign a room before checking in."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Already checked in or already checked out.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "This booking is already checked in."
+
+  /bookings/{id}/check-out:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: checkOutBooking
+      tags: [Bookings]
+      summary: Mark a guest as checked out
+      description: >
+        Requires CASHIER or above. Only legal while `occupancyStatus` is `CHECKED_IN`. Sets the
+        booking's current room `DIRTY` (`PATCH /room-units/{id}/housekeeping` is the way to mark
+        it cleaned again) and reports any outstanding balance - see `CheckOutResult`. Recorded in
+        the audit log.
+      responses:
+        "200":
+          description: Checked out, with the outstanding balance (if any) at the moment of checkout.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckOutResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: This booking was never checked in, or is already checked out.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "This booking hasn't been checked in."
+
+  /bookings/{id}/no-show:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: markBookingNoShow
+      tags: [Bookings]
+      summary: Mark a guest as not having arrived
+      description: >
+        Requires CASHIER or above. Only legal while `occupancyStatus` is `EXPECTED`. A label, not
+        an action - see `OccupancyStatus`'s own description for why this changes nothing about
+        the booking's dates, `status`, or availability. Recorded in the audit log.
+      responses:
+        "200":
+          description: Marked no-show.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: This booking has already been checked in, checked out, or marked no-show.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "This booking is not awaiting arrival."
 
   /bookings/{id}/folio:
     parameters:
@@ -3917,6 +4119,95 @@ components:
       type: string
       enum: [NEW, CONFIRMED, PAID, CANCELLED]
 
+    OccupancyStatus:
+      type: string
+      description: >
+        Whether the guest is physically at the hotel - deliberately separate from
+        `BookingStatus`, which stays commercial only (confirmed/paid/cancelled). One value per
+        booking, not per segment: a guest checks in once and checks out once regardless of how
+        many times they're relocated to a different room mid-stay. Never affects availability -
+        the engine behind `GET /availability/{roomId}` and the booking calendar reads
+        `BookingSegment`/`Booking.status` only, never this field. `NO_SHOW` is a label, not an
+        action: it changes nothing about the booking's dates or `status`, and does not release
+        any nights - the deliberate way to actually free them is cancelling or shortening the
+        booking, a separate step.
+      enum:
+        - EXPECTED
+        - CHECKED_IN
+        - CHECKED_OUT
+        - NO_SHOW
+
+    CheckInResult:
+      type: object
+      description: >
+        Response of `POST /bookings/{id}/check-in`. `warning` is set (but the check-in still
+        succeeds) when the room being checked into is `DIRTY` - staff are told, not blocked; a
+        room sometimes gets finished while the guest waits, and the desk must not stall on it.
+      required: [booking, warning]
+      properties:
+        booking:
+          $ref: "#/components/schemas/Booking"
+        warning:
+          type: string
+          nullable: true
+
+    CheckOutResult:
+      type: object
+      description: >
+        Response of `POST /bookings/{id}/check-out`. `outstandingBalance` is the same number
+        `GET /bookings/{id}/folio` would report at this instant (room total, if `status` isn't
+        yet `PAID`, plus any uncollected `ROOM_CHARGE` payments) - the last moment front desk can
+        act on it before the guest walks out. `"0.00"` means nothing is owed, not that the field
+        was skipped.
+      required: [booking, outstandingBalance]
+      properties:
+        booking:
+          $ref: "#/components/schemas/Booking"
+        outstandingBalance:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+
+    TodayBoardEntry:
+      type: object
+      description: >
+        One row of `GET /bookings/today`. Whether a room still needs assigning
+        (`booking.roomUnitId`) or cleaning (`booking.roomUnit.housekeepingStatus`) is already on
+        the embedded `Booking` - this only adds what isn't: the folio balance, which needs its
+        own payment lookup per booking.
+      required: [booking, outstandingBalance]
+      properties:
+        booking:
+          $ref: "#/components/schemas/Booking"
+        outstandingBalance:
+          type: string
+          description: Decimal(10,2) rendered as a string. Same meaning as `CheckOutResult.outstandingBalance`.
+
+    TodayBoard:
+      type: object
+      description: >
+        Response of `GET /bookings/today` - the front desk's daily working set, in the three
+        groups reception actually thinks in. A booking appears in exactly one list: `arrivingToday`
+        (`checkIn` = today, `occupancyStatus` = `EXPECTED`), `departingToday` (`checkOut` = today,
+        `occupancyStatus` = `CHECKED_IN`), or `inHouse` (`occupancyStatus` = `CHECKED_IN`,
+        regardless of date - a guest mid-stay, not just one departing today; `departingToday` is a
+        subset by date, not a separate population). A booking marked `NO_SHOW` or already
+        `CHECKED_OUT` today appears in none of the three - it's no longer part of today's
+        open work.
+      required: [arrivingToday, departingToday, inHouse]
+      properties:
+        arrivingToday:
+          type: array
+          items:
+            $ref: "#/components/schemas/TodayBoardEntry"
+        departingToday:
+          type: array
+          items:
+            $ref: "#/components/schemas/TodayBoardEntry"
+        inHouse:
+          type: array
+          items:
+            $ref: "#/components/schemas/TodayBoardEntry"
+
     ErrorMessage:
       type: object
       required: [error]
@@ -4031,7 +4322,7 @@ components:
     RoomUnit:
       type: object
       description: A single physical room ("203", "Garden Bungalow 4") - one sellable unit of a Room type.
-      required: [id, roomId, label, isActive, createdAt]
+      required: [id, roomId, label, isActive, housekeepingStatus, createdAt]
       properties:
         id:
           type: string
@@ -4043,9 +4334,32 @@ components:
         isActive:
           type: boolean
           description: Inactive units are excluded from `Room.activeUnitCount` and cannot be newly assigned to a booking.
+        housekeepingStatus:
+          $ref: "#/components/schemas/HousekeepingStatus"
         createdAt:
           type: string
           format: date-time
+
+    HousekeepingStatus:
+      type: string
+      description: >
+        Cleaning state of a physical room, independent of RoomUnitBlock (which pulls a unit off
+        sale entirely, for a reason staff write out - maintenance, renovation). A DIRTY room is
+        still sellable/assignable; `POST /bookings/{id}/check-in` warns but does not block when
+        the room being checked into is dirty. `POST /bookings/{id}/check-out` always sets the
+        checked-out booking's room DIRTY. Set explicitly via
+        `PATCH /room-units/{id}/housekeeping`, CASHIER+.
+      enum:
+        - DIRTY
+        - CLEAN
+
+    HousekeepingStatusInput:
+      type: object
+      description: Body of `PATCH /room-units/{id}/housekeeping`.
+      required: [housekeepingStatus]
+      properties:
+        housekeepingStatus:
+          $ref: "#/components/schemas/HousekeepingStatus"
 
     RoomUnitInput:
       type: object
@@ -4481,6 +4795,9 @@ components:
         - status
         - paymentNote
         - segments
+        - occupancyStatus
+        - checkedInAt
+        - checkedOutAt
         - createdAt
         - updatedAt
       properties:
@@ -4521,6 +4838,16 @@ components:
           type: string
           nullable: true
           x-sensitive: true
+        occupancyStatus:
+          $ref: "#/components/schemas/OccupancyStatus"
+        checkedInAt:
+          type: string
+          format: date-time
+          nullable: true
+        checkedOutAt:
+          type: string
+          format: date-time
+          nullable: true
         segments:
           type: array
           minItems: 1
@@ -5360,6 +5687,9 @@ components:
         - BOOKING_RELOCATED
         - BOOKING_RELOCATION_UNDONE
         - BOOKING_REPRICED
+        - BOOKING_CHECKED_IN
+        - BOOKING_CHECKED_OUT
+        - BOOKING_NO_SHOW_MARKED
         - BOOKINGS_EXPORTED
         - ROOM_PRICE_CHANGED
         - RATE_OVERRIDE_CHANGED
@@ -5378,6 +5708,7 @@ components:
         - ROOM_UNIT_DELETED
         - ROOM_UNIT_BLOCK_CREATED
         - ROOM_UNIT_BLOCK_DELETED
+        - ROOM_UNIT_HOUSEKEEPING_CHANGED
 
     AuditEntityType:
       type: string

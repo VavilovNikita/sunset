@@ -6,12 +6,14 @@
 package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.ErrorMessage;
+import com.sunsetbeach.model.HousekeepingStatusInput;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.RoomUnitBlock;
 import com.sunsetbeach.model.RoomUnitBlockInput;
 import com.sunsetbeach.model.RoomUnitInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
+import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -59,7 +61,7 @@ public interface RoomUnitsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }";
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -272,7 +274,7 @@ public interface RoomUnitsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }";
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -361,7 +363,7 @@ public interface RoomUnitsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" } ]";
+                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -404,7 +406,7 @@ public interface RoomUnitsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }";
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -415,6 +417,63 @@ public interface RoomUnitsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /room-units/{id}/housekeeping : Mark a physical room clean or dirty
+     * Requires CASHIER or above - deliberately a lower bar than the rest of &#x60;/room-units/_**&#x60; (MANAGER+), since front desk is who actually needs to flip this day to day. Independent of &#x60;PATCH /room-units/{id}&#x60; (label/isActive) and of &#x60;RoomUnitBlock&#x60; (which pulls a unit off sale for a reason, not a cleaning state) - see &#x60;HousekeepingStatus&#x60;&#39;s own description. 
+     *
+     * @param id  (required)
+     * @param housekeepingStatusInput  (required)
+     * @return Updated room unit. (status code 200)
+     *         or Body failed validation. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Room unit not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/room-units/{id}/housekeeping",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<RoomUnit> updateRoomUnitHousekeeping(
+         @PathVariable("id") String id,
+         @Valid @RequestBody HousekeepingStatusInput housekeepingStatusInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

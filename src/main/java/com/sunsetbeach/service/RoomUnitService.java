@@ -10,6 +10,7 @@ import com.sunsetbeach.mapper.RoomUnitMapper;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.RoomUnitBlock;
 import com.sunsetbeach.model.RoomUnitBlockInput;
@@ -109,6 +110,29 @@ public class RoomUnitService {
         }
         auditLogService.record(AuditAction.ROOM_UNIT_UPDATED, AuditEntityType.ROOM_UNIT, saved.getId(), summary.toString());
 
+        return roomUnitMapper.toDto(saved);
+    }
+
+    /**
+     * Independent of {@link #update} (label/isActive, MANAGER+) and of {@link #createBlock}
+     * (which pulls a unit off sale for a written reason) - see {@code HousekeepingStatus}'s own
+     * description. CASHIER+ on the backend (a deliberately lower bar than the rest of
+     * {@code /room-units/**}), since front desk is who actually needs to flip this day to day.
+     */
+    @Transactional
+    public RoomUnit updateHousekeeping(String id, HousekeepingStatus status) {
+        RoomUnitEntity entity = findEntity(id);
+        HousekeepingStatus old = entity.getHousekeepingStatus();
+        entity.setHousekeepingStatus(status);
+        RoomUnitEntity saved = roomUnitRepository.saveAndFlush(entity);
+
+        if (old != saved.getHousekeepingStatus()) {
+            auditLogService.record(
+                    AuditAction.ROOM_UNIT_HOUSEKEEPING_CHANGED,
+                    AuditEntityType.ROOM_UNIT,
+                    saved.getId(),
+                    "Room " + saved.getLabel() + " marked " + saved.getHousekeepingStatus().getValue().toLowerCase());
+        }
         return roomUnitMapper.toDto(saved);
     }
 

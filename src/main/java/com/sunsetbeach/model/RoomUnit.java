@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.HousekeepingStatus;
 import java.time.OffsetDateTime;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -30,6 +32,8 @@ public class RoomUnit {
 
   private Boolean isActive;
 
+  private HousekeepingStatus housekeepingStatus;
+
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
@@ -40,11 +44,12 @@ public class RoomUnit {
   /**
    * Constructor with only required parameters
    */
-  public RoomUnit(String id, String roomId, String label, Boolean isActive, OffsetDateTime createdAt) {
+  public RoomUnit(String id, String roomId, String label, Boolean isActive, HousekeepingStatus housekeepingStatus, OffsetDateTime createdAt) {
     this.id = id;
     this.roomId = roomId;
     this.label = label;
     this.isActive = isActive;
+    this.housekeepingStatus = housekeepingStatus;
     this.createdAt = createdAt;
   }
 
@@ -124,6 +129,25 @@ public class RoomUnit {
     this.isActive = isActive;
   }
 
+  public RoomUnit housekeepingStatus(HousekeepingStatus housekeepingStatus) {
+    this.housekeepingStatus = housekeepingStatus;
+    return this;
+  }
+
+  /**
+   * Get housekeepingStatus
+   * @return housekeepingStatus
+   */
+  @NotNull @Valid 
+  @JsonProperty("housekeepingStatus")
+  public HousekeepingStatus getHousekeepingStatus() {
+    return housekeepingStatus;
+  }
+
+  public void setHousekeepingStatus(HousekeepingStatus housekeepingStatus) {
+    this.housekeepingStatus = housekeepingStatus;
+  }
+
   public RoomUnit createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -156,12 +180,13 @@ public class RoomUnit {
         Objects.equals(this.roomId, roomUnit.roomId) &&
         Objects.equals(this.label, roomUnit.label) &&
         Objects.equals(this.isActive, roomUnit.isActive) &&
+        Objects.equals(this.housekeepingStatus, roomUnit.housekeepingStatus) &&
         Objects.equals(this.createdAt, roomUnit.createdAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, label, isActive, createdAt);
+    return Objects.hash(id, roomId, label, isActive, housekeepingStatus, createdAt);
   }
 
   @Override
@@ -172,6 +197,7 @@ public class RoomUnit {
     sb.append("    roomId: ").append(toIndentedString(roomId)).append("\n");
     sb.append("    label: ").append(toIndentedString(label)).append("\n");
     sb.append("    isActive: ").append(toIndentedString(isActive)).append("\n");
+    sb.append("    housekeepingStatus: ").append(toIndentedString(housekeepingStatus)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();

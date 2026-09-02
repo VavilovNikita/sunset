@@ -18,6 +18,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.OccupancyStatus;
 
 @Entity
 @Table(name = "Booking")
@@ -66,6 +67,17 @@ public class BookingEntity {
     // Set once BookingExpiryService has warned staff this booking is about to auto-cancel -
     // prevents the reminder sweep from re-sending the same nudge on every 15-minute pass.
     private boolean expiryReminderSent = false;
+
+    // Physical occupancy - deliberately separate from `status` (commercial only) - see
+    // V23__booking_occupancy.sql and BookingOccupancyService's class javadoc. One value per
+    // booking, not per segment: a relocation mid-stay never touches this.
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private OccupancyStatus occupancyStatus = OccupancyStatus.EXPECTED;
+
+    private LocalDateTime checkedInAt;
+
+    private LocalDateTime checkedOutAt;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
@@ -183,6 +195,30 @@ public class BookingEntity {
 
     public void setExpiryReminderSent(boolean expiryReminderSent) {
         this.expiryReminderSent = expiryReminderSent;
+    }
+
+    public OccupancyStatus getOccupancyStatus() {
+        return occupancyStatus;
+    }
+
+    public void setOccupancyStatus(OccupancyStatus occupancyStatus) {
+        this.occupancyStatus = occupancyStatus;
+    }
+
+    public LocalDateTime getCheckedInAt() {
+        return checkedInAt;
+    }
+
+    public void setCheckedInAt(LocalDateTime checkedInAt) {
+        this.checkedInAt = checkedInAt;
+    }
+
+    public LocalDateTime getCheckedOutAt() {
+        return checkedOutAt;
+    }
+
+    public void setCheckedOutAt(LocalDateTime checkedOutAt) {
+        this.checkedOutAt = checkedOutAt;
     }
 
     public LocalDateTime getCreatedAt() {

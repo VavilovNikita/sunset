@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.Room;
 import com.sunsetbeach.model.RoomUnit;
 import java.time.OffsetDateTime;
@@ -56,6 +57,14 @@ public class Booking {
 
   private JsonNullable<String> paymentNote = JsonNullable.<String>undefined();
 
+  private OccupancyStatus occupancyStatus;
+
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private JsonNullable<OffsetDateTime> checkedInAt = JsonNullable.<OffsetDateTime>undefined();
+
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private JsonNullable<OffsetDateTime> checkedOutAt = JsonNullable.<OffsetDateTime>undefined();
+
   @Valid
   private List<@Valid BookingSegment> segments = new ArrayList<>();
 
@@ -72,7 +81,7 @@ public class Booking {
   /**
    * Constructor with only required parameters
    */
-  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String checkIn, String checkOut, String totalPrice, BookingStatus status, String paymentNote, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String checkIn, String checkOut, String totalPrice, BookingStatus status, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.roomId = roomId;
     this.room = room;
@@ -86,6 +95,9 @@ public class Booking {
     this.totalPrice = totalPrice;
     this.status = status;
     this.paymentNote = JsonNullable.of(paymentNote);
+    this.occupancyStatus = occupancyStatus;
+    this.checkedInAt = JsonNullable.of(checkedInAt);
+    this.checkedOutAt = JsonNullable.of(checkedOutAt);
     this.segments = segments;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
@@ -338,6 +350,63 @@ public class Booking {
     this.paymentNote = paymentNote;
   }
 
+  public Booking occupancyStatus(OccupancyStatus occupancyStatus) {
+    this.occupancyStatus = occupancyStatus;
+    return this;
+  }
+
+  /**
+   * Get occupancyStatus
+   * @return occupancyStatus
+   */
+  @NotNull @Valid 
+  @JsonProperty("occupancyStatus")
+  public OccupancyStatus getOccupancyStatus() {
+    return occupancyStatus;
+  }
+
+  public void setOccupancyStatus(OccupancyStatus occupancyStatus) {
+    this.occupancyStatus = occupancyStatus;
+  }
+
+  public Booking checkedInAt(OffsetDateTime checkedInAt) {
+    this.checkedInAt = JsonNullable.of(checkedInAt);
+    return this;
+  }
+
+  /**
+   * Get checkedInAt
+   * @return checkedInAt
+   */
+  @NotNull @Valid 
+  @JsonProperty("checkedInAt")
+  public JsonNullable<OffsetDateTime> getCheckedInAt() {
+    return checkedInAt;
+  }
+
+  public void setCheckedInAt(JsonNullable<OffsetDateTime> checkedInAt) {
+    this.checkedInAt = checkedInAt;
+  }
+
+  public Booking checkedOutAt(OffsetDateTime checkedOutAt) {
+    this.checkedOutAt = JsonNullable.of(checkedOutAt);
+    return this;
+  }
+
+  /**
+   * Get checkedOutAt
+   * @return checkedOutAt
+   */
+  @NotNull @Valid 
+  @JsonProperty("checkedOutAt")
+  public JsonNullable<OffsetDateTime> getCheckedOutAt() {
+    return checkedOutAt;
+  }
+
+  public void setCheckedOutAt(JsonNullable<OffsetDateTime> checkedOutAt) {
+    this.checkedOutAt = checkedOutAt;
+  }
+
   public Booking segments(List<@Valid BookingSegment> segments) {
     this.segments = segments;
     return this;
@@ -425,6 +494,9 @@ public class Booking {
         Objects.equals(this.totalPrice, booking.totalPrice) &&
         Objects.equals(this.status, booking.status) &&
         Objects.equals(this.paymentNote, booking.paymentNote) &&
+        Objects.equals(this.occupancyStatus, booking.occupancyStatus) &&
+        Objects.equals(this.checkedInAt, booking.checkedInAt) &&
+        Objects.equals(this.checkedOutAt, booking.checkedOutAt) &&
         Objects.equals(this.segments, booking.segments) &&
         Objects.equals(this.createdAt, booking.createdAt) &&
         Objects.equals(this.updatedAt, booking.updatedAt);
@@ -432,7 +504,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, checkIn, checkOut, totalPrice, status, paymentNote, segments, createdAt, updatedAt);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, checkIn, checkOut, totalPrice, status, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, segments, createdAt, updatedAt);
   }
 
   @Override
@@ -452,6 +524,9 @@ public class Booking {
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    paymentNote: ").append("[REDACTED]").append("\n");
+    sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
+    sb.append("    checkedInAt: ").append(toIndentedString(checkedInAt)).append("\n");
+    sb.append("    checkedOutAt: ").append(toIndentedString(checkedOutAt)).append("\n");
     sb.append("    segments: ").append(toIndentedString(segments)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");

@@ -21,6 +21,8 @@ import com.sunsetbeach.model.BookingCalendarResponse;
 import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.HousekeepingStatus;
+import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.MenuDepartment;
@@ -135,6 +137,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private com.sunsetbeach.service.BookingCalendarService bookingCalendarService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.BookingOccupancyService bookingOccupancyService;
 
     @MockitoBean
     private RoomService roomService;
@@ -715,7 +720,7 @@ class PosRoleHierarchyTests {
     }
 
     private static RoomUnit sampleRoomUnit() {
-        return new RoomUnit("unit-1", "room-1", "203", true, OffsetDateTime.now());
+        return new RoomUnit("unit-1", "room-1", "203", true, HousekeepingStatus.CLEAN, OffsetDateTime.now());
     }
 
     private static Room sampleRoom() {
@@ -744,6 +749,9 @@ class PosRoleHierarchyTests {
                 "2026-01-02",
                 "1500.00",
                 BookingStatus.NEW,
+                null,
+                OccupancyStatus.EXPECTED,
+                null,
                 null,
                 List.of(sampleBookingSegment()),
                 OffsetDateTime.now(),

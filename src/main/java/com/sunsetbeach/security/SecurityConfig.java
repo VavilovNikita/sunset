@@ -80,6 +80,11 @@ public class SecurityConfig {
                         // internal notes not meant for every role - frontend should treat this list as
                         // MANAGER-only, not assume it follows GET /room-units's visibility.
                         .requestMatchers(HttpMethod.GET, "/room-units", "/room-units/*").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())
+                        // Housekeeping status is a deliberately lower bar than the rest of
+                        // /room-units/** (MANAGER+ below) - front desk flips this day to day, not
+                        // just managers - so it needs its own rule ahead of the catch-all, same
+                        // ordering requirement as the GET carve-out above.
+                        .requestMatchers(HttpMethod.PATCH, "/room-units/*/housekeeping").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers("/room-units/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Availability: CASHIER+, not MANAGER+ as openapi.yaml originally documented -
                         // this description predates front-desk room assignment. The per-unit breakdown
@@ -137,6 +142,15 @@ public class SecurityConfig {
                         // "/bookings/" aren't covered by "/bookings/*").
                         .requestMatchers(HttpMethod.POST, "/bookings/*/reprice/quote").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.POST, "/bookings/*/reprice").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Physical occupancy (check-in/check-out/no-show) - same CASHIER+ tier as
+                        // the rest of front-desk reservation work above, same explicit-rule
+                        // requirement (two-segment paths past "/bookings/" aren't covered by
+                        // "/bookings/*"). GET /bookings/today needs no separate rule - it's a
+                        // single path segment, already covered by the general
+                        // "/bookings", "/bookings/*" GET rule above at the same CASHIER+ role.
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/check-in").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/check-out").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/no-show").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // POS module: read endpoints (GET /menu, /tables, /orders/**) are open to any
                         // authenticated staff role, including WAITER - explicitly matched below rather
                         // than left to fall through to anyRequest(), so the EndpointCoverageTests
