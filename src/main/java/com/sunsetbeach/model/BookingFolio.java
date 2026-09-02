@@ -14,7 +14,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * &#x60;folioTotal&#x60; &#x3D; &#x60;roomTotal&#x60; + &#x60;roomChargesTotal&#x60;, computed on the fly by &#x60;BookingService.computeFolio&#x60;/&#x60;getFolio&#x60; - see that method&#39;s Javadoc. Never stored. 
+ * &#x60;folioTotal&#x60; &#x3D; &#x60;roomTotal&#x60; + &#x60;roomChargesTotal&#x60;, computed on the fly by &#x60;BookingService.computeFolio&#x60;/&#x60;getFolio&#x60; - see that method&#39;s Javadoc. Never stored. &#x60;roomChargesTotal&#x60; is *net of settlement* - what&#39;s actually still owed, not the raw sum of every ROOM_CHARGE &#x60;Payment&#x60; this stay ever generated. See &#x60;FolioPayment&#x60;&#39;s own description for how a charge gets marked collected; &#x60;GET /bookings/{id}/folio-payments&#x60; lists the settlement history behind this number. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -48,7 +48,7 @@ public class BookingFolio {
   }
 
   /**
-   * `Booking.totalPrice` - decimal(10,2) rendered as a string.
+   * `Booking.totalPrice` - decimal(10,2) rendered as a string. `0` once `status` is `PAID`.
    * @return roomTotal
    */
   @NotNull 
@@ -67,7 +67,7 @@ public class BookingFolio {
   }
 
   /**
-   * Sum of this booking's ROOM_CHARGE `Payment.amount` rows - decimal(10,2) rendered as a string.
+   * Sum of this booking's ROOM_CHARGE `Payment.amount` rows, minus every `FolioPayment` recorded against it (floored at zero) - decimal(10,2) rendered as a string. 
    * @return roomChargesTotal
    */
   @NotNull 
@@ -86,7 +86,7 @@ public class BookingFolio {
   }
 
   /**
-   * `roomTotal` + `roomChargesTotal` - decimal(10,2) rendered as a string.
+   * `roomTotal` + `roomChargesTotal` - decimal(10,2) rendered as a string. What is actually still owed right now.
    * @return folioTotal
    */
   @NotNull 
@@ -105,7 +105,7 @@ public class BookingFolio {
   }
 
   /**
-   * Number of ROOM_CHARGE payments summed into `roomChargesTotal` - same count as `GET /bookings/{id}/pos-orders` would return entries.
+   * Number of ROOM_CHARGE payments this stay has ever generated (a raw historical count, not \"how many are still unsettled\" - individual charges aren't tracked as settled/unsettled, only the running total is) - same count as `GET /bookings/{id}/pos-orders` would return entries. 
    * @return roomChargeCount
    */
   @NotNull 

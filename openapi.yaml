@@ -1957,6 +1957,83 @@ paths:
               example:
                 error: Booking not found
 
+  /bookings/{id}/folio-payments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: listFolioPayments
+      tags: [Bookings]
+      summary: List the settlement history behind a booking's folio balance
+      description: >
+        Requires any authenticated staff session - same floor as `GET /bookings/{id}/folio`,
+        which this explains the arithmetic of. Ordered oldest first.
+      responses:
+        "200":
+          description: This booking's folio payments.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FolioPayment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    post:
+      operationId: recordFolioPayment
+      tags: [Bookings]
+      summary: Record money collected against a booking's folio
+      description: >
+        Requires CASHIER or above. See `FolioPayment`'s own description for what this does and
+        deliberately does not do (no shift/cash-drawer linkage). Not tied to `occupancyStatus`
+        in any way - collectible any time, not just at check-out.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FolioPaymentInput"
+      responses:
+        "201":
+          description: Recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolioPayment"
+        "400":
+          description: Body failed validation, or `amount` is not greater than zero.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: '`amount` exceeds what is currently outstanding on this booking''s folio.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "This would overpay the folio - ฿500.00 is currently outstanding."
+
   /bookings/{id}/pos-orders:
     parameters:
       - name: id
@@ -5634,20 +5711,88 @@ components:
       description: >
         `folioTotal` = `roomTotal` + `roomChargesTotal`, computed on the fly by
         `BookingService.computeFolio`/`getFolio` - see that method's Javadoc. Never stored.
+        `roomChargesTotal` is *net of settlement* - what's actually still owed, not the raw sum
+        of every ROOM_CHARGE `Payment` this stay ever generated. See `FolioPayment`'s own
+        description for how a charge gets marked collected; `GET /bookings/{id}/folio-payments`
+        lists the settlement history behind this number.
       required: [roomTotal, roomChargesTotal, folioTotal, roomChargeCount]
       properties:
         roomTotal:
           type: string
-          description: '`Booking.totalPrice` - decimal(10,2) rendered as a string.'
+          description: >
+            `Booking.totalPrice` - decimal(10,2) rendered as a string. Always the full room
+            total regardless of `status` - unlike `CheckOutResult`/`TodayBoardEntry`'s
+            `outstandingBalance` (see `BookingService.computeOutstandingBalance`), which drops
+            this once `status` is `PAID`. `folioTotal` here is "what this stay adds up to," not
+            "what's still owed" - use `outstandingBalance` for that.
         roomChargesTotal:
           type: string
-          description: Sum of this booking's ROOM_CHARGE `Payment.amount` rows - decimal(10,2) rendered as a string.
+          description: >
+            Sum of this booking's ROOM_CHARGE `Payment.amount` rows, minus every `FolioPayment`
+            recorded against it (floored at zero) - decimal(10,2) rendered as a string.
         folioTotal:
           type: string
-          description: '`roomTotal` + `roomChargesTotal` - decimal(10,2) rendered as a string.'
+          description: >
+            `roomTotal` + `roomChargesTotal` - decimal(10,2) rendered as a string. Not the same
+            question as `outstandingBalance` (see `roomTotal`'s own description) - this always
+            includes the full room total, `outstandingBalance` drops it once `status` is `PAID`.
         roomChargeCount:
           type: integer
-          description: Number of ROOM_CHARGE payments summed into `roomChargesTotal` - same count as `GET /bookings/{id}/pos-orders` would return entries.
+          description: >
+            Number of ROOM_CHARGE payments this stay has ever generated (a raw historical count,
+            not "how many are still unsettled" - individual charges aren't tracked as
+            settled/unsettled, only the running total is) - same count as
+            `GET /bookings/{id}/pos-orders` would return entries.
+
+    FolioPaymentMethod:
+      type: string
+      description: Deliberately excludes ROOM_CHARGE - a room charge can't be settled by charging it to the room.
+      enum:
+        - CASH
+        - CARD
+        - OTHER
+
+    FolioPayment:
+      type: object
+      description: >
+        Money actually collected against a booking's folio - the record that makes a
+        `ROOM_CHARGE` payment's amount stop counting as owed in `BookingFolio.roomChargesTotal`/
+        `CheckOutResult.outstandingBalance`/`TodayBoardEntry.outstandingBalance`. Deliberately
+        not tied to a shift - unlike `Payment`, cash collected this way is not counted in
+        end-of-shift cash-drawer reconciliation, the same gap `Booking.status = PAID` already
+        has for the room portion of a stay. Rows accumulate (a guest can pay part now, the rest
+        later) and are never edited or deleted - to correct a mistake, staff record another
+        entry, the same append-only convention the audit log uses.
+      required: [id, bookingId, method, amount, recordedByUserId, createdAt]
+      properties:
+        id:
+          type: string
+        bookingId:
+          type: string
+        method:
+          $ref: "#/components/schemas/FolioPaymentMethod"
+        amount:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        recordedByUserId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    FolioPaymentInput:
+      type: object
+      description: Body of `POST /bookings/{id}/folio-payments`.
+      required: [method, amount]
+      properties:
+        method:
+          $ref: "#/components/schemas/FolioPaymentMethod"
+        amount:
+          type: string
+          description: >
+            Decimal(10,2) as a string, greater than zero. Rejected with 409 if it would exceed
+            what's currently outstanding on this booking's folio - a fat-finger guard, not a
+            restriction on partial payment (a smaller amount than what's owed is always fine).
 
     PaymentsSummary:
       type: object
@@ -5690,6 +5835,7 @@ components:
         - BOOKING_CHECKED_IN
         - BOOKING_CHECKED_OUT
         - BOOKING_NO_SHOW_MARKED
+        - BOOKING_FOLIO_PAYMENT_RECORDED
         - BOOKINGS_EXPORTED
         - ROOM_PRICE_CHANGED
         - RATE_OVERRIDE_CHANGED

@@ -1,0 +1,57 @@
+package com.sunsetbeach.model;
+
+import java.net.URI;
+import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonValue;
+import org.openapitools.jackson.nullable.JsonNullable;
+import java.time.OffsetDateTime;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.*;
+
+
+import java.util.*;
+import jakarta.annotation.Generated;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+/**
+ * Deliberately excludes ROOM_CHARGE - a room charge can't be settled by charging it to the room.
+ */
+
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
+public enum FolioPaymentMethod {
+  
+  CASH("CASH"),
+  
+  CARD("CARD"),
+  
+  OTHER("OTHER");
+
+  private String value;
+
+  FolioPaymentMethod(String value) {
+    this.value = value;
+  }
+
+  @JsonValue
+  public String getValue() {
+    return value;
+  }
+
+  @Override
+  public String toString() {
+    return String.valueOf(value);
+  }
+
+  @JsonCreator
+  public static FolioPaymentMethod fromValue(String value) {
+    for (FolioPaymentMethod b : FolioPaymentMethod.values()) {
+      if (b.value.equals(value)) {
+        return b;
+      }
+    }
+    throw new IllegalArgumentException("Unexpected value '" + value + "'");
+  }
+}
+

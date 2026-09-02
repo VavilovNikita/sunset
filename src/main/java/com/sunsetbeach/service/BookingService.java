@@ -2,6 +2,7 @@ package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
+import com.sunsetbeach.entity.FolioPaymentEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PaymentEntity;
@@ -24,6 +25,8 @@ import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
+import com.sunsetbeach.model.FolioPayment;
+import com.sunsetbeach.model.FolioPaymentInput;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RelocationUndoInput;
@@ -33,11 +36,13 @@ import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
+import com.sunsetbeach.repository.FolioPaymentRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
+import com.sunsetbeach.security.StaffPrincipal;
 import jakarta.persistence.criteria.Predicate;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.math.BigDecimal;
@@ -51,6 +56,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,6 +74,7 @@ public class BookingService {
     private final BookingMapper bookingMapper;
     private final EmailService emailService;
     private final PaymentRepository paymentRepository;
+    private final FolioPaymentRepository folioPaymentRepository;
     private final OrderItemRepository orderItemRepository;
     private final MenuItemRepository menuItemRepository;
     private final AuditLogService auditLogService;
@@ -81,6 +88,7 @@ public class BookingService {
             BookingMapper bookingMapper,
             EmailService emailService,
             PaymentRepository paymentRepository,
+            FolioPaymentRepository folioPaymentRepository,
             OrderItemRepository orderItemRepository,
             MenuItemRepository menuItemRepository,
             AuditLogService auditLogService) {
@@ -92,6 +100,7 @@ public class BookingService {
         this.bookingMapper = bookingMapper;
         this.emailService = emailService;
         this.paymentRepository = paymentRepository;
+        this.folioPaymentRepository = folioPaymentRepository;
         this.orderItemRepository = orderItemRepository;
         this.menuItemRepository = menuItemRepository;
         this.auditLogService = auditLogService;
@@ -489,9 +498,11 @@ public class BookingService {
     }
 
     /**
-     * folio(booking) = booking.totalPrice + sum of ROOM_CHARGE Payment.amount for this
-     * booking. Computed on the fly, never stored - this is the one place that calculation is
-     * allowed to happen; callers (e.g. {@link #getFolio}, {@link #listPosOrders}) should go
+     * folio(booking) = booking.totalPrice + sum of ROOM_CHARGE Payment.amount for this booking,
+     * minus every {@link FolioPaymentEntity} recorded against it (floored at zero) - see
+     * {@link #recordFolioPayment}'s javadoc for why a room charge needs its own settlement
+     * record at all. Computed on the fly, never stored - this is the one place that calculation
+     * is allowed to happen; callers (e.g. {@link #getFolio}, {@link #listPosOrders}) should go
      * through this method (or {@link #computeFolioBreakdown}/{@link #roomChargePayments})
      * rather than summing Payments themselves.
      */
@@ -529,18 +540,94 @@ public class BookingService {
         return roomOutstanding.add(breakdown.roomChargesTotal());
     }
 
-    /** The one place booking.totalPrice + Σ ROOM_CHARGE Payment.amount is actually computed. */
+    /**
+     * The one place booking.totalPrice + Σ ROOM_CHARGE Payment.amount, minus Σ FolioPayment, is
+     * actually computed. {@code roomChargesTotal} is net of settlement (floored at zero) -
+     * without that subtraction, any booking that ever had one room charge would show as owing
+     * that charge forever, since nothing ever marked it collected.
+     */
     private FolioBreakdown computeFolioBreakdown(String bookingId) {
         BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         List<PaymentEntity> payments = roomChargePayments(bookingId);
-        BigDecimal roomCharges = payments.stream().map(PaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        return new FolioBreakdown(booking.getTotalPrice(), roomCharges, payments.size(), booking.getStatus());
+        BigDecimal roomChargesGross = payments.stream().map(PaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal settled = folioPaymentRepository.findByBookingIdOrderByCreatedAtAsc(bookingId).stream()
+                .map(FolioPaymentEntity::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal roomChargesOutstanding = roomChargesGross.subtract(settled).max(BigDecimal.ZERO);
+        return new FolioBreakdown(booking.getTotalPrice(), roomChargesOutstanding, payments.size(), booking.getStatus());
     }
 
     private record FolioBreakdown(BigDecimal roomTotal, BigDecimal roomChargesTotal, int roomChargeCount, BookingStatus status) {
         BigDecimal folioTotal() {
             return roomTotal.add(roomChargesTotal);
         }
+    }
+
+    /**
+     * Records money actually collected against a booking's ROOM CHARGES specifically - the fix
+     * for a real bug: a ROOM_CHARGE {@code Payment} (money charged to the room, meant to be
+     * collected later) had no way to ever be marked collected, so any booking that ever had one
+     * showed as owing it forever - the check-out warning fired on every check-out regardless of
+     * what was actually paid, and {@code RoomChargeDebtBadge} never went dark. Deliberately does
+     * not touch {@code Booking.status}/{@code PAID} at all - settling the *room* portion of a
+     * stay stays the separate, pre-existing action it already was ({@code PATCH /bookings/{id}}
+     * with {@code status: PAID}). A guest settling a mixed room-plus-charges bill needs both
+     * actions, not one; that asymmetry is deliberate; see {@code FolioPaymentEntity}'s javadoc
+     * for why unifying them wasn't done here. Rejects an amount that would overpay what's
+     * currently outstanding on the charges alone - a fat-finger guard, not a restriction on
+     * partial payment.
+     */
+    @Transactional
+    public FolioPayment recordFolioPayment(String bookingId, FolioPaymentInput input) {
+        if (!bookingRepository.existsById(bookingId)) {
+            throw new NotFoundException("Booking not found");
+        }
+        BigDecimal amount = new BigDecimal(input.getAmount());
+        if (amount.signum() <= 0) {
+            throw ValidationException.field("amount", "amount must be greater than zero");
+        }
+        BigDecimal outstanding = computeFolioBreakdown(bookingId).roomChargesTotal();
+        if (amount.compareTo(outstanding) > 0) {
+            throw new ConflictException(
+                    "This would overpay the folio - ฿" + PriceFormat.asDecimalString(outstanding) + " is currently outstanding.");
+        }
+
+        StaffPrincipal actor = (StaffPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        FolioPaymentEntity entity = new FolioPaymentEntity();
+        entity.setBookingId(bookingId);
+        entity.setMethod(input.getMethod());
+        entity.setAmount(amount);
+        entity.setRecordedByUserId(actor.id());
+        FolioPaymentEntity saved = folioPaymentRepository.saveAndFlush(entity);
+
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        auditLogService.record(
+                AuditAction.BOOKING_FOLIO_PAYMENT_RECORDED,
+                AuditEntityType.BOOKING,
+                bookingId,
+                "Recorded ฿" + PriceFormat.asDecimalString(amount) + " (" + input.getMethod().getValue() + ") against "
+                        + booking.getGuestName() + "'s folio");
+
+        return toFolioPaymentDto(saved);
+    }
+
+    /** Settlement history behind {@link #computeFolioBreakdown}'s {@code roomChargesTotal} - see {@link #recordFolioPayment}. */
+    @Transactional(readOnly = true)
+    public List<FolioPayment> listFolioPayments(String bookingId) {
+        if (!bookingRepository.existsById(bookingId)) {
+            throw new NotFoundException("Booking not found");
+        }
+        return folioPaymentRepository.findByBookingIdOrderByCreatedAtAsc(bookingId).stream().map(this::toFolioPaymentDto).toList();
+    }
+
+    private FolioPayment toFolioPaymentDto(FolioPaymentEntity entity) {
+        return new FolioPayment(
+                entity.getId(),
+                entity.getBookingId(),
+                entity.getMethod(),
+                PriceFormat.asDecimalString(entity.getAmount()),
+                entity.getRecordedByUserId(),
+                TimestampFormat.toUtc(entity.getCreatedAt()));
     }
 
     /**

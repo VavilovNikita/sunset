@@ -12,6 +12,8 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.CheckInResult;
 import com.sunsetbeach.model.CheckOutResult;
+import com.sunsetbeach.model.FolioPayment;
+import com.sunsetbeach.model.FolioPaymentInput;
 import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RepriceInput;
@@ -157,6 +159,16 @@ public class BookingController implements BookingsApi {
     @Override
     public ResponseEntity<BookingFolio> getBookingFolio(String id) {
         return ResponseEntity.ok(bookingService.getFolio(id));
+    }
+
+    @Override
+    public ResponseEntity<List<FolioPayment>> listFolioPayments(String id) {
+        return ResponseEntity.ok(bookingService.listFolioPayments(id));
+    }
+
+    @Override
+    public ResponseEntity<FolioPayment> recordFolioPayment(String id, FolioPaymentInput folioPaymentInput) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.recordFolioPayment(id, folioPaymentInput));
     }
 
     @Override

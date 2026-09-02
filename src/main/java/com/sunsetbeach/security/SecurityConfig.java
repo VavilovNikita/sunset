@@ -151,6 +151,13 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/bookings/*/check-in").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/bookings/*/check-out").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/bookings/*/no-show").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Folio payments: recording one is money-handling, CASHIER+ same as the
+                        // rest of front-desk work above. Listing them is informational (the same
+                        // "what's owed" story GET /bookings/*/folio already tells any
+                        // authenticated role) so it stays open, matching that endpoint's own bar
+                        // rather than the write's.
+                        .requestMatchers(HttpMethod.GET, "/bookings/*/folio-payments").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/folio-payments").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // POS module: read endpoints (GET /menu, /tables, /orders/**) are open to any
                         // authenticated staff role, including WAITER - explicitly matched below rather
                         // than left to fall through to anyRequest(), so the EndpointCoverageTests

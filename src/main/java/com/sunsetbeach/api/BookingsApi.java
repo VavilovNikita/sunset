@@ -17,6 +17,8 @@ import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.CheckInResult;
 import com.sunsetbeach.model.CheckOutResult;
 import com.sunsetbeach.model.ErrorMessage;
+import com.sunsetbeach.model.FolioPayment;
+import com.sunsetbeach.model.FolioPaymentInput;
 import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RepriceInput;
@@ -630,6 +632,48 @@ public interface BookingsApi {
 
 
     /**
+     * GET /bookings/{id}/folio-payments : List the settlement history behind a booking&#39;s folio balance
+     * Requires any authenticated staff session - same floor as &#x60;GET /bookings/{id}/folio&#x60;, which this explains the arithmetic of. Ordered oldest first. 
+     *
+     * @param id  (required)
+     * @return This booking&#39;s folio payments. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Booking not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/bookings/{id}/folio-payments",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<List<FolioPayment>> listFolioPayments(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"amount\" : \"amount\", \"method\" : \"CASH\", \"id\" : \"id\", \"recordedByUserId\" : \"recordedByUserId\", \"bookingId\" : \"bookingId\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"amount\" : \"amount\", \"method\" : \"CASH\", \"id\" : \"id\", \"recordedByUserId\" : \"recordedByUserId\", \"bookingId\" : \"bookingId\" } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * POST /bookings/{id}/no-show : Mark a guest as not having arrived
      * Requires CASHIER or above. Only legal while &#x60;occupancyStatus&#x60; is &#x60;EXPECTED&#x60;. A label, not an action - see &#x60;OccupancyStatus&#x60;&#39;s own description for why this changes nothing about the booking&#39;s dates, &#x60;status&#x60;, or availability. Recorded in the audit log. 
      *
@@ -829,6 +873,69 @@ public interface BookingsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /bookings/{id}/folio-payments : Record money collected against a booking&#39;s folio
+     * Requires CASHIER or above. See &#x60;FolioPayment&#x60;&#39;s own description for what this does and deliberately does not do (no shift/cash-drawer linkage). Not tied to &#x60;occupancyStatus&#x60; in any way - collectible any time, not just at check-out. 
+     *
+     * @param id  (required)
+     * @param folioPaymentInput  (required)
+     * @return Recorded. (status code 201)
+     *         or Body failed validation, or &#x60;amount&#x60; is not greater than zero. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Booking not found. (status code 404)
+     *         or &#x60;amount&#x60; exceeds what is currently outstanding on this booking&#39;s folio. (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/bookings/{id}/folio-payments",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<FolioPayment> recordFolioPayment(
+         @PathVariable("id") String id,
+         @Valid @RequestBody FolioPaymentInput folioPaymentInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"amount\" : \"amount\", \"method\" : \"CASH\", \"id\" : \"id\", \"recordedByUserId\" : \"recordedByUserId\", \"bookingId\" : \"bookingId\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
