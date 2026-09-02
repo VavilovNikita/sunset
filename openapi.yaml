@@ -64,7 +64,10 @@ tags:
       (`GET /print-jobs/{id}/preview`). Printing is best-effort and asynchronous where it needs
       to be: an unreachable printer never fails the order/shift operation that triggered it - it
       leaves a `PENDING`/`FAILED` `PrintJob` behind instead, retried automatically in the
-      background and retriable by hand from here.
+      background and retriable by hand from here. A `FAILED` job that a retry can't fix (the
+      printer was replaced, the order already reached the guest, the kitchen was told by voice)
+      can be closed instead of retried - `POST /print-jobs/dismiss` marks it (never deletes it)
+      and drops it out of the default list and any failed-job count/indicator built from it.
   - name: Users
     description: Staff account management (ADMIN only).
   - name: AuditLog
@@ -2737,6 +2740,10 @@ paths:
         served - and/or by `documentType` to narrow to one kind of document (e.g.
         `documentType=Z_REPORT` for a manager auditing shift closes). Both filters apply
         server-side; an unrecognized value for either is a 400, not a silently-ignored no-op.
+        Dismissed jobs (see `POST /print-jobs/dismiss`) are excluded by default, from this list
+        and from the count anything (a badge, a banner) derives from it, regardless of the
+        `status` filter used - pass `includeDismissed=true` to see them (e.g. reviewing history
+        on a `GUEST_RECEIPT`/`Z_REPORT` job).
       parameters:
         - name: status
           in: query
@@ -2748,6 +2755,12 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/PrintDocumentType"
+        - name: includeDismissed
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: Matching print jobs, filtered to the document types the caller's role may see.
@@ -2759,6 +2772,65 @@ paths:
                   $ref: "#/components/schemas/PrintJob"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /print-jobs/dismiss:
+    post:
+      operationId: dismissPrintJobs
+      tags: [Printers]
+      summary: Close one or more failed print jobs as not-actionable
+      description: >
+        Requires role `WAITER` or above - the same floor as `POST /print-jobs/{id}/retry`, not a
+        higher one. A dismissal can only ever affect a document type the caller could already see
+        and retry (Z-reports/guest receipts stay invisible to `WAITER`/`CASHIER` here exactly as
+        everywhere else on this queue), so the practical risk of a wrong dismissal is bounded to
+        the same kitchen/bar/pre-bill tickets that role can already act on - and the person best
+        placed to know a kitchen ticket is safe to close (the kitchen was told by voice, the
+        printer was swapped, the order already reached the guest) is routinely the front-line
+        staff working the floor, not a manager who wasn't there. Doesn't delete the row or change
+        `status` - `dismissedAt`/`dismissedByUserId`/`dismissNote` are set and the job stops
+        counting toward the default list/badge/banner. Rejects the whole call (no partial
+        effect) if any id doesn't exist, isn't visible to the caller's role (404), isn't
+        currently `FAILED`, or is already dismissed (409) - close several at once from one
+        filtered view without wondering which ones silently didn't take.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DismissPrintJobsInput"
+      responses:
+        "200":
+          description: The dismissed jobs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PrintJob"
+        "400":
+          description: Empty `ids` array.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: No print job ids provided
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: A job id doesn't exist, or its document type isn't visible to the caller's role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Print job not found
+        "409":
+          description: A job isn't currently FAILED, or is already dismissed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /print-jobs/{id}/retry:
     parameters:
@@ -4205,8 +4277,11 @@ components:
       enum: [PENDING, SENT, FAILED]
       description: >
         PENDING = queued, either freshly created or waiting for the next automatic retry.
-        SENT = delivered successfully (terminal). FAILED = automatic retries exhausted
-        (terminal until a manual retry via `POST /print-jobs/{id}/retry` puts it back in play).
+        SENT = delivered successfully (terminal). FAILED = automatic retries exhausted - stays
+        `FAILED` from here on regardless of what happens next: a manual retry
+        (`POST /print-jobs/{id}/retry`) either succeeds (moves to `SENT`) or fails again, and
+        dismissing it (`POST /print-jobs/dismiss`, see `PrintJob.dismissedAt`) doesn't change
+        this value at all - it only stops the job counting as needing attention.
 
     Printer:
       type: object
@@ -4265,6 +4340,9 @@ components:
       description: >
         A queued/attempted print. `payload` (the raw ESC/POS bytes actually sent) is
         intentionally not exposed here - it's binary and only meaningful to a printer.
+        Dismissing a job (`POST /print-jobs/dismiss`) never deletes it or changes `status` - a
+        dismissed job is still `FAILED`, just marked as not needing further attention. See
+        `dismissedAt`.
       required: [id, printerId, documentType, summary, status, attempts, lastError, createdAt, updatedAt]
       properties:
         id:
@@ -4297,6 +4375,39 @@ components:
         updatedAt:
           type: string
           format: date-time
+        dismissedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Set once this job is closed as not-actionable (`POST /print-jobs/dismiss`) - null
+            for every job by default. `GET /print-jobs` excludes dismissed jobs unless
+            `includeDismissed=true` is passed.
+        dismissedByUserId:
+          type: string
+          nullable: true
+        dismissNote:
+          type: string
+          nullable: true
+          description: Optional free-text context supplied at dismiss time (e.g. "printer replaced 2026-09-02").
+
+    DismissPrintJobsInput:
+      type: object
+      description: >
+        Body of `POST /print-jobs/dismiss`. One call closes one or many jobs at once (a single
+        job is just an array of one) - all-or-nothing, same as `PATCH /room-units/positions`:
+        every id is checked (exists, visible to the caller's role, currently `FAILED`, not
+        already dismissed) before any write happens.
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        note:
+          type: string
+          description: Optional, applied to every job in this call - shown on each job and in its own audit-log entry.
 
     PrintAttemptResult:
       type: object
@@ -6141,6 +6252,7 @@ components:
         - ROOM_UNIT_HOUSEKEEPING_CHANGED
         - ROOM_UNIT_POSITION_UPDATED
         - PROPERTY_MAP_IMAGE_UPDATED
+        - PRINT_JOB_DISMISSED
 
     AuditEntityType:
       type: string
@@ -6154,7 +6266,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB]
 
     AuditLogEntry:
       type: object

@@ -5,6 +5,7 @@
  */
 package com.sunsetbeach.api;
 
+import com.sunsetbeach.model.DismissPrintJobsInput;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.PrintDocumentType;
@@ -146,11 +147,67 @@ public interface PrintersApi {
 
 
     /**
+     * POST /print-jobs/dismiss : Close one or more failed print jobs as not-actionable
+     * Requires role &#x60;WAITER&#x60; or above - the same floor as &#x60;POST /print-jobs/{id}/retry&#x60;, not a higher one. A dismissal can only ever affect a document type the caller could already see and retry (Z-reports/guest receipts stay invisible to &#x60;WAITER&#x60;/&#x60;CASHIER&#x60; here exactly as everywhere else on this queue), so the practical risk of a wrong dismissal is bounded to the same kitchen/bar/pre-bill tickets that role can already act on - and the person best placed to know a kitchen ticket is safe to close (the kitchen was told by voice, the printer was swapped, the order already reached the guest) is routinely the front-line staff working the floor, not a manager who wasn&#39;t there. Doesn&#39;t delete the row or change &#x60;status&#x60; - &#x60;dismissedAt&#x60;/&#x60;dismissedByUserId&#x60;/&#x60;dismissNote&#x60; are set and the job stops counting toward the default list/badge/banner. Rejects the whole call (no partial effect) if any id doesn&#39;t exist, isn&#39;t visible to the caller&#39;s role (404), isn&#39;t currently &#x60;FAILED&#x60;, or is already dismissed (409) - close several at once from one filtered view without wondering which ones silently didn&#39;t take. 
+     *
+     * @param dismissPrintJobsInput  (required)
+     * @return The dismissed jobs. (status code 200)
+     *         or Empty &#x60;ids&#x60; array. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or A job id doesn&#39;t exist, or its document type isn&#39;t visible to the caller&#39;s role. (status code 404)
+     *         or A job isn&#39;t currently FAILED, or is already dismissed. (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/print-jobs/dismiss",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<List<PrintJob>> dismissPrintJobs(
+         @Valid @RequestBody DismissPrintJobsInput dismissPrintJobsInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"dismissNote\" : \"dismissNote\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"dismissedByUserId\" : \"dismissedByUserId\", \"dismissedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"dismissNote\" : \"dismissNote\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"dismissedByUserId\" : \"dismissedByUserId\", \"dismissedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * GET /print-jobs : List print jobs
-     * Requires role &#x60;WAITER&#x60; or above (i.e. any staff role) - but what comes back depends on who&#39;s asking. &#x60;ADMIN&#x60;/&#x60;MANAGER&#x60; see every document type. &#x60;CASHIER&#x60;/&#x60;WAITER&#x60; only see &#x60;KITCHEN_TICKET&#x60;/&#x60;BAR_TICKET&#x60;/&#x60;PREBILL&#x60; jobs - &#x60;Z_REPORT&#x60; (shift cash reconciliation) and &#x60;GUEST_RECEIPT&#x60; (booking/payment detail) are cashier/management information, filtered out rather than 403&#39;d so line staff still get the one thing they actually need this endpoint for: seeing that their own kitchen/bar ticket or pre-bill didn&#39;t go through. Ordered by &#x60;createdAt&#x60; descending (most recent first). Filter by &#x60;status&#x3D;FAILED&#x60; to see what needs manual attention - a silently lost kitchen ticket is a dish that never gets served - and/or by &#x60;documentType&#x60; to narrow to one kind of document (e.g. &#x60;documentType&#x3D;Z_REPORT&#x60; for a manager auditing shift closes). Both filters apply server-side; an unrecognized value for either is a 400, not a silently-ignored no-op. 
+     * Requires role &#x60;WAITER&#x60; or above (i.e. any staff role) - but what comes back depends on who&#39;s asking. &#x60;ADMIN&#x60;/&#x60;MANAGER&#x60; see every document type. &#x60;CASHIER&#x60;/&#x60;WAITER&#x60; only see &#x60;KITCHEN_TICKET&#x60;/&#x60;BAR_TICKET&#x60;/&#x60;PREBILL&#x60; jobs - &#x60;Z_REPORT&#x60; (shift cash reconciliation) and &#x60;GUEST_RECEIPT&#x60; (booking/payment detail) are cashier/management information, filtered out rather than 403&#39;d so line staff still get the one thing they actually need this endpoint for: seeing that their own kitchen/bar ticket or pre-bill didn&#39;t go through. Ordered by &#x60;createdAt&#x60; descending (most recent first). Filter by &#x60;status&#x3D;FAILED&#x60; to see what needs manual attention - a silently lost kitchen ticket is a dish that never gets served - and/or by &#x60;documentType&#x60; to narrow to one kind of document (e.g. &#x60;documentType&#x3D;Z_REPORT&#x60; for a manager auditing shift closes). Both filters apply server-side; an unrecognized value for either is a 400, not a silently-ignored no-op. Dismissed jobs (see &#x60;POST /print-jobs/dismiss&#x60;) are excluded by default, from this list and from the count anything (a badge, a banner) derives from it, regardless of the &#x60;status&#x60; filter used - pass &#x60;includeDismissed&#x3D;true&#x60; to see them (e.g. reviewing history on a &#x60;GUEST_RECEIPT&#x60;/&#x60;Z_REPORT&#x60; job). 
      *
      * @param status  (optional)
      * @param documentType  (optional)
+     * @param includeDismissed  (optional, default to false)
      * @return Matching print jobs, filtered to the document types the caller&#39;s role may see. (status code 200)
      *         or No valid JWT. (status code 401)
      */
@@ -162,12 +219,13 @@ public interface PrintersApi {
     
     default ResponseEntity<List<PrintJob>> listPrintJobs(
          @Valid @RequestParam(value = "status", required = false) PrintJobStatus status,
-         @Valid @RequestParam(value = "documentType", required = false) PrintDocumentType documentType
+         @Valid @RequestParam(value = "documentType", required = false) PrintDocumentType documentType,
+         @Valid @RequestParam(value = "includeDismissed", required = false, defaultValue = "false") Boolean includeDismissed
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
+                    String exampleString = "[ { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"dismissNote\" : \"dismissNote\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"dismissedByUserId\" : \"dismissedByUserId\", \"dismissedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"dismissNote\" : \"dismissNote\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"dismissedByUserId\" : \"dismissedByUserId\", \"dismissedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -287,7 +345,7 @@ public interface PrintersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"dismissNote\" : \"dismissNote\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"dismissedByUserId\" : \"dismissedByUserId\", \"dismissedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -330,7 +388,7 @@ public interface PrintersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"dismissNote\" : \"dismissNote\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"dismissedByUserId\" : \"dismissedByUserId\", \"dismissedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

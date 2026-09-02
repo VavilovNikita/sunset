@@ -8,7 +8,10 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.PrintDocumentType;
 import com.sunsetbeach.model.PrintJobStatus;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.springframework.format.annotation.DateTimeFormat;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -19,7 +22,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A queued/attempted print. &#x60;payload&#x60; (the raw ESC/POS bytes actually sent) is intentionally not exposed here - it&#39;s binary and only meaningful to a printer. 
+ * A queued/attempted print. &#x60;payload&#x60; (the raw ESC/POS bytes actually sent) is intentionally not exposed here - it&#39;s binary and only meaningful to a printer. Dismissing a job (&#x60;POST /print-jobs/dismiss&#x60;) never deletes it or changes &#x60;status&#x60; - a dismissed job is still &#x60;FAILED&#x60;, just marked as not needing further attention. See &#x60;dismissedAt&#x60;. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -44,6 +47,13 @@ public class PrintJob {
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime updatedAt;
+
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private JsonNullable<OffsetDateTime> dismissedAt = JsonNullable.<OffsetDateTime>undefined();
+
+  private JsonNullable<String> dismissedByUserId = JsonNullable.<String>undefined();
+
+  private JsonNullable<String> dismissNote = JsonNullable.<String>undefined();
 
   public PrintJob() {
     super();
@@ -235,6 +245,63 @@ public class PrintJob {
     this.updatedAt = updatedAt;
   }
 
+  public PrintJob dismissedAt(OffsetDateTime dismissedAt) {
+    this.dismissedAt = JsonNullable.of(dismissedAt);
+    return this;
+  }
+
+  /**
+   * Set once this job is closed as not-actionable (`POST /print-jobs/dismiss`) - null for every job by default. `GET /print-jobs` excludes dismissed jobs unless `includeDismissed=true` is passed. 
+   * @return dismissedAt
+   */
+  @Valid 
+  @JsonProperty("dismissedAt")
+  public JsonNullable<OffsetDateTime> getDismissedAt() {
+    return dismissedAt;
+  }
+
+  public void setDismissedAt(JsonNullable<OffsetDateTime> dismissedAt) {
+    this.dismissedAt = dismissedAt;
+  }
+
+  public PrintJob dismissedByUserId(String dismissedByUserId) {
+    this.dismissedByUserId = JsonNullable.of(dismissedByUserId);
+    return this;
+  }
+
+  /**
+   * Get dismissedByUserId
+   * @return dismissedByUserId
+   */
+  
+  @JsonProperty("dismissedByUserId")
+  public JsonNullable<String> getDismissedByUserId() {
+    return dismissedByUserId;
+  }
+
+  public void setDismissedByUserId(JsonNullable<String> dismissedByUserId) {
+    this.dismissedByUserId = dismissedByUserId;
+  }
+
+  public PrintJob dismissNote(String dismissNote) {
+    this.dismissNote = JsonNullable.of(dismissNote);
+    return this;
+  }
+
+  /**
+   * Optional free-text context supplied at dismiss time (e.g. \"printer replaced 2026-09-02\").
+   * @return dismissNote
+   */
+  
+  @JsonProperty("dismissNote")
+  public JsonNullable<String> getDismissNote() {
+    return dismissNote;
+  }
+
+  public void setDismissNote(JsonNullable<String> dismissNote) {
+    this.dismissNote = dismissNote;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -252,12 +319,26 @@ public class PrintJob {
         Objects.equals(this.attempts, printJob.attempts) &&
         Objects.equals(this.lastError, printJob.lastError) &&
         Objects.equals(this.createdAt, printJob.createdAt) &&
-        Objects.equals(this.updatedAt, printJob.updatedAt);
+        Objects.equals(this.updatedAt, printJob.updatedAt) &&
+        equalsNullable(this.dismissedAt, printJob.dismissedAt) &&
+        equalsNullable(this.dismissedByUserId, printJob.dismissedByUserId) &&
+        equalsNullable(this.dismissNote, printJob.dismissNote);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, printerId, documentType, summary, status, attempts, lastError, createdAt, updatedAt);
+    return Objects.hash(id, printerId, documentType, summary, status, attempts, lastError, createdAt, updatedAt, hashCodeNullable(dismissedAt), hashCodeNullable(dismissedByUserId), hashCodeNullable(dismissNote));
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -273,6 +354,9 @@ public class PrintJob {
     sb.append("    lastError: ").append(toIndentedString(lastError)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
+    sb.append("    dismissedAt: ").append(toIndentedString(dismissedAt)).append("\n");
+    sb.append("    dismissedByUserId: ").append(toIndentedString(dismissedByUserId)).append("\n");
+    sb.append("    dismissNote: ").append(toIndentedString(dismissNote)).append("\n");
     sb.append("}");
     return sb.toString();
   }

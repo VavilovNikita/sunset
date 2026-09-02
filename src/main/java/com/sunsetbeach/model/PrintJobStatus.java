@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * PENDING = queued, either freshly created or waiting for the next automatic retry. SENT = delivered successfully (terminal). FAILED = automatic retries exhausted (terminal until a manual retry via `POST /print-jobs/{id}/retry` puts it back in play). 
+ * PENDING = queued, either freshly created or waiting for the next automatic retry. SENT = delivered successfully (terminal). FAILED = automatic retries exhausted - stays `FAILED` from here on regardless of what happens next: a manual retry (`POST /print-jobs/{id}/retry`) either succeeds (moves to `SENT`) or fails again, and dismissing it (`POST /print-jobs/dismiss`, see `PrintJob.dismissedAt`) doesn't change this value at all - it only stops the job counting as needing attention. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

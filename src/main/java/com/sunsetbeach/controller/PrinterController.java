@@ -1,6 +1,7 @@
 package com.sunsetbeach.controller;
 
 import com.sunsetbeach.api.PrintersApi;
+import com.sunsetbeach.model.DismissPrintJobsInput;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.PrintDocumentType;
 import com.sunsetbeach.model.PrintJob;
@@ -51,8 +52,14 @@ public class PrinterController implements PrintersApi {
     }
 
     @Override
-    public ResponseEntity<List<PrintJob>> listPrintJobs(PrintJobStatus status, PrintDocumentType documentType) {
-        return ResponseEntity.ok(printerService.listPrintJobs(status, documentType, CurrentUser.role()));
+    public ResponseEntity<List<PrintJob>> listPrintJobs(PrintJobStatus status, PrintDocumentType documentType, Boolean includeDismissed) {
+        return ResponseEntity.ok(printerService.listPrintJobs(status, documentType, Boolean.TRUE.equals(includeDismissed), CurrentUser.role()));
+    }
+
+    @Override
+    public ResponseEntity<List<PrintJob>> dismissPrintJobs(DismissPrintJobsInput dismissPrintJobsInput) {
+        return ResponseEntity.ok(
+                printerService.dismissPrintJobs(dismissPrintJobsInput.getIds(), dismissPrintJobsInput.getNote(), CurrentUser.role(), CurrentUser.id()));
     }
 
     @Override

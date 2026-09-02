@@ -34,7 +34,9 @@ public enum AuditEntityType {
   
   ROOM_UNIT("ROOM_UNIT"),
   
-  PROPERTY_MAP("PROPERTY_MAP");
+  PROPERTY_MAP("PROPERTY_MAP"),
+  
+  PRINT_JOB("PRINT_JOB");
 
   private String value;
 

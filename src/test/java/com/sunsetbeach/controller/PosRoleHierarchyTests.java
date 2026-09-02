@@ -1,6 +1,7 @@
 package com.sunsetbeach.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -26,6 +27,7 @@ import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.model.CloseOrderInput;
+import com.sunsetbeach.model.DismissPrintJobsInput;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.MenuItem;
 import com.sunsetbeach.model.MenuItemInput;
@@ -405,13 +407,13 @@ class PosRoleHierarchyTests {
     void listPrintJobs_withWaiterToken_isOk() throws Exception {
         // Unlike /printers/**, the queue itself is WAITER+ - PrinterService does the actual
         // per-role document-type filtering, not the security gate.
-        when(printerService.listPrintJobs(any(), any(), eq(Role.WAITER))).thenReturn(List.of());
+        when(printerService.listPrintJobs(any(), any(), anyBoolean(), eq(Role.WAITER))).thenReturn(List.of());
         mockMvc.perform(get("/print-jobs").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
     }
 
     @Test
     void listPrintJobs_withManagerToken_isOk() throws Exception {
-        when(printerService.listPrintJobs(any(), any(), eq(Role.MANAGER))).thenReturn(List.of());
+        when(printerService.listPrintJobs(any(), any(), anyBoolean(), eq(Role.MANAGER))).thenReturn(List.of());
         mockMvc.perform(get("/print-jobs").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
     }
 
@@ -425,6 +427,18 @@ class PosRoleHierarchyTests {
     void retryPrintJob_withWaiterToken_isOk() throws Exception {
         when(printerService.retryPrintJob(anyString(), eq(Role.WAITER))).thenReturn(samplePrintJob());
         mockMvc.perform(post("/print-jobs/job-1/retry").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    // Deliberately the same WAITER+ floor as retry, not a higher one - see dismissPrintJobs's
+    // javadoc (PrinterService) and the SecurityConfig comment for why.
+    @Test
+    void dismissPrintJobs_withWaiterToken_isOk() throws Exception {
+        when(printerService.dismissPrintJobs(any(), any(), eq(Role.WAITER), anyString())).thenReturn(List.of(samplePrintJob()));
+        mockMvc.perform(post("/print-jobs/dismiss")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new DismissPrintJobsInput(List.of("job-1")))))
+                .andExpect(status().isOk());
     }
 
     // --- GET /room-units and GET /room-units/{id} are open to any staff role, including WAITER

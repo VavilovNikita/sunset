@@ -47,6 +47,14 @@ public class PrintJobEntity {
     @UpdateTimestamp
     private LocalDateTime updatedAt;
 
+    // Closes a FAILED job as not-actionable without deleting it - see V31__print_job_dismiss.sql.
+    // Null dismissedAt is "not dismissed", the default; all three are set together, never alone.
+    private LocalDateTime dismissedAt;
+
+    private String dismissedByUserId;
+
+    private String dismissNote;
+
     public String getId() {
         return id;
     }
@@ -113,5 +121,29 @@ public class PrintJobEntity {
 
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
+    }
+
+    public LocalDateTime getDismissedAt() {
+        return dismissedAt;
+    }
+
+    public void setDismissedAt(LocalDateTime dismissedAt) {
+        this.dismissedAt = dismissedAt;
+    }
+
+    public String getDismissedByUserId() {
+        return dismissedByUserId;
+    }
+
+    public void setDismissedByUserId(String dismissedByUserId) {
+        this.dismissedByUserId = dismissedByUserId;
+    }
+
+    public String getDismissNote() {
+        return dismissNote;
+    }
+
+    public void setDismissNote(String dismissNote) {
+        this.dismissNote = dismissNote;
     }
 }

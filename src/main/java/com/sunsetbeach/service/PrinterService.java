@@ -2,11 +2,14 @@ package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.PrintJobEntity;
 import com.sunsetbeach.entity.PrinterEntity;
+import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.mapper.PrintJobMapper;
 import com.sunsetbeach.mapper.PrinterMapper;
 import com.sunsetbeach.mapper.TimestampFormat;
+import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.PrintDocumentType;
 import com.sunsetbeach.model.PrintJob;
 import com.sunsetbeach.model.PrintJobStatus;
@@ -18,7 +21,9 @@ import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.PrintJobRepository;
 import com.sunsetbeach.repository.PrinterRepository;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -43,18 +48,21 @@ public class PrinterService {
     private final PrinterMapper printerMapper;
     private final PrintJobMapper printJobMapper;
     private final PrintService printService;
+    private final AuditLogService auditLogService;
 
     public PrinterService(
             PrinterRepository printerRepository,
             PrintJobRepository printJobRepository,
             PrinterMapper printerMapper,
             PrintJobMapper printJobMapper,
-            PrintService printService) {
+            PrintService printService,
+            AuditLogService auditLogService) {
         this.printerRepository = printerRepository;
         this.printJobRepository = printJobRepository;
         this.printerMapper = printerMapper;
         this.printJobMapper = printJobMapper;
         this.printService = printService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -111,15 +119,67 @@ public class PrinterService {
     }
 
     @Transactional(readOnly = true)
-    public List<PrintJob> listPrintJobs(PrintJobStatus status, PrintDocumentType documentType, Role callerRole) {
+    public List<PrintJob> listPrintJobs(PrintJobStatus status, PrintDocumentType documentType, boolean includeDismissed, Role callerRole) {
         List<PrintJobEntity> jobs = status != null
                 ? printJobRepository.findByStatusOrderByCreatedAtDesc(status)
                 : printJobRepository.findAllByOrderByCreatedAtDesc();
         return jobs.stream()
                 .filter(job -> isVisible(job.getDocumentType(), callerRole))
                 .filter(job -> documentType == null || job.getDocumentType() == documentType)
+                .filter(job -> includeDismissed || job.getDismissedAt() == null)
                 .map(printJobMapper::toDto)
                 .toList();
+    }
+
+    /**
+     * Closes one or more FAILED jobs as not-actionable - a printer got replaced, the order
+     * already reached the guest, the kitchen was told by voice, so a retry would never help and
+     * the job would otherwise sit FAILED (and counted by every badge/banner built on that status)
+     * forever. Never deletes the row or changes {@code status} - PrintJob rows include guest
+     * receipts and Z-reports, whose history has to survive - only marks it and excludes it from
+     * {@link #listPrintJobs} by default. All-or-nothing across the whole {@code ids} list, same
+     * principle as {@code RoomService.uploadImages}/{@code RoomUnitService.savePositions}: every
+     * id is checked (visible to the caller's role, currently FAILED, not already dismissed)
+     * before any write happens, so a bulk close from a filtered view can't partially apply
+     * without the caller knowing.
+     */
+    @Transactional
+    public List<PrintJob> dismissPrintJobs(List<String> ids, String note, Role callerRole, String actorUserId) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BadRequestException("No print job ids provided");
+        }
+        List<String> distinctIds = List.copyOf(new LinkedHashSet<>(ids));
+
+        List<PrintJobEntity> jobs = new ArrayList<>();
+        for (String id : distinctIds) {
+            PrintJobEntity job = findVisibleOrThrow(id, callerRole);
+            if (job.getStatus() != PrintJobStatus.FAILED) {
+                throw new ConflictException("Only a FAILED print job can be dismissed (" + id + " is " + job.getStatus().getValue() + ")");
+            }
+            if (job.getDismissedAt() != null) {
+                throw new ConflictException("Print job " + id + " is already dismissed");
+            }
+            jobs.add(job);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        List<PrintJob> dismissed = new ArrayList<>();
+        for (PrintJobEntity job : jobs) {
+            job.setDismissedAt(now);
+            job.setDismissedByUserId(actorUserId);
+            job.setDismissNote(note);
+            PrintJobEntity saved = printJobRepository.save(job);
+
+            auditLogService.record(
+                    AuditAction.PRINT_JOB_DISMISSED,
+                    AuditEntityType.PRINT_JOB,
+                    saved.getId(),
+                    "Dismissed failed " + saved.getDocumentType().getValue().toLowerCase() + " print job (" + saved.getSummary() + ")"
+                            + (note != null && !note.isBlank() ? " - " + note : ""));
+            dismissed.add(printJobMapper.toDto(saved));
+        }
+        printJobRepository.flush();
+        return dismissed;
     }
 
     @Transactional

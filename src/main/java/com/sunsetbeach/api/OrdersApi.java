@@ -415,7 +415,7 @@ public interface OrdersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"attempted\" : true, \"job\" : { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } }";
+                    String exampleString = "{ \"attempted\" : true, \"job\" : { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"dismissNote\" : \"dismissNote\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"dismissedByUserId\" : \"dismissedByUserId\", \"dismissedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

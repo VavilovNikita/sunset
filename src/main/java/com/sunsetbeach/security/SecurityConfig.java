@@ -208,7 +208,13 @@ public class SecurityConfig {
                         // printer) is MANAGER-only. The print-job queue is WAITER+ - any staff role may
                         // view/retry it, but PrinterService itself filters what a non-MANAGER caller can
                         // see/retry down to KITCHEN_TICKET/BAR_TICKET/PREBILL (Z-reports and guest receipts are
-                        // cashier/management information - see PrinterService#isVisible).
+                        // cashier/management information - see PrinterService#isVisible). POST
+                        // /print-jobs/dismiss needs no separate rule - it's the same WAITER+ floor as
+                        // retry, deliberately not raised: a dismissal can only ever touch a document type
+                        // the caller could already see and retry, so the blast radius of a wrong one is
+                        // already bounded, and the front-line staff working the floor (who told the
+                        // kitchen by voice, who knows the printer was swapped) are exactly who should be
+                        // able to close it without escalating to a manager - see dismissPrintJobs's javadoc.
                         .requestMatchers("/printers/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/print-jobs/**").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())
                         // GET /auth/me is the one endpoint outside all the tag groups above - any

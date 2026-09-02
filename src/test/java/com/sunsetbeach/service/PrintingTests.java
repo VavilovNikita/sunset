@@ -4,13 +4,18 @@ import com.sunsetbeach.AbstractIntegrationTest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
+
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.PrintJobEntity;
 import com.sunsetbeach.entity.PrinterEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.UserEntity;
+import com.sunsetbeach.error.BadRequestException;
+import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.MenuDepartment;
@@ -30,12 +35,14 @@ import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.Shift;
 import com.sunsetbeach.model.ShiftCloseInput;
 import com.sunsetbeach.model.ShiftOpenInput;
+import com.sunsetbeach.repository.AuditLogRepository;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.PrintJobRepository;
 import com.sunsetbeach.repository.PrinterRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.UserRepository;
+import com.sunsetbeach.security.StaffPrincipal;
 import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -43,13 +50,17 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Transactional;
@@ -106,9 +117,18 @@ class PrintingTests extends AbstractIntegrationTest {
     @Autowired
     private EntityManager entityManager;
 
+    @Autowired
+    private AuditLogRepository auditLogRepository;
+
     private UserEntity cashier;
     private MenuItemEntity kitchenItem;
     private MenuItemEntity barItem;
+
+    // AuditLogService#record runs REQUIRES_NEW (see its own javadoc) - it commits independently
+    // of this test's @Transactional rollback, so anything that dismisses a print job during a
+    // test leaves a real, permanent row in the dev DB unless cleaned up by hand. Same pattern as
+    // UserRoomUnitAuditLogTests's own @AfterEach.
+    private final List<String> dismissedJobIdsForAuditCleanup = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -120,6 +140,23 @@ class PrintingTests extends AbstractIntegrationTest {
 
         kitchenItem = persistMenuItem("Caesar Salad", MenuDepartment.KITCHEN, "100.00");
         barItem = persistMenuItem("Mojito", MenuDepartment.BAR, "100.00");
+
+        // AuditLogService#record reads the acting user off the security context itself (same
+        // pattern as everywhere else this session) - without this, dismissPrintJobs's audit call
+        // finds no authentication, throws inside record()'s own try block, and (per record()'s
+        // fail-open contract) that failure is silently swallowed, so no row is ever written.
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(new StaffPrincipal(cashier.getId(), cashier.getEmail(), Role.CASHIER), null, List.of()));
+    }
+
+    @AfterEach
+    void cleanUpAuditLog() {
+        SecurityContextHolder.clearContext();
+        for (String jobId : dismissedJobIdsForAuditCleanup) {
+            auditLogRepository.deleteAll(auditLogRepository.findAll().stream()
+                    .filter(e -> e.getEntityType() == AuditEntityType.PRINT_JOB && jobId.equals(e.getEntityId()))
+                    .toList());
+        }
     }
 
     // --- Ticket routing by MenuItem.department ---
@@ -293,6 +330,132 @@ class PrintingTests extends AbstractIntegrationTest {
         }
     }
 
+    // --- Dismiss: closes a FAILED job as not-actionable without deleting it or changing status ---
+
+    private PrintJobEntity persistFailedJob() throws IOException {
+        persistPrinter(PrinterDepartment.KITCHEN, unreachablePort());
+        Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+        orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+        sendOrder(order.getId());
+        return jobsFor(order.getId()).get(0);
+    }
+
+    @Test
+    void dismissPrintJobs_failedJob_marksItButNeverChangesStatus_andWritesOneAuditEntry() throws IOException {
+        PrintJobEntity failed = persistFailedJob();
+        dismissedJobIdsForAuditCleanup.add(failed.getId());
+
+        List<PrintJob> dismissed =
+                printerService.dismissPrintJobs(List.of(failed.getId()), "printer replaced", Role.WAITER, cashier.getId());
+
+        assertThat(dismissed).hasSize(1);
+        PrintJob job = dismissed.get(0);
+        assertThat(job.getStatus()).isEqualTo(PrintJobStatus.FAILED); // dismiss never touches status
+        assertThat(job.getDismissedAt().orElse(null)).isNotNull();
+        assertThat(job.getDismissedByUserId().orElse(null)).isEqualTo(cashier.getId());
+        assertThat(job.getDismissNote().orElse(null)).isEqualTo("printer replaced");
+
+        List<com.sunsetbeach.entity.AuditLogEntity> entries = auditLogRepository.findAll().stream()
+                .filter(e -> e.getEntityType() == AuditEntityType.PRINT_JOB && failed.getId().equals(e.getEntityId()))
+                .toList();
+        assertThat(entries).hasSize(1);
+        assertThat(entries.get(0).getSummary()).contains("printer replaced");
+    }
+
+    @Test
+    void dismissPrintJobs_excludedFromDefaultAndFailedFilterList_butVisibleWithIncludeDismissed() throws IOException {
+        PrintJobEntity failed = persistFailedJob();
+        dismissedJobIdsForAuditCleanup.add(failed.getId());
+        printerService.dismissPrintJobs(List.of(failed.getId()), null, Role.WAITER, cashier.getId());
+
+        assertThat(printerService.listPrintJobs(null, null, false, Role.MANAGER))
+                .extracting(PrintJob::getId).doesNotContain(failed.getId());
+        assertThat(printerService.listPrintJobs(PrintJobStatus.FAILED, null, false, Role.MANAGER))
+                .extracting(PrintJob::getId).doesNotContain(failed.getId());
+        assertThat(printerService.listPrintJobs(PrintJobStatus.FAILED, null, true, Role.MANAGER))
+                .extracting(PrintJob::getId).contains(failed.getId());
+    }
+
+    @Test
+    void dismissPrintJobs_bulk_dismissesEveryJobInOneCall() throws IOException {
+        PrintJobEntity a = persistFailedJob();
+        PrintJobEntity b = persistFailedJob();
+        PrintJobEntity c = persistFailedJob();
+        dismissedJobIdsForAuditCleanup.addAll(List.of(a.getId(), b.getId(), c.getId()));
+
+        List<PrintJob> dismissed =
+                printerService.dismissPrintJobs(List.of(a.getId(), b.getId(), c.getId()), null, Role.WAITER, cashier.getId());
+
+        assertThat(dismissed).hasSize(3);
+        assertThat(dismissed).allSatisfy(j -> assertThat(j.getDismissedAt().orElse(null)).isNotNull());
+    }
+
+    @Test
+    void dismissPrintJobs_nonFailedJob_isRejected() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+            sendOrder(order.getId());
+            PrintJobEntity sentJob = jobsFor(order.getId()).get(0);
+            assertThat(sentJob.getStatus()).isEqualTo(PrintJobStatus.SENT);
+
+            assertThatThrownBy(() -> printerService.dismissPrintJobs(List.of(sentJob.getId()), null, Role.WAITER, cashier.getId()))
+                    .isInstanceOf(ConflictException.class);
+        }
+    }
+
+    @Test
+    void dismissPrintJobs_alreadyDismissed_isRejected() throws IOException {
+        PrintJobEntity failed = persistFailedJob();
+        dismissedJobIdsForAuditCleanup.add(failed.getId());
+        printerService.dismissPrintJobs(List.of(failed.getId()), null, Role.WAITER, cashier.getId());
+
+        assertThatThrownBy(() -> printerService.dismissPrintJobs(List.of(failed.getId()), null, Role.WAITER, cashier.getId()))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void dismissPrintJobs_allOrNothing_oneInvalidIdInABatchRejectsTheWholeCall() throws IOException {
+        PrintJobEntity valid1 = persistFailedJob();
+        PrintJobEntity valid2 = persistFailedJob();
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.BAR, fake.port());
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(barItem.getId(), 1)));
+            sendOrder(order.getId());
+            PrintJobEntity notFailed = jobsFor(order.getId()).get(0); // SENT - not dismissable
+
+            assertThatThrownBy(() -> printerService.dismissPrintJobs(
+                            List.of(valid1.getId(), notFailed.getId(), valid2.getId()), null, Role.WAITER, cashier.getId()))
+                    .isInstanceOf(ConflictException.class);
+        }
+
+        // Neither of the otherwise-valid jobs was dismissed - the rejected id must not have a
+        // partial effect on the rest of the batch.
+        assertThat(printJobRepository.findById(valid1.getId()).orElseThrow().getDismissedAt()).isNull();
+        assertThat(printJobRepository.findById(valid2.getId()).orElseThrow().getDismissedAt()).isNull();
+    }
+
+    @Test
+    void dismissPrintJobs_emptyIds_isRejected() {
+        assertThatThrownBy(() -> printerService.dismissPrintJobs(List.of(), null, Role.WAITER, cashier.getId()))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void dismissPrintJobs_waiterRole_documentTypeNotVisible_throwsNotFound_managerCanStillDismissIt() throws IOException {
+        PrinterEntity printer = persistPrinter(PrinterDepartment.CASHIER, unreachablePort());
+        PrintJob testPageJob = printerService.testPrint(printer.getId()); // TEST_PAGE - not staff-visible
+        dismissedJobIdsForAuditCleanup.add(testPageJob.getId());
+
+        assertThatThrownBy(() -> printerService.dismissPrintJobs(List.of(testPageJob.getId()), null, Role.WAITER, cashier.getId()))
+                .isInstanceOf(NotFoundException.class);
+
+        List<PrintJob> dismissed = printerService.dismissPrintJobs(List.of(testPageJob.getId()), null, Role.MANAGER, cashier.getId());
+        assertThat(dismissed).hasSize(1);
+    }
+
     // --- Z-report: same reconciliation numbers as the CSV export, ROOM_CHARGE excluded from received money ---
 
     @Test
@@ -390,7 +553,7 @@ class PrintingTests extends AbstractIntegrationTest {
             // trying the feature), so these assert set membership, not exact composition -
             // KITCHEN_TICKET/BAR_TICKET/PREBILL can legitimately be visible from elsewhere;
             // Z_REPORT/GUEST_RECEIPT must never be, no matter what else is in the table.
-            List<PrintJob> waiterView = printerService.listPrintJobs(null, null, Role.WAITER);
+            List<PrintJob> waiterView = printerService.listPrintJobs(null, null, false, Role.WAITER);
             assertThat(waiterView)
                     .extracting(PrintJob::getDocumentType)
                     .contains(PrintDocumentType.KITCHEN_TICKET, PrintDocumentType.BAR_TICKET);
@@ -398,14 +561,14 @@ class PrintingTests extends AbstractIntegrationTest {
                     .extracting(PrintJob::getDocumentType)
                     .doesNotContain(PrintDocumentType.Z_REPORT, PrintDocumentType.GUEST_RECEIPT, PrintDocumentType.TEST_PAGE);
             // Same filtering for CASHIER - only MANAGER/ADMIN get the cashier-facing documents.
-            List<PrintJob> cashierView = printerService.listPrintJobs(null, null, Role.CASHIER);
+            List<PrintJob> cashierView = printerService.listPrintJobs(null, null, false, Role.CASHIER);
             assertThat(cashierView)
                     .extracting(PrintJob::getDocumentType)
                     .doesNotContain(PrintDocumentType.Z_REPORT, PrintDocumentType.GUEST_RECEIPT, PrintDocumentType.TEST_PAGE);
             // No money in what a waiter is allowed to see - a kitchen/bar ticket's summary is just "what and where".
             assertThat(waiterView).extracting(PrintJob::getSummary).noneMatch(s -> s.matches(".*\\d+\\.\\d{2}.*"));
 
-            List<PrintJob> managerView = printerService.listPrintJobs(null, null, Role.MANAGER);
+            List<PrintJob> managerView = printerService.listPrintJobs(null, null, false, Role.MANAGER);
             assertThat(managerView)
                     .extracting(PrintJob::getDocumentType)
                     .contains(
@@ -415,11 +578,11 @@ class PrintingTests extends AbstractIntegrationTest {
                             PrintDocumentType.Z_REPORT);
 
             // ?documentType= actually filters, not just ?status=.
-            List<PrintJob> zReportsOnly = printerService.listPrintJobs(null, PrintDocumentType.Z_REPORT, Role.MANAGER);
+            List<PrintJob> zReportsOnly = printerService.listPrintJobs(null, PrintDocumentType.Z_REPORT, false, Role.MANAGER);
             assertThat(zReportsOnly).extracting(PrintJob::getDocumentType).containsOnly(PrintDocumentType.Z_REPORT);
 
             // ?documentType=BAR_TICKET returns bar tickets only - not the kitchen ticket from the same order.
-            List<PrintJob> barTicketsOnly = printerService.listPrintJobs(null, PrintDocumentType.BAR_TICKET, Role.WAITER);
+            List<PrintJob> barTicketsOnly = printerService.listPrintJobs(null, PrintDocumentType.BAR_TICKET, false, Role.WAITER);
             assertThat(barTicketsOnly).extracting(PrintJob::getDocumentType).containsOnly(PrintDocumentType.BAR_TICKET);
 
             // A CASH guest receipt's summary names the payment method - distinguishable from a room-charge one at a glance.
@@ -461,7 +624,7 @@ class PrintingTests extends AbstractIntegrationTest {
             orderService.close(
                     order.getId(), new CloseOrderInput(PaymentMethod.ROOM_CHARGE).bookingId(booking.getId()), cashier.getId());
 
-            PrintJob receipt = printerService.listPrintJobs(null, PrintDocumentType.GUEST_RECEIPT, Role.MANAGER).stream()
+            PrintJob receipt = printerService.listPrintJobs(null, PrintDocumentType.GUEST_RECEIPT, false, Role.MANAGER).stream()
                     .findFirst()
                     .orElseThrow();
             assertThat(receipt.getSummary()).contains("ROOM_CHARGE").contains("Jane Doe");
