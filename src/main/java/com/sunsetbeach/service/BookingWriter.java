@@ -2,6 +2,7 @@ package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
+import com.sunsetbeach.entity.BookingSegmentNightlyRateEntity;
 import com.sunsetbeach.entity.BookingSource;
 import com.sunsetbeach.entity.RatePlanEntity;
 import com.sunsetbeach.entity.RoomEntity;
@@ -12,6 +13,7 @@ import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.BookingSegmentNightlyRateRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.RatePlanRepository;
 import com.sunsetbeach.repository.RoomRepository;
@@ -21,9 +23,13 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +48,25 @@ import org.springframework.transaction.annotation.Transactional;
  * = the *last* segment's) by {@link #syncBookingFromSegments}, called after every write here -
  * every other reader of those columns (CSV export, emails, folio, audit summaries) keeps working
  * unchanged. Occupancy/availability and pricing run against segments, not the booking row.
+ *
+ * <p><b>Nightly price snapshots.</b> Each segment's {@code totalPrice} is a cached sum of its own
+ * {@link BookingSegmentNightlyRateEntity} rows - one frozen price per night, first written when
+ * that night becomes part of the booking (insert, an extension, or a relocation's new segment).
+ * This replaced a design where every schedule-touching write recomputed a segment's *entire*
+ * range from current {@code RatePlan}/{@code Room.basePrice} rates - which silently repriced
+ * nights the guest had already been quoted any time a rate changed after booking and staff later
+ * extended, shrank, or relocated that stay.
+ *
+ * <p>The rule is about whether a night's *room* changes, not merely whether a write touches it:
+ * a night keeps whatever price it was last given until either (a) it's dropped from the booking
+ * entirely (shrinking - its row is just deleted, nothing recomputed), (b) it's assigned to a
+ * genuinely new room for the first time (extending, or a relocation's new segment - priced fresh
+ * at today's rate, because there is no earlier agreement for that room to honor), or (c) a
+ * manager explicitly asks to reprice it. Moving a night *out* of a segment during a relocation
+ * does not delete its row - see {@link #relocate}'s javadoc - specifically so {@link
+ * #undoRelocation} can restore that exact original price later instead of re-deriving one:
+ * reverting a room is not a new agreement with the guest, it's correcting the record, and gets
+ * the room's history back, not its current rate.
  *
  * <p><b>{@code assignRoomUnit}/{@code unassignRoomUnit} only operate on a booking with exactly
  * one segment.</b> Once a booking has been relocated, "the room" is no longer a single
@@ -73,6 +98,7 @@ public class BookingWriter {
     private final RoomUnitBlockRepository roomUnitBlockRepository;
     private final BookingRepository bookingRepository;
     private final BookingSegmentRepository segmentRepository;
+    private final BookingSegmentNightlyRateRepository nightlyRateRepository;
     private final RatePlanRepository ratePlanRepository;
 
     public BookingWriter(
@@ -81,12 +107,14 @@ public class BookingWriter {
             RoomUnitBlockRepository roomUnitBlockRepository,
             BookingRepository bookingRepository,
             BookingSegmentRepository segmentRepository,
+            BookingSegmentNightlyRateRepository nightlyRateRepository,
             RatePlanRepository ratePlanRepository) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
         this.bookingRepository = bookingRepository;
         this.segmentRepository = segmentRepository;
+        this.nightlyRateRepository = nightlyRateRepository;
         this.ratePlanRepository = ratePlanRepository;
     }
 
@@ -97,9 +125,11 @@ public class BookingWriter {
         if (!isRangeAvailable(room.getId(), unitCount, checkIn, checkOut, null)) {
             throw new ConflictException("Selected dates are no longer available");
         }
-        BookingEntity entity = newBookingEntity(room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.PUBLIC);
+        Map<LocalDate, BigDecimal> nightlyPrices = priceNightsAtCurrentRate(room, DateRangeUtil.getNights(checkIn, checkOut));
+        BookingEntity entity =
+                newBookingEntity(room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.PUBLIC, sumPrices(nightlyPrices));
         BookingEntity saved = bookingRepository.saveAndFlush(entity);
-        saveSegment(saved.getId(), room.getId(), null, checkIn, checkOut, saved.getTotalPrice());
+        saveSegment(saved.getId(), room.getId(), null, checkIn, checkOut, nightlyPrices);
         return saved;
     }
 
@@ -124,7 +154,9 @@ public class BookingWriter {
         if (!isRangeAvailable(room.getId(), unitCount, checkIn, checkOut, null)) {
             throw new ConflictException("Selected dates are no longer available");
         }
-        BookingEntity entity = newBookingEntity(room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.STAFF);
+        Map<LocalDate, BigDecimal> nightlyPrices = priceNightsAtCurrentRate(room, DateRangeUtil.getNights(checkIn, checkOut));
+        BookingEntity entity =
+                newBookingEntity(room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.STAFF, sumPrices(nightlyPrices));
 
         String assignedUnitId = null;
         if (roomUnitId != null) {
@@ -136,7 +168,7 @@ public class BookingWriter {
             assignedUnitId = unit.getId();
         }
         BookingEntity saved = bookingRepository.saveAndFlush(entity);
-        saveSegment(saved.getId(), room.getId(), assignedUnitId, checkIn, checkOut, saved.getTotalPrice());
+        saveSegment(saved.getId(), room.getId(), assignedUnitId, checkIn, checkOut, nightlyPrices);
         return saved;
     }
 
@@ -147,7 +179,8 @@ public class BookingWriter {
             String guestPhone,
             LocalDate checkIn,
             LocalDate checkOut,
-            BookingSource source) {
+            BookingSource source,
+            BigDecimal totalPrice) {
         BookingEntity entity = new BookingEntity();
         entity.setRoomId(room.getId());
         entity.setGuestName(guestName);
@@ -155,22 +188,24 @@ public class BookingWriter {
         entity.setGuestPhone(guestPhone);
         entity.setCheckIn(checkIn);
         entity.setCheckOut(checkOut);
-        entity.setTotalPrice(computeTotalPrice(room, checkIn, checkOut));
+        entity.setTotalPrice(totalPrice);
         entity.setStatus(BookingStatus.NEW);
         entity.setSource(source);
         return entity;
     }
 
     private BookingSegmentEntity saveSegment(
-            String bookingId, String roomId, String roomUnitId, LocalDate checkIn, LocalDate checkOut, BigDecimal totalPrice) {
+            String bookingId, String roomId, String roomUnitId, LocalDate checkIn, LocalDate checkOut, Map<LocalDate, BigDecimal> nightlyPrices) {
         BookingSegmentEntity segment = new BookingSegmentEntity();
         segment.setBookingId(bookingId);
         segment.setRoomId(roomId);
         segment.setRoomUnitId(roomUnitId);
         segment.setCheckIn(checkIn);
         segment.setCheckOut(checkOut);
-        segment.setTotalPrice(totalPrice);
-        return segmentRepository.saveAndFlush(segment);
+        segment.setTotalPrice(sumPrices(nightlyPrices));
+        BookingSegmentEntity saved = segmentRepository.saveAndFlush(segment);
+        saveNightlyRates(saved.getId(), nightlyPrices);
+        return saved;
     }
 
     /**
@@ -244,10 +279,28 @@ public class BookingWriter {
             segment.setRoomUnitId(null);
         }
 
+        // Only the nights actually being added/removed by this change are touched - see
+        // repriceSchedule and the class javadoc's "Nightly price snapshots" section. Everything
+        // else about the segment (its remaining nights' own frozen prices) is left exactly as it
+        // was, which is the whole point: this used to recompute the segment's *entire* new range
+        // from current rates, silently repricing nights nobody asked to reprice.
+        ScheduleReprice reprice = repriceSchedule(segment, room, segCheckIn, segCheckOut);
         segment.setCheckIn(segCheckIn);
         segment.setCheckOut(segCheckOut);
-        segment.setTotalPrice(computeTotalPrice(room, segCheckIn, segCheckOut));
+        segment.setTotalPrice(reprice.newSegmentTotal());
         segmentRepository.saveAndFlush(segment);
+        if (!reprice.nightsToRemove().isEmpty()) {
+            // Flushed immediately, not left for Hibernate's own action ordering to sort out: a
+            // single flush runs every pending insert before every pending delete regardless of
+            // the order they were registered in, which would collide with the unique
+            // (segmentId, date) constraint if this ever removed and re-added the same date (see
+            // reprice's identical delete-then-insert-the-same-dates shape, where it does).
+            nightlyRateRepository.deleteBySegmentIdAndDateIn(segment.getId(), reprice.nightsToRemove());
+            nightlyRateRepository.flush();
+        }
+        if (!reprice.nightsToAdd().isEmpty()) {
+            saveNightlyRates(segment.getId(), reprice.addedPrices());
+        }
 
         // Unlike relocate/undoRelocation (whose split point is always interior, so the booking's
         // overall checkIn/checkOut never move, making an assert-then-sync order the meaningful
@@ -264,10 +317,10 @@ public class BookingWriter {
     /**
      * Read-only, advisory preview for {@code POST /bookings/{id}/schedule/quote} - runs the
      * exact same checks as {@link #updateSchedule} (sharing {@link #checkUnitAssignable}/
-     * {@link #isRangeAvailable}/{@link #resolveScheduleTarget} so the two cannot drift apart),
-     * but never writes and never throws on an unavailable result: it reports
-     * {@code available=false} with a reason instead - "no" is a valid answer to a preview,
-     * including "no, that would touch more than one segment."
+     * {@link #isRangeAvailable}/{@link #resolveScheduleTarget}/{@link #repriceSchedule} so the
+     * two cannot drift apart), but never writes and never throws on an unavailable result: it
+     * reports {@code available=false} with a reason instead - "no" is a valid answer to a
+     * preview, including "no, that would touch more than one segment."
      */
     @Transactional(readOnly = true)
     public ScheduleQuote quoteSchedule(String bookingId, LocalDate newCheckIn, LocalDate newCheckOut, String roomUnitId) {
@@ -284,12 +337,12 @@ public class BookingWriter {
         LocalDate segCheckOut = target.segmentCheckOut();
         RoomEntity room = roomRepository.findById(segment.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
 
-        BigDecimal segmentPrice = computeTotalPrice(room, segCheckIn, segCheckOut);
+        ScheduleReprice reprice = repriceSchedule(segment, room, segCheckIn, segCheckOut);
         BigDecimal othersTotal = segments.stream()
                 .filter(s -> !s.getId().equals(segment.getId()))
                 .map(BookingSegmentEntity::getTotalPrice)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalPrice = othersTotal.add(segmentPrice);
+        BigDecimal totalPrice = othersTotal.add(reprice.newSegmentTotal());
         int nights = DateRangeUtil.getNights(newCheckIn, newCheckOut).size();
 
         int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
@@ -375,13 +428,47 @@ public class BookingWriter {
     }
 
     /**
+     * What a schedule change (extend/shrink one edge of {@code segment} to {@code newCheckIn}/
+     * {@code newCheckOut}) would do to that segment's price - shared by {@link #updateSchedule}
+     * and {@link #quoteSchedule} so the two price a change identically, the same reasoning
+     * {@link #resolveScheduleTarget} is already shared for. Computed as a set difference against
+     * the segment's *current* nights, not just its edge (correct even in the never-actually-
+     * reachable case of a request that doesn't overlap the old range at all): nights present in
+     * both old and new are untouched, nights only in the new range are priced at today's rate,
+     * nights only in the old range are dropped with no repricing of anything else.
+     */
+    private ScheduleReprice repriceSchedule(BookingSegmentEntity segment, RoomEntity room, LocalDate newCheckIn, LocalDate newCheckOut) {
+        List<LocalDate> oldNights = DateRangeUtil.getNights(segment.getCheckIn(), segment.getCheckOut());
+        List<LocalDate> newNights = DateRangeUtil.getNights(newCheckIn, newCheckOut);
+        Set<LocalDate> oldSet = new HashSet<>(oldNights);
+        Set<LocalDate> newSet = new HashSet<>(newNights);
+        List<LocalDate> nightsToAdd = newNights.stream().filter(n -> !oldSet.contains(n)).toList();
+        List<LocalDate> nightsToRemove = oldNights.stream().filter(n -> !newSet.contains(n)).toList();
+
+        Map<LocalDate, BigDecimal> existingRates = existingRatesByDate(segment.getId());
+        BigDecimal removedSum = nightsToRemove.stream().map(existingRates::get).reduce(BigDecimal.ZERO, BigDecimal::add);
+        Map<LocalDate, BigDecimal> addedPrices = priceNightsAtCurrentRate(room, nightsToAdd);
+        BigDecimal newTotal = segment.getTotalPrice().subtract(removedSum).add(sumPrices(addedPrices));
+        return new ScheduleReprice(newTotal, nightsToAdd, addedPrices, nightsToRemove);
+    }
+
+    /** Result of {@link #repriceSchedule}. */
+    private record ScheduleReprice(
+            BigDecimal newSegmentTotal, List<LocalDate> nightsToAdd, Map<LocalDate, BigDecimal> addedPrices, List<LocalDate> nightsToRemove) {
+    }
+
+    /**
      * Splits the segment covering {@code effectiveDate} into two: the existing room/unit keeps
-     * {@code [oldCheckIn, effectiveDate)}, and a new segment for {@code [effectiveDate,
-     * oldCheckOut)} takes {@code newRoomId}/{@code newRoomUnitId} - a guest moving to a
-     * different room (possibly a different room *type*, hence a different price) partway
-     * through their stay. Same three checks as {@link #assignRoomUnit} against the *new*
-     * room/unit for the new segment's date range, same SERIALIZABLE race-safety as
-     * {@link #insert}.
+     * {@code [oldCheckIn, effectiveDate)} at whatever it was already priced, and a new segment
+     * for {@code [effectiveDate, oldCheckOut)} takes {@code newRoomId}/{@code newRoomUnitId},
+     * priced fresh at today's rate (a genuinely new agreement - a guest moving to a different
+     * room, possibly a different room *type*, is exactly the case where a price change is
+     * warranted, but only for the nights after the move). The truncated segment's own rows for
+     * the nights it's giving up are deliberately left in place, not deleted, even though they now
+     * fall outside its {@code [checkIn, checkOut)} range - see {@link #undoRelocation}'s comment
+     * for why keeping them is what makes undoing this relocation later a real undo. Same three
+     * checks as {@link #assignRoomUnit} against the *new* room/unit for the new segment's date
+     * range, same SERIALIZABLE race-safety as {@link #insert}.
      */
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public RelocationResult relocate(String bookingId, LocalDate effectiveDate, String newRoomId, String newRoomUnitId) {
@@ -414,11 +501,18 @@ public class BookingWriter {
                 ? roomUnitRepository.findById(target.getRoomUnitId()).map(RoomUnitEntity::getLabel).orElse(null)
                 : null;
 
+        List<LocalDate> movedOutNights = DateRangeUtil.getNights(effectiveDate, target.getCheckOut());
+        BigDecimal movedOutSum =
+                movedOutNights.stream().map(existingRatesByDate(target.getId())::get).reduce(BigDecimal.ZERO, BigDecimal::add);
         target.setCheckOut(effectiveDate);
-        target.setTotalPrice(computeTotalPrice(oldRoom, target.getCheckIn(), effectiveDate));
+        target.setTotalPrice(target.getTotalPrice().subtract(movedOutSum));
         segmentRepository.saveAndFlush(target);
+        // No delete here - see the class/method javadoc. These rows are the guest's original
+        // price for these specific nights; keeping them around (inert, since they're now outside
+        // target's own checkIn/checkOut) is what undoRelocation restores from.
+
         saveSegment(bookingId, newRoom.getId(), newUnit != null ? newUnit.getId() : null, newSegCheckIn, newSegCheckOut,
-                computeTotalPrice(newRoom, newSegCheckIn, newSegCheckOut));
+                priceNightsAtCurrentRate(newRoom, DateRangeUtil.getNights(newSegCheckIn, newSegCheckOut)));
 
         List<BookingSegmentEntity> updated = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
         assertContinuity(booking, updated);
@@ -455,9 +549,11 @@ public class BookingWriter {
         LocalDate newSegCheckOut = target.getCheckOut();
         int nights = DateRangeUtil.getNights(newSegCheckIn, newSegCheckOut).size();
 
-        RoomEntity oldRoom = roomRepository.findById(target.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
-        BigDecimal shrunkOldSegmentPrice = computeTotalPrice(oldRoom, target.getCheckIn(), effectiveDate);
-        BigDecimal newSegmentPrice = computeTotalPrice(newRoom, newSegCheckIn, newSegCheckOut);
+        List<LocalDate> movedOutNights = DateRangeUtil.getNights(effectiveDate, target.getCheckOut());
+        BigDecimal movedOutSum =
+                movedOutNights.stream().map(existingRatesByDate(target.getId())::get).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal shrunkOldSegmentPrice = target.getTotalPrice().subtract(movedOutSum);
+        BigDecimal newSegmentPrice = sumPrices(priceNightsAtCurrentRate(newRoom, DateRangeUtil.getNights(newSegCheckIn, newSegCheckOut)));
         BigDecimal othersTotal = segments.stream()
                 .filter(s -> !s.getId().equals(target.getId()))
                 .map(BookingSegmentEntity::getTotalPrice)
@@ -481,11 +577,38 @@ public class BookingWriter {
     /**
      * The inverse of {@link #relocate}: merges the two segments meeting at {@code splitDate}
      * back into one, keeping the *earlier* segment's room (undoing a relocation means "this move
-     * didn't happen," so the room reverts to what covered that whole span before it). Not a
-     * no-op write: the earlier room's unit/type may no longer be free for the range it's about
-     * to re-absorb (someone else could have booked it in the meantime, since the relocation made
-     * it look free), so this re-runs the same availability check {@link #relocate} does, under
-     * the same SERIALIZABLE isolation.
+     * didn't happen," so the room reverts to what covered that whole span before it).
+     *
+     * <p><b>Pricing is a real restore, not a reprice.</b> An earlier version of this method
+     * treated undo as symmetric with {@link #relocate}'s own "new room, new price" rule - reason
+     * being, reverting a room is itself a new room assignment. That reasoning is correct for a
+     * forward relocation (the guest is genuinely moving and agreeing to a new room's terms), but
+     * wrong here: nothing physically happens when an undo is applied - it corrects a record or
+     * reverses a decision that was just made, not a fresh agreement with the guest. Under the old
+     * rule, a rate hike between the relocation and its undo would hand the guest a bill for a
+     * night they never asked to be repriced, which is exactly the class of bug this whole nightly-
+     * snapshot design exists to prevent. The only reason that mistake shipped once already is that
+     * the test guarding this method predates nightly snapshots entirely - it was written when
+     * *every* schedule-touching write repriced wholesale, so it happened to still pass under the
+     * new "reprice on revert" rule too (its rates never changed mid-test) without actually
+     * testing which rule was right. A green test that predates the design decision it's being
+     * used to justify does not confirm that decision - it just failed to contradict it once. Get
+     * an explicit test for the case that actually distinguishes them (a rate hike between
+     * relocate and undo) before trusting either behavior.
+     *
+     * <p>Given that, undo restores {@code after}'s nights to whatever they cost under {@code
+     * before}'s room *before* the relocation moved them out - {@link #relocate} deliberately
+     * leaves the truncated segment's own rows in place for exactly this (see its own javadoc),
+     * so the original price is normally still sitting right there under {@code before}'s segment
+     * id, just outside its current {@code checkOut}; restoring it is a lookup, not a
+     * recomputation. The one exception is a night whose original row genuinely isn't there
+     * (a relocation from before this design existed, or some other gap) - that night alone falls
+     * back to today's rate for the reverted room, the same way a never-previously-owned night
+     * would; it's the best available answer once the real history is gone, not a silent
+     * assumption that it never existed. Not a no-op write otherwise: the earlier room's unit/type
+     * may no longer be free for the range it's about to re-absorb (someone else could have booked
+     * it in the meantime, since the relocation made it look free), so this re-runs the same
+     * availability check {@link #relocate} does, under the same SERIALIZABLE isolation.
      */
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public RelocationResult undoRelocation(String bookingId, LocalDate splitDate) {
@@ -501,7 +624,6 @@ public class BookingWriter {
         String discardedUnitLabel = after.getRoomUnitId() != null
                 ? roomUnitRepository.findById(after.getRoomUnitId()).map(RoomUnitEntity::getLabel).orElse(null)
                 : null;
-        LocalDate mergedCheckIn = before.getCheckIn();
         LocalDate mergedCheckOut = after.getCheckOut();
 
         int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
@@ -513,11 +635,26 @@ public class BookingWriter {
             failIfUnassignable(checkUnitAssignable(unit, room.getId(), splitDate, mergedCheckOut, bookingId));
         }
 
+        // Restore from before's own preserved rows wherever they exist; only a genuinely missing
+        // night falls back to today's rate. "after"'s own rows are simply discarded (via
+        // ON DELETE CASCADE when it's deleted below) - they priced a room this booking is
+        // leaving, and that price leaves with it.
+        List<LocalDate> revertingNights = DateRangeUtil.getNights(splitDate, mergedCheckOut);
+        Map<LocalDate, BigDecimal> beforesOwnRates = existingRatesByDate(before.getId());
+        List<LocalDate> missingNights = revertingNights.stream().filter(n -> !beforesOwnRates.containsKey(n)).toList();
+        Map<LocalDate, BigDecimal> freshPricesForMissing = missingNights.isEmpty() ? Map.of() : priceNightsAtCurrentRate(room, missingNights);
+        BigDecimal restoredSum = revertingNights.stream()
+                .map(n -> beforesOwnRates.getOrDefault(n, freshPricesForMissing.get(n)))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         before.setCheckOut(mergedCheckOut);
-        before.setTotalPrice(computeTotalPrice(room, mergedCheckIn, mergedCheckOut));
+        before.setTotalPrice(before.getTotalPrice().add(restoredSum));
         segmentRepository.saveAndFlush(before);
         segmentRepository.delete(after);
         segmentRepository.flush();
+        if (!freshPricesForMissing.isEmpty()) {
+            saveNightlyRates(before.getId(), freshPricesForMissing);
+        }
 
         List<BookingSegmentEntity> updated = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
         assertContinuity(booking, updated);
@@ -525,6 +662,81 @@ public class BookingWriter {
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
         return new RelocationResult(saved, discardedRoom, discardedUnitLabel, room,
                 before.getRoomUnitId() != null ? roomUnitRepository.findById(before.getRoomUnitId()).orElse(null) : null);
+    }
+
+    /**
+     * The one explicit, deliberate way to move an already-agreed price forward - see the class
+     * javadoc's "Nightly price snapshots" section. Only ever touches nights from today onward
+     * (inclusive) within the named segment; a night the guest has already stayed keeps whatever
+     * was agreed for it even when this is invoked mid-stay - there is no "explicit" override for
+     * the past, only for what hasn't happened yet. A segment with nothing left to reprice
+     * (entirely in the past) is a legitimate no-op, not an error.
+     */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public RepriceResult reprice(String bookingId, String segmentId) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        BookingSegmentEntity segment = requireSegmentOnBooking(bookingId, segmentId);
+        RoomEntity room = roomRepository.findById(segment.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+
+        RepricePreview preview = previewReprice(segment, room);
+        if (!preview.nightsToReprice().isEmpty()) {
+            // Flushed immediately - see updateSchedule's identical comment. Reprice always
+            // deletes and re-inserts the *same* dates, so without this the insert half of the
+            // next flush would race the not-yet-executed delete and collide on the unique
+            // (segmentId, date) constraint.
+            nightlyRateRepository.deleteBySegmentIdAndDateIn(segmentId, preview.nightsToReprice());
+            nightlyRateRepository.flush();
+            saveNightlyRates(segmentId, preview.newPrices());
+            segment.setTotalPrice(preview.newSegmentTotal());
+            segmentRepository.saveAndFlush(segment);
+        }
+
+        List<BookingSegmentEntity> allSegments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+        syncBookingFromSegments(booking, allSegments);
+        BookingEntity saved = bookingRepository.saveAndFlush(booking);
+        return new RepriceResult(saved, preview.oldSegmentTotal(), preview.newSegmentTotal(), preview.nightsToReprice().size());
+    }
+
+    /** Read-only preview for {@code POST /bookings/{id}/reprice/quote} - identical computation to {@link #reprice}, never writing. */
+    @Transactional(readOnly = true)
+    public RepriceResult quoteReprice(String bookingId, String segmentId) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        BookingSegmentEntity segment = requireSegmentOnBooking(bookingId, segmentId);
+        RoomEntity room = roomRepository.findById(segment.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+
+        RepricePreview preview = previewReprice(segment, room);
+        return new RepriceResult(booking, preview.oldSegmentTotal(), preview.newSegmentTotal(), preview.nightsToReprice().size());
+    }
+
+    private RepricePreview previewReprice(BookingSegmentEntity segment, RoomEntity room) {
+        LocalDate today = LocalDate.now();
+        LocalDate repriceFrom = today.isAfter(segment.getCheckIn()) ? today : segment.getCheckIn();
+        if (!repriceFrom.isBefore(segment.getCheckOut())) {
+            return new RepricePreview(List.of(), Map.of(), segment.getTotalPrice(), segment.getTotalPrice());
+        }
+        List<LocalDate> nightsToReprice = DateRangeUtil.getNights(repriceFrom, segment.getCheckOut());
+        Map<LocalDate, BigDecimal> existingRates = existingRatesByDate(segment.getId());
+        BigDecimal oldSum = nightsToReprice.stream().map(existingRates::get).reduce(BigDecimal.ZERO, BigDecimal::add);
+        Map<LocalDate, BigDecimal> newPrices = priceNightsAtCurrentRate(room, nightsToReprice);
+        BigDecimal oldSegmentTotal = segment.getTotalPrice();
+        BigDecimal newSegmentTotal = oldSegmentTotal.subtract(oldSum).add(sumPrices(newPrices));
+        return new RepricePreview(nightsToReprice, newPrices, oldSegmentTotal, newSegmentTotal);
+    }
+
+    private record RepricePreview(
+            List<LocalDate> nightsToReprice, Map<LocalDate, BigDecimal> newPrices, BigDecimal oldSegmentTotal, BigDecimal newSegmentTotal) {
+    }
+
+    /** Result of {@link #reprice}/{@link #quoteReprice} - the segment's own before/after total (not the whole booking's), plus how many nights were touched. */
+    public record RepriceResult(BookingEntity booking, BigDecimal oldSegmentTotal, BigDecimal newSegmentTotal, int nightsRepriced) {
+    }
+
+    private BookingSegmentEntity requireSegmentOnBooking(String bookingId, String segmentId) {
+        BookingSegmentEntity segment = segmentRepository.findById(segmentId).orElseThrow(() -> new NotFoundException("Segment not found"));
+        if (!segment.getBookingId().equals(bookingId)) {
+            throw new NotFoundException("Segment not found");
+        }
+        return segment;
     }
 
     private static Optional<BookingSegmentEntity> findSegmentContaining(List<BookingSegmentEntity> segments, LocalDate date) {
@@ -686,18 +898,41 @@ public class BookingWriter {
         return true;
     }
 
-    private BigDecimal computeTotalPrice(RoomEntity room, LocalDate checkIn, LocalDate checkOut) {
-        List<LocalDate> nights = DateRangeUtil.getNights(checkIn, checkOut);
-
+    /** Every night in {@code nights} priced at *today's* rate - RatePlan override where one exists, Room.basePrice otherwise. Never reads what a night was already priced at; see {@link #existingRatesByDate} for that. */
+    private Map<LocalDate, BigDecimal> priceNightsAtCurrentRate(RoomEntity room, List<LocalDate> nights) {
+        if (nights.isEmpty()) {
+            return Map.of();
+        }
         Map<LocalDate, BigDecimal> overrides = new HashMap<>();
         for (RatePlanEntity plan : ratePlanRepository.findByRoomIdAndDateIn(room.getId(), nights)) {
             overrides.put(plan.getDate(), plan.getPrice());
         }
-
-        BigDecimal total = BigDecimal.ZERO;
+        Map<LocalDate, BigDecimal> prices = new LinkedHashMap<>();
         for (LocalDate night : nights) {
-            total = total.add(overrides.getOrDefault(night, room.getBasePrice()));
+            prices.put(night, overrides.getOrDefault(night, room.getBasePrice()));
         }
-        return total;
+        return prices;
+    }
+
+    /** A segment's already-agreed nightly prices, keyed by date - what {@link #priceNightsAtCurrentRate} deliberately never looks at. */
+    private Map<LocalDate, BigDecimal> existingRatesByDate(String segmentId) {
+        return nightlyRateRepository.findBySegmentIdOrderByDateAsc(segmentId).stream()
+                .collect(Collectors.toMap(BookingSegmentNightlyRateEntity::getDate, BookingSegmentNightlyRateEntity::getPrice));
+    }
+
+    private static BigDecimal sumPrices(Map<LocalDate, BigDecimal> prices) {
+        return prices.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** Persists one frozen-price row per entry - the only place a {@link BookingSegmentNightlyRateEntity} is ever created. */
+    private void saveNightlyRates(String segmentId, Map<LocalDate, BigDecimal> prices) {
+        for (Map.Entry<LocalDate, BigDecimal> entry : prices.entrySet()) {
+            BookingSegmentNightlyRateEntity rate = new BookingSegmentNightlyRateEntity();
+            rate.setSegmentId(segmentId);
+            rate.setDate(entry.getKey());
+            rate.setPrice(entry.getValue());
+            nightlyRateRepository.save(rate);
+        }
+        nightlyRateRepository.flush();
     }
 }

@@ -17,6 +17,8 @@ import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RelocationUndoInput;
+import com.sunsetbeach.model.RepriceInput;
+import com.sunsetbeach.model.RepriceQuote;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.StaffBookingCreateInput;
@@ -527,6 +529,63 @@ public interface BookingsApi {
 
 
     /**
+     * POST /bookings/{id}/reprice/quote : Preview repricing a segment&#39;s future nights to current rates, without applying it
+     * Requires MANAGER or above - a deliberate override of an already-agreed price, not a front-desk administration of a guest&#39;s own request, so this sits one tier above the CASHIER-level schedule/relocate operations. Non-mutating preview for &#x60;POST /bookings/{id}/reprice&#x60; - same request body. 
+     *
+     * @param id  (required)
+     * @param repriceInput  (required)
+     * @return Computed old/new segment totals and how many nights would be repriced. (status code 200)
+     *         or Body failed validation. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     *         or Booking not found, or segmentId does not belong to this booking. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/bookings/{id}/reprice/quote",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<RepriceQuote> quoteBookingReprice(
+         @PathVariable("id") String id,
+         @Valid @RequestBody RepriceInput repriceInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"newTotalPrice\" : \"newTotalPrice\", \"nightsRepriced\" : 0, \"oldTotalPrice\" : \"oldTotalPrice\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * POST /bookings/{id}/schedule/quote : Preview the price/availability of a schedule change without applying it
      * Requires CASHIER or above. Non-mutating preview for &#x60;PATCH /bookings/{id}/schedule&#x60; - same request body, no &#x60;Serializable&#x60; transaction (nothing is written), so this is advisory only: the apply call re-validates from scratch and is the sole source of truth. A separate operation rather than a &#x60;dryRun&#x60; flag on the PATCH above, so the two contracts stay simple - one always mutates and returns the updated &#x60;Booking&#x60;, the other never mutates and always returns a quote, instead of one endpoint whose response shape depends on a flag. Used by the booking calendar grid to show the recalculated price and a would-this-succeed signal before the user confirms a drag/resize. 
      *
@@ -621,6 +680,63 @@ public interface BookingsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /bookings/{id}/reprice : Reprice a segment&#39;s future nights to current rates
+     * Requires MANAGER or above. Recomputes only the named segment&#39;s nights from today onward (inclusive) at today&#39;s &#x60;RatePlan&#x60;/&#x60;Room.basePrice&#x60; rates - nights already stayed are never touched, even when this is invoked mid-stay. This is the one explicit, deliberate way to move an already-agreed price forward; every other write in this API (extending, shortening, or relocating a stay) preserves whatever was already agreed for nights that were already part of the booking, pricing only genuinely new nights. A segment with nothing left to reprice (entirely in the past) is a legitimate no-op, not an error. Recorded in the audit log with the before/after totals. 
+     *
+     * @param id  (required)
+     * @param repriceInput  (required)
+     * @return Updated booking, with the named segment&#39;s total (and the booking&#39;s overall total) recomputed. (status code 200)
+     *         or Body failed validation. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     *         or Booking not found, or segmentId does not belong to this booking. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/bookings/{id}/reprice",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<Booking> repriceBooking(
+         @PathVariable("id") String id,
+         @Valid @RequestBody RepriceInput repriceInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"roomId\" : \"roomId\" }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

@@ -12,6 +12,8 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RelocationUndoInput;
+import com.sunsetbeach.model.RepriceInput;
+import com.sunsetbeach.model.RepriceQuote;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.security.BookingRateLimiter;
@@ -108,6 +110,16 @@ public class BookingController implements BookingsApi {
     @Override
     public ResponseEntity<Booking> undoBookingRelocation(String id, RelocationUndoInput relocationUndoInput) {
         return ResponseEntity.ok(bookingService.undoRelocation(id, relocationUndoInput));
+    }
+
+    @Override
+    public ResponseEntity<Booking> repriceBooking(String id, RepriceInput repriceInput) {
+        return ResponseEntity.ok(bookingService.reprice(id, repriceInput));
+    }
+
+    @Override
+    public ResponseEntity<RepriceQuote> quoteBookingReprice(String id, RepriceInput repriceInput) {
+        return ResponseEntity.ok(bookingService.quoteReprice(id, repriceInput));
     }
 
     @Override

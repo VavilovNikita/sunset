@@ -130,6 +130,13 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/bookings/*/relocate/quote").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/bookings/*/relocate").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/bookings/*/undo-relocation").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Repricing a segment to current rates is a deliberate override of an
+                        // already-agreed price, not front-desk administration of a guest's own
+                        // request - one tier above the CASHIER-level schedule/relocate operations
+                        // above, same explicit-rule requirement (multi-segment paths past
+                        // "/bookings/" aren't covered by "/bookings/*").
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/reprice/quote").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/reprice").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // POS module: read endpoints (GET /menu, /tables, /orders/**) are open to any
                         // authenticated staff role, including WAITER - explicitly matched below rather
                         // than left to fall through to anyRequest(), so the EndpointCoverageTests

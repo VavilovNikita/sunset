@@ -1626,6 +1626,102 @@ paths:
                 raceLost:
                   value: { error: "Someone just booked these dates — please try again." }
 
+  /bookings/{id}/reprice/quote:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: quoteBookingReprice
+      tags: [Bookings]
+      summary: Preview repricing a segment's future nights to current rates, without applying it
+      description: >
+        Requires MANAGER or above - a deliberate override of an already-agreed price, not a
+        front-desk administration of a guest's own request, so this sits one tier above the
+        CASHIER-level schedule/relocate operations. Non-mutating preview for
+        `POST /bookings/{id}/reprice` - same request body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepriceInput"
+      responses:
+        "200":
+          description: Computed old/new segment totals and how many nights would be repriced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepriceQuote"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Booking not found, or segmentId does not belong to this booking.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /bookings/{id}/reprice:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: repriceBooking
+      tags: [Bookings]
+      summary: Reprice a segment's future nights to current rates
+      description: >
+        Requires MANAGER or above. Recomputes only the named segment's nights from today onward
+        (inclusive) at today's `RatePlan`/`Room.basePrice` rates - nights already stayed are
+        never touched, even when this is invoked mid-stay. This is the one explicit, deliberate
+        way to move an already-agreed price forward; every other write in this API (extending,
+        shortening, or relocating a stay) preserves whatever was already agreed for nights that
+        were already part of the booking, pricing only genuinely new nights. A segment with
+        nothing left to reprice (entirely in the past) is a legitimate no-op, not an error.
+        Recorded in the audit log with the before/after totals.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepriceInput"
+      responses:
+        "200":
+          description: Updated booking, with the named segment's total (and the booking's overall total) recomputed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Booking not found, or segmentId does not belong to this booking.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /bookings/{id}/folio:
     parameters:
       - name: id
@@ -4168,6 +4264,35 @@ components:
           nullable: true
           description: Set when `available` is `false` - the same wording `PATCH /bookings/{id}/schedule` would reject with.
 
+    RepriceInput:
+      type: object
+      description: Body of `POST /bookings/{id}/reprice` and `POST /bookings/{id}/reprice/quote`.
+      required: [segmentId]
+      properties:
+        segmentId:
+          type: string
+          description: Which segment to reprice - required rather than inferred, since a relocated booking has more than one and there is no single unambiguous default.
+
+    RepriceQuote:
+      type: object
+      description: >
+        Response of `POST /bookings/{id}/reprice/quote` - a non-mutating preview of what
+        `POST /bookings/{id}/reprice` would do. Only nights from today onward within the segment
+        are ever repriced - a night the guest has already stayed keeps whatever price was agreed
+        for it, even when this is invoked mid-stay. `nightsRepriced` is `0` (and the totals are
+        equal) when the segment has no nights left to reprice (it's entirely in the past).
+      required: [oldTotalPrice, newTotalPrice, nightsRepriced]
+      properties:
+        oldTotalPrice:
+          type: string
+          description: The segment's current total, decimal(10,2) as a string.
+        newTotalPrice:
+          type: string
+          description: What the segment's total would become at today's rates, decimal(10,2) as a string.
+        nightsRepriced:
+          type: integer
+          description: How many nights (today onward) this would touch.
+
     RoomTypeDailyAvailability:
       type: object
       description: >
@@ -5234,6 +5359,7 @@ components:
         - BOOKING_ROOM_ASSIGNED
         - BOOKING_RELOCATED
         - BOOKING_RELOCATION_UNDONE
+        - BOOKING_REPRICED
         - BOOKINGS_EXPORTED
         - ROOM_PRICE_CHANGED
         - RATE_OVERRIDE_CHANGED

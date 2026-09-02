@@ -27,6 +27,8 @@ import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RelocationUndoInput;
+import com.sunsetbeach.model.RepriceInput;
+import com.sunsetbeach.model.RepriceQuote;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.repository.BookingRepository;
@@ -421,6 +423,49 @@ public class BookingService {
                         + (result.oldUnitLabel() != null ? " (" + result.oldUnitLabel() + ")" : "") + ", back to " + result.newRoom().getName()
                         + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + " from " + splitDate);
         return bookingMapper.toDto(saved, currentRoom, result.newUnit(), loadSegments(saved.getId()));
+    }
+
+    /**
+     * The one explicit, deliberate way to move an already-agreed price forward - the write path
+     * behind {@code POST /bookings/{id}/reprice}. See {@link BookingWriter}'s class javadoc
+     * ("Nightly price snapshots") for why every other schedule-touching write preserves an
+     * already-agreed night's price instead of recomputing it.
+     */
+    public Booking reprice(String bookingId, RepriceInput input) {
+        BookingWriter.RepriceResult result;
+        try {
+            result = bookingWriter.reprice(bookingId, input.getSegmentId());
+        } catch (DataAccessException | TransactionSystemException e) {
+            if (isSerializationFailure(e)) {
+                throw new ConflictException("Someone just changed this booking — please try again.");
+            }
+            throw e;
+        }
+
+        BookingEntity saved = result.booking();
+        RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        RoomUnitEntity unit = findRoomUnit(saved.getRoomUnitId());
+        auditLogService.record(
+                AuditAction.BOOKING_REPRICED,
+                AuditEntityType.BOOKING,
+                saved.getId(),
+                "Repriced " + result.nightsRepriced() + " night(s) for " + saved.getGuestName() + ": ฿" + result.oldSegmentTotal()
+                        + " → ฿" + result.newSegmentTotal());
+        return bookingMapper.toDto(saved, room, unit, loadSegments(saved.getId()));
+    }
+
+    /**
+     * Non-mutating preview for {@code POST /bookings/{id}/reprice/quote} - see
+     * {@link BookingWriter#quoteReprice}. No serialization-failure handling needed here: this
+     * read never writes, so there is nothing for Postgres to report a conflict on.
+     */
+    @Transactional(readOnly = true)
+    public RepriceQuote quoteReprice(String bookingId, RepriceInput input) {
+        BookingWriter.RepriceResult result = bookingWriter.quoteReprice(bookingId, input.getSegmentId());
+        return new RepriceQuote(
+                PriceFormat.asDecimalString(result.oldSegmentTotal()),
+                PriceFormat.asDecimalString(result.newSegmentTotal()),
+                result.nightsRepriced());
     }
 
     /**
