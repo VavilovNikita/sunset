@@ -5,6 +5,9 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import java.math.BigDecimal;
+import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -15,7 +18,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * One entry of the array body of &#x60;PATCH /room-units/positions&#x60;. &#x60;positionX&#x60;/&#x60;positionY&#x60; must both be null (clears the position, returning the unit to \&quot;not placed\&quot;) or both set within 0..1 - never one without the other. 
+ * One entry of the array body of &#x60;PATCH /room-units/positions&#x60;. &#x60;positionX&#x60;/&#x60;positionY&#x60; must both be null (clears the position, returning the unit to \&quot;not placed\&quot;) or both set within 0..1 - never one without the other; checked manually in &#x60;RoomUnitService&#x60;, not via &#x60;required&#x60; below. Deliberately NOT listing &#x60;positionX&#x60;/&#x60;positionY&#x60; under &#x60;required&#x60; despite them conceptually needing to be present: &#x60;org.openapitools:jackson-databind- nullable&#x60;&#39;s Bean Validation integration registers an &#x60;@UnwrapByDefault&#x60; &#x60;ValueExtractor&#x60; for &#x60;JsonNullable&lt;T&gt;&#x60;, so a generated &#x60;@NotNull&#x60; on a &#x60;nullable: true&#x60; + &#x60;required&#x60; property validates the *unwrapped* value, rejecting the exact &#x60;null&#x60; these fields exist to accept - same reasoning as &#x60;RoomUnitAssignmentInput.roomUnitId&#x60; above. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -34,10 +37,8 @@ public class RoomUnitPositionInput {
   /**
    * Constructor with only required parameters
    */
-  public RoomUnitPositionInput(String roomUnitId, BigDecimal positionX, BigDecimal positionY) {
+  public RoomUnitPositionInput(String roomUnitId) {
     this.roomUnitId = roomUnitId;
-    this.positionX = JsonNullable.of(positionX);
-    this.positionY = JsonNullable.of(positionY);
   }
 
   public RoomUnitPositionInput roomUnitId(String roomUnitId) {
@@ -70,7 +71,7 @@ public class RoomUnitPositionInput {
    * maximum: 1
    * @return positionX
    */
-  @NotNull @Valid @DecimalMin("0") @DecimalMax("1") 
+  @Valid @DecimalMin("0") @DecimalMax("1") 
   @JsonProperty("positionX")
   public JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> getPositionX() {
     return positionX;
@@ -91,7 +92,7 @@ public class RoomUnitPositionInput {
    * maximum: 1
    * @return positionY
    */
-  @NotNull @Valid @DecimalMin("0") @DecimalMax("1") 
+  @Valid @DecimalMin("0") @DecimalMax("1") 
   @JsonProperty("positionY")
   public JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> getPositionY() {
     return positionY;
@@ -111,13 +112,24 @@ public class RoomUnitPositionInput {
     }
     RoomUnitPositionInput roomUnitPositionInput = (RoomUnitPositionInput) o;
     return Objects.equals(this.roomUnitId, roomUnitPositionInput.roomUnitId) &&
-        Objects.equals(this.positionX, roomUnitPositionInput.positionX) &&
-        Objects.equals(this.positionY, roomUnitPositionInput.positionY);
+        equalsNullable(this.positionX, roomUnitPositionInput.positionX) &&
+        equalsNullable(this.positionY, roomUnitPositionInput.positionY);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomUnitId, positionX, positionY);
+    return Objects.hash(roomUnitId, hashCodeNullable(positionX), hashCodeNullable(positionY));
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override

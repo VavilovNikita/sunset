@@ -4623,8 +4623,14 @@ components:
       description: >
         One entry of the array body of `PATCH /room-units/positions`. `positionX`/`positionY`
         must both be null (clears the position, returning the unit to "not placed") or both set
-        within 0..1 - never one without the other.
-      required: [roomUnitId, positionX, positionY]
+        within 0..1 - never one without the other; checked manually in `RoomUnitService`, not
+        via `required` below. Deliberately NOT listing `positionX`/`positionY` under `required`
+        despite them conceptually needing to be present: `org.openapitools:jackson-databind-
+        nullable`'s Bean Validation integration registers an `@UnwrapByDefault` `ValueExtractor`
+        for `JsonNullable<T>`, so a generated `@NotNull` on a `nullable: true` + `required`
+        property validates the *unwrapped* value, rejecting the exact `null` these fields exist
+        to accept - same reasoning as `RoomUnitAssignmentInput.roomUnitId` above.
+      required: [roomUnitId]
       properties:
         roomUnitId:
           type: string

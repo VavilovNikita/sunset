@@ -505,7 +505,7 @@ class PosRoleHierarchyTests {
         mockMvc.perform(patch("/room-units/positions")
                         .header("Authorization", token(Role.CASHIER))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(List.of(new RoomUnitPositionInput("unit-1", BigDecimal.valueOf(0.5), BigDecimal.valueOf(0.5))))))
+                        .content(objectMapper.writeValueAsString(List.of(new RoomUnitPositionInput("unit-1").positionX(BigDecimal.valueOf(0.5)).positionY(BigDecimal.valueOf(0.5))))))
                 .andExpect(status().isForbidden());
     }
 
@@ -515,7 +515,7 @@ class PosRoleHierarchyTests {
         mockMvc.perform(patch("/room-units/positions")
                         .header("Authorization", token(Role.MANAGER))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(List.of(new RoomUnitPositionInput("unit-1", BigDecimal.valueOf(0.5), BigDecimal.valueOf(0.5))))))
+                        .content(objectMapper.writeValueAsString(List.of(new RoomUnitPositionInput("unit-1").positionX(BigDecimal.valueOf(0.5)).positionY(BigDecimal.valueOf(0.5))))))
                 .andExpect(status().isOk());
     }
 

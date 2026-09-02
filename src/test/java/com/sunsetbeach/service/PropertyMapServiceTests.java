@@ -149,7 +149,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
     void savePositions_thenRead_roundTripsTheCoordinates() {
         RoomUnitEntity unit = persistUnit("204");
 
-        roomUnitService.savePositions(List.of(new RoomUnitPositionInput(unit.getId(), new BigDecimal("0.25"), new BigDecimal("0.75"))));
+        roomUnitService.savePositions(List.of(positionInput(unit.getId(), new BigDecimal("0.25"), new BigDecimal("0.75"))));
 
         PropertyMapUnit dto = findUnit(unit.getId());
         assertThat(dto.getPositionX().get()).isEqualByComparingTo("0.25");
@@ -162,8 +162,8 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         RoomUnitEntity b = persistUnit("B");
 
         roomUnitService.savePositions(List.of(
-                new RoomUnitPositionInput(a.getId(), new BigDecimal("0.1"), new BigDecimal("0.2")),
-                new RoomUnitPositionInput(b.getId(), new BigDecimal("0.8"), new BigDecimal("0.9"))));
+                positionInput(a.getId(), new BigDecimal("0.1"), new BigDecimal("0.2")),
+                positionInput(b.getId(), new BigDecimal("0.8"), new BigDecimal("0.9"))));
 
         assertThat(findUnit(a.getId()).getPositionX().get()).isEqualByComparingTo("0.1");
         assertThat(findUnit(b.getId()).getPositionX().get()).isEqualByComparingTo("0.8");
@@ -172,9 +172,9 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
     @Test
     void savePositions_bothNull_resetsAnAlreadyPlacedUnit() {
         RoomUnitEntity unit = persistUnit("205");
-        roomUnitService.savePositions(List.of(new RoomUnitPositionInput(unit.getId(), new BigDecimal("0.5"), new BigDecimal("0.5"))));
+        roomUnitService.savePositions(List.of(positionInput(unit.getId(), new BigDecimal("0.5"), new BigDecimal("0.5"))));
 
-        roomUnitService.savePositions(List.of(new RoomUnitPositionInput(unit.getId(), null, null)));
+        roomUnitService.savePositions(List.of(positionInput(unit.getId(), null, null)));
 
         PropertyMapUnit dto = findUnit(unit.getId());
         assertThat(dto.getPositionX().get()).isNull();
@@ -185,7 +185,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
     void savePositions_onlyOneCoordinateSet_isRejected() {
         RoomUnitEntity unit = persistUnit("206");
 
-        assertThatCode(() -> roomUnitService.savePositions(List.of(new RoomUnitPositionInput(unit.getId(), new BigDecimal("0.5"), null))))
+        assertThatCode(() -> roomUnitService.savePositions(List.of(positionInput(unit.getId(), new BigDecimal("0.5"), null))))
                 .isInstanceOf(ValidationException.class);
     }
 
@@ -193,9 +193,9 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
     void savePositions_outOfRange_isRejected() {
         RoomUnitEntity unit = persistUnit("207");
 
-        assertThatCode(() -> roomUnitService.savePositions(List.of(new RoomUnitPositionInput(unit.getId(), new BigDecimal("1.5"), new BigDecimal("0.5")))))
+        assertThatCode(() -> roomUnitService.savePositions(List.of(positionInput(unit.getId(), new BigDecimal("1.5"), new BigDecimal("0.5")))))
                 .isInstanceOf(ValidationException.class);
-        assertThatCode(() -> roomUnitService.savePositions(List.of(new RoomUnitPositionInput(unit.getId(), new BigDecimal("-0.1"), new BigDecimal("0.5")))))
+        assertThatCode(() -> roomUnitService.savePositions(List.of(positionInput(unit.getId(), new BigDecimal("-0.1"), new BigDecimal("0.5")))))
                 .isInstanceOf(ValidationException.class);
     }
 
@@ -204,7 +204,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
     @Test
     void uploadImage_doesNotChangeAnyUnitPosition() throws IOException {
         RoomUnitEntity unit = persistUnit("208");
-        roomUnitService.savePositions(List.of(new RoomUnitPositionInput(unit.getId(), new BigDecimal("0.42"), new BigDecimal("0.58"))));
+        roomUnitService.savePositions(List.of(positionInput(unit.getId(), new BigDecimal("0.42"), new BigDecimal("0.58"))));
 
         MockMultipartFile file = new MockMultipartFile("file", "plan.jpg", "image/jpeg", PNG_BYTES);
         PropertyMap first = propertyMapService.uploadImage(file);
@@ -306,6 +306,14 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
     void vacantUnit_hasNoCurrentBooking() {
         RoomUnitEntity unit = persistUnit("214");
         assertThat(findUnit(unit.getId()).getCurrentBooking()).isNull();
+    }
+
+    // positionX/positionY are deliberately not in RoomUnitPositionInput's "required" set (see
+    // openapi.yaml's comment on that schema - a generated @NotNull there would reject the exact
+    // null this endpoint exists to accept), so the generated required-args constructor only takes
+    // roomUnitId; the fluent builder sets the nullable pair, including the null-null reset case.
+    private static RoomUnitPositionInput positionInput(String roomUnitId, BigDecimal x, BigDecimal y) {
+        return new RoomUnitPositionInput(roomUnitId).positionX(x).positionY(y);
     }
 
     private PropertyMapUnit findUnit(String roomUnitId) {
