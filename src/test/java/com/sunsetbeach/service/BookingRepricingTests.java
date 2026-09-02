@@ -17,6 +17,7 @@ import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RepriceInput;
 import com.sunsetbeach.model.RepriceQuote;
+import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentNightlyRateRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
@@ -88,6 +89,15 @@ class BookingRepricingTests extends AbstractIntegrationTest {
                 new BookingCreateInput(roomId, "Guest", "guest@example.com", "+66800000000", checkIn.toString(), checkOut.toString()));
     }
 
+    // POST /bookings/staff's own write path (BookingWriter#insertStaff) - deliberately not
+    // routed through createBooking above, since that only ever exercises POST /bookings
+    // (BookingWriter#insert). roomUnitId is left unset (StaffBookingCreateInput's optional
+    // field defaults to absent, which BookingService.createStaffBooking treats as null) so this
+    // also covers the no-room-unit-yet case for the staff path.
+    private Booking createStaffBooking(String roomId, LocalDate checkIn, LocalDate checkOut) {
+        return bookingService.createStaffBooking(new StaffBookingCreateInput(roomId, "Guest", checkIn.toString(), checkOut.toString()));
+    }
+
     private List<BookingSegmentEntity> segmentsOf(String bookingId) {
         return segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
     }
@@ -100,6 +110,84 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     private void bumpBasePrice(RoomEntity room, BigDecimal newBasePrice) {
         room.setBasePrice(newBasePrice);
         roomRepository.saveAndFlush(room);
+    }
+
+    // --- The snapshot must exist from the moment a booking is created, on every creation path -
+    // not appear only once something later touches the schedule. A booking sits untouched for
+    // most of its life; if creation left a gap, that gap would look invisible right up until the
+    // first edit finally exposed it as a wrong price. Both known creation paths are covered
+    // (BookingWriter#insert for the public POST /bookings flow, BookingWriter#insertStaff for
+    // front-desk POST /bookings/staff - confirmed by inspection to be the only two call sites
+    // that ever construct a BookingSegmentEntity at all), including the common case of a
+    // freshly-created booking with no physical room unit chosen yet: room *type* - the only
+    // thing pricing ever depends on - is known from the first request either way. --------------
+
+    @Test
+    void publicBooking_getsAFullNightlySnapshotAtCreation_beforeAnyRoomUnitIsChosen() {
+        RoomEntity room = createRoom(new BigDecimal("1500.00"));
+        LocalDate checkIn = LocalDate.now().plusDays(350);
+        LocalDate checkOut = checkIn.plusDays(5);
+
+        Booking booking = createBooking(room.getId(), checkIn, checkOut);
+
+        BookingSegmentEntity segment = segmentsOf(booking.getId()).get(0);
+        assertThat(segment.getRoomUnitId()).as("public bookings never get a unit at creation").isNull();
+        Map<LocalDate, BigDecimal> rates = nightlyRatesOf(segment.getId());
+        assertThat(rates).hasSize(5);
+        for (LocalDate night = checkIn; night.isBefore(checkOut); night = night.plusDays(1)) {
+            assertThat(rates.get(night)).as("night %s", night).isEqualByComparingTo("1500.00");
+        }
+    }
+
+    @Test
+    void staffBooking_getsAFullNightlySnapshotAtCreation_withOrWithoutARoomUnitChosen() {
+        RoomEntity room = createRoom(new BigDecimal("1800.00"));
+        LocalDate checkIn = LocalDate.now().plusDays(355);
+        LocalDate checkOut = checkIn.plusDays(3);
+
+        Booking unassigned = createStaffBooking(room.getId(), checkIn, checkOut);
+        BookingSegmentEntity unassignedSegment = segmentsOf(unassigned.getId()).get(0);
+        assertThat(unassignedSegment.getRoomUnitId()).isNull();
+        Map<LocalDate, BigDecimal> unassignedRates = nightlyRatesOf(unassignedSegment.getId());
+        assertThat(unassignedRates).hasSize(3);
+        unassignedRates.values().forEach(price -> assertThat(price).isEqualByComparingTo("1800.00"));
+
+        RoomUnitEntity unit = roomUnitRepository.findByRoomId(room.getId()).get(0);
+        LocalDate checkIn2 = checkIn.plusDays(10);
+        LocalDate checkOut2 = checkIn2.plusDays(3);
+        Booking assigned = bookingService.createStaffBooking(
+                new StaffBookingCreateInput(room.getId(), "Guest", checkIn2.toString(), checkOut2.toString()).roomUnitId(unit.getId()));
+        BookingSegmentEntity assignedSegment = segmentsOf(assigned.getId()).get(0);
+        assertThat(assignedSegment.getRoomUnitId()).isEqualTo(unit.getId());
+        Map<LocalDate, BigDecimal> assignedRates = nightlyRatesOf(assignedSegment.getId());
+        assertThat(assignedRates).hasSize(3);
+        assignedRates.values().forEach(price -> assertThat(price).isEqualByComparingTo("1800.00"));
+    }
+
+    @Test
+    void staffBooking_extendedAfterARateHike_alsoOnlyPricesTheNewNightAtTheNewRate() {
+        // Mirrors extendingAStay_afterARateHike_onlyPricesTheNewNightAtTheNewRate below, but
+        // through the staff creation path - the fix must not be an accident of one path's code
+        // happening to snapshot correctly while the other doesn't.
+        RoomEntity room = createRoom(new BigDecimal("1000.00"));
+        LocalDate checkIn = LocalDate.now().plusDays(360);
+        LocalDate checkOut = checkIn.plusDays(6); // 6 nights @ 1000 = 6000
+        Booking booking = createStaffBooking(room.getId(), checkIn, checkOut);
+        assertThat(new BigDecimal(booking.getTotalPrice())).isEqualByComparingTo("6000.00");
+
+        bumpBasePrice(room, new BigDecimal("5000.00"));
+
+        LocalDate extendedCheckOut = checkOut.plusDays(1);
+        Booking updated = bookingService.updateSchedule(
+                booking.getId(), new BookingScheduleInput(checkIn.toString(), extendedCheckOut.toString()).roomUnitId(null));
+
+        // 6000 (unchanged) + 5000 (the one new night, at the new rate) = 11000.
+        assertThat(new BigDecimal(updated.getTotalPrice())).isEqualByComparingTo("11000.00");
+        Map<LocalDate, BigDecimal> rates = nightlyRatesOf(segmentsOf(booking.getId()).get(0).getId());
+        for (LocalDate night = checkIn; night.isBefore(checkOut); night = night.plusDays(1)) {
+            assertThat(rates.get(night)).as("original night %s must keep its original price", night).isEqualByComparingTo("1000.00");
+        }
+        assertThat(rates.get(checkOut)).isEqualByComparingTo("5000.00");
     }
 
     // --- Extending a stay must not touch already-agreed nights ----------------------------------
