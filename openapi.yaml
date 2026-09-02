@@ -86,6 +86,15 @@ tags:
       Rooms/Pricing/Availability tags: no session required, and availability
       here never reveals whether a blocked day is a real booking or a manual
       staff block.
+  - name: PropertyMap
+    description: >
+      The front desk's visual map of the property (CASHIER or above) - every physical room
+      placed on a floor-plan image, colored by current state (occupied/vacant/dirty/blocked/
+      debt), a dedicated addition to the existing Today Board (what to do today) and booking
+      calendar (what's coming up), not a replacement for either. Placing rooms on the plan
+      (`PATCH /room-units/positions`) and replacing the background image are MANAGER or above;
+      viewing is CASHIER or above, same floor as `GET /bookings/today`. Internal only - unlike
+      Rooms' image endpoints, nothing here is reachable from the public site.
 
 security:
   - bearerAuth: []
@@ -704,6 +713,47 @@ paths:
               example:
                 error: This label is already in use by another room.
 
+  /room-units/positions:
+    patch:
+      operationId: saveRoomUnitPositions
+      tags: [RoomUnits]
+      summary: Place (or un-place) physical rooms on the property map
+      description: >
+        Requires MANAGER or above. Batch: the manager's editor drags several rooms around and
+        saves once, so this takes an array and applies it in one transaction rather than one
+        request per drag. Every entry is validated (range, paired nulls, `roomUnitId` exists)
+        before any write happens - the same all-or-nothing approach as
+        `POST /rooms/{id}/images`. `positionX`/`positionY` both null clears a unit's position
+        (returns it to "not placed"). See `PropertyMap`/`GET /property-map`, which reads these
+        same coordinates back for the map screen.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/RoomUnitPositionInput"
+      responses:
+        "200":
+          description: The updated room units.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoomUnit"
+        "400":
+          description: A position outside 0..1, an entry with only one of positionX/positionY set, or an unknown roomUnitId.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /room-units/{id}:
     parameters:
       - name: id
@@ -965,6 +1015,93 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
+
+  /property-map:
+    get:
+      operationId: getPropertyMap
+      tags: [PropertyMap]
+      summary: Get the property map (background image + every room's current state)
+      description: >
+        Requires any authenticated staff session (CASHIER or above) - same floor as
+        `GET /bookings/today`. Returns every physical room, placed or not; `PropertyMap.units[]`
+        never omits an unplaced room, it just carries null `positionX`/`positionY`.
+      responses:
+        "200":
+          description: The property map.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PropertyMap"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+
+  /property-map/image:
+    get:
+      operationId: getPropertyMapImage
+      tags: [PropertyMap]
+      summary: Serve the property map's background image
+      description: >
+        Requires any authenticated staff session (CASHIER or above) - unlike room photos
+        (`GET /uploads/rooms/{roomId}/{filename}`), this is not reachable from the public site,
+        so it isn't served under `/uploads/**`. No filename in the path: since there is exactly
+        one current image, the server resolves it from the `PropertyMap` row itself - there is
+        no client-supplied path segment to validate against traversal at all.
+      responses:
+        "200":
+          description: The image file.
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: No property map image has been uploaded yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    post:
+      operationId: uploadPropertyMapImage
+      tags: [PropertyMap]
+      summary: Upload (or replace) the property map's background image
+      description: >
+        Requires MANAGER or above. Same validation as `POST /rooms/{id}/images` (content-sniffed
+        type, 8MB cap, randomized filename) - see `ImageUploadValidator`. Replacing the image
+        does not touch any `RoomUnit.positionX`/`positionY` - those live in a separate table and
+        are addressed only by `PATCH /room-units/positions`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        "201":
+          description: The updated property map.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PropertyMap"
+        "400":
+          description: No file provided, an unsupported MIME type, or a file over 8MB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
 
   /bookings:
     get:
@@ -4413,6 +4550,22 @@ components:
           description: Inactive units are excluded from `Room.activeUnitCount` and cannot be newly assigned to a booking.
         housekeepingStatus:
           $ref: "#/components/schemas/HousekeepingStatus"
+        positionX:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: >
+            Normalized (0..1) horizontal position on the property map image, set via
+            `PATCH /room-units/positions`. Null (always paired with a null `positionY`) means
+            this unit hasn't been placed on the map yet - a normal state, especially right after
+            the map ships.
+        positionY:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: Normalized (0..1) vertical position - see `positionX`.
         createdAt:
           type: string
           format: date-time
@@ -4465,6 +4618,27 @@ components:
         isActive:
           type: boolean
 
+    RoomUnitPositionInput:
+      type: object
+      description: >
+        One entry of the array body of `PATCH /room-units/positions`. `positionX`/`positionY`
+        must both be null (clears the position, returning the unit to "not placed") or both set
+        within 0..1 - never one without the other.
+      required: [roomUnitId, positionX, positionY]
+      properties:
+        roomUnitId:
+          type: string
+        positionX:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+        positionY:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+
     RoomUnitBlock:
       type: object
       description: >
@@ -4503,6 +4677,110 @@ components:
           type: string
           minLength: 1
       # Cross-field rule: fromDate <= toDate (matches RoomUnitBlock_date_range_check).
+
+    PropertyMapCurrentBooking:
+      type: object
+      description: >
+        The booking a room unit is showing on the map right now - either a guest checked in this
+        moment, or, only when the unit isn't currently occupied, a guest expected to check in
+        today. Never both - a unit shows at most one of these.
+      required: [bookingId, guestName, checkOut, occupancyStatus, outstandingBalance]
+      properties:
+        bookingId:
+          type: string
+        guestName:
+          type: string
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        occupancyStatus:
+          $ref: "#/components/schemas/OccupancyStatus"
+        outstandingBalance:
+          type: string
+          description: >
+            Decimal(10,2) as a string, from `BookingService#computeOutstandingBalance` - the
+            same PAID-aware figure the check-out warning and `TodayBoardEntry` already use, not
+            re-derived.
+
+    PropertyMapActiveBlock:
+      type: object
+      description: >
+        A `RoomUnitBlock` covering today - independent of `PropertyMapUnit.isActive`, see that
+        schema's description for why the two must not be collapsed into one flag.
+      required: [reason, fromDate, toDate]
+      properties:
+        reason:
+          type: string
+        fromDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        toDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+
+    PropertyMapUnit:
+      type: object
+      description: >
+        One physical room on the property map (`GET /property-map`). `isActive` (permanently
+        deactivated) and `activeBlock` (temporarily pulled off sale today, `isActive` still
+        true) are independent facts and both always present here - never collapse them into a
+        single "unavailable" flag, they mean different things and the frontend's display rule
+        treats them differently (a deactivated unit reads as gone from the picture; a blocked
+        unit reads as "unavailable today, will return" with its reason shown). Which one wins
+        visually when both happen to be true is a frontend decision, not encoded in this DTO.
+      required:
+        [roomUnitId, roomId, roomName, unitLabel, isActive, housekeepingStatus, positionX, positionY, currentBooking, activeBlock]
+      properties:
+        roomUnitId:
+          type: string
+        roomId:
+          type: string
+        roomName:
+          type: string
+        unitLabel:
+          type: string
+        isActive:
+          type: boolean
+        housekeepingStatus:
+          $ref: "#/components/schemas/HousekeepingStatus"
+        positionX:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+        positionY:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+        currentBooking:
+          $ref: "#/components/schemas/PropertyMapCurrentBooking"
+          nullable: true
+        activeBlock:
+          $ref: "#/components/schemas/PropertyMapActiveBlock"
+          nullable: true
+
+    PropertyMap:
+      type: object
+      description: >
+        Body of `GET /property-map` - the front desk's visual map: every physical room (placed
+        on the map or not), enriched with today's occupancy/housekeeping/debt/block state, plus
+        the current background image. A dedicated addition to `TodayBoard`/the booking calendar,
+        not a replacement for either.
+      required: [imagePath, imageUpdatedAt, units]
+      properties:
+        imagePath:
+          type: string
+          nullable: true
+          description: Null until a manager uploads one via `POST /property-map/image` - a normal state right after this ships.
+        imageUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        units:
+          type: array
+          items:
+            $ref: "#/components/schemas/PropertyMapUnit"
 
     RoomUnitAssignmentInput:
       type: object
@@ -5855,6 +6133,8 @@ components:
         - ROOM_UNIT_BLOCK_CREATED
         - ROOM_UNIT_BLOCK_DELETED
         - ROOM_UNIT_HOUSEKEEPING_CHANGED
+        - ROOM_UNIT_POSITION_UPDATED
+        - PROPERTY_MAP_IMAGE_UPDATED
 
     AuditEntityType:
       type: string
@@ -5868,7 +6148,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP]
 
     AuditLogEntry:
       type: object

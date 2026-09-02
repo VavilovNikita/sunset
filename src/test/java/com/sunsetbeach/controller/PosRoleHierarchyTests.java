@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -37,11 +38,13 @@ import com.sunsetbeach.model.PricingResponse;
 import com.sunsetbeach.model.PrintDocumentType;
 import com.sunsetbeach.model.PrintJob;
 import com.sunsetbeach.model.PrintJobStatus;
+import com.sunsetbeach.model.PropertyMap;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.Room;
 import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.RoomUnitInput;
+import com.sunsetbeach.model.RoomUnitPositionInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
 import com.sunsetbeach.model.ShiftTotals;
 import com.sunsetbeach.security.JwtService;
@@ -56,6 +59,7 @@ import com.sunsetbeach.service.OrderService;
 import com.sunsetbeach.service.PaymentService;
 import com.sunsetbeach.service.PricingService;
 import com.sunsetbeach.service.PrinterService;
+import com.sunsetbeach.service.PropertyMapService;
 import com.sunsetbeach.service.RoomService;
 import com.sunsetbeach.service.RoomUnitService;
 import com.sunsetbeach.service.ShiftService;
@@ -70,6 +74,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -94,6 +99,7 @@ import tools.jackson.databind.json.JsonMapper;
             RoomController.class,
             PricingController.class,
             AvailabilityController.class,
+            PropertyMapController.class,
             com.sunsetbeach.controller.AuditLogController.class
         })
 @Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
@@ -131,6 +137,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private RoomUnitService roomUnitService;
+
+    @MockitoBean
+    private PropertyMapService propertyMapService;
 
     @MockitoBean
     private BookingService bookingService;
@@ -487,6 +496,63 @@ class PosRoleHierarchyTests {
         mockMvc.perform(get("/room-units/unit-1/blocks").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
     }
 
+    // --- PATCH /room-units/positions (property map editor's batch save) is MANAGER-only, same
+    // tier as the rest of /room-units/** writes - falls through to that catch-all, no dedicated
+    // rule in SecurityConfig, this is the regression test for that. ---
+
+    @Test
+    void saveRoomUnitPositions_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/room-units/positions")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(List.of(new RoomUnitPositionInput("unit-1", BigDecimal.valueOf(0.5), BigDecimal.valueOf(0.5))))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void saveRoomUnitPositions_withManagerToken_isOk() throws Exception {
+        when(roomUnitService.savePositions(any())).thenReturn(List.of(sampleRoomUnit()));
+        mockMvc.perform(patch("/room-units/positions")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(List.of(new RoomUnitPositionInput("unit-1", BigDecimal.valueOf(0.5), BigDecimal.valueOf(0.5))))))
+                .andExpect(status().isOk());
+    }
+
+    // --- Property map: viewing is CASHIER+ (same floor as GET /bookings/today), replacing the
+    // background image is MANAGER+ (same floor as POST /rooms/{id}/images). ---
+
+    @Test
+    void getPropertyMap_withCashierToken_isOk() throws Exception {
+        when(propertyMapService.get()).thenReturn(samplePropertyMap());
+        mockMvc.perform(get("/property-map").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void getPropertyMap_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/property-map").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getPropertyMapImage_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/property-map/image").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void uploadPropertyMapImage_withCashierToken_isForbidden() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "plan.jpg", "image/jpeg", new byte[] {1, 2, 3});
+        mockMvc.perform(multipart("/property-map/image").file(file).header("Authorization", token(Role.CASHIER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void uploadPropertyMapImage_withManagerToken_isCreated() throws Exception {
+        when(propertyMapService.uploadImage(any())).thenReturn(samplePropertyMap());
+        MockMultipartFile file = new MockMultipartFile("file", "plan.jpg", "image/jpeg", new byte[] {1, 2, 3});
+        mockMvc.perform(multipart("/property-map/image").file(file).header("Authorization", token(Role.MANAGER)))
+                .andExpect(status().isCreated());
+    }
+
     // --- PUT /bookings/{id}/room-unit requires CASHIER or above - and now that GET /room-units
     // is WAITER+, a CASHIER can actually list candidates before calling it. This is the
     // asymmetry (action allowed, prerequisite read blocked) this test class was missing
@@ -721,6 +787,10 @@ class PosRoleHierarchyTests {
 
     private static RoomUnit sampleRoomUnit() {
         return new RoomUnit("unit-1", "room-1", "203", true, HousekeepingStatus.CLEAN, OffsetDateTime.now());
+    }
+
+    private static PropertyMap samplePropertyMap() {
+        return new PropertyMap(null, null, List.of());
     }
 
     private static Room sampleRoom() {

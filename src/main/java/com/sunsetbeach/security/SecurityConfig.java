@@ -85,7 +85,20 @@ public class SecurityConfig {
                         // just managers - so it needs its own rule ahead of the catch-all, same
                         // ordering requirement as the GET carve-out above.
                         .requestMatchers(HttpMethod.PATCH, "/room-units/*/housekeeping").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // PATCH /room-units/positions (the property map editor's batch save) needs no
+                        // separate rule here - it isn't the GET or housekeeping carve-out above, so it
+                        // falls straight through to the MANAGER+ catch-all below, which is exactly the
+                        // role this write needs. Same "no separate rule needed" reasoning as
+                        // GET /bookings/today further down.
                         .requestMatchers("/room-units/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Property map: viewing (both the aggregate JSON and the background image
+                        // itself) is CASHIER+, same floor as GET /bookings/today - this is the front
+                        // desk's own screen, not a manager report. Replacing the background image is
+                        // MANAGER+, matching the room-photo upload precedent (POST /rooms/{id}/images).
+                        // Deliberately NOT under /uploads/** (permitAll, public-site room photos) -
+                        // this image is an internal tool, never reachable from the public site.
+                        .requestMatchers(HttpMethod.GET, "/property-map", "/property-map/image").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/property-map/image").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Availability: CASHIER+, not MANAGER+ as openapi.yaml originally documented -
                         // this description predates front-desk room assignment. The per-unit breakdown
                         // here is exactly what a CASHIER needs to see which physical room is free

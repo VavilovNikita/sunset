@@ -15,14 +15,19 @@ import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.RoomUnitBlock;
 import com.sunsetbeach.model.RoomUnitBlockInput;
 import com.sunsetbeach.model.RoomUnitInput;
+import com.sunsetbeach.model.RoomUnitPositionInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
 import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -134,6 +139,81 @@ public class RoomUnitService {
                     "Room " + saved.getLabel() + " marked " + saved.getHousekeepingStatus().getValue().toLowerCase());
         }
         return roomUnitMapper.toDto(saved);
+    }
+
+    /**
+     * Batch: the manager's property-map editor drags several rooms around and saves once, so
+     * this applies the whole array in one transaction rather than one request per drag. Every
+     * entry is validated (paired nulls, `roomUnitId` exists) before any write happens - the same
+     * all-or-nothing approach as {@code RoomService.uploadImages}. Independent of {@link #update}
+     * and {@link #updateHousekeeping} - same reasoning as those two staying apart from each
+     * other, a position is neither the label/isActive flag nor the cleaning state.
+     */
+    @Transactional
+    public List<RoomUnit> savePositions(List<RoomUnitPositionInput> inputs) {
+        for (RoomUnitPositionInput input : inputs) {
+            BigDecimal x = input.getPositionX().orElse(null);
+            BigDecimal y = input.getPositionY().orElse(null);
+            if ((x == null) != (y == null)) {
+                throw ValidationException.field("positionY", "positionX and positionY must both be set or both be null");
+            }
+            // Bean Validation's @DecimalMin/@DecimalMax on the DTO already enforce this at the
+            // HTTP boundary, but this service doesn't only ever get called through that path -
+            // re-checking here means the rule holds regardless of caller, not just the generated
+            // controller wiring.
+            if (outOfRange(x)) {
+                throw ValidationException.field("positionX", "positionX must be between 0 and 1");
+            }
+            if (outOfRange(y)) {
+                throw ValidationException.field("positionY", "positionY must be between 0 and 1");
+            }
+        }
+
+        List<String> ids = inputs.stream().map(RoomUnitPositionInput::getRoomUnitId).toList();
+        Map<String, RoomUnitEntity> entitiesById =
+                roomUnitRepository.findAllById(ids).stream().collect(Collectors.toMap(RoomUnitEntity::getId, e -> e));
+        for (String id : ids) {
+            if (!entitiesById.containsKey(id)) {
+                throw new BadRequestException("Unknown room unit: " + id);
+            }
+        }
+
+        List<RoomUnitEntity> saved = new ArrayList<>();
+        for (RoomUnitPositionInput input : inputs) {
+            RoomUnitEntity entity = entitiesById.get(input.getRoomUnitId());
+            BigDecimal newX = input.getPositionX().orElse(null);
+            BigDecimal newY = input.getPositionY().orElse(null);
+            boolean changed = !positionEquals(entity.getPositionX(), newX) || !positionEquals(entity.getPositionY(), newY);
+
+            entity.setPositionX(newX);
+            entity.setPositionY(newY);
+            RoomUnitEntity savedEntity = roomUnitRepository.save(entity);
+            saved.add(savedEntity);
+
+            if (changed) {
+                auditLogService.record(
+                        AuditAction.ROOM_UNIT_POSITION_UPDATED,
+                        AuditEntityType.ROOM_UNIT,
+                        savedEntity.getId(),
+                        newX == null
+                                ? "Room " + savedEntity.getLabel() + " removed from the property map"
+                                : "Room " + savedEntity.getLabel() + " placed on the property map");
+            }
+        }
+        roomUnitRepository.flush();
+        return saved.stream().map(roomUnitMapper::toDto).toList();
+    }
+
+    private static boolean outOfRange(BigDecimal value) {
+        return value != null && (value.compareTo(BigDecimal.ZERO) < 0 || value.compareTo(BigDecimal.ONE) > 0);
+    }
+
+    /** Scale-insensitive comparison - "0.5" from a request body and "0.5000" round-tripped through numeric(5,4) are the same position. */
+    private static boolean positionEquals(BigDecimal a, BigDecimal b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        return a.compareTo(b) == 0;
     }
 
     @Transactional

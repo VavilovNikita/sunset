@@ -18,7 +18,9 @@ public class RoomUnitMapper {
                 entity.getLabel(),
                 entity.isActive(),
                 entity.getHousekeepingStatus(),
-                TimestampFormat.toUtc(entity.getCreatedAt()));
+                TimestampFormat.toUtc(entity.getCreatedAt()))
+                .positionX(entity.getPositionX())
+                .positionY(entity.getPositionY());
     }
 
     public void applyInput(RoomUnitEntity entity, RoomUnitInput input) {

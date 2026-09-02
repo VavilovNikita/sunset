@@ -52,7 +52,7 @@ class RoomServiceUploadTests {
 
     private RoomService newService(Path uploadsRoot, RoomRepository roomRepository) {
         return new RoomService(roomRepository, Mockito.mock(RoomUnitRepository.class), new RoomMapper(Mockito.mock(RoomUnitRepository.class)),
-                uploadsRoot.toString(), Mockito.mock(AuditLogService.class));
+                uploadsRoot.toString(), Mockito.mock(AuditLogService.class), new ImageUploadValidator());
     }
 
     @Test

@@ -32,7 +32,9 @@ public enum AuditEntityType {
   
   USER("USER"),
   
-  ROOM_UNIT("ROOM_UNIT");
+  ROOM_UNIT("ROOM_UNIT"),
+  
+  PROPERTY_MAP("PROPERTY_MAP");
 
   private String value;
 

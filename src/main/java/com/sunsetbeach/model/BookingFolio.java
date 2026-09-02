@@ -48,7 +48,7 @@ public class BookingFolio {
   }
 
   /**
-   * `Booking.totalPrice` - decimal(10,2) rendered as a string. `0` once `status` is `PAID`.
+   * `Booking.totalPrice` - decimal(10,2) rendered as a string. Always the full room total regardless of `status` - unlike `CheckOutResult`/`TodayBoardEntry`'s `outstandingBalance` (see `BookingService.computeOutstandingBalance`), which drops this once `status` is `PAID`. `folioTotal` here is \"what this stay adds up to,\" not \"what's still owed\" - use `outstandingBalance` for that. 
    * @return roomTotal
    */
   @NotNull 
@@ -86,7 +86,7 @@ public class BookingFolio {
   }
 
   /**
-   * `roomTotal` + `roomChargesTotal` - decimal(10,2) rendered as a string. What is actually still owed right now.
+   * `roomTotal` + `roomChargesTotal` - decimal(10,2) rendered as a string. Not the same question as `outstandingBalance` (see `roomTotal`'s own description) - this always includes the full room total, `outstandingBalance` drops it once `status` is `PAID`. 
    * @return folioTotal
    */
   @NotNull 

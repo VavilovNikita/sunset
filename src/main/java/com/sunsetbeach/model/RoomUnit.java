@@ -6,8 +6,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.HousekeepingStatus;
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.springframework.format.annotation.DateTimeFormat;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -33,6 +37,10 @@ public class RoomUnit {
   private Boolean isActive;
 
   private HousekeepingStatus housekeepingStatus;
+
+  private JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> positionX = JsonNullable.<BigDecimal>undefined();
+
+  private JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> positionY = JsonNullable.<BigDecimal>undefined();
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
@@ -148,6 +156,48 @@ public class RoomUnit {
     this.housekeepingStatus = housekeepingStatus;
   }
 
+  public RoomUnit positionX(BigDecimal positionX) {
+    this.positionX = JsonNullable.of(positionX);
+    return this;
+  }
+
+  /**
+   * Normalized (0..1) horizontal position on the property map image, set via `PATCH /room-units/positions`. Null (always paired with a null `positionY`) means this unit hasn't been placed on the map yet - a normal state, especially right after the map ships. 
+   * minimum: 0
+   * maximum: 1
+   * @return positionX
+   */
+  @Valid @DecimalMin("0") @DecimalMax("1") 
+  @JsonProperty("positionX")
+  public JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> getPositionX() {
+    return positionX;
+  }
+
+  public void setPositionX(JsonNullable<BigDecimal> positionX) {
+    this.positionX = positionX;
+  }
+
+  public RoomUnit positionY(BigDecimal positionY) {
+    this.positionY = JsonNullable.of(positionY);
+    return this;
+  }
+
+  /**
+   * Normalized (0..1) vertical position - see `positionX`.
+   * minimum: 0
+   * maximum: 1
+   * @return positionY
+   */
+  @Valid @DecimalMin("0") @DecimalMax("1") 
+  @JsonProperty("positionY")
+  public JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> getPositionY() {
+    return positionY;
+  }
+
+  public void setPositionY(JsonNullable<BigDecimal> positionY) {
+    this.positionY = positionY;
+  }
+
   public RoomUnit createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -181,12 +231,25 @@ public class RoomUnit {
         Objects.equals(this.label, roomUnit.label) &&
         Objects.equals(this.isActive, roomUnit.isActive) &&
         Objects.equals(this.housekeepingStatus, roomUnit.housekeepingStatus) &&
+        equalsNullable(this.positionX, roomUnit.positionX) &&
+        equalsNullable(this.positionY, roomUnit.positionY) &&
         Objects.equals(this.createdAt, roomUnit.createdAt);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, label, isActive, housekeepingStatus, createdAt);
+    return Objects.hash(id, roomId, label, isActive, housekeepingStatus, hashCodeNullable(positionX), hashCodeNullable(positionY), createdAt);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -198,6 +261,8 @@ public class RoomUnit {
     sb.append("    label: ").append(toIndentedString(label)).append("\n");
     sb.append("    isActive: ").append(toIndentedString(isActive)).append("\n");
     sb.append("    housekeepingStatus: ").append(toIndentedString(housekeepingStatus)).append("\n");
+    sb.append("    positionX: ").append(toIndentedString(positionX)).append("\n");
+    sb.append("    positionY: ").append(toIndentedString(positionY)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();

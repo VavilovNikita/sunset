@@ -1,10 +1,12 @@
 package com.sunsetbeach.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -31,6 +33,14 @@ public class RoomUnitEntity {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private HousekeepingStatus housekeepingStatus = HousekeepingStatus.CLEAN;
+
+    // Position on the property map image (0..1, normalized) - see V28__room_unit_position.sql.
+    // Both null = not placed on the map yet.
+    @Column(precision = 5, scale = 4)
+    private BigDecimal positionX;
+
+    @Column(precision = 5, scale = 4)
+    private BigDecimal positionY;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
@@ -77,5 +87,21 @@ public class RoomUnitEntity {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public BigDecimal getPositionX() {
+        return positionX;
+    }
+
+    public void setPositionX(BigDecimal positionX) {
+        this.positionX = positionX;
+    }
+
+    public BigDecimal getPositionY() {
+        return positionY;
+    }
+
+    public void setPositionY(BigDecimal positionY) {
+        this.positionY = positionY;
     }
 }

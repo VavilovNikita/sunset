@@ -16,12 +16,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -31,33 +29,26 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class RoomService {
 
-    private static final long MAX_FILE_BYTES = 8L * 1024 * 1024;
-    // Keyed by the type Tika detects from actual file content (magic bytes), not the
-    // client-supplied Content-Type header - this is what decides both acceptance and the
-    // stored file's extension, so a relabeled .svg can't slip through as a "photo".
-    private static final Map<String, String> ALLOWED_TYPE_EXTENSIONS =
-            Map.of("image/jpeg", ".jpg", "image/png", ".png", "image/webp", ".webp");
-    private static final Tika TIKA = new Tika();
-    private static final SecureRandom RANDOM = new SecureRandom();
-    private static final String ALPHANUMERIC = "abcdefghijklmnopqrstuvwxyz0123456789";
-
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
     private final RoomMapper roomMapper;
     private final Path uploadsRoot;
     private final AuditLogService auditLogService;
+    private final ImageUploadValidator imageUploadValidator;
 
     public RoomService(
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             RoomMapper roomMapper,
             @Value("${app.uploads.root}") String uploadsRoot,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            ImageUploadValidator imageUploadValidator) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomMapper = roomMapper;
         this.uploadsRoot = Path.of(uploadsRoot);
         this.auditLogService = auditLogService;
+        this.imageUploadValidator = imageUploadValidator;
     }
 
     @Transactional(readOnly = true)
@@ -132,25 +123,9 @@ public class RoomService {
 
         // Validate every file before writing any of them - the first violation aborts the
         // whole request, so nothing should be left on disk from a rejected upload.
-        List<byte[]> contents = new ArrayList<>();
-        List<String> extensions = new ArrayList<>();
+        List<ImageUploadValidator.ValidatedImage> validated = new ArrayList<>();
         for (MultipartFile file : files) {
-            if (file.getSize() > MAX_FILE_BYTES) {
-                throw new BadRequestException(file.getOriginalFilename() + " exceeds the 8MB limit");
-            }
-            byte[] bytes;
-            try {
-                bytes = file.getBytes();
-            } catch (IOException e) {
-                throw new IllegalStateException("Could not read uploaded file", e);
-            }
-            String detectedType = TIKA.detect(bytes);
-            String extension = ALLOWED_TYPE_EXTENSIONS.get(detectedType);
-            if (extension == null) {
-                throw new BadRequestException("Unsupported file type: " + detectedType);
-            }
-            contents.add(bytes);
-            extensions.add(extension);
+            validated.add(imageUploadValidator.validate(file));
         }
 
         Path dir = uploadsRoot.resolve("rooms").resolve(room.getId());
@@ -161,10 +136,10 @@ public class RoomService {
         }
 
         List<String> newPaths = new ArrayList<>();
-        for (int i = 0; i < files.size(); i++) {
-            String filename = randomFilename(extensions.get(i));
+        for (ImageUploadValidator.ValidatedImage image : validated) {
+            String filename = imageUploadValidator.randomFilename(image.extension());
             try {
-                Files.write(dir.resolve(filename), contents.get(i));
+                Files.write(dir.resolve(filename), image.bytes());
             } catch (IOException e) {
                 throw new IllegalStateException("Could not write uploaded file", e);
             }
@@ -225,13 +200,5 @@ public class RoomService {
         } catch (IOException ignored) {
             // best-effort, matches the JS route's .catch(() => {})
         }
-    }
-
-    private static String randomFilename(String extension) {
-        StringBuilder random = new StringBuilder(6);
-        for (int i = 0; i < 6; i++) {
-            random.append(ALPHANUMERIC.charAt(RANDOM.nextInt(ALPHANUMERIC.length())));
-        }
-        return System.currentTimeMillis() + "-" + random + extension;
     }
 }

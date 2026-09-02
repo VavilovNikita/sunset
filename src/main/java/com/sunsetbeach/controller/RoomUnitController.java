@@ -7,6 +7,7 @@ import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.RoomUnitBlock;
 import com.sunsetbeach.model.RoomUnitBlockInput;
 import com.sunsetbeach.model.RoomUnitInput;
+import com.sunsetbeach.model.RoomUnitPositionInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
 import com.sunsetbeach.service.RoomUnitService;
 import java.util.List;
@@ -46,6 +47,11 @@ public class RoomUnitController implements RoomUnitsApi {
     @Override
     public ResponseEntity<RoomUnit> updateRoomUnitHousekeeping(String id, HousekeepingStatusInput housekeepingStatusInput) {
         return ResponseEntity.ok(roomUnitService.updateHousekeeping(id, housekeepingStatusInput.getHousekeepingStatus()));
+    }
+
+    @Override
+    public ResponseEntity<List<RoomUnit>> saveRoomUnitPositions(List<RoomUnitPositionInput> roomUnitPositionInput) {
+        return ResponseEntity.ok(roomUnitService.savePositions(roomUnitPositionInput));
     }
 
     @Override
