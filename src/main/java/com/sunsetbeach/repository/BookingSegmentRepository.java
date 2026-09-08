@@ -44,4 +44,15 @@ public interface BookingSegmentRepository extends JpaRepository<BookingSegmentEn
 
     /** Used by {@link com.sunsetbeach.service.RoomUnitService} to reject deleting/deactivating a unit still promised to a future guest. */
     boolean existsByRoomUnitIdAndBooking_StatusNotAndCheckOutGreaterThan(String roomUnitId, BookingStatus excludedStatus, LocalDate from);
+
+    /**
+     * Unit-level overlap against a {@code RoomUnitBlock}, not another booking - {@code toDate} is
+     * inclusive (a block's own {@code fromDate}/{@code toDate} both are, unlike a booking's
+     * exclusive {@code checkOut}), so this takes {@code CheckInLessThanEqual} where the
+     * booking-vs-booking finders above take {@code CheckInLessThan}. Used by
+     * {@link com.sunsetbeach.service.RoomUnitService#createBlock} to warn, not refuse, when a new
+     * block overlaps a booking.
+     */
+    List<BookingSegmentEntity> findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
+            String roomUnitId, BookingStatus excludedStatus, LocalDate blockToDate, LocalDate blockFromDate);
 }

@@ -6,6 +6,7 @@ import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.RoomUnitBlock;
 import com.sunsetbeach.model.RoomUnitBlockInput;
+import com.sunsetbeach.model.RoomUnitBlockResult;
 import com.sunsetbeach.model.RoomUnitInput;
 import com.sunsetbeach.model.RoomUnitPositionInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
@@ -66,7 +67,7 @@ public class RoomUnitController implements RoomUnitsApi {
     }
 
     @Override
-    public ResponseEntity<RoomUnitBlock> createRoomUnitBlock(String id, RoomUnitBlockInput roomUnitBlockInput) {
+    public ResponseEntity<RoomUnitBlockResult> createRoomUnitBlock(String id, RoomUnitBlockInput roomUnitBlockInput) {
         return ResponseEntity.status(HttpStatus.CREATED).body(roomUnitService.createBlock(id, roomUnitBlockInput));
     }
 

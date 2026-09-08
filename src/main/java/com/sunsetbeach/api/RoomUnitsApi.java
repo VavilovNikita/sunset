@@ -11,6 +11,7 @@ import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.RoomUnitBlock;
 import com.sunsetbeach.model.RoomUnitBlockInput;
+import com.sunsetbeach.model.RoomUnitBlockResult;
 import com.sunsetbeach.model.RoomUnitInput;
 import com.sunsetbeach.model.RoomUnitPositionInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
@@ -95,11 +96,11 @@ public interface RoomUnitsApi {
 
     /**
      * POST /room-units/{id}/blocks : Pull a physical room off sale for a date range
-     * Requires MANAGER or above. Does not touch bookings - a block only affects the availability calculation. Overlapping blocks on the same unit are allowed (not merged). 
+     * Requires MANAGER or above. Creating a block never cancels, moves, or otherwise touches a booking - if the blocked range overlaps one or more non-CANCELLED bookings assigned to this unit, the block is still created and &#x60;RoomUnitBlockResult.warning&#x60; is set instead; see that schema&#39;s own description for the overlap rule. Overlapping blocks on the same unit are allowed (not merged). 
      *
      * @param id  (required)
      * @param roomUnitBlockInput  (required)
-     * @return Block created. (status code 201)
+     * @return Block created, with a warning set if it overlaps any bookings. (status code 201)
      *         or Body failed validation (includes &#x60;fromDate &lt;&#x3D; toDate&#x60;). (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
@@ -112,14 +113,14 @@ public interface RoomUnitsApi {
         consumes = { "application/json" }
     )
     
-    default ResponseEntity<RoomUnitBlock> createRoomUnitBlock(
+    default ResponseEntity<RoomUnitBlockResult> createRoomUnitBlock(
          @PathVariable("id") String id,
          @Valid @RequestBody RoomUnitBlockInput roomUnitBlockInput
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"fromDate\" : \"fromDate\", \"reason\" : \"reason\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"toDate\" : \"toDate\", \"id\" : \"id\", \"roomUnitId\" : \"roomUnitId\" }";
+                    String exampleString = "{ \"affectedBookings\" : [ { \"checkIn\" : \"checkIn\", \"checkOut\" : \"checkOut\", \"bookingId\" : \"bookingId\", \"guestName\" : \"guestName\", \"status\" : \"NEW\" }, { \"checkIn\" : \"checkIn\", \"checkOut\" : \"checkOut\", \"bookingId\" : \"bookingId\", \"guestName\" : \"guestName\", \"status\" : \"NEW\" } ], \"warning\" : \"warning\", \"block\" : { \"fromDate\" : \"fromDate\", \"reason\" : \"reason\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"toDate\" : \"toDate\", \"id\" : \"id\", \"roomUnitId\" : \"roomUnitId\" } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

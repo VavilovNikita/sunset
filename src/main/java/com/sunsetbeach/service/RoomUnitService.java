@@ -1,5 +1,7 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.RoomUnitBlockEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.BadRequestException;
@@ -13,10 +15,13 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.RoomUnitBlock;
+import com.sunsetbeach.model.RoomUnitBlockAffectedBooking;
 import com.sunsetbeach.model.RoomUnitBlockInput;
+import com.sunsetbeach.model.RoomUnitBlockResult;
 import com.sunsetbeach.model.RoomUnitInput;
 import com.sunsetbeach.model.RoomUnitPositionInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
+import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitBlockRepository;
@@ -39,6 +44,7 @@ public class RoomUnitService {
     private final RoomUnitRepository roomUnitRepository;
     private final RoomUnitBlockRepository roomUnitBlockRepository;
     private final BookingSegmentRepository segmentRepository;
+    private final BookingRepository bookingRepository;
     private final RoomUnitMapper roomUnitMapper;
     private final AuditLogService auditLogService;
 
@@ -47,12 +53,14 @@ public class RoomUnitService {
             RoomUnitRepository roomUnitRepository,
             RoomUnitBlockRepository roomUnitBlockRepository,
             BookingSegmentRepository segmentRepository,
+            BookingRepository bookingRepository,
             RoomUnitMapper roomUnitMapper,
             AuditLogService auditLogService) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
         this.segmentRepository = segmentRepository;
+        this.bookingRepository = bookingRepository;
         this.roomUnitMapper = roomUnitMapper;
         this.auditLogService = auditLogService;
     }
@@ -245,8 +253,17 @@ public class RoomUnitService {
         return roomUnitBlockRepository.findByRoomUnitId(roomUnitId).stream().map(roomUnitMapper::toDto).toList();
     }
 
+    /**
+     * Warn-don't-block, matching {@link BookingOccupancyService#checkIn}: the block is created
+     * (and returned) even when it overlaps a booking, with {@link RoomUnitBlockResult#getWarning()}
+     * set instead of a rejection. Overlap is computed from {@link BookingSegmentEntity} (the
+     * source of truth for which unit a booking occupies on which dates - see {@link
+     * AvailabilityService#computeInventory}), not {@link BookingEntity}'s own summary
+     * checkIn/checkOut, even though the warning lists the *booking's* summary fields once a
+     * bookingId is known to be affected.
+     */
     @Transactional
-    public RoomUnitBlock createBlock(String roomUnitId, RoomUnitBlockInput input) {
+    public RoomUnitBlockResult createBlock(String roomUnitId, RoomUnitBlockInput input) {
         RoomUnitEntity unit = findEntity(roomUnitId);
 
         LocalDate fromDate = LocalDate.parse(input.getFromDate());
@@ -262,13 +279,39 @@ public class RoomUnitService {
         entity.setReason(input.getReason().trim());
         RoomUnitBlockEntity saved = roomUnitBlockRepository.saveAndFlush(entity);
 
+        List<RoomUnitBlockAffectedBooking> affectedBookings = findAffectedBookings(roomUnitId, fromDate, toDate);
+        String warning = affectedBookings.isEmpty()
+                ? null
+                : "This room has " + affectedBookings.size() + " booking(s) during the blocked range - the block does not cancel or move them.";
+
         auditLogService.record(
                 AuditAction.ROOM_UNIT_BLOCK_CREATED,
                 AuditEntityType.ROOM_UNIT,
                 roomUnitId,
-                "Room " + unit.getLabel() + " blocked " + fromDate + " to " + toDate + " (" + entity.getReason() + ")");
+                "Room " + unit.getLabel() + " blocked " + fromDate + " to " + toDate + " (" + entity.getReason() + ")"
+                        + (affectedBookings.isEmpty() ? "" : " - overlaps " + affectedBookings.size() + " booking(s)"));
 
-        return roomUnitMapper.toDto(saved);
+        return new RoomUnitBlockResult(roomUnitMapper.toDto(saved), warning, affectedBookings);
+    }
+
+    /**
+     * {@code toDate} is passed where the finder's parameter name says {@code blockToDate} (and
+     * {@code fromDate} for {@code blockFromDate}) - see
+     * {@link BookingSegmentRepository#findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan}
+     * for why this is {@code <=}/{@code >}, not the booking-vs-booking finders' {@code <}/{@code >}.
+     */
+    private List<RoomUnitBlockAffectedBooking> findAffectedBookings(String roomUnitId, LocalDate fromDate, LocalDate toDate) {
+        List<BookingSegmentEntity> overlapping = segmentRepository
+                .findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
+                        roomUnitId, BookingStatus.CANCELLED, toDate, fromDate);
+
+        List<String> bookingIds = overlapping.stream().map(BookingSegmentEntity::getBookingId).distinct().toList();
+
+        return bookingIds.stream()
+                .map(id -> bookingRepository.findById(id).orElseThrow(() -> new NotFoundException("Booking not found")))
+                .map(b -> new RoomUnitBlockAffectedBooking(
+                        b.getId(), b.getGuestName(), b.getCheckIn().toString(), b.getCheckOut().toString(), b.getStatus()))
+                .toList();
     }
 
     @Transactional

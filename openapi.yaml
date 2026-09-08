@@ -952,8 +952,11 @@ paths:
       tags: [RoomUnits]
       summary: Pull a physical room off sale for a date range
       description: >
-        Requires MANAGER or above. Does not touch bookings - a block only affects the
-        availability calculation. Overlapping blocks on the same unit are allowed (not merged).
+        Requires MANAGER or above. Creating a block never cancels, moves, or otherwise touches a
+        booking - if the blocked range overlaps one or more non-CANCELLED bookings assigned to
+        this unit, the block is still created and `RoomUnitBlockResult.warning` is set instead;
+        see that schema's own description for the overlap rule. Overlapping blocks on the same
+        unit are allowed (not merged).
       requestBody:
         required: true
         content:
@@ -962,11 +965,11 @@ paths:
               $ref: "#/components/schemas/RoomUnitBlockInput"
       responses:
         "201":
-          description: Block created.
+          description: Block created, with a warning set if it overlaps any bookings.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RoomUnitBlock"
+                $ref: "#/components/schemas/RoomUnitBlockResult"
         "400":
           description: Body failed validation (includes `fromDate <= toDate`).
           content:
@@ -4794,6 +4797,53 @@ components:
           type: string
           minLength: 1
       # Cross-field rule: fromDate <= toDate (matches RoomUnitBlock_date_range_check).
+
+    RoomUnitBlockAffectedBooking:
+      type: object
+      description: >
+        One booking whose stay overlaps a block being created on this unit - enough for the UI
+        to name the guest and link to the booking (`GET /bookings/{id}`), not the full `Booking`
+        object. `checkIn`/`checkOut`/`status` are the booking's own derived-from-segments fields
+        (see `Booking`'s own description), not the specific segment that touches this unit - the
+        overwhelmingly common case is one segment, and this stays a simple per-booking summary
+        rather than a per-segment one.
+      required: [bookingId, guestName, checkIn, checkOut, status]
+      properties:
+        bookingId:
+          type: string
+        guestName:
+          type: string
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        status:
+          $ref: "#/components/schemas/BookingStatus"
+
+    RoomUnitBlockResult:
+      type: object
+      description: >
+        Response of `POST /room-units/{id}/blocks`. `warning` is set (but the block is still
+        created) when the blocked range overlaps one or more non-CANCELLED bookings assigned to
+        this unit - staff are told, not blocked, the same warn-don't-block shape as
+        `CheckInResult`. Overlap uses the same rule the calendar/availability engine already use
+        to compare a booking against a block: `booking.checkIn <= block.toDate &&
+        booking.checkOut > block.fromDate` - `RoomUnitBlock.fromDate`/`toDate` are both
+        inclusive, a booking's `checkOut` is exclusive (the departure day is free), so a block
+        starting on a booking's checkout day does not warn.
+      required: [block, warning, affectedBookings]
+      properties:
+        block:
+          $ref: "#/components/schemas/RoomUnitBlock"
+        warning:
+          type: string
+          nullable: true
+        affectedBookings:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomUnitBlockAffectedBooking"
 
     PropertyMapCurrentBooking:
       type: object
