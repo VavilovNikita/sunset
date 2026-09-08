@@ -26,6 +26,8 @@ PII redaction in `toString()` is not manual any more: mark a property `x-sensiti
 
 **`ALTER TYPE ... ADD VALUE` and any DML using the new value must be in separate migration files.** PostgreSQL forbids using a freshly added enum value in the same transaction, and Flyway wraps each migration in one. See V2/V3 (new `Role` values) and V6/V7 (new `PrintDocumentType` value, then a backfill — V6's own comment explains the split).
 
+**A set of values on one row is `TEXT[]` plus a `CHECK` constraint, not a native Postgres enum array.** `Role` is a native enum (one value per row); `JobFunction` (`User.jobFunctions`, a set) is not, deliberately — this project has a working Hibernate mapping for a scalar native enum and for a plain array (`RoomEntity.images` is the only array column here, and it's `text[]`), but none for an *array of a custom enum type*, and `V33__user_job_functions.sql` wasn't the place to become the first. The `CHECK` constraint is the DB-side validation a native enum would otherwise provide. Don't "fix" this inconsistency by converting it to a native enum array — read `V33`'s own comment first. It's a deliberate trade-off, not an oversight: it costs `JobFunction` the type safety a native enum gets, but it buys a real simplification — adding a third value later is one migration updating the `CHECK` constraint, not the `ALTER TYPE`-plus-separate-migration dance the rule above describes.
+
 Some migrations are destructive (dropped columns, deleted rows) — V4 and V11 are the two so far. Code rollback alone is not safe once one of these has run; restoring means restoring a dump. Take one before deploying.
 
 ## Money

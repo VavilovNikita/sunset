@@ -246,6 +246,17 @@ public class SecurityConfig {
      * exception is `/users/**`, matched with a literal hasRole(ADMIN) check above that this
      * hierarchy does not loosen (WAITER < CASHIER < MANAGER < ADMIN still means only ADMIN
      * satisfies it).
+     *
+     * <p>Job functions (see {@code com.sunsetbeach.model.JobFunction} - ENGINEER, HOUSEKEEPER)
+     * are a second, deliberately independent axis and never appear in this hierarchy string or
+     * as a ROLE_ authority: {@link JwtAuthFilter} grants them as their own {@code FUNCTION_<name>}
+     * authorities (e.g. {@code "FUNCTION_ENGINEER"}), gate a path on one with
+     * {@code hasAuthority("FUNCTION_ENGINEER")} - never {@code hasRole()}/{@code hasAnyRole()},
+     * which would route it through this hierarchy and let it inherit/grant along the role ladder,
+     * exactly what a function must not do. As of this comment nothing in the app is
+     * function-gated yet, so no such rule exists below - add one here, with its own explicit
+     * matcher (EndpointCoverageTests enforces this the same as every other path), the day an
+     * endpoint actually needs it.
      */
     @Bean
     public RoleHierarchy roleHierarchy() {

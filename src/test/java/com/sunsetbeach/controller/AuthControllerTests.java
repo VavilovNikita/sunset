@@ -25,6 +25,7 @@ import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.UserService;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -195,7 +196,7 @@ class AuthControllerTests {
     @Test
     void register_withAdminToken_delegatesToUserService() throws Exception {
         String adminToken = "Bearer " + jwtService.issue(new StaffPrincipal("admin-1", "admin@example.com", Role.ADMIN));
-        User created = new User("user-2", "new@example.com", Role.MANAGER, true, OffsetDateTime.now());
+        User created = new User("user-2", "new@example.com", Role.MANAGER, true, List.of(), OffsetDateTime.now());
         when(userService.create(any(UserCreateInput.class))).thenReturn(created);
 
         mockMvc.perform(post("/auth/register")

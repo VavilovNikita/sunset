@@ -8,11 +8,14 @@ import com.sunsetbeach.error.UnauthorizedException;
 import com.sunsetbeach.mapper.UserMapper;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
+import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.User;
 import com.sunsetbeach.model.UserCreateInput;
+import com.sunsetbeach.model.UserFunctionsUpdateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
 import com.sunsetbeach.repository.UserRepository;
+import java.util.LinkedHashSet;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -84,6 +87,37 @@ public class UserService {
                 saved.getId(),
                 "Role for " + saved.getEmail() + " changed from " + oldRole.getValue() + " to " + saved.getRole().getValue());
         return userMapper.toDto(saved);
+    }
+
+    /**
+     * {@code PATCH /users/{id}/functions} - job functions are a second, independent
+     * authorization axis alongside {@link Role} (see {@link JobFunction}), so unlike
+     * {@link #updateRole}/{@link #setActive}/{@link #resetPassword} this does NOT bump
+     * {@code tokenVersion}: {@link com.sunsetbeach.security.JwtAuthFilter} already re-reads this
+     * user's row on every request (to check {@code active}/{@code tokenVersion}) and grants
+     * {@code FUNCTION_<name>} authorities straight from that fresh read, not from the JWT's own
+     * claims the way {@code role} is - so a change here is already enforced on the very next
+     * request without forcing a re-login. Full replace, not incremental: the input is the
+     * complete desired set. No self-change restriction - unlike role/active, this can't lock the
+     * caller out of anything.
+     */
+    @Transactional
+    public User updateFunctions(String id, UserFunctionsUpdateInput input) {
+        UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        String[] oldFunctions = entity.getJobFunctions();
+        String[] newFunctions = new LinkedHashSet<>(input.getFunctions()).stream().map(JobFunction::getValue).toArray(String[]::new);
+        entity.setJobFunctions(newFunctions);
+        UserEntity saved = userRepository.save(entity);
+        auditLogService.record(
+                AuditAction.USER_FUNCTIONS_CHANGED,
+                AuditEntityType.USER,
+                saved.getId(),
+                "Job functions for " + saved.getEmail() + " changed from " + describeFunctions(oldFunctions) + " to " + describeFunctions(newFunctions));
+        return userMapper.toDto(saved);
+    }
+
+    private static String describeFunctions(String[] functions) {
+        return functions.length == 0 ? "none" : String.join(", ", functions);
     }
 
     /**

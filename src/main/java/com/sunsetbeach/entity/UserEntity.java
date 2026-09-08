@@ -39,6 +39,16 @@ public class UserEntity {
     // current value here. This is the only way a stateless JWT gets revoked before it expires.
     private int tokenVersion = 0;
 
+    // A second, independent authorization axis alongside role (see JobFunction) - raw enum
+    // names (e.g. "ENGINEER"), not a native Postgres enum array: RoomEntity.images is this
+    // codebase's only other array column and is plain text[] too, so this follows that
+    // precedent rather than an unproven Hibernate array-of-custom-enum mapping. A DB-level CHECK
+    // constraint (see V33) is the validation a native enum type would otherwise provide.
+    // JwtAuthFilter reads this column fresh on every request to grant FUNCTION_<name>
+    // authorities - unlike role, a change here needs no tokenVersion bump.
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    private String[] jobFunctions = new String[0];
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -92,5 +102,13 @@ public class UserEntity {
 
     public void setTokenVersion(int tokenVersion) {
         this.tokenVersion = tokenVersion;
+    }
+
+    public String[] getJobFunctions() {
+        return jobFunctions;
+    }
+
+    public void setJobFunctions(String[] jobFunctions) {
+        this.jobFunctions = jobFunctions;
     }
 }

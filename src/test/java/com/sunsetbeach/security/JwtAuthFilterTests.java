@@ -43,6 +43,12 @@ class JwtAuthFilterTests {
         return entity;
     }
 
+    private static UserEntity activeUserWithFunctions(int tokenVersion, String... jobFunctions) {
+        UserEntity entity = activeUser(tokenVersion);
+        entity.setJobFunctions(jobFunctions);
+        return entity;
+    }
+
     private void runFilter(String bearerHeader) throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
         if (bearerHeader != null) {
@@ -102,6 +108,35 @@ class JwtAuthFilterTests {
         runFilter("Bearer " + token);
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void userWithJobFunctions_grantsFunctionAuthoritiesAlongsideRole() throws Exception {
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(activeUserWithFunctions(0, "ENGINEER")));
+        String token = jwtService.issue(new StaffPrincipal("user-1", "user@example.com", Role.CASHIER), 0);
+
+        runFilter("Bearer " + token);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
+                .extracting(Object::toString)
+                .containsExactlyInAnyOrder("ROLE_CASHIER", "FUNCTION_ENGINEER");
+    }
+
+    @Test
+    void userWithNoJobFunctions_grantsOnlyRoleAuthority() throws Exception {
+        // The token itself never carries functions (StaffPrincipal doesn't have them) - this and
+        // the test above both prove authorities come from a fresh read of the User row on every
+        // request, not from anything embedded in the JWT the way role is. That's exactly why a
+        // job-function change (unlike a role change) needs no tokenVersion bump: this DB read
+        // already happens on every request regardless.
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(activeUser(0)));
+        String token = jwtService.issue(new StaffPrincipal("user-1", "user@example.com", Role.CASHIER), 0);
+
+        runFilter("Bearer " + token);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
+                .extracting(Object::toString)
+                .containsExactly("ROLE_CASHIER");
     }
 
     @Test

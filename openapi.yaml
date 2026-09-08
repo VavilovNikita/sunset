@@ -3908,6 +3908,59 @@ paths:
               example:
                 error: User not found
 
+  /users/{id}/functions:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateUserFunctions
+      tags: [Users]
+      summary: Set a staff user's job functions
+      description: >
+        Requires an authenticated session with role `ADMIN` - job functions are managed under
+        `/users/**` alongside role, password and active-state, not through any lower-privilege
+        route. Replaces the full set (send every function this user should have; an empty array
+        clears all of them). Unlike `PATCH /users/{id}` (role), `PATCH /users/{id}/password`, and
+        `PATCH /users/{id}/active`, this does not bump `tokenVersion` and does not invalidate any
+        existing token - `JwtAuthFilter` grants `FUNCTION_<name>` authorities from a fresh read of
+        this user on every request already (the same row it re-reads to check `active`/
+        `tokenVersion`), so a change here is enforced on the very next request with no re-login
+        needed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserFunctionsUpdateInput"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: User not found
+
   /users/{id}/password:
     parameters:
       - name: id
@@ -4235,6 +4288,16 @@ components:
         Hierarchical: ADMIN > MANAGER > CASHIER > WAITER (see RoleHierarchy bean). A role
         check written as e.g. "CASHIER" is satisfied by CASHIER, MANAGER, or ADMIN. `/users/**`
         is the one exception — hard-restricted to ADMIN regardless of hierarchy.
+
+    JobFunction:
+      type: string
+      enum: [ENGINEER, HOUSEKEEPER]
+      description: >
+        A second, independent authorization axis alongside `Role` — a sideways job, not a step
+        on the ADMIN > MANAGER > CASHIER > WAITER ladder. A function grants access to specific
+        endpoints on its own, without granting anything else and without being expressed as a
+        role comparison; it never appears in the RoleHierarchy bean. `User.functions` is a set
+        (zero or more, no duplicates) — see that schema.
 
     Zone:
       type: string
@@ -5429,7 +5492,7 @@ components:
     User:
       type: object
       description: Safe projection returned by the API — `passwordHash` is never included.
-      required: [id, email, role, active, createdAt]
+      required: [id, email, role, active, functions, createdAt]
       properties:
         id:
           type: string
@@ -5443,6 +5506,15 @@ components:
             Whether this account can currently authenticate. A disabled account's already-issued
             tokens are rejected on their very next request regardless of remaining validity -
             see `PATCH /users/{id}/active`.
+        functions:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobFunction"
+          description: >
+            This user's job functions (see `JobFunction`) - zero or more, independent of `role`.
+            Set via `PATCH /users/{id}/functions`. Does not affect authentication - unlike a role
+            change, changing this does not invalidate existing tokens (see that operation's own
+            description for why).
         createdAt:
           type: string
           format: date-time
@@ -5491,6 +5563,19 @@ components:
       properties:
         role:
           $ref: "#/components/schemas/Role"
+
+    UserFunctionsUpdateInput:
+      type: object
+      description: >
+        Body of `PATCH /users/{id}/functions`. Replaces the full set of job functions - send
+        every function this user should have, not just the one being added or removed. An empty
+        array clears every function.
+      required: [functions]
+      properties:
+        functions:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobFunction"
 
     ChangePasswordInput:
       type: object
@@ -6294,6 +6379,7 @@ components:
         - USER_ROLE_CHANGED
         - USER_ACTIVE_CHANGED
         - USER_PASSWORD_RESET
+        - USER_FUNCTIONS_CHANGED
         - ROOM_UNIT_CREATED
         - ROOM_UNIT_UPDATED
         - ROOM_UNIT_DELETED

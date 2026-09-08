@@ -249,6 +249,25 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void updateUserFunctions_withManagerToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/users/user-2/functions")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"functions\":[\"ENGINEER\"]}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateUserFunctions_withAdminToken_isOk() throws Exception {
+        when(userService.updateFunctions(eq("user-2"), any())).thenReturn(sampleUser());
+        mockMvc.perform(patch("/users/user-2/functions")
+                        .header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"functions\":[\"ENGINEER\"]}"))
+                .andExpect(status().isOk());
+    }
+
     // --- POST /menu requires MANAGER or above ---
 
     @Test
@@ -812,7 +831,7 @@ class PosRoleHierarchyTests {
     }
 
     private static com.sunsetbeach.model.User sampleUser() {
-        return new com.sunsetbeach.model.User("user-2", "user-2@example.com", Role.CASHIER, true, OffsetDateTime.now());
+        return new com.sunsetbeach.model.User("user-2", "user-2@example.com", Role.CASHIER, true, List.of(), OffsetDateTime.now());
     }
 
     private static BookingSegment sampleBookingSegment() {

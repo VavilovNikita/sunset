@@ -5,8 +5,12 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.Role;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -32,6 +36,9 @@ public class User {
 
   private Boolean active;
 
+  @Valid
+  private List<JobFunction> functions = new ArrayList<>();
+
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
@@ -42,11 +49,12 @@ public class User {
   /**
    * Constructor with only required parameters
    */
-  public User(String id, String email, Role role, Boolean active, OffsetDateTime createdAt) {
+  public User(String id, String email, Role role, Boolean active, List<JobFunction> functions, OffsetDateTime createdAt) {
     this.id = id;
     this.email = email;
     this.role = role;
     this.active = active;
+    this.functions = functions;
     this.createdAt = createdAt;
   }
 
@@ -126,6 +134,33 @@ public class User {
     this.active = active;
   }
 
+  public User functions(List<JobFunction> functions) {
+    this.functions = functions;
+    return this;
+  }
+
+  public User addFunctionsItem(JobFunction functionsItem) {
+    if (this.functions == null) {
+      this.functions = new ArrayList<>();
+    }
+    this.functions.add(functionsItem);
+    return this;
+  }
+
+  /**
+   * This user's job functions (see `JobFunction`) - zero or more, independent of `role`. Set via `PATCH /users/{id}/functions`. Does not affect authentication - unlike a role change, changing this does not invalidate existing tokens (see that operation's own description for why). 
+   * @return functions
+   */
+  @NotNull @Valid 
+  @JsonProperty("functions")
+  public List<JobFunction> getFunctions() {
+    return functions;
+  }
+
+  public void setFunctions(List<JobFunction> functions) {
+    this.functions = functions;
+  }
+
   public User createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -158,12 +193,13 @@ public class User {
         Objects.equals(this.email, user.email) &&
         Objects.equals(this.role, user.role) &&
         Objects.equals(this.active, user.active) &&
+        Objects.equals(this.functions, user.functions) &&
         Objects.equals(this.createdAt, user.createdAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, email, role, active, createdAt);
+    return Objects.hash(id, email, role, active, functions, createdAt);
   }
 
   @Override
@@ -174,6 +210,7 @@ public class User {
     sb.append("    email: ").append(toIndentedString(email)).append("\n");
     sb.append("    role: ").append(toIndentedString(role)).append("\n");
     sb.append("    active: ").append(toIndentedString(active)).append("\n");
+    sb.append("    functions: ").append(toIndentedString(functions)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();
