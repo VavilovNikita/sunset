@@ -4889,14 +4889,20 @@ components:
       type: object
       description: >
         Response of `POST /room-units/{id}/blocks`. `warning` is set (but the block is still
-        created) when the blocked range overlaps one or more non-CANCELLED bookings assigned to
-        this unit - staff are told, not blocked, the same warn-don't-block shape as
-        `CheckInResult`. Overlap uses the same rule the calendar/availability engine already use
-        to compare a booking against a block: `booking.checkIn <= block.toDate &&
-        booking.checkOut > block.fromDate` - `RoomUnitBlock.fromDate`/`toDate` are both
-        inclusive, a booking's `checkOut` is exclusive (the departure day is free), so a block
-        starting on a booking's checkout day does not warn.
-      required: [block, warning, affectedBookings]
+        created) when the blocked range overlaps one or more non-CANCELLED bookings - staff are
+        told, not blocked, the same warn-don't-block shape as `CheckInResult`. Two distinct
+        populations, because the manager's next move differs for each: `affectedBookings` are
+        assigned to this exact physical unit (a certain conflict - the guest is in this specific
+        room); `affectedUnassignedBookings` are booked into this unit's *room type* with no
+        specific unit chosen yet (`Booking.roomUnitId` null) - not yet in this room, but pulling
+        one more unit out of the type's pool can leave too few units for them, the same oversell
+        `AvailabilityDay.availableCount` already models by not clamping at zero (see that
+        schema). Both use the same overlap rule the calendar/availability engine already use to
+        compare a booking against a block: `booking.checkIn <= block.toDate && booking.checkOut >
+        block.fromDate` - `RoomUnitBlock.fromDate`/`toDate` are both inclusive, a booking's
+        `checkOut` is exclusive (the departure day is free), so a block starting on a booking's
+        checkout day does not warn.
+      required: [block, warning, affectedBookings, affectedUnassignedBookings]
       properties:
         block:
           $ref: "#/components/schemas/RoomUnitBlock"
@@ -4907,6 +4913,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RoomUnitBlockAffectedBooking"
+        affectedUnassignedBookings:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomUnitBlockAffectedBooking"
+          description: >
+            Non-CANCELLED bookings of this unit's room type, over the same dates, with no room
+            unit assigned yet - not tied to this specific room, but competing for the same pool
+            of units it belongs to. Does not attempt to compute whether the type actually goes
+            into oversell (that depends on every other unit/booking of the type over the whole
+            range, not just this one block) - it names the population that could be affected and
+            leaves the judgment to the manager, the same warn-don't-decide stance as the rest of
+            this response.
 
     PropertyMapCurrentBooking:
       type: object

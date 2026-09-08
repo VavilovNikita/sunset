@@ -19,7 +19,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Response of &#x60;POST /room-units/{id}/blocks&#x60;. &#x60;warning&#x60; is set (but the block is still created) when the blocked range overlaps one or more non-CANCELLED bookings assigned to this unit - staff are told, not blocked, the same warn-don&#39;t-block shape as &#x60;CheckInResult&#x60;. Overlap uses the same rule the calendar/availability engine already use to compare a booking against a block: &#x60;booking.checkIn &lt;&#x3D; block.toDate &amp;&amp; booking.checkOut &gt; block.fromDate&#x60; - &#x60;RoomUnitBlock.fromDate&#x60;/&#x60;toDate&#x60; are both inclusive, a booking&#39;s &#x60;checkOut&#x60; is exclusive (the departure day is free), so a block starting on a booking&#39;s checkout day does not warn. 
+ * Response of &#x60;POST /room-units/{id}/blocks&#x60;. &#x60;warning&#x60; is set (but the block is still created) when the blocked range overlaps one or more non-CANCELLED bookings - staff are told, not blocked, the same warn-don&#39;t-block shape as &#x60;CheckInResult&#x60;. Two distinct populations, because the manager&#39;s next move differs for each: &#x60;affectedBookings&#x60; are assigned to this exact physical unit (a certain conflict - the guest is in this specific room); &#x60;affectedUnassignedBookings&#x60; are booked into this unit&#39;s *room type* with no specific unit chosen yet (&#x60;Booking.roomUnitId&#x60; null) - not yet in this room, but pulling one more unit out of the type&#39;s pool can leave too few units for them, the same oversell &#x60;AvailabilityDay.availableCount&#x60; already models by not clamping at zero (see that schema). Both use the same overlap rule the calendar/availability engine already use to compare a booking against a block: &#x60;booking.checkIn &lt;&#x3D; block.toDate &amp;&amp; booking.checkOut &gt; block.fromDate&#x60; - &#x60;RoomUnitBlock.fromDate&#x60;/&#x60;toDate&#x60; are both inclusive, a booking&#39;s &#x60;checkOut&#x60; is exclusive (the departure day is free), so a block starting on a booking&#39;s checkout day does not warn. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -32,6 +32,9 @@ public class RoomUnitBlockResult {
   @Valid
   private List<@Valid RoomUnitBlockAffectedBooking> affectedBookings = new ArrayList<>();
 
+  @Valid
+  private List<@Valid RoomUnitBlockAffectedBooking> affectedUnassignedBookings = new ArrayList<>();
+
   public RoomUnitBlockResult() {
     super();
   }
@@ -39,10 +42,11 @@ public class RoomUnitBlockResult {
   /**
    * Constructor with only required parameters
    */
-  public RoomUnitBlockResult(RoomUnitBlock block, String warning, List<@Valid RoomUnitBlockAffectedBooking> affectedBookings) {
+  public RoomUnitBlockResult(RoomUnitBlock block, String warning, List<@Valid RoomUnitBlockAffectedBooking> affectedBookings, List<@Valid RoomUnitBlockAffectedBooking> affectedUnassignedBookings) {
     this.block = block;
     this.warning = JsonNullable.of(warning);
     this.affectedBookings = affectedBookings;
+    this.affectedUnassignedBookings = affectedUnassignedBookings;
   }
 
   public RoomUnitBlockResult block(RoomUnitBlock block) {
@@ -110,6 +114,33 @@ public class RoomUnitBlockResult {
     this.affectedBookings = affectedBookings;
   }
 
+  public RoomUnitBlockResult affectedUnassignedBookings(List<@Valid RoomUnitBlockAffectedBooking> affectedUnassignedBookings) {
+    this.affectedUnassignedBookings = affectedUnassignedBookings;
+    return this;
+  }
+
+  public RoomUnitBlockResult addAffectedUnassignedBookingsItem(RoomUnitBlockAffectedBooking affectedUnassignedBookingsItem) {
+    if (this.affectedUnassignedBookings == null) {
+      this.affectedUnassignedBookings = new ArrayList<>();
+    }
+    this.affectedUnassignedBookings.add(affectedUnassignedBookingsItem);
+    return this;
+  }
+
+  /**
+   * Non-CANCELLED bookings of this unit's room type, over the same dates, with no room unit assigned yet - not tied to this specific room, but competing for the same pool of units it belongs to. Does not attempt to compute whether the type actually goes into oversell (that depends on every other unit/booking of the type over the whole range, not just this one block) - it names the population that could be affected and leaves the judgment to the manager, the same warn-don't-decide stance as the rest of this response. 
+   * @return affectedUnassignedBookings
+   */
+  @NotNull @Valid 
+  @JsonProperty("affectedUnassignedBookings")
+  public List<@Valid RoomUnitBlockAffectedBooking> getAffectedUnassignedBookings() {
+    return affectedUnassignedBookings;
+  }
+
+  public void setAffectedUnassignedBookings(List<@Valid RoomUnitBlockAffectedBooking> affectedUnassignedBookings) {
+    this.affectedUnassignedBookings = affectedUnassignedBookings;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -121,12 +152,13 @@ public class RoomUnitBlockResult {
     RoomUnitBlockResult roomUnitBlockResult = (RoomUnitBlockResult) o;
     return Objects.equals(this.block, roomUnitBlockResult.block) &&
         Objects.equals(this.warning, roomUnitBlockResult.warning) &&
-        Objects.equals(this.affectedBookings, roomUnitBlockResult.affectedBookings);
+        Objects.equals(this.affectedBookings, roomUnitBlockResult.affectedBookings) &&
+        Objects.equals(this.affectedUnassignedBookings, roomUnitBlockResult.affectedUnassignedBookings);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(block, warning, affectedBookings);
+    return Objects.hash(block, warning, affectedBookings, affectedUnassignedBookings);
   }
 
   @Override
@@ -136,6 +168,7 @@ public class RoomUnitBlockResult {
     sb.append("    block: ").append(toIndentedString(block)).append("\n");
     sb.append("    warning: ").append(toIndentedString(warning)).append("\n");
     sb.append("    affectedBookings: ").append(toIndentedString(affectedBookings)).append("\n");
+    sb.append("    affectedUnassignedBookings: ").append(toIndentedString(affectedUnassignedBookings)).append("\n");
     sb.append("}");
     return sb.toString();
   }

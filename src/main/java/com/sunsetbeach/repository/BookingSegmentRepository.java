@@ -55,4 +55,17 @@ public interface BookingSegmentRepository extends JpaRepository<BookingSegmentEn
      */
     List<BookingSegmentEntity> findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
             String roomUnitId, BookingStatus excludedStatus, LocalDate blockToDate, LocalDate blockFromDate);
+
+    /**
+     * Type-level counterpart of the finder above, restricted to bookings with no unit assigned
+     * yet ({@code roomUnitId IS NULL}) - an unassigned booking occupies one unit of the *type*
+     * without pinning a specific physical room (see {@code AvailabilityService}/{@code
+     * AvailabilityDay}'s own doc on this), so blocking one unit of a type can squeeze an
+     * unassigned booking out even though no {@code BookingSegment} names that unit directly.
+     * Used by {@link com.sunsetbeach.service.RoomUnitService#createBlock} to extend the same
+     * overlap warning to that population, distinguishably from bookings tied to the specific
+     * unit being blocked.
+     */
+    List<BookingSegmentEntity> findByRoomIdAndRoomUnitIdIsNullAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
+            String roomId, BookingStatus excludedStatus, LocalDate blockToDate, LocalDate blockFromDate);
 }

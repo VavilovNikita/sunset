@@ -280,18 +280,40 @@ public class RoomUnitService {
         RoomUnitBlockEntity saved = roomUnitBlockRepository.saveAndFlush(entity);
 
         List<RoomUnitBlockAffectedBooking> affectedBookings = findAffectedBookings(roomUnitId, fromDate, toDate);
-        String warning = affectedBookings.isEmpty()
-                ? null
-                : "This room has " + affectedBookings.size() + " booking(s) during the blocked range - the block does not cancel or move them.";
+        List<RoomUnitBlockAffectedBooking> affectedUnassignedBookings = findAffectedUnassignedBookings(unit.getRoomId(), fromDate, toDate);
+        String warning = buildWarning(affectedBookings, affectedUnassignedBookings);
 
         auditLogService.record(
                 AuditAction.ROOM_UNIT_BLOCK_CREATED,
                 AuditEntityType.ROOM_UNIT,
                 roomUnitId,
                 "Room " + unit.getLabel() + " blocked " + fromDate + " to " + toDate + " (" + entity.getReason() + ")"
-                        + (affectedBookings.isEmpty() ? "" : " - overlaps " + affectedBookings.size() + " booking(s)"));
+                        + (affectedBookings.isEmpty() ? "" : " - overlaps " + affectedBookings.size() + " booking(s) assigned to this room")
+                        + (affectedUnassignedBookings.isEmpty()
+                                ? ""
+                                : " - overlaps " + affectedUnassignedBookings.size() + " unassigned booking(s) of this room type"));
 
-        return new RoomUnitBlockResult(roomUnitMapper.toDto(saved), warning, affectedBookings);
+        return new RoomUnitBlockResult(roomUnitMapper.toDto(saved), warning, affectedBookings, affectedUnassignedBookings);
+    }
+
+    private static String buildWarning(List<RoomUnitBlockAffectedBooking> affectedBookings, List<RoomUnitBlockAffectedBooking> affectedUnassignedBookings) {
+        if (affectedBookings.isEmpty() && affectedUnassignedBookings.isEmpty()) {
+            return null;
+        }
+        StringBuilder warning = new StringBuilder();
+        if (!affectedBookings.isEmpty()) {
+            warning.append("This room has ").append(affectedBookings.size()).append(" booking(s) during the blocked range");
+        }
+        if (!affectedUnassignedBookings.isEmpty()) {
+            if (!warning.isEmpty()) {
+                warning.append(", and ");
+            }
+            warning
+                    .append(affectedUnassignedBookings.size())
+                    .append(" unassigned booking(s) of this room type overlap it too - one fewer unit may not be enough for them");
+        }
+        warning.append(" - the block does not cancel or move any of them.");
+        return warning.toString();
     }
 
     /**
@@ -304,7 +326,25 @@ public class RoomUnitService {
         List<BookingSegmentEntity> overlapping = segmentRepository
                 .findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
                         roomUnitId, BookingStatus.CANCELLED, toDate, fromDate);
+        return toAffectedBookings(overlapping);
+    }
 
+    /**
+     * Same overlap rule as {@link #findAffectedBookings}, but type-level (by {@code roomId}, this
+     * unit's room type) and restricted to bookings with no unit assigned yet - see {@link
+     * BookingSegmentRepository#findByRoomIdAndRoomUnitIdIsNullAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan}.
+     * These bookings don't occupy this specific unit, but blocking one more unit of the type can
+     * leave too few free for them - the same oversell the availability engine already models by
+     * not clamping {@code availableCount} at zero.
+     */
+    private List<RoomUnitBlockAffectedBooking> findAffectedUnassignedBookings(String roomId, LocalDate fromDate, LocalDate toDate) {
+        List<BookingSegmentEntity> overlapping = segmentRepository
+                .findByRoomIdAndRoomUnitIdIsNullAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
+                        roomId, BookingStatus.CANCELLED, toDate, fromDate);
+        return toAffectedBookings(overlapping);
+    }
+
+    private List<RoomUnitBlockAffectedBooking> toAffectedBookings(List<BookingSegmentEntity> overlapping) {
         List<String> bookingIds = overlapping.stream().map(BookingSegmentEntity::getBookingId).distinct().toList();
 
         return bookingIds.stream()
