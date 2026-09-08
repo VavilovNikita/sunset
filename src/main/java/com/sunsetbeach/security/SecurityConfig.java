@@ -6,6 +6,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -13,6 +16,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
@@ -99,6 +103,18 @@ public class SecurityConfig {
                         // this image is an internal tool, never reachable from the public site.
                         .requestMatchers(HttpMethod.GET, "/property-map", "/property-map/image").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/property-map/image").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Maintenance tasks: filing and reading are open to any authenticated staff
+                        // role - the person who notices a problem is often the one standing in the
+                        // room, not necessarily a manager, and a role that can file one must be able
+                        // to see it again (this project has fixed that asymmetry three times already,
+                        // see the /room-units and /rooms notes above/below). Blocking the room stays a
+                        // manager decision. Status transitions use .access(...) rather than hasRole()/
+                        // hasAuthority() alone - see engineerOrManagerPlus() below for why.
+                        .requestMatchers(HttpMethod.GET, "/maintenance-tasks", "/maintenance-tasks/*", "/maintenance-tasks/*/photos/*")
+                        .authenticated()
+                        .requestMatchers(HttpMethod.POST, "/maintenance-tasks").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/maintenance-tasks/*/block").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers(HttpMethod.PATCH, "/maintenance-tasks/*/status").access(engineerOrManagerPlus())
                         // Availability: CASHIER+, not MANAGER+ as openapi.yaml originally documented -
                         // this description predates front-desk room assignment. The per-unit breakdown
                         // here is exactly what a CASHIER needs to see which physical room is free
@@ -253,10 +269,8 @@ public class SecurityConfig {
      * authorities (e.g. {@code "FUNCTION_ENGINEER"}), gate a path on one with
      * {@code hasAuthority("FUNCTION_ENGINEER")} - never {@code hasRole()}/{@code hasAnyRole()},
      * which would route it through this hierarchy and let it inherit/grant along the role ladder,
-     * exactly what a function must not do. As of this comment nothing in the app is
-     * function-gated yet, so no such rule exists below - add one here, with its own explicit
-     * matcher (EndpointCoverageTests enforces this the same as every other path), the day an
-     * endpoint actually needs it.
+     * exactly what a function must not do. {@code PATCH /maintenance-tasks/{id}/status} is the
+     * first path gated this way - see {@link #engineerOrManagerPlus()}.
      */
     @Bean
     public RoleHierarchy roleHierarchy() {
@@ -265,5 +279,23 @@ public class SecurityConfig {
                 ROLE_MANAGER > ROLE_CASHIER
                 ROLE_CASHIER > ROLE_WAITER
                 """);
+    }
+
+    /**
+     * FUNCTION_ENGINEER OR role MANAGER-or-above - a manager is the fallback for progressing a
+     * maintenance task if nobody currently holds the ENGINEER function. Built with {@code
+     * AuthorizationManagers.anyOf(...)} rather than a single hasRole()/hasAuthority() call
+     * because there's no fluent-DSL builder for "one of several unrelated checks"; the MANAGER+
+     * half is built the same way {@code hasRole(...)} would build it internally, with the same
+     * {@link #roleHierarchy()} instance wired in by hand, since constructing an
+     * AuthorityAuthorizationManager directly - unlike going through {@code .hasRole(...)} in the
+     * authorizeHttpRequests DSL - does not pick up the hierarchy bean automatically.
+     */
+    private AuthorizationManager<RequestAuthorizationContext> engineerOrManagerPlus() {
+        AuthorityAuthorizationManager<RequestAuthorizationContext> managerOrAbove =
+                AuthorityAuthorizationManager.hasRole(com.sunsetbeach.model.Role.MANAGER.getValue());
+        managerOrAbove.setRoleHierarchy(roleHierarchy());
+        AuthorityAuthorizationManager<RequestAuthorizationContext> engineerFunction = AuthorityAuthorizationManager.hasAuthority("FUNCTION_ENGINEER");
+        return AuthorizationManagers.anyOf(managerOrAbove, engineerFunction);
     }
 }

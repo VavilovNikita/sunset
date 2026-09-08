@@ -1022,6 +1022,265 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
 
+  /maintenance-tasks:
+    get:
+      operationId: listMaintenanceTasks
+      tags: [MaintenanceTasks]
+      summary: List maintenance tasks
+      description: >
+        Requires any authenticated staff session - the same floor as filing one (`POST`, below).
+        A role that can file a task must be able to see it again; this project already treats
+        that "can act but can't see" asymmetry as a bug it has introduced and fixed three times
+        elsewhere (see `SecurityConfig`'s own notes on `/room-units`/`/rooms`/`/availability`).
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/MaintenanceTaskStatus"
+        - name: roomUnitId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matching tasks, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MaintenanceTask"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createMaintenanceTask
+      tags: [MaintenanceTasks]
+      summary: File a maintenance task against a physical room
+      description: >
+        Requires any authenticated staff session - the person who notices a problem is usually
+        the one standing in the room, not necessarily a manager. Creates the task with status
+        `OPEN` and no block (see `POST /maintenance-tasks/{id}/block` for that, `MANAGER` or
+        above only). Photos are optional (zero or more, not every problem is photographable) and
+        validated/stored the same way as `POST /rooms/{id}/images`/`POST /property-map/image`
+        (see `ImageUploadValidator`): content-sniffed type, 8MB cap each, randomized filenames.
+        Unlike room photos these are never reachable under `/uploads/**` - see
+        `GET /maintenance-tasks/{id}/photos/{filename}`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [roomUnitId, description]
+              properties:
+                roomUnitId:
+                  type: string
+                description:
+                  type: string
+                photos:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: Zero or more image files. Field name must be repeated as `photos` per file.
+      responses:
+        "201":
+          description: Task created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceTask"
+        "400":
+          description: Missing `roomUnitId`/`description`, or a photo failed validation (type/size).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /maintenance-tasks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getMaintenanceTask
+      tags: [MaintenanceTasks]
+      summary: Get one maintenance task
+      description: Requires any authenticated staff session.
+      responses:
+        "200":
+          description: The task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceTask"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /maintenance-tasks/{id}/photos/{filename}:
+    get:
+      operationId: getMaintenanceTaskPhoto
+      tags: [MaintenanceTasks]
+      summary: Serve one photo attached to a maintenance task
+      description: >
+        Requires any authenticated staff session. Staff-only, like `GET /property-map/image` -
+        not reachable under `/uploads/**`: a photo of, say, a broken air conditioner in a guest
+        room is not public-site content the way a room's own marketing photos are.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The image file.
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Task or photo not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /maintenance-tasks/{id}/block:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: blockMaintenanceTaskRoom
+      tags: [MaintenanceTasks]
+      summary: Pull this task's room off sale
+      description: >
+        Requires `MANAGER` or above - blocking a room stays a manager decision; filing a task
+        does not require one. Reuses `RoomUnitBlockInput`/`RoomUnitService#createBlock` as-is
+        (same overlap warning, same `fromDate <= toDate` validation) rather than a narrower
+        schema - the manager still enters both dates, `toDate` being their best guess at when the
+        work finishes (see `PATCH /maintenance-tasks/{id}/status`, which corrects it to the day
+        work actually finished). Rejected if this task already has a block - remove the existing
+        one via `DELETE /room-units/{id}/blocks/{blockId}` first if it needs replacing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomUnitBlockInput"
+      responses:
+        "200":
+          description: >
+            Task updated with the new block, plus the same overlap-warning result
+            `POST /room-units/{id}/blocks` itself returns.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceTaskBlockResult"
+        "400":
+          description: Body failed validation, or this task already has a block.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /maintenance-tasks/{id}/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateMaintenanceTaskStatus
+      tags: [MaintenanceTasks]
+      summary: Move a maintenance task through OPEN -> IN_PROGRESS -> DONE
+      description: >
+        Requires the `ENGINEER` job function, or role `MANAGER` or above - a manager is the
+        fallback for this if nobody currently holds the function (see `JobFunction`). The
+        function half is not expressed as a role check: `FUNCTION_ENGINEER` is its own authority,
+        unrelated to `RoleHierarchy` (see `SecurityConfig#roleHierarchy`'s own note on this).
+        Forward-only - skipping `IN_PROGRESS` is allowed, going backward or repeating the current
+        status is not. Transitioning to `DONE`, when this task has a block, moves that block's
+        `toDate` to yesterday (today is still covered by an inclusive `toDate`, so the room must
+        not return to sale until the day after it's actually fixed) - or deletes the block
+        outright if yesterday is before the block's own `fromDate` (created and fixed the same
+        day, so it never covered a usable night). If the block was already removed by other means,
+        closing succeeds and touches no block.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MaintenanceTaskStatusUpdateInput"
+      responses:
+        "200":
+          description: Updated task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceTask"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenEngineerOrManagerPlus"
+        "404":
+          description: Task not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Not a valid forward transition from the task's current status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /property-map:
     get:
       operationId: getPropertyMap
@@ -4279,6 +4538,16 @@ components:
             $ref: "#/components/schemas/ErrorMessage"
           example:
             error: Forbidden
+    ForbiddenEngineerOrManagerPlus:
+      description: >
+        Token is valid but the caller has neither the `ENGINEER` job function nor role `MANAGER`
+        or above - see `JobFunction`, an axis independent of `RoleHierarchy`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorMessage"
+          example:
+            error: Forbidden
 
   schemas:
     Role:
@@ -4926,6 +5195,103 @@ components:
             leaves the judgment to the manager, the same warn-don't-decide stance as the rest of
             this response.
 
+    MaintenanceTaskStatus:
+      type: string
+      enum: [OPEN, IN_PROGRESS, DONE]
+      description: >
+        Forward-only in practice (see `PATCH /maintenance-tasks/{id}/status`): OPEN ->
+        IN_PROGRESS -> DONE, skipping IN_PROGRESS allowed, going backward or repeating the
+        current status is not.
+
+    MaintenanceTask:
+      type: object
+      description: >
+        A reported problem in a physical room. `roomId`/`roomName`/`unitLabel` are denormalized
+        display fields (same pattern as `PropertyMapUnit`) so the UI doesn't need a second round
+        trip. `blockId` is null until a manager links one via `POST /maintenance-tasks/{id}/block`
+        - a block is optional, not every task needs the room pulled off sale. `closedAt` is null
+        until `status` becomes `DONE`.
+      required:
+        [id, roomUnitId, roomId, roomName, unitLabel, description, status, blockId, reportedByUserId, reportedByEmail, photos, createdAt, closedAt]
+      properties:
+        id:
+          type: string
+        roomUnitId:
+          type: string
+        roomId:
+          type: string
+        roomName:
+          type: string
+        unitLabel:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/MaintenanceTaskStatus"
+        blockId:
+          type: string
+          nullable: true
+        reportedByUserId:
+          type: string
+        reportedByEmail:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+          description: Served paths under `/maintenance-tasks/{id}/photos/{filename}` - staff-only, never `/uploads/**`.
+        createdAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    MaintenanceTaskStatusUpdateInput:
+      type: object
+      description: Body of `PATCH /maintenance-tasks/{id}/status`.
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/MaintenanceTaskStatus"
+
+    MaintenanceTaskBlockResult:
+      type: object
+      description: >
+        Response of `POST /maintenance-tasks/{id}/block`. `blockResult` is exactly what
+        `POST /room-units/{id}/blocks` itself returns (same overlap warning, same two affected-
+        bookings populations) - linking a block to a task doesn't change that behavior, it reuses
+        it.
+      required: [task, blockResult]
+      properties:
+        task:
+          $ref: "#/components/schemas/MaintenanceTask"
+        blockResult:
+          $ref: "#/components/schemas/RoomUnitBlockResult"
+
+    PropertyMapMaintenanceTask:
+      type: object
+      description: >
+        Summary of the most urgent open (`OPEN`/`IN_PROGRESS`) `MaintenanceTask` on a
+        `PropertyMapUnit`, if any - see that schema's `openMaintenanceTask`. When a unit has more
+        than one open task, the one with `blockExpired: true` is preferred (if any), else the
+        oldest.
+      required: [taskId, description, status, blockExpired]
+      properties:
+        taskId:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/MaintenanceTaskStatus"
+        blockExpired:
+          type: boolean
+          description: >
+            True when this task has a linked block whose `toDate` has already passed while the
+            task is still open - the room has silently returned to sale while still broken. The
+            one state this field exists to catch; everything else about the task is informational.
+
     PropertyMapCurrentBooking:
       type: object
       description: >
@@ -4977,7 +5343,19 @@ components:
         unit reads as "unavailable today, will return" with its reason shown). Which one wins
         visually when both happen to be true is a frontend decision, not encoded in this DTO.
       required:
-        [roomUnitId, roomId, roomName, unitLabel, isActive, housekeepingStatus, positionX, positionY, currentBooking, activeBlock]
+        [
+          roomUnitId,
+          roomId,
+          roomName,
+          unitLabel,
+          isActive,
+          housekeepingStatus,
+          positionX,
+          positionY,
+          currentBooking,
+          activeBlock,
+          openMaintenanceTask,
+        ]
       properties:
         roomUnitId:
           type: string
@@ -5007,6 +5385,12 @@ components:
         activeBlock:
           $ref: "#/components/schemas/PropertyMapActiveBlock"
           nullable: true
+        openMaintenanceTask:
+          $ref: "#/components/schemas/PropertyMapMaintenanceTask"
+          nullable: true
+          description: >
+            Computed at read time, not a stored alert - reuses this existing per-unit carrier
+            rather than a new notification mechanism (see that schema's own `blockExpired`).
 
     PropertyMap:
       type: object
@@ -6407,6 +6791,10 @@ components:
         - ROOM_UNIT_POSITION_UPDATED
         - PROPERTY_MAP_IMAGE_UPDATED
         - PRINT_JOB_DISMISSED
+        - MAINTENANCE_TASK_CREATED
+        - MAINTENANCE_TASK_STATUS_CHANGED
+        - MAINTENANCE_TASK_BLOCKED
+        - MAINTENANCE_TASK_BLOCK_LIFTED
 
     AuditEntityType:
       type: string
@@ -6420,7 +6808,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK]
 
     AuditLogEntry:
       type: object

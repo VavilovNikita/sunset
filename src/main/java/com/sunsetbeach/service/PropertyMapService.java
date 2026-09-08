@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.MaintenanceTaskEntity;
 import com.sunsetbeach.entity.PropertyMapEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitBlockEntity;
@@ -11,12 +12,15 @@ import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.MaintenanceTaskStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.PropertyMap;
 import com.sunsetbeach.model.PropertyMapActiveBlock;
 import com.sunsetbeach.model.PropertyMapCurrentBooking;
+import com.sunsetbeach.model.PropertyMapMaintenanceTask;
 import com.sunsetbeach.model.PropertyMapUnit;
 import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.MaintenanceTaskRepository;
 import com.sunsetbeach.repository.PropertyMapRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitBlockRepository;
@@ -29,8 +33,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -61,6 +67,7 @@ public class PropertyMapService {
     private final BookingRepository bookingRepository;
     private final BookingService bookingService;
     private final PropertyMapRepository propertyMapRepository;
+    private final MaintenanceTaskRepository maintenanceTaskRepository;
     private final ImageUploadValidator imageUploadValidator;
     private final AuditLogService auditLogService;
     private final Path uploadsRoot;
@@ -72,6 +79,7 @@ public class PropertyMapService {
             BookingRepository bookingRepository,
             BookingService bookingService,
             PropertyMapRepository propertyMapRepository,
+            MaintenanceTaskRepository maintenanceTaskRepository,
             ImageUploadValidator imageUploadValidator,
             AuditLogService auditLogService,
             @Value("${app.uploads.root}") String uploadsRoot) {
@@ -81,6 +89,7 @@ public class PropertyMapService {
         this.bookingRepository = bookingRepository;
         this.bookingService = bookingService;
         this.propertyMapRepository = propertyMapRepository;
+        this.maintenanceTaskRepository = maintenanceTaskRepository;
         this.imageUploadValidator = imageUploadValidator;
         this.auditLogService = auditLogService;
         this.uploadsRoot = Path.of(uploadsRoot);
@@ -116,8 +125,10 @@ public class PropertyMapService {
         Map<String, RoomUnitBlockEntity> blockByUnit =
                 blocksToday.stream().collect(Collectors.toMap(RoomUnitBlockEntity::getRoomUnitId, b -> b, (a, b) -> a));
 
+        Map<String, PropertyMapMaintenanceTask> openTaskByUnit = computeOpenTaskByUnit(today);
+
         List<PropertyMapUnit> unitDtos =
-                units.stream().map(unit -> toUnitDto(unit, roomNames, checkedInByUnit, arrivingTodayByUnit, blockByUnit)).toList();
+                units.stream().map(unit -> toUnitDto(unit, roomNames, checkedInByUnit, arrivingTodayByUnit, blockByUnit, openTaskByUnit)).toList();
 
         PropertyMapEntity map = propertyMapRepository.findById(SINGLETON_ID).orElse(null);
         String imagePath = map != null ? map.getImagePath() : null;
@@ -131,7 +142,8 @@ public class PropertyMapService {
             Map<String, String> roomNames,
             Map<String, BookingEntity> checkedInByUnit,
             Map<String, BookingEntity> arrivingTodayByUnit,
-            Map<String, RoomUnitBlockEntity> blockByUnit) {
+            Map<String, RoomUnitBlockEntity> blockByUnit,
+            Map<String, PropertyMapMaintenanceTask> openTaskByUnit) {
         BookingEntity checkedIn = checkedInByUnit.get(unit.getId());
         PropertyMapCurrentBooking currentBooking =
                 checkedIn != null ? toCurrentBookingDto(checkedIn) : toCurrentBookingDtoOrNull(arrivingTodayByUnit.get(unit.getId()));
@@ -150,7 +162,53 @@ public class PropertyMapService {
                 unit.getPositionX(),
                 unit.getPositionY(),
                 currentBooking,
-                activeBlock);
+                activeBlock,
+                openTaskByUnit.get(unit.getId()));
+    }
+
+    /**
+     * One entry per unit that has at least one OPEN/IN_PROGRESS task - computed fresh on every
+     * read, not a stored alert (see PropertyMapMaintenanceTask's own doc). When a unit has more
+     * than one open task, the one with blockExpired=true wins (if any), else the oldest -
+     * {@link #preferMoreUrgent} implements that tie-break.
+     */
+    private Map<String, PropertyMapMaintenanceTask> computeOpenTaskByUnit(LocalDate today) {
+        List<MaintenanceTaskEntity> openTasks =
+                maintenanceTaskRepository.findByStatusIn(List.of(MaintenanceTaskStatus.OPEN, MaintenanceTaskStatus.IN_PROGRESS));
+        if (openTasks.isEmpty()) {
+            return Map.of();
+        }
+
+        List<String> blockIds = openTasks.stream().map(MaintenanceTaskEntity::getBlockId).filter(Objects::nonNull).distinct().toList();
+        Map<String, RoomUnitBlockEntity> blocksById =
+                blockIds.isEmpty() ? Map.of() : roomUnitBlockRepository.findAllById(blockIds).stream().collect(Collectors.toMap(RoomUnitBlockEntity::getId, b -> b));
+
+        Map<String, MaintenanceTaskEntity> chosenByUnit = new HashMap<>();
+        for (MaintenanceTaskEntity task : openTasks) {
+            chosenByUnit.merge(task.getRoomUnitId(), task, (a, b) -> preferMoreUrgent(a, b, blocksById, today));
+        }
+
+        return chosenByUnit.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> toMaintenanceTaskDto(e.getValue(), blocksById, today)));
+    }
+
+    private static MaintenanceTaskEntity preferMoreUrgent(
+            MaintenanceTaskEntity a, MaintenanceTaskEntity b, Map<String, RoomUnitBlockEntity> blocksById, LocalDate today) {
+        boolean aExpired = blockExpired(a, blocksById, today);
+        boolean bExpired = blockExpired(b, blocksById, today);
+        if (aExpired != bExpired) {
+            return aExpired ? a : b;
+        }
+        return a.getCreatedAt().isBefore(b.getCreatedAt()) ? a : b;
+    }
+
+    private static boolean blockExpired(MaintenanceTaskEntity task, Map<String, RoomUnitBlockEntity> blocksById, LocalDate today) {
+        RoomUnitBlockEntity block = task.getBlockId() != null ? blocksById.get(task.getBlockId()) : null;
+        return block != null && today.isAfter(block.getToDate());
+    }
+
+    private static PropertyMapMaintenanceTask toMaintenanceTaskDto(MaintenanceTaskEntity task, Map<String, RoomUnitBlockEntity> blocksById, LocalDate today) {
+        return new PropertyMapMaintenanceTask(task.getId(), task.getDescription(), task.getStatus(), blockExpired(task, blocksById, today));
     }
 
     private PropertyMapCurrentBooking toCurrentBookingDtoOrNull(BookingEntity booking) {

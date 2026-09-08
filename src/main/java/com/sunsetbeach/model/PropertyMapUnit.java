@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.PropertyMapActiveBlock;
 import com.sunsetbeach.model.PropertyMapCurrentBooking;
+import com.sunsetbeach.model.PropertyMapMaintenanceTask;
 import java.math.BigDecimal;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -45,6 +46,8 @@ public class PropertyMapUnit {
 
   private PropertyMapActiveBlock activeBlock;
 
+  private PropertyMapMaintenanceTask openMaintenanceTask;
+
   public PropertyMapUnit() {
     super();
   }
@@ -52,7 +55,7 @@ public class PropertyMapUnit {
   /**
    * Constructor with only required parameters
    */
-  public PropertyMapUnit(String roomUnitId, String roomId, String roomName, String unitLabel, Boolean isActive, HousekeepingStatus housekeepingStatus, BigDecimal positionX, BigDecimal positionY, PropertyMapCurrentBooking currentBooking, PropertyMapActiveBlock activeBlock) {
+  public PropertyMapUnit(String roomUnitId, String roomId, String roomName, String unitLabel, Boolean isActive, HousekeepingStatus housekeepingStatus, BigDecimal positionX, BigDecimal positionY, PropertyMapCurrentBooking currentBooking, PropertyMapActiveBlock activeBlock, PropertyMapMaintenanceTask openMaintenanceTask) {
     this.roomUnitId = roomUnitId;
     this.roomId = roomId;
     this.roomName = roomName;
@@ -63,6 +66,7 @@ public class PropertyMapUnit {
     this.positionY = JsonNullable.of(positionY);
     this.currentBooking = currentBooking;
     this.activeBlock = activeBlock;
+    this.openMaintenanceTask = openMaintenanceTask;
   }
 
   public PropertyMapUnit roomUnitId(String roomUnitId) {
@@ -259,6 +263,25 @@ public class PropertyMapUnit {
     this.activeBlock = activeBlock;
   }
 
+  public PropertyMapUnit openMaintenanceTask(PropertyMapMaintenanceTask openMaintenanceTask) {
+    this.openMaintenanceTask = openMaintenanceTask;
+    return this;
+  }
+
+  /**
+   * Get openMaintenanceTask
+   * @return openMaintenanceTask
+   */
+  @NotNull @Valid 
+  @JsonProperty("openMaintenanceTask")
+  public PropertyMapMaintenanceTask getOpenMaintenanceTask() {
+    return openMaintenanceTask;
+  }
+
+  public void setOpenMaintenanceTask(PropertyMapMaintenanceTask openMaintenanceTask) {
+    this.openMaintenanceTask = openMaintenanceTask;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -277,12 +300,13 @@ public class PropertyMapUnit {
         Objects.equals(this.positionX, propertyMapUnit.positionX) &&
         Objects.equals(this.positionY, propertyMapUnit.positionY) &&
         Objects.equals(this.currentBooking, propertyMapUnit.currentBooking) &&
-        Objects.equals(this.activeBlock, propertyMapUnit.activeBlock);
+        Objects.equals(this.activeBlock, propertyMapUnit.activeBlock) &&
+        Objects.equals(this.openMaintenanceTask, propertyMapUnit.openMaintenanceTask);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomUnitId, roomId, roomName, unitLabel, isActive, housekeepingStatus, positionX, positionY, currentBooking, activeBlock);
+    return Objects.hash(roomUnitId, roomId, roomName, unitLabel, isActive, housekeepingStatus, positionX, positionY, currentBooking, activeBlock, openMaintenanceTask);
   }
 
   @Override
@@ -299,6 +323,7 @@ public class PropertyMapUnit {
     sb.append("    positionY: ").append(toIndentedString(positionY)).append("\n");
     sb.append("    currentBooking: ").append(toIndentedString(currentBooking)).append("\n");
     sb.append("    activeBlock: ").append(toIndentedString(activeBlock)).append("\n");
+    sb.append("    openMaintenanceTask: ").append(toIndentedString(openMaintenanceTask)).append("\n");
     sb.append("}");
     return sb.toString();
   }

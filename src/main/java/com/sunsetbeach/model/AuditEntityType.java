@@ -36,7 +36,9 @@ public enum AuditEntityType {
   
   PROPERTY_MAP("PROPERTY_MAP"),
   
-  PRINT_JOB("PRINT_JOB");
+  PRINT_JOB("PRINT_JOB"),
+  
+  MAINTENANCE_TASK("MAINTENANCE_TASK");
 
   private String value;
 

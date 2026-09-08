@@ -84,6 +84,9 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
     private RoomUnitService roomUnitService;
 
     @Autowired
+    private MaintenanceTaskService maintenanceTaskService;
+
+    @Autowired
     private RoomRepository roomRepository;
 
     @Autowired
@@ -99,6 +102,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
     private UserRepository userRepository;
 
     private RoomEntity room;
+    private String staffUserId;
 
     @BeforeEach
     void setUp() {
@@ -114,6 +118,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         staffUser.setPasswordHash("irrelevant-for-this-test");
         staffUser.setRole(Role.MANAGER);
         staffUser = userRepository.saveAndFlush(staffUser);
+        staffUserId = staffUser.getId();
 
         // uploadImage reads the acting user off the security context, same pattern as
         // BookingFolioPaymentTests stubs for recordFolioPayment - no MockMvc/JWT layer here.
@@ -306,6 +311,86 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
     void vacantUnit_hasNoCurrentBooking() {
         RoomUnitEntity unit = persistUnit("214");
         assertThat(findUnit(unit.getId()).getCurrentBooking()).isNull();
+    }
+
+    // --- openMaintenanceTask: computed at read time from MaintenanceTask, reusing this existing
+    // per-unit carrier rather than a new alert - see PropertyMapMaintenanceTask's own doc ---
+
+    @Test
+    void unitWithNoOpenTask_hasNullOpenMaintenanceTask() {
+        RoomUnitEntity unit = persistUnit("212");
+
+        assertThat(findUnit(unit.getId()).getOpenMaintenanceTask()).isNull();
+    }
+
+    @Test
+    void unitWithOpenTask_surfacesItWithBlockExpiredFalse() {
+        RoomUnitEntity unit = persistUnit("213");
+        com.sunsetbeach.model.MaintenanceTask task = maintenanceTaskService.create(unit.getId(), "AC is leaking", List.of(), staffUserId);
+
+        com.sunsetbeach.model.PropertyMapMaintenanceTask dto = findUnit(unit.getId()).getOpenMaintenanceTask();
+
+        assertThat(dto).isNotNull();
+        assertThat(dto.getTaskId()).isEqualTo(task.getId());
+        assertThat(dto.getStatus()).isEqualTo(com.sunsetbeach.model.MaintenanceTaskStatus.OPEN);
+        assertThat(dto.getBlockExpired()).isFalse();
+    }
+
+    @Test
+    void doneTask_doesNotAppearAsOpenMaintenanceTask() {
+        RoomUnitEntity unit = persistUnit("214");
+        com.sunsetbeach.model.MaintenanceTask task = maintenanceTaskService.create(unit.getId(), "Dead lightbulb", List.of(), staffUserId);
+        maintenanceTaskService.updateStatus(task.getId(), com.sunsetbeach.model.MaintenanceTaskStatus.DONE);
+
+        assertThat(findUnit(unit.getId()).getOpenMaintenanceTask()).isNull();
+    }
+
+    @Test
+    void openTaskWithLinkedButNotYetExpiredBlock_reportsBlockExpiredFalse() {
+        RoomUnitEntity unit = persistUnit("215");
+        com.sunsetbeach.model.MaintenanceTask task = maintenanceTaskService.create(unit.getId(), "AC is leaking", List.of(), staffUserId);
+        maintenanceTaskService.addBlock(
+                task.getId(), new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().toString(), LocalDate.now().plusDays(5).toString(), "AC repair"));
+
+        com.sunsetbeach.model.PropertyMapMaintenanceTask dto = findUnit(unit.getId()).getOpenMaintenanceTask();
+
+        assertThat(dto).isNotNull();
+        assertThat(dto.getBlockExpired()).isFalse();
+    }
+
+    @Test
+    void openTaskWithExpiredBlock_reportsBlockExpiredTrue_theAlertCase() {
+        RoomUnitEntity unit = persistUnit("216");
+        com.sunsetbeach.model.MaintenanceTask task = maintenanceTaskService.create(unit.getId(), "AC is leaking", List.of(), staffUserId);
+        // A block whose window has already lapsed while the task is still open - room unit blocks
+        // aren't restricted to future dates, so this is created directly with both dates in the
+        // past, simulating exactly the "room silently back on sale, still broken" scenario.
+        maintenanceTaskService.addBlock(
+                task.getId(),
+                new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().minusDays(10).toString(), LocalDate.now().minusDays(1).toString(), "AC repair"));
+
+        com.sunsetbeach.model.PropertyMapMaintenanceTask dto = findUnit(unit.getId()).getOpenMaintenanceTask();
+
+        assertThat(dto).isNotNull();
+        assertThat(dto.getTaskId()).isEqualTo(task.getId());
+        assertThat(dto.getBlockExpired()).isTrue();
+    }
+
+    @Test
+    void unitWithTwoOpenTasks_prefersTheOneWithExpiredBlock() {
+        RoomUnitEntity unit = persistUnit("217");
+        com.sunsetbeach.model.MaintenanceTask plainTask = maintenanceTaskService.create(unit.getId(), "Dead lightbulb", List.of(), staffUserId);
+        com.sunsetbeach.model.MaintenanceTask expiredBlockTask = maintenanceTaskService.create(unit.getId(), "AC is leaking", List.of(), staffUserId);
+        maintenanceTaskService.addBlock(
+                expiredBlockTask.getId(),
+                new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().minusDays(10).toString(), LocalDate.now().minusDays(1).toString(), "AC repair"));
+
+        com.sunsetbeach.model.PropertyMapMaintenanceTask dto = findUnit(unit.getId()).getOpenMaintenanceTask();
+
+        assertThat(dto).isNotNull();
+        assertThat(dto.getTaskId()).isEqualTo(expiredBlockTask.getId());
+        assertThat(dto.getBlockExpired()).isTrue();
+        assertThat(plainTask.getStatus()).isEqualTo(com.sunsetbeach.model.MaintenanceTaskStatus.OPEN); // sanity: both are genuinely open
     }
 
     // positionX/positionY are deliberately not in RoomUnitPositionInput's "required" set (see

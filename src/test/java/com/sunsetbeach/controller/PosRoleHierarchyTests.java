@@ -102,7 +102,8 @@ import tools.jackson.databind.json.JsonMapper;
             PricingController.class,
             AvailabilityController.class,
             PropertyMapController.class,
-            com.sunsetbeach.controller.AuditLogController.class
+            com.sunsetbeach.controller.AuditLogController.class,
+            com.sunsetbeach.controller.MaintenanceTaskController.class
         })
 @Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
         com.sunsetbeach.security.BookingRateLimiter.class})
@@ -164,6 +165,9 @@ class PosRoleHierarchyTests {
     @MockitoBean
     private com.sunsetbeach.service.AuditLogService auditLogService;
 
+    @MockitoBean
+    private com.sunsetbeach.service.MaintenanceTaskService maintenanceTaskService;
+
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
     // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
     // "user-1" regardless of role, so one stub covers every test.
@@ -187,6 +191,16 @@ class PosRoleHierarchyTests {
 
     private String token(Role role) {
         return "Bearer " + jwtService.issue(new StaffPrincipal("user-1", role.getValue().toLowerCase() + "@example.com", role));
+    }
+
+    /** Overrides stubActiveUser()'s default (no functions) for the tests that need FUNCTION_<name> authorities granted. */
+    private void stubActiveUserWithFunctions(String... functions) {
+        UserEntity entity = new UserEntity();
+        entity.setId("user-1");
+        entity.setEmail("user-1@example.com");
+        entity.setActive(true);
+        entity.setJobFunctions(functions);
+        when(userRepository.findById("user-1")).thenReturn(Optional.of(entity));
     }
 
     // --- /users/** stays ADMIN-only despite the hierarchy granting everything else down-chain ---
@@ -816,6 +830,106 @@ class PosRoleHierarchyTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new BookingScheduleInput("2031-01-01", "2031-01-02").roomUnitId(null))))
                 .andExpect(status().isOk());
+    }
+
+    // --- Maintenance tasks: filing/reading are open to any authenticated staff role, blocking the
+    // room is MANAGER+, status transitions are FUNCTION_ENGINEER *or* MANAGER+ (a manager is the
+    // fallback if nobody currently holds the function - see SecurityConfig#engineerOrManagerPlus) ---
+
+    @Test
+    void listMaintenanceTasks_withWaiterToken_isOk() throws Exception {
+        mockMvc.perform(get("/maintenance-tasks").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void createMaintenanceTask_withWaiterToken_isCreated() throws Exception {
+        when(maintenanceTaskService.create(eq("unit-1"), eq("AC is leaking"), any(), any())).thenReturn(sampleMaintenanceTask());
+        mockMvc.perform(multipart("/maintenance-tasks")
+                        .param("roomUnitId", "unit-1")
+                        .param("description", "AC is leaking")
+                        .header("Authorization", token(Role.WAITER)))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void getMaintenanceTask_withWaiterToken_isOk() throws Exception {
+        when(maintenanceTaskService.getById("task-1")).thenReturn(sampleMaintenanceTask());
+        mockMvc.perform(get("/maintenance-tasks/task-1").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void blockMaintenanceTaskRoom_withManagerToken_isOk() throws Exception {
+        when(maintenanceTaskService.addBlock(eq("task-1"), any()))
+                .thenReturn(new com.sunsetbeach.model.MaintenanceTaskBlockResult(sampleMaintenanceTask(), sampleRoomUnitBlockResult()));
+        mockMvc.perform(post("/maintenance-tasks/task-1/block")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"fromDate\":\"2031-01-01\",\"toDate\":\"2031-01-02\",\"reason\":\"repair\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void blockMaintenanceTaskRoom_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/maintenance-tasks/task-1/block")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"fromDate\":\"2031-01-01\",\"toDate\":\"2031-01-02\",\"reason\":\"repair\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateMaintenanceTaskStatus_withManagerToken_isOk() throws Exception {
+        when(maintenanceTaskService.updateStatus(eq("task-1"), any())).thenReturn(sampleMaintenanceTask());
+        mockMvc.perform(patch("/maintenance-tasks/task-1/status")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void updateMaintenanceTaskStatus_withCashierTokenAndNoFunction_isForbidden() throws Exception {
+        mockMvc.perform(patch("/maintenance-tasks/task-1/status")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateMaintenanceTaskStatus_withWaiterTokenAndEngineerFunction_isOk() throws Exception {
+        // The point of this test: a WAITER (the lowest role) with the ENGINEER function granted
+        // can still do this - the function is independent of RoleHierarchy, not a role in disguise.
+        stubActiveUserWithFunctions("ENGINEER");
+        when(maintenanceTaskService.updateStatus(eq("task-1"), any())).thenReturn(sampleMaintenanceTask());
+        mockMvc.perform(patch("/maintenance-tasks/task-1/status")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void updateMaintenanceTaskStatus_withWaiterTokenAndHousekeeperFunction_isForbidden() throws Exception {
+        // Confirms the gate checks specifically for ENGINEER, not "has any function at all".
+        stubActiveUserWithFunctions("HOUSEKEEPER");
+        mockMvc.perform(patch("/maintenance-tasks/task-1/status")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    private static com.sunsetbeach.model.MaintenanceTask sampleMaintenanceTask() {
+        return new com.sunsetbeach.model.MaintenanceTask(
+                "task-1", "unit-1", "room-1", "Ocean View Suite", "203", "AC is leaking",
+                com.sunsetbeach.model.MaintenanceTaskStatus.OPEN, null, "user-1", "user-1@example.com", List.of(), OffsetDateTime.now(), null);
+    }
+
+    private static com.sunsetbeach.model.RoomUnitBlockResult sampleRoomUnitBlockResult() {
+        return new com.sunsetbeach.model.RoomUnitBlockResult(
+                new com.sunsetbeach.model.RoomUnitBlock("block-1", "unit-1", "2031-01-01", "2031-01-02", "repair", OffsetDateTime.now()),
+                null, List.of(), List.of());
     }
 
     private static RoomUnit sampleRoomUnit() {
