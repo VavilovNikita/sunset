@@ -15,7 +15,7 @@ import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.Order;
 import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.Role;
-import com.sunsetbeach.model.SpaAppointmentCreateInput;
+import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.repository.MenuItemRepository;
@@ -26,6 +26,7 @@ import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,11 +36,17 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * DB-backed (real dev Postgres, rolled back after each test): how {@code SpaAppointment.orderId}
  * actually gets set. Both `/pos` and `/admin/pos` open an order the same way - {@code POST
- * /orders} with nothing but a {@code tableId} (see {@code PosTableBoard}/{@code OrderBoard} on
- * the frontend) - so the auto-link in {@link OrderService#create} is what makes the ordinary
- * path set the link without either screen having to know spa appointments exist; explicit
- * {@code spaAppointmentId} stays as the override for when auto-resolution can't or shouldn't
- * guess.
+ * /orders} with nothing but a {@code tableId} and/or {@code bookingId} - so the auto-link in
+ * {@link OrderService#linkSpaAppointment} is what makes the ordinary path set the link without
+ * either screen having to know spa appointments exist; explicit {@code spaAppointmentId} stays
+ * as the override for when auto-resolution can't or shouldn't guess.
+ *
+ * <p>Appointments here are persisted directly via {@link SpaAppointmentRepository}, not through
+ * {@link SpaAppointmentService#create}, specifically so their times can be set relative to
+ * {@link LocalDateTime#now()} without also having to fall inside the spa's configured opening
+ * hours (irrelevant to what's under test here - the resolution logic, not appointment creation
+ * validation). The exclusion constraint still applies either way; it's a database constraint, not
+ * a service-layer check.
  */
 @SpringBootTest
 @Transactional
@@ -47,9 +54,6 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
 
     @Autowired
     private OrderService orderService;
-
-    @Autowired
-    private SpaAppointmentService spaAppointmentService;
 
     @Autowired
     private BookingService bookingService;
@@ -98,6 +102,15 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
         return tableRepository.saveAndFlush(table);
     }
 
+    private TableEntity createRestaurantTable() {
+        TableEntity table = new TableEntity();
+        table.setZone(Zone.RESTAURANT);
+        table.setLabel("Order Link Restaurant Table " + UUID.randomUUID());
+        table.setCapacity(2);
+        table.setActive(true);
+        return tableRepository.saveAndFlush(table);
+    }
+
     private MenuItemEntity createTreatment() {
         MenuItemEntity item = new MenuItemEntity();
         item.setName("Order Link Massage " + UUID.randomUUID());
@@ -129,80 +142,227 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
         return userRepository.saveAndFlush(user);
     }
 
-    private SpaAppointmentEntity bookAppointment(TableEntity table, MenuItemEntity treatment, LocalDate date, String startTime) {
-        Booking booking = createBooking(date);
+    /** Persisted directly (bypassing SpaAppointmentService's opening-hours validation) - see the class javadoc. */
+    private SpaAppointmentEntity persistAppointment(
+            TableEntity table, Booking booking, MenuItemEntity treatment, UserEntity therapist, UserEntity actor, LocalDateTime start, int durationMinutes) {
+        SpaAppointmentEntity entity = new SpaAppointmentEntity();
+        entity.setTableId(table.getId());
+        entity.setBookingId(booking.getId());
+        entity.setTreatmentMenuItemId(treatment.getId());
+        entity.setTherapistUserId(therapist.getId());
+        entity.setCreatedByUserId(actor.getId());
+        entity.setDate(start.toLocalDate());
+        entity.setStartTime(start.toLocalTime());
+        entity.setDurationMinutes(durationMinutes);
+        entity.setStatus(SpaAppointmentStatus.BOOKED);
+        return spaAppointmentRepository.saveAndFlush(entity);
+    }
+
+    private String orderIdOf(SpaAppointmentEntity appointment) {
+        return spaAppointmentRepository.findById(appointment.getId()).orElseThrow().getOrderId();
+    }
+
+    /**
+     * A fixed today+time, for tests on the booking axis (date-only, not time-of-day sensitive -
+     * see {@link OrderService#resolveByBooking}) that must NOT be built as an offset from
+     * {@code LocalDateTime.now()}: an offset of a couple of hours can cross midnight depending on
+     * when the suite happens to run, silently landing the appointment on tomorrow's date and
+     * making the test flaky. A fixed time-of-day on today's actual date has no such risk.
+     */
+    private static LocalDateTime todayAt(int hour, int minute) {
+        return LocalDateTime.of(LocalDate.now(), java.time.LocalTime.of(hour, minute));
+    }
+
+    /**
+     * The scenario the correction named directly: a table busy all day (three appointments, gaps
+     * between them) - the order must link to whichever one is actually happening, not decline
+     * because the day has more than one candidate.
+     */
+    @Test
+    void create_busyTableDuringSecondAppointment_linksToTheSecond() {
+        LocalDateTime now = LocalDateTime.now();
+        TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment();
         UserEntity therapist = createTherapist();
         UserEntity receptionist = createReceptionist();
-        String appointmentId = spaAppointmentService
-                .create(new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapist.getId(), treatment.getId(), date.toString(), startTime), receptionist.getId())
-                .getAppointment()
-                .getId();
-        return spaAppointmentRepository.findById(appointmentId).orElseThrow();
+        Booking bookingA = createBooking(LocalDate.now().plusDays(300));
+        Booking bookingB = createBooking(LocalDate.now().plusDays(301));
+        Booking bookingC = createBooking(LocalDate.now().plusDays(302));
+
+        SpaAppointmentEntity first = persistAppointment(table, bookingA, treatment, therapist, receptionist, now.minusMinutes(150), 60);
+        SpaAppointmentEntity second = persistAppointment(table, bookingB, treatment, therapist, receptionist, now.minusMinutes(15), 60);
+        SpaAppointmentEntity third = persistAppointment(table, bookingC, treatment, therapist, receptionist, now.plusMinutes(120), 60);
+
+        Order order = orderService.create(new OrderCreateInput().tableId(table.getId()), receptionist.getId());
+
+        assertThat(orderIdOf(second)).isEqualTo(order.getId());
+        assertThat(orderIdOf(first)).isNull();
+        assertThat(orderIdOf(third)).isNull();
     }
 
+    /**
+     * The common case named directly: the order is opened a few minutes after the treatment
+     * actually finished, not during it. Within app.spa.order-link-grace-minutes (30 by default)
+     * of the appointment's end, it still links.
+     */
     @Test
-    void create_forSpaTableWithOneCandidate_autoLinksTheAppointment() {
+    void create_shortlyAfterAppointmentEnded_stillLinksWithinGraceWindow() {
+        LocalDateTime now = LocalDateTime.now();
         TableEntity table = createSpaTable();
         MenuItemEntity treatment = createTreatment();
-        SpaAppointmentEntity appointment = bookAppointment(table, treatment, LocalDate.now(), "10:00");
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        Booking booking = createBooking(LocalDate.now().plusDays(300));
 
-        Order order = orderService.create(new OrderCreateInput().tableId(table.getId()), createReceptionist().getId());
+        // Ended 10 minutes ago (60-minute treatment starting 70 minutes ago) - well inside the 30-minute grace window.
+        SpaAppointmentEntity appointment = persistAppointment(table, booking, treatment, therapist, receptionist, now.minusMinutes(70), 60);
 
-        SpaAppointmentEntity reloaded = spaAppointmentRepository.findById(appointment.getId()).orElseThrow();
-        assertThat(reloaded.getOrderId()).isEqualTo(order.getId());
+        Order order = orderService.create(new OrderCreateInput().tableId(table.getId()), receptionist.getId());
+
+        assertThat(orderIdOf(appointment)).isEqualTo(order.getId());
     }
 
     @Test
-    void create_forSpaTableWithNoAppointmentToday_leavesOrderUnlinked() {
+    void create_wellAfterAppointmentEnded_leavesOrderUnlinked() {
+        LocalDateTime now = LocalDateTime.now();
         TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment();
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        Booking booking = createBooking(LocalDate.now().plusDays(300));
 
-        Order order = orderService.create(new OrderCreateInput().tableId(table.getId()), createReceptionist().getId());
+        // Ended 40 minutes ago - past the 30-minute grace window, and nothing else on the table today.
+        SpaAppointmentEntity appointment = persistAppointment(table, booking, treatment, therapist, receptionist, now.minusMinutes(100), 60);
 
-        // No exception, no crash - just nothing to link. Confirmed by the order existing at all.
+        Order order = orderService.create(new OrderCreateInput().tableId(table.getId()), receptionist.getId());
+
         assertThat(order.getId()).isNotNull();
-        assertThat(order.getTableId().get()).isEqualTo(table.getId());
+        assertThat(orderIdOf(appointment)).isNull();
     }
 
+    /** Two candidates both inside the grace window at once - genuinely ambiguous, must decline rather than guess. */
     @Test
-    void create_forSpaTableWithTwoUnlinkedCandidates_declinesToGuess() {
+    void create_twoAppointmentsBothRecentlyEnded_declinesToGuess() {
+        LocalDateTime now = LocalDateTime.now();
         TableEntity table = createSpaTable();
         MenuItemEntity treatment = createTreatment();
-        LocalDate date = LocalDate.now();
-        SpaAppointmentEntity first = bookAppointment(table, treatment, date, "09:00");
-        SpaAppointmentEntity second = bookAppointment(table, treatment, date, "10:00");
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        Booking bookingA = createBooking(LocalDate.now().plusDays(300));
+        Booking bookingB = createBooking(LocalDate.now().plusDays(301));
 
-        orderService.create(new OrderCreateInput().tableId(table.getId()), createReceptionist().getId());
+        // A 10-minute treatment ending 5 minutes ago, and another (non-overlapping) ending 25 minutes ago - both within grace.
+        SpaAppointmentEntity first = persistAppointment(table, bookingA, treatment, therapist, receptionist, now.minusMinutes(15), 10);
+        SpaAppointmentEntity second = persistAppointment(table, bookingB, treatment, therapist, receptionist, now.minusMinutes(35), 10);
 
-        assertThat(spaAppointmentRepository.findById(first.getId()).orElseThrow().getOrderId()).isNull();
-        assertThat(spaAppointmentRepository.findById(second.getId()).orElseThrow().getOrderId()).isNull();
+        orderService.create(new OrderCreateInput().tableId(table.getId()), receptionist.getId());
+
+        assertThat(orderIdOf(first)).isNull();
+        assertThat(orderIdOf(second)).isNull();
     }
 
     @Test
     void create_forNonSpaTable_neverAttemptsToLink() {
-        TableEntity restaurantTable = new TableEntity();
-        restaurantTable.setZone(Zone.RESTAURANT);
-        restaurantTable.setLabel("Order Link Restaurant Table " + UUID.randomUUID());
-        restaurantTable.setCapacity(2);
-        restaurantTable.setActive(true);
-        TableEntity saved = tableRepository.saveAndFlush(restaurantTable);
+        TableEntity restaurantTable = createRestaurantTable();
 
-        Order order = orderService.create(new OrderCreateInput().tableId(saved.getId()), createReceptionist().getId());
+        Order order = orderService.create(new OrderCreateInput().tableId(restaurantTable.getId()), createReceptionist().getId());
 
         assertThat(order.getId()).isNotNull();
+    }
+
+    /**
+     * A room-charge order carries a bookingId and often no tableId at all - the table axis would
+     * never fire for it, so the booking axis (tried first) is the only way this ever resolves.
+     */
+    @Test
+    void create_roomChargeOrderWithNoTable_linksViaBookingWhenUnambiguous() {
+        TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment();
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        Booking booking = createBooking(LocalDate.now().plusDays(300));
+        // The booking axis is date-only, not time-of-day sensitive - see todayAt's own comment.
+        SpaAppointmentEntity appointment = persistAppointment(table, booking, treatment, therapist, receptionist, todayAt(15, 0), 60);
+
+        Order order = orderService.create(new OrderCreateInput().bookingId(booking.getId()), receptionist.getId());
+
+        assertThat(orderIdOf(appointment)).isEqualTo(order.getId());
+    }
+
+    @Test
+    void create_bookingWithTwoUnlinkedAppointments_declinesToGuess() {
+        TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment();
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        Booking booking = createBooking(LocalDate.now().plusDays(300));
+        SpaAppointmentEntity first = persistAppointment(table, booking, treatment, therapist, receptionist, todayAt(10, 0), 60);
+        SpaAppointmentEntity second = persistAppointment(table, booking, treatment, therapist, receptionist, todayAt(15, 0), 60);
+
+        Order order = orderService.create(new OrderCreateInput().bookingId(booking.getId()), receptionist.getId());
+
+        assertThat(order.getId()).isNotNull();
+        assertThat(orderIdOf(first)).isNull();
+        assertThat(orderIdOf(second)).isNull();
+    }
+
+    /**
+     * Booking first, table second: the order names both a table (with a live appointment for an
+     * unrelated booking) and a bookingId (with its own, unambiguous appointment elsewhere) - the
+     * booking's own appointment wins, not whatever the table happens to be running.
+     */
+    @Test
+    void create_withBothBookingAndTable_prefersTheBookingsOwnAppointment() {
+        LocalDateTime now = LocalDateTime.now();
+        TableEntity tableAtCounter = createSpaTable();
+        TableEntity tableElsewhere = createSpaTable();
+        MenuItemEntity treatment = createTreatment();
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+
+        Booking unrelatedBooking = createBooking(LocalDate.now().plusDays(300));
+        SpaAppointmentEntity liveAtCounterTable = persistAppointment(tableAtCounter, unrelatedBooking, treatment, therapist, receptionist, now.minusMinutes(10), 60);
+
+        Booking guestBooking = createBooking(LocalDate.now().plusDays(301));
+        // The booking axis is date-only, not time-of-day sensitive - see todayAt's own comment.
+        SpaAppointmentEntity guestsOwnAppointment = persistAppointment(tableElsewhere, guestBooking, treatment, therapist, receptionist, todayAt(16, 0), 60);
+
+        Order order = orderService.create(new OrderCreateInput().tableId(tableAtCounter.getId()).bookingId(guestBooking.getId()), receptionist.getId());
+
+        assertThat(orderIdOf(guestsOwnAppointment)).isEqualTo(order.getId());
+        assertThat(orderIdOf(liveAtCounterTable)).isNull();
+    }
+
+    /** The zone gate applies to the booking axis too - a restaurant order must never guess its way onto a spa appointment. */
+    @Test
+    void create_nonSpaTableWithBookingId_neverAttemptsToLink() {
+        TableEntity restaurantTable = createRestaurantTable();
+        TableEntity spaTable = createSpaTable();
+        MenuItemEntity treatment = createTreatment();
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        Booking booking = createBooking(LocalDate.now().plusDays(300));
+        SpaAppointmentEntity appointment = persistAppointment(spaTable, booking, treatment, therapist, receptionist, todayAt(11, 0), 60);
+
+        Order order = orderService.create(new OrderCreateInput().tableId(restaurantTable.getId()).bookingId(booking.getId()), receptionist.getId());
+
+        assertThat(order.getId()).isNotNull();
+        assertThat(orderIdOf(appointment)).isNull();
     }
 
     @Test
     void create_withExplicitSpaAppointmentId_linksRegardlessOfTable() {
         TableEntity table = createSpaTable();
         MenuItemEntity treatment = createTreatment();
-        SpaAppointmentEntity appointment = bookAppointment(table, treatment, LocalDate.now(), "11:00");
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        Booking booking = createBooking(LocalDate.now().plusDays(300));
+        SpaAppointmentEntity appointment = persistAppointment(table, booking, treatment, therapist, receptionist, todayAt(18, 0), 60);
 
-        // Opened with no tableId at all (a walk-in ticket, say) but the explicit id still applies -
-        // the override doesn't depend on the auto-resolution path being reachable.
-        Order order = orderService.create(new OrderCreateInput().spaAppointmentId(appointment.getId()), createReceptionist().getId());
+        // No tableId/bookingId sent at all - auto-resolution has nothing to work with either way; proves the explicit id doesn't depend on it.
+        Order order = orderService.create(new OrderCreateInput().spaAppointmentId(appointment.getId()), receptionist.getId());
 
-        SpaAppointmentEntity reloaded = spaAppointmentRepository.findById(appointment.getId()).orElseThrow();
-        assertThat(reloaded.getOrderId()).isEqualTo(order.getId());
+        assertThat(orderIdOf(appointment)).isEqualTo(order.getId());
     }
 
     @Test

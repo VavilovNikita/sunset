@@ -46,6 +46,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -56,6 +57,8 @@ public class OrderService {
 
     private static final Set<OrderStatus> CLOSED_STATUSES = Set.of(OrderStatus.PAID, OrderStatus.CANCELLED);
     private static final Set<OrderStatus> ADDABLE_STATUSES = Set.of(OrderStatus.OPEN, OrderStatus.SENT);
+    private static final List<SpaAppointmentStatus> LINKABLE_SPA_APPOINTMENT_STATUSES =
+            List.of(SpaAppointmentStatus.BOOKED, SpaAppointmentStatus.COMPLETED);
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -69,6 +72,7 @@ public class OrderService {
     private final OrderMapper orderMapper;
     private final OrderPrintingService orderPrintingService;
     private final AuditLogService auditLogService;
+    private final long spaOrderLinkGraceMinutes;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -82,7 +86,8 @@ public class OrderService {
             SpaAppointmentRepository spaAppointmentRepository,
             OrderMapper orderMapper,
             OrderPrintingService orderPrintingService,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            @Value("${app.spa.order-link-grace-minutes}") long spaOrderLinkGraceMinutes) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.menuItemRepository = menuItemRepository;
@@ -92,6 +97,7 @@ public class OrderService {
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
         this.spaAppointmentRepository = spaAppointmentRepository;
+        this.spaOrderLinkGraceMinutes = spaOrderLinkGraceMinutes;
         this.orderMapper = orderMapper;
         this.orderPrintingService = orderPrintingService;
         this.auditLogService = auditLogService;
@@ -156,7 +162,7 @@ public class OrderService {
         entity.setOpenedByUserId(openedByUserId);
         OrderEntity saved = orderRepository.saveAndFlush(entity);
 
-        linkSpaAppointment(input.getSpaAppointmentId().orElse(null), table, saved.getId());
+        linkSpaAppointment(input.getSpaAppointmentId().orElse(null), bookingId, table, saved.getId(), LocalDateTime.now());
 
         return orderMapper.toDto(saved, List.of(), resolveEmail(openedByUserId), null);
     }
@@ -166,26 +172,40 @@ public class OrderService {
      * description. Never blocks order creation (an id that doesn't resolve is silently ignored,
      * same "don't let a side link fail the write it rides on" spirit as printing/audit).
      *
-     * <p>An explicit {@code spaAppointmentId} always wins. Otherwise, when the order was opened
-     * against a SPA-zone table, this auto-resolves it - see the class javadoc on why this, not an
-     * explicit field a screen has to remember to send, is the mechanism that actually keeps the
-     * link reachable: {@code POST /orders} is the one place both `/pos` and `/admin/pos` open an
-     * order, tapping a table with nothing more than its id (see {@code PosTableBoard}/
-     * {@code OrderBoard}), so resolving it here covers every screen that ever will exist,
-     * structurally, rather than something each frontend has to remember to wire up (and can
-     * drift apart on - see CLAUDE.md's own note on that asymmetry recurring). Only auto-links
-     * when exactly one candidate exists for today; an ambiguous table (two treatments booked back
-     * to back with neither charged yet) is left unlinked rather than guessing wrong - staff still
-     * see the gap and can sort it out, which is safer than silently billing the wrong guest's
-     * massage to this order.
+     * <p>An explicit {@code spaAppointmentId} always wins. Otherwise this auto-resolves it - see
+     * the class javadoc on why this, not an explicit field a screen has to remember to send, is
+     * the mechanism that actually keeps the link reachable: {@code POST /orders} is the one place
+     * both `/pos` and `/admin/pos` open an order, so resolving it here covers every screen that
+     * ever will exist, structurally, rather than something each frontend has to remember to wire
+     * up (and can drift apart on - see CLAUDE.md's own note on that asymmetry recurring).
+     *
+     * <p>Skipped entirely when the order is tied to a table outside the SPA zone (a restaurant
+     * dinner charged to the room is never a treatment, no matter how the booking axis below would
+     * resolve). Otherwise tried in two stages:
+     *
+     * <p><b>Booking first</b> ({@link #resolveByBooking}) - a room-charge order often names a
+     * booking and no table at all, so the table stage below would never fire for it. No time
+     * signal exists on this axis (the order isn't tied to a slot), so it stays count-based:
+     * exactly one of the booking's unlinked appointments today is unambiguous, two or more decline.
+     *
+     * <p><b>Table second</b> ({@link #resolveByTable}), only if the booking axis didn't resolve -
+     * by time, not count: a spa table takes several appointments a day (that's what the grid is
+     * for), so "exactly one candidate today" declines on every ordinary busy day, which is exactly
+     * the always-on warning this exists to prevent. The appointment whose interval contains the
+     * order-open moment is unique by construction (the exclusion constraint guarantees no two
+     * BOOKED/COMPLETED appointments overlap on one table); failing that, one that ended within
+     * {@code spaOrderLinkGraceMinutes} covers the ordinary case of the order being opened a few
+     * minutes after the guest's treatment actually finished.
      */
-    private void linkSpaAppointment(String explicitSpaAppointmentId, TableEntity table, String orderId) {
+    private void linkSpaAppointment(String explicitSpaAppointmentId, String bookingId, TableEntity table, String orderId, LocalDateTime openedAt) {
         String spaAppointmentId = explicitSpaAppointmentId;
-        if (spaAppointmentId == null && table != null && table.getZone() == Zone.SPA) {
-            List<SpaAppointmentEntity> candidates = spaAppointmentRepository.findByTableIdAndDateAndOrderIdIsNullAndStatusIn(
-                    table.getId(), LocalDate.now(), List.of(SpaAppointmentStatus.BOOKED, SpaAppointmentStatus.COMPLETED));
-            if (candidates.size() == 1) {
-                spaAppointmentId = candidates.get(0).getId();
+        boolean tableRulesOutSpa = table != null && table.getZone() != Zone.SPA;
+        if (spaAppointmentId == null && !tableRulesOutSpa) {
+            if (bookingId != null) {
+                spaAppointmentId = resolveByBooking(bookingId, openedAt.toLocalDate());
+            }
+            if (spaAppointmentId == null && table != null) {
+                spaAppointmentId = resolveByTable(table.getId(), openedAt);
             }
         }
         if (spaAppointmentId == null) {
@@ -196,6 +216,45 @@ public class OrderService {
             appointment.setOrderId(orderId);
             spaAppointmentRepository.save(appointment);
         });
+    }
+
+    private String resolveByBooking(String bookingId, LocalDate today) {
+        List<SpaAppointmentEntity> candidates =
+                spaAppointmentRepository.findByBookingIdAndDateAndOrderIdIsNullAndStatusIn(bookingId, today, LINKABLE_SPA_APPOINTMENT_STATUSES);
+        return candidates.size() == 1 ? candidates.get(0).getId() : null;
+    }
+
+    private String resolveByTable(String tableId, LocalDateTime openedAt) {
+        List<SpaAppointmentEntity> candidates = spaAppointmentRepository.findByTableIdAndDateAndOrderIdIsNullAndStatusIn(
+                tableId, openedAt.toLocalDate(), LINKABLE_SPA_APPOINTMENT_STATUSES);
+
+        List<SpaAppointmentEntity> live = candidates.stream().filter(a -> isDuring(a, openedAt)).toList();
+        if (live.size() == 1) {
+            return live.get(0).getId();
+        }
+        if (!live.isEmpty()) {
+            return null; // more than one live candidate should be impossible under the exclusion constraint; decline rather than guess
+        }
+
+        List<SpaAppointmentEntity> recentlyEnded = candidates.stream().filter(a -> isWithinGraceOfEnding(a, openedAt)).toList();
+        return recentlyEnded.size() == 1 ? recentlyEnded.get(0).getId() : null;
+    }
+
+    private static LocalDateTime startOf(SpaAppointmentEntity appointment) {
+        return LocalDateTime.of(appointment.getDate(), appointment.getStartTime());
+    }
+
+    private static LocalDateTime endOf(SpaAppointmentEntity appointment) {
+        return startOf(appointment).plusMinutes(appointment.getDurationMinutes());
+    }
+
+    private static boolean isDuring(SpaAppointmentEntity appointment, LocalDateTime moment) {
+        return !moment.isBefore(startOf(appointment)) && moment.isBefore(endOf(appointment));
+    }
+
+    private boolean isWithinGraceOfEnding(SpaAppointmentEntity appointment, LocalDateTime moment) {
+        LocalDateTime end = endOf(appointment);
+        return !moment.isBefore(end) && moment.isBefore(end.plusMinutes(spaOrderLinkGraceMinutes));
     }
 
     @Transactional

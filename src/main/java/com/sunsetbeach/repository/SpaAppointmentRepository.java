@@ -25,12 +25,24 @@ public interface SpaAppointmentRepository extends JpaRepository<SpaAppointmentEn
             String therapistUserId, SpaAppointmentStatus status, LocalDate date);
 
     /**
-     * Candidates for auto-linking a newly opened POS order to a treatment - see
-     * {@link com.sunsetbeach.service.OrderService#create}. {@code BOOKED}/{@code COMPLETED} both
-     * count (the order can legitimately be opened before or after the therapist marks the
-     * treatment done); {@code orderId IS NULL} so an already-billed appointment is never a
-     * candidate for a second order.
+     * Table-axis candidates for auto-linking a newly opened POS order to a treatment - see
+     * {@link com.sunsetbeach.service.OrderService#linkSpaAppointment}. {@code BOOKED}/
+     * {@code COMPLETED} both count (the order can legitimately be opened before or after the
+     * therapist marks the treatment done); {@code orderId IS NULL} so an already-billed
+     * appointment is never a candidate for a second order. Resolved by time (which of today's
+     * candidates the order-open moment actually falls in/near), not by count - see that method's
+     * own javadoc for why a busy table needs this, not "exactly one for the day".
      */
     List<SpaAppointmentEntity> findByTableIdAndDateAndOrderIdIsNullAndStatusIn(
             String tableId, LocalDate date, List<SpaAppointmentStatus> statuses);
+
+    /**
+     * Booking-axis candidates for the same auto-link, tried first - see
+     * {@link com.sunsetbeach.service.OrderService#linkSpaAppointment}. A room-charge order names
+     * a booking but often no table at all, so the table-axis query above never fires for it. No
+     * time signal is available here (the order isn't tied to a specific slot), so this stays
+     * count-based: exactly one unlinked candidate for the day is unambiguous, two or more decline.
+     */
+    List<SpaAppointmentEntity> findByBookingIdAndDateAndOrderIdIsNullAndStatusIn(
+            String bookingId, LocalDate date, List<SpaAppointmentStatus> statuses);
 }
