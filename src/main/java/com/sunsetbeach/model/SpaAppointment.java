@@ -346,7 +346,7 @@ public class SpaAppointment {
   }
 
   /**
-   * The POS order that charged this treatment, if any - set via `spaAppointmentId` on `OrderCreateInput` when the order is opened, never computed or amount-bearing here. A `COMPLETED` appointment with `orderId: null` is a real, visible gap (a treatment settled another way, or one nobody rang up yet) - deliberately not blocked, see the class description. 
+   * The POS order that charged this treatment, if any - set when the order is opened against this appointment's table (auto-resolved server-side when unambiguous, or via an explicit `spaAppointmentId` on `OrderCreateInput` - see that field), never computed or amount-bearing here. A `COMPLETED` appointment with `orderId: null` is a real, visible gap (a treatment settled another way, or one nobody rang up yet) - deliberately not blocked, see the class description. 
    * @return orderId
    */
   @NotNull 

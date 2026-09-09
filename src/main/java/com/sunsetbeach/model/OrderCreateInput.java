@@ -94,7 +94,7 @@ public class OrderCreateInput {
   }
 
   /**
-   * When set, this order becomes `SpaAppointment.orderId` for that appointment - the one way a treatment's charge gets linked (see that field's own description; the appointment itself never computes or stores an amount). An id that doesn't resolve to a real appointment is silently ignored, same \"don't let a side link fail the write it rides on\" spirit as printing/audit - order creation is never blocked by this. 
+   * When set, this order becomes `SpaAppointment.orderId` for that appointment (see that field's own description; the appointment itself never computes or stores an amount). An id that doesn't resolve to a real appointment is silently ignored, same \"don't let a side link fail the write it rides on\" spirit as printing/audit - order creation is never blocked by this. Usually left unset: opening an order against a SPA-zone `tableId` with exactly one un-linked `BOOKED`/`COMPLETED` appointment for today auto-links it without this field, so every screen that opens an order for a table - not just one that was specifically built spa-aware - gets the link for free. Send this explicitly only to override that (or when the table has more than one candidate and auto-resolution deliberately declines to guess). 
    * @return spaAppointmentId
    */
   

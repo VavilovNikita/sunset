@@ -6,6 +6,7 @@ import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.ShiftEntity;
+import com.sunsetbeach.entity.SpaAppointmentEntity;
 import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
@@ -24,6 +25,7 @@ import com.sunsetbeach.model.OrderUpdateInput;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.ShiftStatus;
+import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
@@ -138,7 +140,8 @@ public class OrderService {
     @Transactional
     public Order create(OrderCreateInput input, String openedByUserId) {
         String tableId = input.getTableId().orElse(null);
-        if (tableId != null && !tableRepository.existsById(tableId)) {
+        TableEntity table = tableId != null ? tableRepository.findById(tableId).orElse(null) : null;
+        if (tableId != null && table == null) {
             throw new NotFoundException("Table not found");
         }
         String bookingId = input.getBookingId().orElse(null);
@@ -153,19 +156,46 @@ public class OrderService {
         entity.setOpenedByUserId(openedByUserId);
         OrderEntity saved = orderRepository.saveAndFlush(entity);
 
-        // The one way SpaAppointment.orderId gets set - see that field's own openapi.yaml
-        // description. An id that doesn't resolve to a real appointment is silently ignored,
-        // same "don't let a side link fail the write it rides on" spirit as printing/audit -
-        // order creation is never blocked by this.
-        String spaAppointmentId = input.getSpaAppointmentId().orElse(null);
-        if (spaAppointmentId != null) {
-            spaAppointmentRepository.findById(spaAppointmentId).ifPresent(appointment -> {
-                appointment.setOrderId(saved.getId());
-                spaAppointmentRepository.save(appointment);
-            });
-        }
+        linkSpaAppointment(input.getSpaAppointmentId().orElse(null), table, saved.getId());
 
         return orderMapper.toDto(saved, List.of(), resolveEmail(openedByUserId), null);
+    }
+
+    /**
+     * The one way {@code SpaAppointment.orderId} gets set - see that field's own openapi.yaml
+     * description. Never blocks order creation (an id that doesn't resolve is silently ignored,
+     * same "don't let a side link fail the write it rides on" spirit as printing/audit).
+     *
+     * <p>An explicit {@code spaAppointmentId} always wins. Otherwise, when the order was opened
+     * against a SPA-zone table, this auto-resolves it - see the class javadoc on why this, not an
+     * explicit field a screen has to remember to send, is the mechanism that actually keeps the
+     * link reachable: {@code POST /orders} is the one place both `/pos` and `/admin/pos` open an
+     * order, tapping a table with nothing more than its id (see {@code PosTableBoard}/
+     * {@code OrderBoard}), so resolving it here covers every screen that ever will exist,
+     * structurally, rather than something each frontend has to remember to wire up (and can
+     * drift apart on - see CLAUDE.md's own note on that asymmetry recurring). Only auto-links
+     * when exactly one candidate exists for today; an ambiguous table (two treatments booked back
+     * to back with neither charged yet) is left unlinked rather than guessing wrong - staff still
+     * see the gap and can sort it out, which is safer than silently billing the wrong guest's
+     * massage to this order.
+     */
+    private void linkSpaAppointment(String explicitSpaAppointmentId, TableEntity table, String orderId) {
+        String spaAppointmentId = explicitSpaAppointmentId;
+        if (spaAppointmentId == null && table != null && table.getZone() == Zone.SPA) {
+            List<SpaAppointmentEntity> candidates = spaAppointmentRepository.findByTableIdAndDateAndOrderIdIsNullAndStatusIn(
+                    table.getId(), LocalDate.now(), List.of(SpaAppointmentStatus.BOOKED, SpaAppointmentStatus.COMPLETED));
+            if (candidates.size() == 1) {
+                spaAppointmentId = candidates.get(0).getId();
+            }
+        }
+        if (spaAppointmentId == null) {
+            return;
+        }
+        String resolvedId = spaAppointmentId;
+        spaAppointmentRepository.findById(resolvedId).ifPresent(appointment -> {
+            appointment.setOrderId(orderId);
+            spaAppointmentRepository.save(appointment);
+        });
     }
 
     @Transactional
