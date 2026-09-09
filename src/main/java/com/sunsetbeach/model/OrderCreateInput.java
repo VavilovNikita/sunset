@@ -29,6 +29,8 @@ public class OrderCreateInput {
 
   private JsonNullable<@Size(max = 120) String> guestName = JsonNullable.<String>undefined();
 
+  private JsonNullable<String> spaAppointmentId = JsonNullable.<String>undefined();
+
   public OrderCreateInput tableId(String tableId) {
     this.tableId = JsonNullable.of(tableId);
     return this;
@@ -86,6 +88,25 @@ public class OrderCreateInput {
     this.guestName = guestName;
   }
 
+  public OrderCreateInput spaAppointmentId(String spaAppointmentId) {
+    this.spaAppointmentId = JsonNullable.of(spaAppointmentId);
+    return this;
+  }
+
+  /**
+   * When set, this order becomes `SpaAppointment.orderId` for that appointment - the one way a treatment's charge gets linked (see that field's own description; the appointment itself never computes or stores an amount). An id that doesn't resolve to a real appointment is silently ignored, same \"don't let a side link fail the write it rides on\" spirit as printing/audit - order creation is never blocked by this. 
+   * @return spaAppointmentId
+   */
+  
+  @JsonProperty("spaAppointmentId")
+  public JsonNullable<String> getSpaAppointmentId() {
+    return spaAppointmentId;
+  }
+
+  public void setSpaAppointmentId(JsonNullable<String> spaAppointmentId) {
+    this.spaAppointmentId = spaAppointmentId;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -97,7 +118,8 @@ public class OrderCreateInput {
     OrderCreateInput orderCreateInput = (OrderCreateInput) o;
     return equalsNullable(this.tableId, orderCreateInput.tableId) &&
         equalsNullable(this.bookingId, orderCreateInput.bookingId) &&
-        equalsNullable(this.guestName, orderCreateInput.guestName);
+        equalsNullable(this.guestName, orderCreateInput.guestName) &&
+        equalsNullable(this.spaAppointmentId, orderCreateInput.spaAppointmentId);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -106,7 +128,7 @@ public class OrderCreateInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(hashCodeNullable(tableId), hashCodeNullable(bookingId), hashCodeNullable(guestName));
+    return Objects.hash(hashCodeNullable(tableId), hashCodeNullable(bookingId), hashCodeNullable(guestName), hashCodeNullable(spaAppointmentId));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -123,6 +145,7 @@ public class OrderCreateInput {
     sb.append("    tableId: ").append(toIndentedString(tableId)).append("\n");
     sb.append("    bookingId: ").append(toIndentedString(bookingId)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
+    sb.append("    spaAppointmentId: ").append(toIndentedString(spaAppointmentId)).append("\n");
     sb.append("}");
     return sb.toString();
   }

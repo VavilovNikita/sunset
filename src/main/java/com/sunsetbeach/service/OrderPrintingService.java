@@ -78,6 +78,13 @@ public class OrderPrintingService {
                     .collect(Collectors.groupingBy(item -> menuDepartmentOf(item, menuItemsById)));
 
             for (Map.Entry<MenuDepartment, List<OrderItemEntity>> entry : byDepartment.entrySet()) {
+                // A treatment never generates a kitchen/bar ticket - see MenuDepartment's own
+                // openapi.yaml description. Billing still happens normally: this only skips
+                // printTickets, never printGuestReceipt, which reads straight from the order/
+                // items and doesn't route by department at all.
+                if (entry.getKey() == MenuDepartment.SPA) {
+                    continue;
+                }
                 PrinterDepartment printerDepartment =
                         entry.getKey() == MenuDepartment.BAR ? PrinterDepartment.BAR : PrinterDepartment.KITCHEN;
                 PrintDocumentType documentType =

@@ -7,7 +7,10 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.MenuDepartment;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.springframework.format.annotation.DateTimeFormat;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -37,6 +40,8 @@ public class MenuItem {
   private String price;
 
   private Boolean isAvailable;
+
+  private JsonNullable<@Min(1) Integer> durationMinutes = JsonNullable.<Integer>undefined();
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
@@ -192,6 +197,26 @@ public class MenuItem {
     this.isAvailable = isAvailable;
   }
 
+  public MenuItem durationMinutes(Integer durationMinutes) {
+    this.durationMinutes = JsonNullable.of(durationMinutes);
+    return this;
+  }
+
+  /**
+   * Minutes a scheduled treatment takes - null for every ordinary food/drink item. Copied onto `SpaAppointment.durationMinutes` at the moment an appointment is created, not read live afterward - the same \"agreed terms are frozen\" precedent as `BookingSegmentNightlyRate`, so editing this later never reflows an appointment already on the grid. Not listed under `required`: the codegen's `JsonNullable<T>` unwrapping makes a generated `@NotNull` on a `nullable: true` + `required` property reject the very null most rows need - see `RoomUnitPositionInput`'s own comment. 
+   * minimum: 1
+   * @return durationMinutes
+   */
+  @Min(1) 
+  @JsonProperty("durationMinutes")
+  public JsonNullable<@Min(1) Integer> getDurationMinutes() {
+    return durationMinutes;
+  }
+
+  public void setDurationMinutes(JsonNullable<Integer> durationMinutes) {
+    this.durationMinutes = durationMinutes;
+  }
+
   public MenuItem createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -227,12 +252,24 @@ public class MenuItem {
         Objects.equals(this.department, menuItem.department) &&
         Objects.equals(this.price, menuItem.price) &&
         Objects.equals(this.isAvailable, menuItem.isAvailable) &&
+        equalsNullable(this.durationMinutes, menuItem.durationMinutes) &&
         Objects.equals(this.createdAt, menuItem.createdAt);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, description, category, department, price, isAvailable, createdAt);
+    return Objects.hash(id, name, description, category, department, price, isAvailable, hashCodeNullable(durationMinutes), createdAt);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -246,6 +283,7 @@ public class MenuItem {
     sb.append("    department: ").append(toIndentedString(department)).append("\n");
     sb.append("    price: ").append(toIndentedString(price)).append("\n");
     sb.append("    isAvailable: ").append(toIndentedString(isAvailable)).append("\n");
+    sb.append("    durationMinutes: ").append(toIndentedString(durationMinutes)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();

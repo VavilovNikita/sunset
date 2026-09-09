@@ -198,9 +198,22 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/menu/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.GET, "/menu", "/menu/*").authenticated()
                         .requestMatchers(HttpMethod.POST, "/tables").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // PATCH /tables/positions (the spa floor-plan editor's batch save) needs
+                        // no separate rule - it isn't the GET carve-out below, so it falls
+                        // straight through to this MANAGER+ PATCH rule, exactly the role this
+                        // write needs. Same "no separate rule needed" reasoning as
+                        // PATCH /room-units/positions above.
                         .requestMatchers(HttpMethod.PATCH, "/tables/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.DELETE, "/tables/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.GET, "/tables").authenticated()
+                        // Spa: booking/reading the half-hour grid is CASHIER+, same floor as the
+                        // rest of front-desk reservation work (GET /bookings, POST /bookings/staff
+                        // above) - reception is the only surface in v1, no therapist self-service
+                        // (see JobFunction.THERAPIST and SpaAppointment's own description).
+                        .requestMatchers(HttpMethod.GET, "/spa-appointments", "/spa-appointments/therapists")
+                        .hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/spa-appointments").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.PATCH, "/spa-appointments/*/status").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // More specific than the /orders/** rule below, so it must come first -
                         // authorizeHttpRequests matches in declaration order.
                         .requestMatchers(HttpMethod.POST, "/orders/*/close").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())

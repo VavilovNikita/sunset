@@ -4,6 +4,7 @@ import com.sunsetbeach.api.TablesApi;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.Table;
 import com.sunsetbeach.model.TableInput;
+import com.sunsetbeach.model.TablePositionInput;
 import com.sunsetbeach.service.TableService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -22,6 +23,11 @@ public class TableController implements TablesApi {
     @Override
     public ResponseEntity<List<Table>> listTables() {
         return ResponseEntity.ok(tableService.list());
+    }
+
+    @Override
+    public ResponseEntity<List<Table>> saveTablePositions(List<TablePositionInput> tablePositionInput) {
+        return ResponseEntity.ok(tableService.savePositions(tablePositionInput));
     }
 
     @Override

@@ -9,7 +9,9 @@ import org.springframework.stereotype.Component;
 public class TableMapper {
 
     public Table toDto(TableEntity entity) {
-        return new Table(entity.getId(), entity.getZone(), entity.getLabel(), entity.getCapacity(), entity.isActive());
+        return new Table(entity.getId(), entity.getZone(), entity.getLabel(), entity.getCapacity(), entity.isActive())
+                .positionX(entity.getPositionX())
+                .positionY(entity.getPositionY());
     }
 
     /** TableInput is a full replacement on both create and update - applies every field. */

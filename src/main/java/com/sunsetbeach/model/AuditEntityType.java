@@ -38,7 +38,11 @@ public enum AuditEntityType {
   
   PRINT_JOB("PRINT_JOB"),
   
-  MAINTENANCE_TASK("MAINTENANCE_TASK");
+  MAINTENANCE_TASK("MAINTENANCE_TASK"),
+  
+  TABLE("TABLE"),
+  
+  SPA_APPOINTMENT("SPA_APPOINTMENT");
 
   private String value;
 

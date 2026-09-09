@@ -31,6 +31,7 @@ import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.OrderRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.ShiftRepository;
+import com.sunsetbeach.repository.SpaAppointmentRepository;
 import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
@@ -62,6 +63,7 @@ public class OrderService {
     private final ShiftRepository shiftRepository;
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
+    private final SpaAppointmentRepository spaAppointmentRepository;
     private final OrderMapper orderMapper;
     private final OrderPrintingService orderPrintingService;
     private final AuditLogService auditLogService;
@@ -75,6 +77,7 @@ public class OrderService {
             ShiftRepository shiftRepository,
             PaymentRepository paymentRepository,
             UserRepository userRepository,
+            SpaAppointmentRepository spaAppointmentRepository,
             OrderMapper orderMapper,
             OrderPrintingService orderPrintingService,
             AuditLogService auditLogService) {
@@ -86,6 +89,7 @@ public class OrderService {
         this.shiftRepository = shiftRepository;
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
+        this.spaAppointmentRepository = spaAppointmentRepository;
         this.orderMapper = orderMapper;
         this.orderPrintingService = orderPrintingService;
         this.auditLogService = auditLogService;
@@ -148,6 +152,19 @@ public class OrderService {
         entity.setGuestName(input.getGuestName().orElse(null));
         entity.setOpenedByUserId(openedByUserId);
         OrderEntity saved = orderRepository.saveAndFlush(entity);
+
+        // The one way SpaAppointment.orderId gets set - see that field's own openapi.yaml
+        // description. An id that doesn't resolve to a real appointment is silently ignored,
+        // same "don't let a side link fail the write it rides on" spirit as printing/audit -
+        // order creation is never blocked by this.
+        String spaAppointmentId = input.getSpaAppointmentId().orElse(null);
+        if (spaAppointmentId != null) {
+            spaAppointmentRepository.findById(spaAppointmentId).ifPresent(appointment -> {
+                appointment.setOrderId(saved.getId());
+                spaAppointmentRepository.save(appointment);
+            });
+        }
+
         return orderMapper.toDto(saved, List.of(), resolveEmail(openedByUserId), null);
     }
 

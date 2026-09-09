@@ -9,6 +9,7 @@ import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.Table;
 import com.sunsetbeach.model.TableInput;
+import com.sunsetbeach.model.TablePositionInput;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -56,7 +57,7 @@ public interface TablesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0 }";
+                    String exampleString = "{ \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -155,7 +156,56 @@ public interface TablesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0 }, { \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0 } ]";
+                    String exampleString = "[ { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /tables/positions : Place (or un-place) POS tables on the spa&#39;s floor plan
+     * Requires MANAGER or above. Batch, same all-or-nothing shape as &#x60;PATCH /room-units/positions&#x60;: every entry is validated (range, paired nulls, &#x60;tableId&#x60; exists) before any write happens. &#x60;positionX&#x60;/&#x60;positionY&#x60; both null clears a table&#39;s position. 
+     *
+     * @param tablePositionInput  (required)
+     * @return The updated tables. (status code 200)
+     *         or A position outside 0..1, an entry with only one of positionX/positionY set, or an unknown tableId. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/tables/positions",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<List<Table>> saveTablePositions(
+         @Valid @RequestBody List<@Valid TablePositionInput> tablePositionInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -197,7 +247,7 @@ public interface TablesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0 }";
+                    String exampleString = "{ \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

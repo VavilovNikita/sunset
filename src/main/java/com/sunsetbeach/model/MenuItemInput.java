@@ -7,6 +7,9 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.MenuDepartment;
 import java.math.BigDecimal;
+import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -17,7 +20,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Full replacement on PATCH — no partial update (same convention as &#x60;RoomInput&#x60;). &#x60;department&#x60; defaults to &#x60;KITCHEN&#x60; (most menu items are food) - existing rows migrated the same way; staff reassign drinks to &#x60;BAR&#x60; explicitly. 
+ * Full replacement on PATCH — no partial update (same convention as &#x60;RoomInput&#x60;). &#x60;department&#x60; defaults to &#x60;KITCHEN&#x60; (most menu items are food) - existing rows migrated the same way; staff reassign drinks to &#x60;BAR&#x60; explicitly, or a treatment to &#x60;SPA&#x60;. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -34,6 +37,8 @@ public class MenuItemInput {
   private BigDecimal price;
 
   private Boolean isAvailable = true;
+
+  private JsonNullable<@Min(1) Integer> durationMinutes = JsonNullable.<Integer>undefined();
 
   public MenuItemInput() {
     super();
@@ -164,6 +169,26 @@ public class MenuItemInput {
     this.isAvailable = isAvailable;
   }
 
+  public MenuItemInput durationMinutes(Integer durationMinutes) {
+    this.durationMinutes = JsonNullable.of(durationMinutes);
+    return this;
+  }
+
+  /**
+   * Set only for a `SPA`-department item - see `MenuItem.durationMinutes`.
+   * minimum: 1
+   * @return durationMinutes
+   */
+  @Min(1) 
+  @JsonProperty("durationMinutes")
+  public JsonNullable<@Min(1) Integer> getDurationMinutes() {
+    return durationMinutes;
+  }
+
+  public void setDurationMinutes(JsonNullable<Integer> durationMinutes) {
+    this.durationMinutes = durationMinutes;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -178,12 +203,24 @@ public class MenuItemInput {
         Objects.equals(this.category, menuItemInput.category) &&
         Objects.equals(this.department, menuItemInput.department) &&
         Objects.equals(this.price, menuItemInput.price) &&
-        Objects.equals(this.isAvailable, menuItemInput.isAvailable);
+        Objects.equals(this.isAvailable, menuItemInput.isAvailable) &&
+        equalsNullable(this.durationMinutes, menuItemInput.durationMinutes);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, description, category, department, price, isAvailable);
+    return Objects.hash(name, description, category, department, price, isAvailable, hashCodeNullable(durationMinutes));
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -196,6 +233,7 @@ public class MenuItemInput {
     sb.append("    department: ").append(toIndentedString(department)).append("\n");
     sb.append("    price: ").append(toIndentedString(price)).append("\n");
     sb.append("    isAvailable: ").append(toIndentedString(isAvailable)).append("\n");
+    sb.append("    durationMinutes: ").append(toIndentedString(durationMinutes)).append("\n");
     sb.append("}");
     return sb.toString();
   }

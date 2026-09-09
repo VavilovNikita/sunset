@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * A second, independent authorization axis alongside `Role` — a sideways job, not a step on the ADMIN > MANAGER > CASHIER > WAITER ladder. A function grants access to specific endpoints on its own, without granting anything else and without being expressed as a role comparison; it never appears in the RoleHierarchy bean. `User.functions` is a set (zero or more, no duplicates) — see that schema. 
+ * A second, independent authorization axis alongside `Role` — a sideways job, not a step on the ADMIN > MANAGER > CASHIER > WAITER ladder. A function grants access to specific endpoints on its own, without granting anything else and without being expressed as a role comparison; it never appears in the RoleHierarchy bean. `User.functions` is a set (zero or more, no duplicates) — see that schema. `THERAPIST` marks a staff account as a spa therapist for `SpaAppointment.therapistUserId` - an ordinary staff account like any other (the same account shape shifts/hours will use), not a separate person record; one whose holder never signs in costs nothing beyond the row itself. No endpoint is gated on this function in v1 (there is no therapist self-service screen yet - reception is the only surface), so it exists purely as a tag on who counts as a bookable therapist. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -24,7 +24,9 @@ public enum JobFunction {
   
   ENGINEER("ENGINEER"),
   
-  HOUSEKEEPER("HOUSEKEEPER");
+  HOUSEKEEPER("HOUSEKEEPER"),
+  
+  THERAPIST("THERAPIST");
 
   private String value;
 

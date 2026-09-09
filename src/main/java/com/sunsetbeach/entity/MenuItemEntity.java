@@ -37,6 +37,9 @@ public class MenuItemEntity {
 
     private boolean isAvailable = true;
 
+    /** Minutes a scheduled treatment takes - null for every ordinary food/drink item. See MenuItem's own openapi.yaml description. */
+    private Integer durationMinutes;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -94,5 +97,13 @@ public class MenuItemEntity {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public Integer getDurationMinutes() {
+        return durationMinutes;
+    }
+
+    public void setDurationMinutes(Integer durationMinutes) {
+        this.durationMinutes = durationMinutes;
     }
 }

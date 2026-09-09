@@ -49,6 +49,16 @@ import com.sunsetbeach.model.RoomUnitInput;
 import com.sunsetbeach.model.RoomUnitPositionInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
 import com.sunsetbeach.model.ShiftTotals;
+import com.sunsetbeach.model.SpaAppointment;
+import com.sunsetbeach.model.SpaAppointmentCreateInput;
+import com.sunsetbeach.model.SpaAppointmentResult;
+import com.sunsetbeach.model.SpaAppointmentStatus;
+import com.sunsetbeach.model.SpaAppointmentStatusUpdateInput;
+import com.sunsetbeach.model.SpaSchedule;
+import com.sunsetbeach.model.SpaTherapist;
+import com.sunsetbeach.model.Table;
+import com.sunsetbeach.model.TablePositionInput;
+import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.security.JwtService;
 import com.sunsetbeach.security.RestAccessDeniedHandler;
 import com.sunsetbeach.security.RestAuthEntryPoint;
@@ -65,6 +75,8 @@ import com.sunsetbeach.service.PropertyMapService;
 import com.sunsetbeach.service.RoomService;
 import com.sunsetbeach.service.RoomUnitService;
 import com.sunsetbeach.service.ShiftService;
+import com.sunsetbeach.service.SpaAppointmentService;
+import com.sunsetbeach.service.TableService;
 import com.sunsetbeach.service.UserService;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -103,7 +115,9 @@ import tools.jackson.databind.json.JsonMapper;
             AvailabilityController.class,
             PropertyMapController.class,
             com.sunsetbeach.controller.AuditLogController.class,
-            com.sunsetbeach.controller.MaintenanceTaskController.class
+            com.sunsetbeach.controller.MaintenanceTaskController.class,
+            TableController.class,
+            SpaController.class
         })
 @Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
         com.sunsetbeach.security.BookingRateLimiter.class})
@@ -167,6 +181,12 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private com.sunsetbeach.service.MaintenanceTaskService maintenanceTaskService;
+
+    @MockitoBean
+    private TableService tableService;
+
+    @MockitoBean
+    private SpaAppointmentService spaAppointmentService;
 
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
     // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
@@ -255,7 +275,7 @@ class PosRoleHierarchyTests {
 
     @Test
     void updateUserActive_withAdminToken_isOk() throws Exception {
-        when(userService.setActive(eq("user-2"), anyString(), eq(false))).thenReturn(sampleUser());
+        when(userService.setActive(eq("user-2"), anyString(), eq(false))).thenReturn(sampleUserUpdateResult());
         mockMvc.perform(patch("/users/user-2/active")
                         .header("Authorization", token(Role.ADMIN))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -274,7 +294,7 @@ class PosRoleHierarchyTests {
 
     @Test
     void updateUserFunctions_withAdminToken_isOk() throws Exception {
-        when(userService.updateFunctions(eq("user-2"), any())).thenReturn(sampleUser());
+        when(userService.updateFunctions(eq("user-2"), any())).thenReturn(sampleUserUpdateResult());
         mockMvc.perform(patch("/users/user-2/functions")
                         .header("Authorization", token(Role.ADMIN))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -563,6 +583,96 @@ class PosRoleHierarchyTests {
                         .header("Authorization", token(Role.MANAGER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(List.of(new RoomUnitPositionInput("unit-1").positionX(BigDecimal.valueOf(0.5)).positionY(BigDecimal.valueOf(0.5))))))
+                .andExpect(status().isOk());
+    }
+
+    // --- PATCH /tables/positions (spa floor-plan editor's batch save) is MANAGER-only, same
+    // tier and same "falls through to the PATCH /tables/** catch-all" reasoning as
+    // PATCH /room-units/positions above. ---
+
+    @Test
+    void saveTablePositions_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/tables/positions")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                List.of(new TablePositionInput("table-1").positionX(BigDecimal.valueOf(0.5)).positionY(BigDecimal.valueOf(0.5))))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void saveTablePositions_withManagerToken_isOk() throws Exception {
+        when(tableService.savePositions(any())).thenReturn(List.of(sampleTable()));
+        mockMvc.perform(patch("/tables/positions")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                List.of(new TablePositionInput("table-1").positionX(BigDecimal.valueOf(0.5)).positionY(BigDecimal.valueOf(0.5))))))
+                .andExpect(status().isOk());
+    }
+
+    // --- Spa: booking/reading the half-hour grid is CASHIER+ - reception is the only surface in
+    // v1, no therapist self-service (see JobFunction.THERAPIST). ---
+
+    @Test
+    void getSpaSchedule_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/spa-appointments?date=2027-01-01").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getSpaSchedule_withCashierToken_isOk() throws Exception {
+        when(spaAppointmentService.getSchedule(any())).thenReturn(sampleSpaSchedule());
+        mockMvc.perform(get("/spa-appointments?date=2027-01-01").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void listSpaTherapists_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/spa-appointments/therapists").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listSpaTherapists_withCashierToken_isOk() throws Exception {
+        when(spaAppointmentService.listTherapists()).thenReturn(List.of(new SpaTherapist("user-1", "therapist@example.com")));
+        mockMvc.perform(get("/spa-appointments/therapists").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void createSpaAppointment_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/spa-appointments")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SpaAppointmentCreateInput("booking-1", "table-1", "user-1", "menu-1", "2027-01-01", "10:00"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createSpaAppointment_withCashierToken_isCreated() throws Exception {
+        when(spaAppointmentService.create(any(), anyString())).thenReturn(new SpaAppointmentResult(sampleSpaAppointment(), null));
+        mockMvc.perform(post("/spa-appointments")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SpaAppointmentCreateInput("booking-1", "table-1", "user-1", "menu-1", "2027-01-01", "10:00"))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void updateSpaAppointmentStatus_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/spa-appointments/appt-1/status")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.CANCELLED))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateSpaAppointmentStatus_withCashierToken_isOk() throws Exception {
+        when(spaAppointmentService.updateStatus(eq("appt-1"), any(), anyString())).thenReturn(sampleSpaAppointment());
+        mockMvc.perform(patch("/spa-appointments/appt-1/status")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.CANCELLED))))
                 .andExpect(status().isOk());
     }
 
@@ -948,6 +1058,10 @@ class PosRoleHierarchyTests {
         return new com.sunsetbeach.model.User("user-2", "user-2@example.com", Role.CASHIER, true, List.of(), OffsetDateTime.now());
     }
 
+    private static com.sunsetbeach.model.UserUpdateResult sampleUserUpdateResult() {
+        return new com.sunsetbeach.model.UserUpdateResult(sampleUser(), null);
+    }
+
     private static BookingSegment sampleBookingSegment() {
         return new BookingSegment("segment-1", "room-1", sampleRoom(), "unit-1", sampleRoomUnit(), "2026-01-01", "2026-01-02", "1500.00");
     }
@@ -995,6 +1109,37 @@ class PosRoleHierarchyTests {
     private static MenuItem sampleMenuItem() {
         return new MenuItem(
                 "menu-1", "Pad Thai", "Stir-fried rice noodles", "Mains", MenuDepartment.KITCHEN, "250.00", true, OffsetDateTime.now());
+    }
+
+    private static Table sampleTable() {
+        return new Table("table-1", Zone.SPA, "Spa Table 1", 1, true);
+    }
+
+    private static SpaAppointment sampleSpaAppointment() {
+        return new SpaAppointment(
+                "appt-1",
+                "booking-1",
+                "Guest",
+                "table-1",
+                "Spa Table 1",
+                "user-1",
+                "therapist@example.com",
+                "menu-1",
+                "Massage",
+                "2027-01-01",
+                "10:00",
+                60,
+                SpaAppointmentStatus.BOOKED,
+                null,
+                "user-2",
+                null,
+                null,
+                OffsetDateTime.now(),
+                OffsetDateTime.now());
+    }
+
+    private static SpaSchedule sampleSpaSchedule() {
+        return new SpaSchedule("2027-01-01", "09:00", "20:00", 30, List.of(sampleTable()), List.of(sampleSpaAppointment()));
     }
 
     private static Order sampleOrder() {

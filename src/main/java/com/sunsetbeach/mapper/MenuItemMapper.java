@@ -11,14 +11,15 @@ public class MenuItemMapper {
 
     public MenuItem toDto(MenuItemEntity entity) {
         return new MenuItem(
-                entity.getId(),
-                entity.getName(),
-                entity.getDescription(),
-                entity.getCategory(),
-                entity.getDepartment(),
-                PriceFormat.asDecimalString(entity.getPrice()),
-                entity.isAvailable(),
-                TimestampFormat.toUtc(entity.getCreatedAt()));
+                        entity.getId(),
+                        entity.getName(),
+                        entity.getDescription(),
+                        entity.getCategory(),
+                        entity.getDepartment(),
+                        PriceFormat.asDecimalString(entity.getPrice()),
+                        entity.isAvailable(),
+                        TimestampFormat.toUtc(entity.getCreatedAt()))
+                .durationMinutes(entity.getDurationMinutes());
     }
 
     /** MenuItemInput is a full replacement on both create and update - applies every field. */
@@ -29,5 +30,6 @@ public class MenuItemMapper {
         entity.setDepartment(input.getDepartment() != null ? input.getDepartment() : MenuDepartment.KITCHEN);
         entity.setPrice(input.getPrice());
         entity.setAvailable(input.getIsAvailable() != null ? input.getIsAvailable() : true);
+        entity.setDurationMinutes(input.getDurationMinutes().orElse(null));
     }
 }

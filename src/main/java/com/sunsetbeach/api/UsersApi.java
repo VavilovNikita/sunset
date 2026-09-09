@@ -13,6 +13,7 @@ import com.sunsetbeach.model.UserActiveUpdateInput;
 import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.model.UserFunctionsUpdateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
+import com.sunsetbeach.model.UserUpdateResult;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -240,7 +241,7 @@ public interface UsersApi {
 
     /**
      * PATCH /users/{id}/active : Enable or disable a staff user
-     * Requires an authenticated session with role &#x60;ADMIN&#x60;. Disabling a user (&#x60;active: false&#x60;) rejects every request bearing one of their tokens on the very next request, regardless of that token&#39;s remaining validity window - the closest thing this stateless-JWT system has to revoking access on termination. An admin cannot disable their own account (blocked before any DB write, same guard as &#x60;PATCH /users/{id}&#x60; for role changes). 
+     * Requires an authenticated session with role &#x60;ADMIN&#x60;. Disabling a user (&#x60;active: false&#x60;) rejects every request bearing one of their tokens on the very next request, regardless of that token&#39;s remaining validity window - the closest thing this stateless-JWT system has to revoking access on termination. An admin cannot disable their own account (blocked before any DB write, same guard as &#x60;PATCH /users/{id}&#x60; for role changes). &#x60;warning&#x60; in the response is set when disabling this user leaves future &#x60;BOOKED&#x60; spa appointments assigned to them - see &#x60;UserUpdateResult&#x60;. 
      *
      * @param id  (required)
      * @param userActiveUpdateInput  (required)
@@ -257,14 +258,14 @@ public interface UsersApi {
         consumes = { "application/json" }
     )
     
-    default ResponseEntity<User> updateUserActive(
+    default ResponseEntity<UserUpdateResult> updateUserActive(
          @PathVariable("id") String id,
          @Valid @RequestBody UserActiveUpdateInput userActiveUpdateInput
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -297,7 +298,7 @@ public interface UsersApi {
 
     /**
      * PATCH /users/{id}/functions : Set a staff user&#39;s job functions
-     * Requires an authenticated session with role &#x60;ADMIN&#x60; - job functions are managed under &#x60;/users/_**&#x60; alongside role, password and active-state, not through any lower-privilege route. Replaces the full set (send every function this user should have; an empty array clears all of them). Unlike &#x60;PATCH /users/{id}&#x60; (role), &#x60;PATCH /users/{id}/password&#x60;, and &#x60;PATCH /users/{id}/active&#x60;, this does not bump &#x60;tokenVersion&#x60; and does not invalidate any existing token - &#x60;JwtAuthFilter&#x60; grants &#x60;FUNCTION_&lt;name&gt;&#x60; authorities from a fresh read of this user on every request already (the same row it re-reads to check &#x60;active&#x60;/ &#x60;tokenVersion&#x60;), so a change here is enforced on the very next request with no re-login needed. 
+     * Requires an authenticated session with role &#x60;ADMIN&#x60; - job functions are managed under &#x60;/users/_**&#x60; alongside role, password and active-state, not through any lower-privilege route. Replaces the full set (send every function this user should have; an empty array clears all of them). Unlike &#x60;PATCH /users/{id}&#x60; (role), &#x60;PATCH /users/{id}/password&#x60;, and &#x60;PATCH /users/{id}/active&#x60;, this does not bump &#x60;tokenVersion&#x60; and does not invalidate any existing token - &#x60;JwtAuthFilter&#x60; grants &#x60;FUNCTION_&lt;name&gt;&#x60; authorities from a fresh read of this user on every request already (the same row it re-reads to check &#x60;active&#x60;/ &#x60;tokenVersion&#x60;), so a change here is enforced on the very next request with no re-login needed. &#x60;warning&#x60; in the response is set when this change removes &#x60;THERAPIST&#x60; from a user who holds future &#x60;BOOKED&#x60; spa appointments - see &#x60;UserUpdateResult&#x60;. 
      *
      * @param id  (required)
      * @param userFunctionsUpdateInput  (required)
@@ -314,14 +315,14 @@ public interface UsersApi {
         consumes = { "application/json" }
     )
     
-    default ResponseEntity<User> updateUserFunctions(
+    default ResponseEntity<UserUpdateResult> updateUserFunctions(
          @PathVariable("id") String id,
          @Valid @RequestBody UserFunctionsUpdateInput userFunctionsUpdateInput
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

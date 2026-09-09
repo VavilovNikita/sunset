@@ -2724,6 +2724,44 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /tables/positions:
+    patch:
+      operationId: saveTablePositions
+      tags: [Tables]
+      summary: Place (or un-place) POS tables on the spa's floor plan
+      description: >
+        Requires MANAGER or above. Batch, same all-or-nothing shape as
+        `PATCH /room-units/positions`: every entry is validated (range, paired nulls, `tableId`
+        exists) before any write happens. `positionX`/`positionY` both null clears a table's
+        position.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/TablePositionInput"
+      responses:
+        "200":
+          description: The updated tables.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Table"
+        "400":
+          description: A position outside 0..1, an entry with only one of positionX/positionY set, or an unknown tableId.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /tables/{id}:
     parameters:
       - name: id
@@ -2799,6 +2837,149 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: This table has open orders and can't be deleted.
+
+  /spa-appointments:
+    get:
+      operationId: getSpaSchedule
+      tags: [Spa]
+      summary: Get the spa's half-hour grid for one day
+      description: Requires CASHIER or above. `tables` (SPA-zone) and `appointments` for `date`, plus the backend's own opening hours - see `SpaSchedule`.
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+      responses:
+        "200":
+          description: The spa's schedule for the day.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaSchedule"
+        "400":
+          description: '`date` missing or not `YYYY-MM-DD`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+    post:
+      operationId: createSpaAppointment
+      tags: [Spa]
+      summary: Book a spa appointment
+      description: >
+        Requires CASHIER or above. Both the table and the therapist must be free for the whole
+        slot - enforced by a database exclusion constraint on each axis, not a check-then-write;
+        a genuine race (two receptionists booking the same therapist at once) surfaces as 409 on
+        whichever request loses, not a 500 or a silent double-booking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpaAppointmentCreateInput"
+      responses:
+        "201":
+          description: Appointment created (possibly with a warning - see `SpaAppointmentResult`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaAppointmentResult"
+        "400":
+          description: Body failed validation, `treatmentMenuItemId` isn't a `SPA`-department item with a duration, or `startTime` falls outside opening hours / off the half-hour grid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: bookingId, tableId, therapistUserId, or treatmentMenuItemId does not reference an existing row.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The table or the therapist already has an overlapping BOOKED appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: This therapist already has an appointment overlapping this time.
+
+  /spa-appointments/therapists:
+    get:
+      operationId: listSpaTherapists
+      tags: [Spa]
+      summary: List active staff holding the THERAPIST job function
+      description: Requires CASHIER or above - see `SpaTherapist` for why this is narrower than `GET /users`.
+      responses:
+        "200":
+          description: Active therapists.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SpaTherapist"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+
+  /spa-appointments/{id}/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateSpaAppointmentStatus
+      tags: [Spa]
+      summary: Cancel, mark no-show, or complete a spa appointment
+      description: >
+        Requires CASHIER or above. No therapist self-service in v1 - no therapist is signing
+        into this system yet, see `JobFunction.THERAPIST`. `COMPLETED` is never set
+        automatically by an order closing - the two lifecycles are deliberately independent, see
+        `SpaAppointment.orderId`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpaAppointmentStatusUpdateInput"
+      responses:
+        "200":
+          description: Updated appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaAppointment"
+        "400":
+          description: '`status` is `BOOKED`, or the appointment is already in an end state.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Appointment not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /printers:
     get:
@@ -4187,7 +4368,8 @@ paths:
         existing token - `JwtAuthFilter` grants `FUNCTION_<name>` authorities from a fresh read of
         this user on every request already (the same row it re-reads to check `active`/
         `tokenVersion`), so a change here is enforced on the very next request with no re-login
-        needed.
+        needed. `warning` in the response is set when this change removes `THERAPIST` from a
+        user who holds future `BOOKED` spa appointments - see `UserUpdateResult`.
       requestBody:
         required: true
         content:
@@ -4200,7 +4382,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                $ref: "#/components/schemas/UserUpdateResult"
         "400":
           description: Body failed validation.
           content:
@@ -4286,7 +4468,8 @@ paths:
         next request, regardless of that token's remaining validity window - the closest
         thing this stateless-JWT system has to revoking access on termination. An admin
         cannot disable their own account (blocked before any DB write, same guard as
-        `PATCH /users/{id}` for role changes).
+        `PATCH /users/{id}` for role changes). `warning` in the response is set when disabling
+        this user leaves future `BOOKED` spa appointments assigned to them - see `UserUpdateResult`.
       requestBody:
         required: true
         content:
@@ -4299,7 +4482,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                $ref: "#/components/schemas/UserUpdateResult"
         "400":
           description: '`id` in the path is the caller''s own id, or body failed validation.'
           content:
@@ -4560,13 +4743,18 @@ components:
 
     JobFunction:
       type: string
-      enum: [ENGINEER, HOUSEKEEPER]
+      enum: [ENGINEER, HOUSEKEEPER, THERAPIST]
       description: >
         A second, independent authorization axis alongside `Role` — a sideways job, not a step
         on the ADMIN > MANAGER > CASHIER > WAITER ladder. A function grants access to specific
         endpoints on its own, without granting anything else and without being expressed as a
         role comparison; it never appears in the RoleHierarchy bean. `User.functions` is a set
-        (zero or more, no duplicates) — see that schema.
+        (zero or more, no duplicates) — see that schema. `THERAPIST` marks a staff account as a
+        spa therapist for `SpaAppointment.therapistUserId` - an ordinary staff account like any
+        other (the same account shape shifts/hours will use), not a separate person record; one
+        whose holder never signs in costs nothing beyond the row itself. No endpoint is gated on
+        this function in v1 (there is no therapist self-service screen yet - reception is the
+        only surface), so it exists purely as a tag on who counts as a bookable therapist.
 
     Zone:
       type: string
@@ -4575,11 +4763,15 @@ components:
 
     MenuDepartment:
       type: string
-      enum: [KITCHEN, BAR]
+      enum: [KITCHEN, BAR, SPA]
       description: >
         Where a MenuItem's kitchen/bar ticket prints - independent of `category`, which is a
         free-text display grouping for the menu itself (e.g. "Mains", "Cocktails") and has no
-        effect on print routing.
+        effect on print routing. `SPA` is not a real ticket-printer department: a treatment item
+        never generates a kitchen/bar ticket at all (see `OrderPrintingService`) - the guest's
+        receipt still prints normally, since that's a separate print path keyed off the order,
+        not this field. `SpaAppointment.treatmentMenuItemId` must reference a `SPA`-department
+        item with `durationMinutes` set; that's what makes an item schedulable.
 
     PrinterDepartment:
       type: string
@@ -5270,6 +5462,220 @@ components:
         blockResult:
           $ref: "#/components/schemas/RoomUnitBlockResult"
 
+    SpaAppointmentStatus:
+      type: string
+      enum: [BOOKED, COMPLETED, CANCELLED, NO_SHOW]
+      description: >
+        Forward-only from `BOOKED` in practice: `PATCH /spa-appointments/{id}/status` accepts
+        `COMPLETED`/`CANCELLED`/`NO_SHOW` as targets (never back to `BOOKED`, never between the
+        three end states). Only a `BOOKED` appointment holds a slot - see `SpaAppointment`'s own
+        description of the exclusion constraints, which are scoped `WHERE status = 'BOOKED'`, so
+        a cancelled/no-show/completed appointment never blocks a new booking of the same
+        table/therapist/time.
+
+    SpaAppointment:
+      type: object
+      description: >
+        A half-hour-grid treatment slot - occupies both a POS `Table` (in the SPA zone) and a
+        therapist (a staff `User` holding the `THERAPIST` job function) for
+        `[startTime, startTime + durationMinutes)` on `date`. Always names a booking - there is
+        no walk-in path and no separate client record (hotel guests only); `guestName` is
+        resolved from that booking at read time, not stored here.
+
+        `durationMinutes` is copied from `MenuItem.durationMinutes` once, at creation - the
+        appointment's own frozen record of how long the treatment takes, immune to the menu item
+        being re-timed later (same "agreed terms are frozen" precedent as
+        `BookingSegmentNightlyRate`). The appointment's end is never stored - it's always
+        `startTime + durationMinutes`, computed wherever needed (including by the two
+        `EXCLUDE USING gist` constraints on the `SpaAppointment` table, one keyed on `tableId`
+        and one on `therapistUserId`, each restricted to `status = 'BOOKED'` rows - see
+        `V41__spa_appointment.sql`). `date`/`startTime` are a plain date-only string and a plain
+        local `HH:mm` string - the hotel is a single location and nothing in this API converts
+        time zones, so there is deliberately no offset anywhere on this schema.
+
+        The appointment carries no money - see `orderId`. Cancelling/shortening/early-checking-
+        out the named booking does not cascade to this row automatically (nothing in this system
+        cascades booking-date changes to anything else yet); those write paths instead return a
+        warning listing affected future appointments, the same warn-don't-block shape as
+        `RoomUnitBlockResult`. The same applies to a therapist losing the `THERAPIST` function or
+        being deactivated while holding future `BOOKED` appointments - see
+        `PATCH /users/{id}/active` / `PATCH /users/{id}/functions`.
+      required:
+        [
+          id,
+          bookingId,
+          guestName,
+          tableId,
+          tableLabel,
+          therapistUserId,
+          therapistEmail,
+          treatmentMenuItemId,
+          treatmentName,
+          date,
+          startTime,
+          durationMinutes,
+          status,
+          orderId,
+          createdByUserId,
+          cancelledByUserId,
+          cancelReason,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id:
+          type: string
+        bookingId:
+          type: string
+        guestName:
+          type: string
+          description: Denormalized from the named booking at read time - same convention as `PropertyMapCurrentBooking.guestName`.
+        tableId:
+          type: string
+        tableLabel:
+          type: string
+          description: Denormalized from the named table at read time.
+        therapistUserId:
+          type: string
+        therapistEmail:
+          type: string
+          description: Denormalized from the named therapist at read time - same convention as `Order.openedByEmail`.
+        treatmentMenuItemId:
+          type: string
+        treatmentName:
+          type: string
+          description: Denormalized `MenuItem.name` at read time - the treatment's current name, not frozen (unlike `durationMinutes`).
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        startTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: Local 24-hour `HH:mm`. No time zone anywhere on this schema - see the class description.
+        durationMinutes:
+          type: integer
+          description: Frozen at creation from `MenuItem.durationMinutes` - see the class description.
+        status:
+          $ref: "#/components/schemas/SpaAppointmentStatus"
+        orderId:
+          type: string
+          nullable: true
+          description: >
+            The POS order that charged this treatment, if any - set via `spaAppointmentId` on
+            `OrderCreateInput` when the order is opened, never computed or amount-bearing here.
+            A `COMPLETED` appointment with `orderId: null` is a real, visible gap (a treatment
+            settled another way, or one nobody rang up yet) - deliberately not blocked, see the
+            class description.
+        createdByUserId:
+          type: string
+        cancelledByUserId:
+          type: string
+          nullable: true
+        cancelReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SpaAppointmentCreateInput:
+      type: object
+      description: >
+        Body of `POST /spa-appointments`. `treatmentMenuItemId` must reference a `SPA`-department
+        item with `durationMinutes` set (400 otherwise). `date` outside the named booking's
+        `[checkIn, checkOut]` (inclusive both ends - the guest is still in the hotel on the
+        departure day) is a warning, not a rejection - see `SpaAppointmentResult`.
+      required: [bookingId, tableId, therapistUserId, treatmentMenuItemId, date, startTime]
+      properties:
+        bookingId:
+          type: string
+        tableId:
+          type: string
+        therapistUserId:
+          type: string
+        treatmentMenuItemId:
+          type: string
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        startTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+
+    SpaAppointmentResult:
+      type: object
+      description: Response of `POST /spa-appointments`. `warning` is set (creation still succeeds) when `date` falls outside the named booking's stay - see `SpaAppointmentCreateInput`.
+      required: [appointment, warning]
+      properties:
+        appointment:
+          $ref: "#/components/schemas/SpaAppointment"
+        warning:
+          type: string
+          nullable: true
+
+    SpaAppointmentStatusUpdateInput:
+      type: object
+      description: >
+        Body of `PATCH /spa-appointments/{id}/status`. Only `COMPLETED`, `CANCELLED`, `NO_SHOW`
+        are legal targets - see `SpaAppointmentStatus`. `cancelReason` is only meaningful (and
+        only read) when `status` is `CANCELLED`.
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/SpaAppointmentStatus"
+        cancelReason:
+          type: string
+          maxLength: 500
+
+    SpaSchedule:
+      type: object
+      description: >
+        Response of `GET /spa-appointments?date=`. `openingTime`/`closingTime`/`slotMinutes` come
+        from the backend's own config (`app.spa.*`), not a frontend constant, so the grid can
+        never render slots the server wouldn't accept. `tables` is every active SPA-zone `Table`
+        (the grid's rows); `appointments` is every appointment on `date` regardless of status (a
+        cancelled/no-show slot still needs to render, just not as occupied).
+      required: [date, openingTime, closingTime, slotMinutes, tables, appointments]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        openingTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        closingTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        slotMinutes:
+          type: integer
+        tables:
+          type: array
+          items:
+            $ref: "#/components/schemas/Table"
+        appointments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpaAppointment"
+
+    SpaTherapist:
+      type: object
+      description: >
+        Minimal projection of a staff `User` holding the `THERAPIST` job function, for
+        `GET /spa-appointments/therapists` - narrower than `GET /users` (ADMIN-only, deliberately
+        outside the role hierarchy) so a CASHIER creating an appointment can list valid
+        therapists without that escalation, the same "a role that may act must be able to read
+        what the action needs" fix already applied to `GET /room-units`/`GET /availability`.
+        Excludes an inactive user - see `PATCH /users/{id}/active`.
+      required: [id, email]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+
     PropertyMapMaintenanceTask:
       type: object
       description: >
@@ -5921,6 +6327,22 @@ components:
           type: string
           format: date-time
 
+    UserUpdateResult:
+      type: object
+      description: >
+        Response of `PATCH /users/{id}/active` and `PATCH /users/{id}/functions`. `warning` is
+        set (the change still succeeds) when the user being disabled, or having `THERAPIST`
+        removed, holds one or more future `BOOKED` spa appointments - warn, don't block, same
+        shape as `CheckInResult`/`RoomUnitBlockResult`; nothing here cancels those appointments
+        automatically.
+      required: [user, warning]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        warning:
+          type: string
+          nullable: true
+
     LoginRequest:
       type: object
       required: [email, password]
@@ -6169,6 +6591,18 @@ components:
           description: Decimal(10,2) rendered as a string, e.g. `"250.00"` — same convention as `Room.basePrice`.
         isAvailable:
           type: boolean
+        durationMinutes:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: >
+            Minutes a scheduled treatment takes - null for every ordinary food/drink item.
+            Copied onto `SpaAppointment.durationMinutes` at the moment an appointment is
+            created, not read live afterward - the same "agreed terms are frozen" precedent as
+            `BookingSegmentNightlyRate`, so editing this later never reflows an appointment
+            already on the grid. Not listed under `required`: the codegen's `JsonNullable<T>`
+            unwrapping makes a generated `@NotNull` on a `nullable: true` + `required` property
+            reject the very null most rows need - see `RoomUnitPositionInput`'s own comment.
         createdAt:
           type: string
           format: date-time
@@ -6178,7 +6612,7 @@ components:
       description: >
         Full replacement on PATCH — no partial update (same convention as `RoomInput`).
         `department` defaults to `KITCHEN` (most menu items are food) - existing rows migrated
-        the same way; staff reassign drinks to `BAR` explicitly.
+        the same way; staff reassign drinks to `BAR` explicitly, or a treatment to `SPA`.
       required: [name, description, category, price]
       properties:
         name:
@@ -6203,6 +6637,11 @@ components:
         isAvailable:
           type: boolean
           default: true
+        durationMinutes:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Set only for a `SPA`-department item - see `MenuItem.durationMinutes`.
 
     Table:
       type: object
@@ -6222,6 +6661,23 @@ components:
           type: integer
         isActive:
           type: boolean
+        positionX:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: >
+            Normalized (0..1) horizontal position on a floor-plan image, set via
+            `PATCH /tables/positions` - same convention as `RoomUnit.positionX`. Null (always
+            paired with a null `positionY`) means this table hasn't been placed yet. Used by the
+            spa's own grid (rows = SPA-zone tables) to place them on its floor plan; not tied to
+            the front desk's property map, which only places `RoomUnit`s.
+        positionY:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: Normalized (0..1) vertical position - see `positionX`.
 
     TableInput:
       type: object
@@ -6241,6 +6697,27 @@ components:
         isActive:
           type: boolean
           default: true
+
+    TablePositionInput:
+      type: object
+      description: >
+        One entry of the array body of `PATCH /tables/positions` - mirrors
+        `RoomUnitPositionInput` exactly, see that schema's own comment for why `positionX`/
+        `positionY` aren't under `required` despite conceptually needing to be present.
+      required: [tableId]
+      properties:
+        tableId:
+          type: string
+        positionX:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+        positionY:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
 
     OrderItem:
       type: object
@@ -6358,6 +6835,15 @@ components:
           type: string
           nullable: true
           maxLength: 120
+        spaAppointmentId:
+          type: string
+          nullable: true
+          description: >
+            When set, this order becomes `SpaAppointment.orderId` for that appointment - the one
+            way a treatment's charge gets linked (see that field's own description; the
+            appointment itself never computes or stores an amount). An id that doesn't resolve to
+            a real appointment is silently ignored, same "don't let a side link fail the write it
+            rides on" spirit as printing/audit - order creation is never blocked by this.
 
     OrderUpdateInput:
       type: object
@@ -6791,6 +7277,9 @@ components:
         - ROOM_UNIT_POSITION_UPDATED
         - PROPERTY_MAP_IMAGE_UPDATED
         - PRINT_JOB_DISMISSED
+        - SPA_APPOINTMENT_CREATED
+        - SPA_APPOINTMENT_STATUS_CHANGED
+        - POS_TABLE_POSITION_UPDATED
         - MAINTENANCE_TASK_CREATED
         - MAINTENANCE_TASK_STATUS_CHANGED
         - MAINTENANCE_TASK_BLOCKED
@@ -6808,7 +7297,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT]
 
     AuditLogEntry:
       type: object

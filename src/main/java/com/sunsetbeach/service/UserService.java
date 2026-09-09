@@ -1,5 +1,6 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.entity.SpaAppointmentEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
@@ -10,11 +11,16 @@ import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.Role;
+import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.model.User;
 import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.model.UserFunctionsUpdateInput;
+import com.sunsetbeach.model.UserUpdateResult;
 import com.sunsetbeach.model.UserRoleUpdateInput;
+import com.sunsetbeach.repository.SpaAppointmentRepository;
 import com.sunsetbeach.repository.UserRepository;
+import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -29,12 +35,19 @@ public class UserService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
+    private final SpaAppointmentRepository spaAppointmentRepository;
 
-    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder, AuditLogService auditLogService) {
+    public UserService(
+            UserRepository userRepository,
+            UserMapper userMapper,
+            PasswordEncoder passwordEncoder,
+            AuditLogService auditLogService,
+            SpaAppointmentRepository spaAppointmentRepository) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
+        this.spaAppointmentRepository = spaAppointmentRepository;
     }
 
     @Transactional(readOnly = true)
@@ -102,7 +115,7 @@ public class UserService {
      * caller out of anything.
      */
     @Transactional
-    public User updateFunctions(String id, UserFunctionsUpdateInput input) {
+    public UserUpdateResult updateFunctions(String id, UserFunctionsUpdateInput input) {
         UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
         String[] oldFunctions = entity.getJobFunctions();
         String[] newFunctions = new LinkedHashSet<>(input.getFunctions()).stream().map(JobFunction::getValue).toArray(String[]::new);
@@ -113,7 +126,11 @@ public class UserService {
                 AuditEntityType.USER,
                 saved.getId(),
                 "Job functions for " + saved.getEmail() + " changed from " + describeFunctions(oldFunctions) + " to " + describeFunctions(newFunctions));
-        return userMapper.toDto(saved);
+
+        boolean wasTherapist = Arrays.asList(oldFunctions).contains(JobFunction.THERAPIST.getValue());
+        boolean stillTherapist = Arrays.asList(newFunctions).contains(JobFunction.THERAPIST.getValue());
+        String warning = wasTherapist && !stillTherapist ? futureBookedAppointmentWarning(saved.getId()) : null;
+        return new UserUpdateResult(userMapper.toDto(saved), warning);
     }
 
     private static String describeFunctions(String[] functions) {
@@ -162,7 +179,7 @@ public class UserService {
      * an admin can't lock themselves out by disabling their own account.
      */
     @Transactional
-    public User setActive(String id, String callerId, boolean active) {
+    public UserUpdateResult setActive(String id, String callerId, boolean active) {
         if (id.equals(callerId) && !active) {
             throw new BadRequestException("You can't disable your own account");
         }
@@ -176,6 +193,25 @@ public class UserService {
                 AuditEntityType.USER,
                 saved.getId(),
                 "User " + saved.getEmail() + " " + (active ? "re-enabled" : "disabled"));
-        return userMapper.toDto(saved);
+
+        String warning = !active ? futureBookedAppointmentWarning(saved.getId()) : null;
+        return new UserUpdateResult(userMapper.toDto(saved), warning);
+    }
+
+    /**
+     * Warn-don't-block (see CLAUDE.md's Failure handling section): disabling a therapist, or
+     * removing THERAPIST from them, never cancels or reassigns their future appointments
+     * automatically - nothing in this system cascades a staff change onto dependent records
+     * today, same as a cancelled/shortened booking not cascading onto its own spa appointments
+     * (see SpaAppointmentService). This only surfaces the gap so a manager notices it.
+     */
+    private String futureBookedAppointmentWarning(String therapistUserId) {
+        List<SpaAppointmentEntity> future = spaAppointmentRepository.findByTherapistUserIdAndStatusAndDateGreaterThanEqual(
+                therapistUserId, SpaAppointmentStatus.BOOKED, LocalDate.now());
+        if (future.isEmpty()) {
+            return null;
+        }
+        return "This user has " + future.size() + " upcoming spa appointment(s) still assigned to them - "
+                + "they are not automatically cancelled or reassigned.";
     }
 }

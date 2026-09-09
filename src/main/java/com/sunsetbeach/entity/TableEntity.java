@@ -5,6 +5,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
@@ -28,6 +29,12 @@ public class TableEntity {
     private int capacity;
 
     private boolean isActive = true;
+
+    @jakarta.persistence.Column(precision = 5, scale = 4)
+    private BigDecimal positionX;
+
+    @jakarta.persistence.Column(precision = 5, scale = 4)
+    private BigDecimal positionY;
 
     public String getId() {
         return id;
@@ -63,5 +70,21 @@ public class TableEntity {
 
     public void setActive(boolean active) {
         isActive = active;
+    }
+
+    public BigDecimal getPositionX() {
+        return positionX;
+    }
+
+    public void setPositionX(BigDecimal positionX) {
+        this.positionX = positionX;
+    }
+
+    public BigDecimal getPositionY() {
+        return positionY;
+    }
+
+    public void setPositionY(BigDecimal positionY) {
+        this.positionY = positionY;
     }
 }

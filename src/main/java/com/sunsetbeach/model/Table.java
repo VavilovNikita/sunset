@@ -6,6 +6,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.Zone;
+import java.math.BigDecimal;
+import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -31,6 +35,10 @@ public class Table {
   private Integer capacity;
 
   private Boolean isActive;
+
+  private JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> positionX = JsonNullable.<BigDecimal>undefined();
+
+  private JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> positionY = JsonNullable.<BigDecimal>undefined();
 
   public Table() {
     super();
@@ -142,6 +150,48 @@ public class Table {
     this.isActive = isActive;
   }
 
+  public Table positionX(BigDecimal positionX) {
+    this.positionX = JsonNullable.of(positionX);
+    return this;
+  }
+
+  /**
+   * Normalized (0..1) horizontal position on a floor-plan image, set via `PATCH /tables/positions` - same convention as `RoomUnit.positionX`. Null (always paired with a null `positionY`) means this table hasn't been placed yet. Used by the spa's own grid (rows = SPA-zone tables) to place them on its floor plan; not tied to the front desk's property map, which only places `RoomUnit`s. 
+   * minimum: 0
+   * maximum: 1
+   * @return positionX
+   */
+  @Valid @DecimalMin("0") @DecimalMax("1") 
+  @JsonProperty("positionX")
+  public JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> getPositionX() {
+    return positionX;
+  }
+
+  public void setPositionX(JsonNullable<BigDecimal> positionX) {
+    this.positionX = positionX;
+  }
+
+  public Table positionY(BigDecimal positionY) {
+    this.positionY = JsonNullable.of(positionY);
+    return this;
+  }
+
+  /**
+   * Normalized (0..1) vertical position - see `positionX`.
+   * minimum: 0
+   * maximum: 1
+   * @return positionY
+   */
+  @Valid @DecimalMin("0") @DecimalMax("1") 
+  @JsonProperty("positionY")
+  public JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> getPositionY() {
+    return positionY;
+  }
+
+  public void setPositionY(JsonNullable<BigDecimal> positionY) {
+    this.positionY = positionY;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -155,12 +205,25 @@ public class Table {
         Objects.equals(this.zone, table.zone) &&
         Objects.equals(this.label, table.label) &&
         Objects.equals(this.capacity, table.capacity) &&
-        Objects.equals(this.isActive, table.isActive);
+        Objects.equals(this.isActive, table.isActive) &&
+        equalsNullable(this.positionX, table.positionX) &&
+        equalsNullable(this.positionY, table.positionY);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, zone, label, capacity, isActive);
+    return Objects.hash(id, zone, label, capacity, isActive, hashCodeNullable(positionX), hashCodeNullable(positionY));
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -172,6 +235,8 @@ public class Table {
     sb.append("    label: ").append(toIndentedString(label)).append("\n");
     sb.append("    capacity: ").append(toIndentedString(capacity)).append("\n");
     sb.append("    isActive: ").append(toIndentedString(isActive)).append("\n");
+    sb.append("    positionX: ").append(toIndentedString(positionX)).append("\n");
+    sb.append("    positionY: ").append(toIndentedString(positionY)).append("\n");
     sb.append("}");
     return sb.toString();
   }

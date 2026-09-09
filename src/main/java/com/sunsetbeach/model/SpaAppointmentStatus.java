@@ -16,21 +16,23 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Where a MenuItem's kitchen/bar ticket prints - independent of `category`, which is a free-text display grouping for the menu itself (e.g. \"Mains\", \"Cocktails\") and has no effect on print routing. `SPA` is not a real ticket-printer department: a treatment item never generates a kitchen/bar ticket at all (see `OrderPrintingService`) - the guest's receipt still prints normally, since that's a separate print path keyed off the order, not this field. `SpaAppointment.treatmentMenuItemId` must reference a `SPA`-department item with `durationMinutes` set; that's what makes an item schedulable. 
+ * Forward-only from `BOOKED` in practice: `PATCH /spa-appointments/{id}/status` accepts `COMPLETED`/`CANCELLED`/`NO_SHOW` as targets (never back to `BOOKED`, never between the three end states). Only a `BOOKED` appointment holds a slot - see `SpaAppointment`'s own description of the exclusion constraints, which are scoped `WHERE status = 'BOOKED'`, so a cancelled/no-show/completed appointment never blocks a new booking of the same table/therapist/time. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
-public enum MenuDepartment {
+public enum SpaAppointmentStatus {
   
-  KITCHEN("KITCHEN"),
+  BOOKED("BOOKED"),
   
-  BAR("BAR"),
+  COMPLETED("COMPLETED"),
   
-  SPA("SPA");
+  CANCELLED("CANCELLED"),
+  
+  NO_SHOW("NO_SHOW");
 
   private String value;
 
-  MenuDepartment(String value) {
+  SpaAppointmentStatus(String value) {
     this.value = value;
   }
 
@@ -45,8 +47,8 @@ public enum MenuDepartment {
   }
 
   @JsonCreator
-  public static MenuDepartment fromValue(String value) {
-    for (MenuDepartment b : MenuDepartment.values()) {
+  public static SpaAppointmentStatus fromValue(String value) {
+    for (SpaAppointmentStatus b : SpaAppointmentStatus.values()) {
       if (b.value.equals(value)) {
         return b;
       }

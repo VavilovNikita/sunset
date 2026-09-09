@@ -7,6 +7,7 @@ import com.sunsetbeach.model.UserActiveUpdateInput;
 import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.model.UserFunctionsUpdateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
+import com.sunsetbeach.model.UserUpdateResult;
 import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.UserService;
 import java.util.List;
@@ -51,13 +52,13 @@ public class UserController implements UsersApi {
     }
 
     @Override
-    public ResponseEntity<User> updateUserActive(String id, UserActiveUpdateInput userActiveUpdateInput) {
+    public ResponseEntity<UserUpdateResult> updateUserActive(String id, UserActiveUpdateInput userActiveUpdateInput) {
         String callerId = callerId();
         return ResponseEntity.ok(userService.setActive(id, callerId, userActiveUpdateInput.getActive()));
     }
 
     @Override
-    public ResponseEntity<User> updateUserFunctions(String id, UserFunctionsUpdateInput userFunctionsUpdateInput) {
+    public ResponseEntity<UserUpdateResult> updateUserFunctions(String id, UserFunctionsUpdateInput userFunctionsUpdateInput) {
         return ResponseEntity.ok(userService.updateFunctions(id, userFunctionsUpdateInput));
     }
 
