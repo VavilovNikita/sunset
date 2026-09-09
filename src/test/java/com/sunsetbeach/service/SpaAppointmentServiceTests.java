@@ -10,6 +10,7 @@ import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
+import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.MenuDepartment;
@@ -371,5 +372,106 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
         assertThatThrownBy(() -> spaAppointmentService.updateStatus(
                         created.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.CANCELLED), receptionist.getId()))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    /**
+     * CORRECTION 2: completing an appointment must not free its own slot - only CANCELLED/
+     * NO_SHOW do (see V43__spa_appointment_completed_still_occupies_slot.sql). Marking a
+     * treatment done at 10:20 while it runs until 11:00 must still block a second booking on the
+     * same table/therapist for the rest of that hour.
+     */
+    @Test
+    void completedAppointment_stillBlocksAnOverlappingBookingOnTheSameTable() {
+        LocalDate checkIn = LocalDate.now().plusDays(343);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapistA = createTherapist();
+        UserEntity therapistB = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        SpaAppointment created = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapistA.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+        spaAppointmentService.updateStatus(created.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.COMPLETED), receptionist.getId());
+
+        // Same table, overlapping time, a different therapist - only the table axis is under test.
+        assertThatThrownBy(() -> spaAppointmentService.create(
+                        new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapistB.getId(), treatment.getId(), checkIn.toString(), "10:30"),
+                        receptionist.getId()))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void completedAppointment_stillBlocksAnOverlappingBookingOfTheSameTherapist() {
+        LocalDate checkIn = LocalDate.now().plusDays(344);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity tableA = createSpaTable();
+        TableEntity tableB = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        SpaAppointment created = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), tableA.getId(), therapist.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+        spaAppointmentService.updateStatus(created.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.COMPLETED), receptionist.getId());
+
+        assertThatThrownBy(() -> spaAppointmentService.create(
+                        new SpaAppointmentCreateInput(booking.getId(), tableB.getId(), therapist.getId(), treatment.getId(), checkIn.toString(), "10:30"),
+                        receptionist.getId()))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void cancelledAppointment_freesTheSlot() {
+        LocalDate checkIn = LocalDate.now().plusDays(345);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapistA = createTherapist();
+        UserEntity therapistB = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        SpaAppointment created = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapistA.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+        spaAppointmentService.updateStatus(created.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.CANCELLED), receptionist.getId());
+
+        SpaAppointment rebooked = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapistB.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+
+        assertThat(rebooked.getStatus()).isEqualTo(SpaAppointmentStatus.BOOKED);
+    }
+
+    @Test
+    void noShowAppointment_freesTheSlot() {
+        LocalDate checkIn = LocalDate.now().plusDays(346);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapistA = createTherapist();
+        UserEntity therapistB = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        SpaAppointment created = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapistA.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+        spaAppointmentService.updateStatus(created.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.NO_SHOW), receptionist.getId());
+
+        SpaAppointment rebooked = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapistB.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+
+        assertThat(rebooked.getStatus()).isEqualTo(SpaAppointmentStatus.BOOKED);
     }
 }

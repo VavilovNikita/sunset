@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Forward-only from `BOOKED` in practice: `PATCH /spa-appointments/{id}/status` accepts `COMPLETED`/`CANCELLED`/`NO_SHOW` as targets (never back to `BOOKED`, never between the three end states). Only a `BOOKED` appointment holds a slot - see `SpaAppointment`'s own description of the exclusion constraints, which are scoped `WHERE status = 'BOOKED'`, so a cancelled/no-show/completed appointment never blocks a new booking of the same table/therapist/time. 
+ * Forward-only from `BOOKED` in practice: `PATCH /spa-appointments/{id}/status` accepts `COMPLETED`/`CANCELLED`/`NO_SHOW` as targets (never back to `BOOKED`, never between the three end states). `BOOKED` and `COMPLETED` both hold their slot - see `SpaAppointment`'s own description of the exclusion constraints, scoped `WHERE status IN ('BOOKED', 'COMPLETED')` - completing a treatment must not free its table/therapist while it's still running. Only `CANCELLED`/`NO_SHOW` release the slot for a new booking of the same table/therapist/time. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
