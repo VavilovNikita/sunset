@@ -125,7 +125,7 @@ public class Order {
   }
 
   /**
-   * Get bookingId
+   * Settable only via `OrderCreateInput.bookingId` at creation - no real frontend caller populates it today, so it reads null on effectively every order in this system, including a `ROOM_CHARGE`-closed one. It is *not* the record of what a closed order was charged to - that's `Payment.bookingId` (see that field's own description), set independently at `POST /orders/{id}/close` and never mirrored back here. Money reads (a booking's folio, its room-charges list) and the spa auto-link's booking axis both go through `Payment.bookingId` for exactly this reason. Left as-is rather than populated at close alongside it: doing so would be a second, deliberate change with its own callers to think through (this field, `GET /orders?bookingId=`, and the one frontend read of it are effectively dormant today, not exercised by anything real), not a side effect of the spa-link fix this description was last touched for. 
    * @return bookingId
    */
   @NotNull 

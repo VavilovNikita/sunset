@@ -36,19 +36,26 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * DB-backed (real dev Postgres, rolled back after each test): how {@code SpaAppointment.orderId}
- * actually gets set. Both `/pos` and `/admin/pos` open an order the same way - {@code POST
- * /orders} with nothing but a {@code tableId} and/or {@code bookingId} - so the auto-link in
- * {@link OrderService#autoLinkSpaAppointment} is what makes the ordinary path set the link
- * without either screen having to know spa appointments exist; explicit {@code spaAppointmentId}
- * stays as the override for when auto-resolution can't or shouldn't guess.
+ * DB-backed (real dev Postgres, rolled back after each test): the *table* axis of how {@code
+ * SpaAppointment.orderId} gets set - {@link OrderService#autoLinkSpaAppointmentByTable}, run from
+ * {@link OrderService#addItems}. The *booking* axis ({@link
+ * OrderService#autoLinkSpaAppointmentByBooking}, run from {@link OrderService#close}) has its own
+ * test class, {@code OrderCloseSpaAppointmentLinkTests} - a `ROOM_CHARGE` close needs a real
+ * `Shift` and writes audit-log entries in their own committing transaction (see that class's own
+ * javadoc for why it isn't `@Transactional`), machinery this table-axis-only file has no reason
+ * to carry.
  *
- * <p>Auto-resolution runs from {@link OrderService#addItems}, not {@link OrderService#create} -
- * an order has no items at creation, and resolution now requires one to be a {@code SPA}-
- * department item (see the class javadoc on {@code autoLinkSpaAppointment} for the correction
- * this closes). Every auto-resolution test here therefore creates the order, then calls
- * {@code addItems} with the treatment line before asserting on the link - a test that only calls
- * {@code create} would be testing behavior that no longer exists.
+ * <p>The two axes used to be one method, tried at order-open time keyed on whichever of table/
+ * booking the order happened to name. It was split because the two facts each axis needs never
+ * exist at the same call site: the table is known from order creation, but the SPA-content gate
+ * needs items, which don't exist until {@code addItems}; the booking, meanwhile, is often not
+ * known until a `ROOM_CHARGE` close names one - {@code Order.bookingId} (settable at creation) is
+ * never populated by any real caller, so resolving on it before this split was dead code that
+ * happened to never fire. See {@code OrderService#autoLinkSpaAppointmentByTable}'s own javadoc.
+ *
+ * <p>Every test here therefore creates the order, then calls {@code addItems} with the treatment
+ * line before asserting on the link - a test that only calls {@code create} would be testing
+ * behavior that no longer exists.
  *
  * <p>Appointments here are persisted directly via {@link SpaAppointmentRepository}, not through
  * {@link SpaAppointmentService#create}, specifically so their times can be set relative to
@@ -302,84 +309,17 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
         assertThat(order.getId()).isNotNull();
     }
 
-    /**
-     * A room-charge order carries a bookingId and often no tableId at all - the table axis would
-     * never fire for it, so the booking axis (tried first) is the only way this ever resolves.
-     */
+    /** The zone gate applies on the table axis regardless of what's actually billed - a restaurant order must never guess its way onto a spa appointment. */
     @Test
-    void addItems_roomChargeOrderWithNoTable_linksViaBookingWhenUnambiguous() {
-        TableEntity table = createSpaTable();
-        MenuItemEntity treatment = createTreatment();
-        UserEntity therapist = createTherapist();
-        UserEntity receptionist = createReceptionist();
-        Booking booking = createBooking(LocalDate.now().plusDays(300));
-        // The booking axis is date-only, not time-of-day sensitive - see todayAt's own comment.
-        SpaAppointmentEntity appointment = persistAppointment(table, booking, treatment, therapist, receptionist, todayAt(15, 0), 60);
-
-        Order order = orderService.create(new OrderCreateInput().bookingId(booking.getId()), receptionist.getId());
-        billTreatment(order.getId(), treatment);
-
-        assertThat(orderIdOf(appointment)).isEqualTo(order.getId());
-    }
-
-    @Test
-    void addItems_bookingWithTwoUnlinkedAppointments_declinesToGuess() {
-        TableEntity table = createSpaTable();
-        MenuItemEntity treatment = createTreatment();
-        UserEntity therapist = createTherapist();
-        UserEntity receptionist = createReceptionist();
-        Booking booking = createBooking(LocalDate.now().plusDays(300));
-        SpaAppointmentEntity first = persistAppointment(table, booking, treatment, therapist, receptionist, todayAt(10, 0), 60);
-        SpaAppointmentEntity second = persistAppointment(table, booking, treatment, therapist, receptionist, todayAt(15, 0), 60);
-
-        Order order = orderService.create(new OrderCreateInput().bookingId(booking.getId()), receptionist.getId());
-        billTreatment(order.getId(), treatment);
-
-        assertThat(order.getId()).isNotNull();
-        assertThat(orderIdOf(first)).isNull();
-        assertThat(orderIdOf(second)).isNull();
-    }
-
-    /**
-     * Booking first, table second: the order names both a table (with a live appointment for an
-     * unrelated booking) and a bookingId (with its own, unambiguous appointment elsewhere) - the
-     * booking's own appointment wins, not whatever the table happens to be running.
-     */
-    @Test
-    void addItems_withBothBookingAndTable_prefersTheBookingsOwnAppointment() {
-        LocalDateTime now = LocalDateTime.now();
-        TableEntity tableAtCounter = createSpaTable();
-        TableEntity tableElsewhere = createSpaTable();
-        MenuItemEntity treatment = createTreatment();
-        UserEntity therapist = createTherapist();
-        UserEntity receptionist = createReceptionist();
-
-        Booking unrelatedBooking = createBooking(LocalDate.now().plusDays(300));
-        SpaAppointmentEntity liveAtCounterTable = persistAppointment(tableAtCounter, unrelatedBooking, treatment, therapist, receptionist, now.minusMinutes(10), 60);
-
-        Booking guestBooking = createBooking(LocalDate.now().plusDays(301));
-        // The booking axis is date-only, not time-of-day sensitive - see todayAt's own comment.
-        SpaAppointmentEntity guestsOwnAppointment = persistAppointment(tableElsewhere, guestBooking, treatment, therapist, receptionist, todayAt(16, 0), 60);
-
-        Order order = orderService.create(new OrderCreateInput().tableId(tableAtCounter.getId()).bookingId(guestBooking.getId()), receptionist.getId());
-        billTreatment(order.getId(), treatment);
-
-        assertThat(orderIdOf(guestsOwnAppointment)).isEqualTo(order.getId());
-        assertThat(orderIdOf(liveAtCounterTable)).isNull();
-    }
-
-    /** The zone gate applies to the booking axis too - a restaurant order must never guess its way onto a spa appointment. */
-    @Test
-    void addItems_nonSpaTableWithBookingId_neverAttemptsToLink() {
+    void addItems_treatmentOnNonSpaTable_neverAttemptsToLink() {
         TableEntity restaurantTable = createRestaurantTable();
-        TableEntity spaTable = createSpaTable();
         MenuItemEntity treatment = createTreatment();
         UserEntity therapist = createTherapist();
         UserEntity receptionist = createReceptionist();
         Booking booking = createBooking(LocalDate.now().plusDays(300));
-        SpaAppointmentEntity appointment = persistAppointment(spaTable, booking, treatment, therapist, receptionist, todayAt(11, 0), 60);
+        SpaAppointmentEntity appointment = persistAppointment(createSpaTable(), booking, treatment, therapist, receptionist, todayAt(11, 0), 60);
 
-        Order order = orderService.create(new OrderCreateInput().tableId(restaurantTable.getId()).bookingId(booking.getId()), receptionist.getId());
+        Order order = orderService.create(new OrderCreateInput().tableId(restaurantTable.getId()), receptionist.getId());
         // Even billing a treatment-department item doesn't matter here - the zone gate on the order's own table rules it out first.
         billTreatment(order.getId(), treatment);
 
@@ -388,13 +328,13 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
     }
 
     /**
-     * The residual hole this correction closes: a table-less order naming the guest's booking,
-     * with nothing on it that actually bills a treatment - either no items at all, or items that
-     * aren't SPA-department - must never link, no matter how unambiguous the booking axis would
-     * otherwise be. Before this fix, resolution ran at order-open time keyed only on bookingId,
-     * so this exact order would have linked and the appointment would read as billed against an
-     * order that never charged for it - quieter, and worse, than the over-eager version replaced
-     * two corrections ago.
+     * A residual hole an earlier correction closed: a table-less order naming the guest's
+     * booking, with nothing on it that actually bills a treatment - either no items at all, or
+     * items that aren't SPA-department - must never link, no matter how unambiguous the booking
+     * axis would otherwise be. This is now doubly true: {@code addItems}' table axis was never
+     * going to touch a table-less order regardless (there's no table to resolve by), and the
+     * booking axis doesn't run here at all any more - see {@code OrderCloseSpaAppointmentLinkTests}
+     * for the same guarantee at the one call site ({@code close}) that axis actually runs from.
      */
     @Test
     void noItemsAtAll_bookingOrderWithUnambiguousAppointment_neverLinks() {
@@ -412,18 +352,24 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
         assertThat(orderIdOf(appointment)).isNull();
     }
 
+    /**
+     * The table axis has nothing to resolve by on a table-less order, regardless of what's rung
+     * in - even a genuine treatment item never links it through {@code addItems} alone. This
+     * order would eventually link at close (see {@code OrderCloseSpaAppointmentLinkTests}'
+     * "must link" scenario for the exact same setup carried through to {@code close}); this test
+     * is scoped to proving {@code addItems} by itself is not that mechanism.
+     */
     @Test
-    void addItems_bookingOrderWithNoTreatmentItem_neverLinks() {
+    void addItems_tableLessOrder_neverLinksThroughAddItemsAlone() {
         MenuItemEntity treatment = createTreatment();
-        MenuItemEntity kitchenItem = createKitchenItem();
         UserEntity therapist = createTherapist();
         UserEntity receptionist = createReceptionist();
         Booking booking = createBooking(LocalDate.now().plusDays(300));
         SpaAppointmentEntity appointment = persistAppointment(createSpaTable(), booking, treatment, therapist, receptionist, todayAt(14, 0), 60);
 
-        // No tableId, and the one thing rung up isn't a treatment - a minibar item charged to the room, say.
+        // No tableId at all.
         Order order = orderService.create(new OrderCreateInput().bookingId(booking.getId()), receptionist.getId());
-        billTreatment(order.getId(), kitchenItem);
+        billTreatment(order.getId(), treatment);
 
         assertThat(orderIdOf(appointment)).isNull();
     }

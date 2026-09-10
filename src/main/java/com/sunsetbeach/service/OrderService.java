@@ -47,6 +47,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.jpa.domain.Specification;
@@ -56,6 +58,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrderService {
 
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
     private static final Set<OrderStatus> CLOSED_STATUSES = Set.of(OrderStatus.PAID, OrderStatus.CANCELLED);
     private static final Set<OrderStatus> ADDABLE_STATUSES = Set.of(OrderStatus.OPEN, OrderStatus.SENT);
     private static final List<SpaAppointmentStatus> LINKABLE_SPA_APPOINTMENT_STATUSES =
@@ -191,75 +194,82 @@ public class OrderService {
     /**
      * The automatic path for {@code SpaAppointment.orderId} - see that field's own openapi.yaml
      * description, and {@link #linkExplicitSpaAppointment} for the staff-named override this
-     * complements. Run from {@link #addItems}, not {@link #create}: an order has no items at
-     * creation, and this now requires one, so creation is structurally too early for it to ever
-     * fire.
+     * complements. Tried from two different moments, on two different axes, because the two
+     * facts each axis needs never exist at the same call site:
      *
-     * <p><b>Gated on the order actually containing a SPA-department item</b> - the correction
-     * this exists for. Auto-resolution used to run at order-open time, keyed only on table/
-     * booking, with no idea what the order would eventually bill; a table-less, item-less order
-     * (nothing stops one existing - {@code OrderCreateInput}'s own schema documents "an order
-     * with none of tableId/bookingId/guestName is a valid but untraceable tab" - though no
-     * current frontend caller happens to produce one carrying a bookingId today) still resolved
-     * on the booking axis and could link to that guest's real appointment despite billing nothing
-     * of the kind - the ⚠ this module exists to raise would go silent in exactly the case it's
-     * for, which is worse than the over-eager version it replaced. "Contains a SPA-department
-     * item" is true of every order that genuinely bills a treatment and false of everything else,
-     * so it's checked once, ahead of both axes below, not bolted onto the table axis alone -
-     * the same masking risk exists there too (a spa-table order for a bottle of water, timed to
-     * coincide with a live appointment, is no more a treatment than a table-less one is).
+     * <ul>
+     * <li>{@link #autoLinkSpaAppointmentByTable}, run from {@link #addItems} - the table is
+     * known from the moment the order is opened, but the order's items (needed for the
+     * SPA-content gate below) only exist once something has been rung in.
+     * <li>{@link #autoLinkSpaAppointmentByBooking}, run from {@link #close} - a {@code
+     * ROOM_CHARGE} close is the one place a booking is actually known. {@code Order.bookingId}
+     * (set only from an optional field on {@code POST /orders} - see that field's own
+     * description) is never populated by any real caller today, so resolving on the booking axis
+     * anywhere before this was dead code that happened to never fire; this uses {@code
+     * CloseOrderInput.bookingId} instead, the value already resolved for {@code Payment.bookingId}
+     * two lines above its own call site.
+     * </ul>
      *
-     * <p>Skipped entirely when the order is tied to a table outside the SPA zone (a restaurant
-     * dinner charged to the room is never a treatment, no matter how the booking axis below would
-     * resolve). Otherwise tried in two stages:
-     *
-     * <p><b>Booking first</b> ({@link #resolveByBooking}) - a room-charge order often names a
-     * booking and no table at all, so the table stage below would never fire for it. No time
-     * signal exists on this axis (the order isn't tied to a slot), so it stays count-based:
-     * exactly one of the booking's unlinked appointments today is unambiguous, two or more decline.
-     *
-     * <p><b>Table second</b> ({@link #resolveByTable}), only if the booking axis didn't resolve -
-     * by time, not count: a spa table takes several appointments a day (that's what the grid is
-     * for), so "exactly one candidate today" declines on every ordinary busy day, which is exactly
-     * the always-on warning this exists to prevent. The appointment whose interval contains the
-     * order-open moment is unique by construction (the exclusion constraint guarantees no two
-     * BOOKED/COMPLETED appointments overlap on one table); failing that, one that ended within
-     * {@code spaOrderLinkGraceMinutes} covers the ordinary case of the order being opened a few
-     * minutes after the guest's treatment actually finished. The "moment" used throughout is the
-     * order's own {@code createdAt} (when the tab was opened), not when this method happens to
-     * run - items can be added well after opening, and the table axis is about which appointment
-     * the *order* corresponds to, not when a line was rung in.
+     * <p>Both share {@link #canAutoLink}'s gates - see that method's own javadoc for what they
+     * are and why. Neither ever resolves a *second* time once either has linked the order -
+     * {@code canAutoLink}'s existsByOrderId check covers both orderings (table linked first,
+     * booking attempted later at close; or vice versa, though the booking axis existing at all is
+     * new as of this method split).
      */
-    private void autoLinkSpaAppointment(OrderEntity order, List<OrderItemEntity> items) {
+    private void autoLinkSpaAppointmentByTable(OrderEntity order, List<OrderItemEntity> items) {
+        if (!canAutoLink(order, items)) {
+            return;
+        }
+        String tableId = order.getTableId();
+        if (tableId == null) {
+            return;
+        }
+        applyLink(resolveByTable(tableId, order.getCreatedAt()), order.getId());
+    }
+
+    /**
+     * See {@link #autoLinkSpaAppointmentByTable}'s own javadoc for why this runs from {@link
+     * #close} rather than earlier. {@code bookingId} is the id already resolved there for the
+     * {@code ROOM_CHARGE} payment being recorded, not read off the order itself. Uses the same
+     * "moment" convention as the table axis - the order's own {@code createdAt} date, not the
+     * close instant - for the same reason: this asks which appointment the *order's* items
+     * correspond to, not when the till happened to close it.
+     */
+    private void autoLinkSpaAppointmentByBooking(OrderEntity order, List<OrderItemEntity> items, String bookingId) {
+        if (!canAutoLink(order, items)) {
+            return;
+        }
+        applyLink(resolveByBooking(bookingId, order.getCreatedAt().toLocalDate()), order.getId());
+    }
+
+    /**
+     * Shared by both auto-link axes: already linked (explicitly, by an earlier {@code addItems}
+     * call, or - now - by a booking match at an earlier close attempt on this same order, though
+     * an order only ever closes once) never re-resolves onto a second appointment; an order with
+     * no SPA-department item is never a treatment regardless of table/booking, the correction
+     * {@code OrderSpaAppointmentLinkTests} exists to hold in place; and a table outside the SPA
+     * zone rules out both axes, not just its own - a restaurant dinner charged to the room is
+     * never a treatment no matter what the booking axis would otherwise resolve, the same masking
+     * risk a spa-table order for a bottle of water would carry on the table axis alone.
+     */
+    private boolean canAutoLink(OrderEntity order, List<OrderItemEntity> items) {
         if (spaAppointmentRepository.existsByOrderId(order.getId())) {
-            return; // already linked (explicitly, or by an earlier addItems call) - never re-resolve onto a second appointment
+            return false;
         }
         if (items.stream().map(this::departmentOf).noneMatch(MenuDepartment.SPA::equals)) {
-            return;
+            return false;
         }
-
         String tableId = order.getTableId();
         TableEntity table = tableId != null ? tableRepository.findById(tableId).orElse(null) : null;
-        boolean tableRulesOutSpa = table != null && table.getZone() != Zone.SPA;
-        if (tableRulesOutSpa) {
-            return;
-        }
+        return table == null || table.getZone() == Zone.SPA;
+    }
 
-        LocalDateTime openedAt = order.getCreatedAt();
-        String spaAppointmentId = null;
-        String bookingId = order.getBookingId();
-        if (bookingId != null) {
-            spaAppointmentId = resolveByBooking(bookingId, openedAt.toLocalDate());
-        }
-        if (spaAppointmentId == null && table != null) {
-            spaAppointmentId = resolveByTable(table.getId(), openedAt);
-        }
+    private void applyLink(String spaAppointmentId, String orderId) {
         if (spaAppointmentId == null) {
             return;
         }
-        String resolvedId = spaAppointmentId;
-        spaAppointmentRepository.findById(resolvedId).ifPresent(appointment -> {
-            appointment.setOrderId(order.getId());
+        spaAppointmentRepository.findById(spaAppointmentId).ifPresent(appointment -> {
+            appointment.setOrderId(orderId);
             spaAppointmentRepository.save(appointment);
         });
     }
@@ -386,9 +396,10 @@ public class OrderService {
         order.setTotal(sumTotal(items));
         OrderEntity saved = orderRepository.saveAndFlush(order);
 
-        // The earliest point an order can actually be a candidate for the spa auto-link - see
-        // that method's own javadoc for why creation is structurally too early now.
-        autoLinkSpaAppointment(saved, items);
+        // The earliest point an order can actually be a candidate for the spa auto-link's table
+        // axis - see that method's own javadoc for why creation is structurally too early, and
+        // why the booking axis runs from #close instead, not here.
+        autoLinkSpaAppointmentByTable(saved, items);
 
         // The order was already dispatched at least once - there's no "send" button left for
         // staff to press for this round, so the ticket for whatever just became unsent goes out
@@ -485,6 +496,18 @@ public class OrderService {
         OrderEntity saved = orderRepository.saveAndFlush(order);
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
         orderPrintingService.printGuestReceipt(saved, items, payment, booking);
+
+        // Best-effort, same fail-open contract as printing/audit above and below - closing an
+        // order is a money operation, this is inference sitting next to it, and a resolution
+        // failure must never affect the close itself. See #autoLinkSpaAppointmentByBooking's own
+        // javadoc for why this is the one moment this axis can run at all.
+        if (booking != null) {
+            try {
+                autoLinkSpaAppointmentByBooking(saved, items, booking.getId());
+            } catch (Exception e) {
+                log.error("autoLinkSpaAppointmentByBooking failed for order {}", saved.getId(), e);
+            }
+        }
 
         auditLogService.record(
                 AuditAction.ORDER_CLOSED,
