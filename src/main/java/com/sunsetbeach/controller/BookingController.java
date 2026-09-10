@@ -21,6 +21,7 @@ import com.sunsetbeach.model.RepriceInput;
 import com.sunsetbeach.model.RepriceQuote;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.StaffBookingCreateInput;
+import com.sunsetbeach.model.SwapSegmentRoomUnitInput;
 import com.sunsetbeach.model.TodayBoard;
 import com.sunsetbeach.security.BookingRateLimiter;
 import com.sunsetbeach.security.ClientIpResolver;
@@ -85,6 +86,16 @@ public class BookingController implements BookingsApi {
     @Override
     public ResponseEntity<Booking> assignBookingRoomUnit(String id, RoomUnitAssignmentInput roomUnitAssignmentInput) {
         return ResponseEntity.ok(bookingService.assignRoomUnit(id, roomUnitAssignmentInput));
+    }
+
+    @Override
+    public ResponseEntity<Booking> assignBookingSegmentRoomUnit(String id, String segmentId, RoomUnitAssignmentInput roomUnitAssignmentInput) {
+        return ResponseEntity.ok(bookingService.assignSegmentRoomUnit(id, segmentId, roomUnitAssignmentInput));
+    }
+
+    @Override
+    public ResponseEntity<Booking> swapBookingSegmentRoomUnit(String id, String segmentId, SwapSegmentRoomUnitInput swapSegmentRoomUnitInput) {
+        return ResponseEntity.ok(bookingService.swapSegmentRoomUnit(id, segmentId, swapSegmentRoomUnitInput));
     }
 
     @Override

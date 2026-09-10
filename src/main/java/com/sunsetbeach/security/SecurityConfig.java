@@ -147,6 +147,12 @@ public class SecurityConfig {
                         // operation - explicitly matched (rather than left to a general /bookings/**
                         // rule) since it has its own role independent of the PATCH above.
                         .requestMatchers(HttpMethod.PUT, "/bookings/*/room-unit").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // The segment-scoped room-assignment sibling and the two-booking swap -
+                        // same CASHIER+ tier as PUT /bookings/*/room-unit just above, same
+                        // explicit-rule requirement (three-segment paths past "/bookings/" aren't
+                        // covered by any wildcard rule here, including the one just above).
+                        .requestMatchers(HttpMethod.PUT, "/bookings/*/segments/*/room-unit").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/bookings/*/segments/*/swap-room-unit").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Linking/unlinking a booking's Guest record - same CASHIER+ tier and same
                         // explicit-rule requirement as PUT /bookings/*/room-unit just above.
                         .requestMatchers(HttpMethod.PUT, "/bookings/*/guest").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
@@ -221,6 +227,9 @@ public class SecurityConfig {
                         .hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/spa-appointments").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/spa-appointments/*/status").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Rescheduling (drag to another table/time) - same CASHIER+ tier and same
+                        // explicit-rule requirement as PATCH .../status just above.
+                        .requestMatchers(HttpMethod.PATCH, "/spa-appointments/*/schedule").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Spa map background image - same CASHIER-read/MANAGER-write split as
                         // GET/POST /property-map/image just above, mirrored deliberately (see
                         // SpaMapService's own class javadoc for why this is a separate image, not

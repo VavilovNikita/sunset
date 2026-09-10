@@ -3,6 +3,7 @@ package com.sunsetbeach.repository;
 import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.model.BookingStatus;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -68,4 +69,14 @@ public interface BookingSegmentRepository extends JpaRepository<BookingSegmentEn
      */
     List<BookingSegmentEntity> findByRoomIdAndRoomUnitIdIsNullAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
             String roomId, BookingStatus excludedStatus, LocalDate blockToDate, LocalDate blockFromDate);
+
+    /**
+     * Unit-level overlap excluding a <em>set</em> of segment ids, not one booking - {@link
+     * com.sunsetbeach.service.BookingWriter#swapSegmentRoomUnits}'s own conflict check. A swap
+     * moves two named segments, not two whole bookings, so only those two segments are excluded;
+     * a third segment belonging to either booking (or to anyone else) still conflict-checks
+     * normally, including a third segment sitting in the very unit being swapped into.
+     */
+    List<BookingSegmentEntity> findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThanAndIdNotIn(
+            String roomUnitId, BookingStatus excludedStatus, LocalDate checkOut, LocalDate checkIn, Collection<String> excludedSegmentIds);
 }

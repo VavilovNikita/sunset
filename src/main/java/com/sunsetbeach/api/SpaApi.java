@@ -9,6 +9,7 @@ import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.SpaAppointment;
 import com.sunsetbeach.model.SpaAppointmentCreateInput;
 import com.sunsetbeach.model.SpaAppointmentResult;
+import com.sunsetbeach.model.SpaAppointmentScheduleInput;
 import com.sunsetbeach.model.SpaAppointmentStatusUpdateInput;
 import com.sunsetbeach.model.SpaMap;
 import com.sunsetbeach.model.SpaSchedule;
@@ -249,6 +250,69 @@ public interface SpaApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "[ { \"id\" : \"id\", \"email\" : \"email\" }, { \"id\" : \"id\", \"email\" : \"email\" } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /spa-appointments/{id}/schedule : Move a spa appointment to another table, time, and/or therapist
+     * Requires CASHIER or above. The operation a drag on the spa schedule grid needs. Full replacement of all four fields, not a partial update - a drag always knows all four, and this project&#39;s own convention is full replacement wherever the caller has no reason not to send everything. Only legal while &#x60;status&#x60; is &#x60;BOOKED&#x60; - the same lifecycle boundary &#x60;PATCH /spa-appointments/{id}/status&#x60; already enforces (an appointment past that point is an end state). Never touches the treatment or its frozen &#x60;durationMinutes&#x60;, so the interval this checks is unchanged in length, just moved. No pre-check query - same \&quot;let the database settle it\&quot; philosophy &#x60;POST /spa-appointments&#x60; already documents: this writes the four fields directly and lets the two GiST exclusion constraints (&#x60;spa_appointment_no_table_overlap&#x60;, &#x60;spa_appointment_no_therapist_overlap&#x60; - see &#x60;V41__spa_appointment.sql&#x60;) decide, exactly as they do for a fresh booking. Both apply to this update exactly as they apply to an insert; the 409 on a lost race is the same message &#x60;POST /spa-appointments&#x60; already gives, not a new one. 
+     *
+     * @param id  (required)
+     * @param spaAppointmentScheduleInput  (required)
+     * @return Updated appointment. (status code 200)
+     *         or &#x60;startTime&#x60; isn&#39;t on a slot boundary, the treatment would run past closing, or the appointment isn&#39;t &#x60;BOOKED&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Appointment, table, or therapist not found. (status code 404)
+     *         or This table or this therapist already has an appointment overlapping the requested time. (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/spa-appointments/{id}/schedule",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<SpaAppointment> updateSpaAppointmentSchedule(
+         @PathVariable("id") String id,
+         @Valid @RequestBody SpaAppointmentScheduleInput spaAppointmentScheduleInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"date\" : \"date\", \"createdByUserId\" : \"createdByUserId\", \"orderId\" : \"orderId\", \"therapistEmail\" : \"therapistEmail\", \"treatmentMenuItemId\" : \"treatmentMenuItemId\", \"cancelledByUserId\" : \"cancelledByUserId\", \"bookingId\" : \"bookingId\", \"guestName\" : \"guestName\", \"durationMinutes\" : 6, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"therapistUserId\" : \"therapistUserId\", \"tableId\" : \"tableId\", \"tableLabel\" : \"tableLabel\", \"startTime\" : \"startTime\", \"id\" : \"id\", \"cancelReason\" : \"cancelReason\", \"treatmentName\" : \"treatmentName\", \"status\" : \"BOOKED\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

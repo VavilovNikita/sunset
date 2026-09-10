@@ -4,6 +4,7 @@ import com.sunsetbeach.api.SpaApi;
 import com.sunsetbeach.model.SpaAppointment;
 import com.sunsetbeach.model.SpaAppointmentCreateInput;
 import com.sunsetbeach.model.SpaAppointmentResult;
+import com.sunsetbeach.model.SpaAppointmentScheduleInput;
 import com.sunsetbeach.model.SpaAppointmentStatusUpdateInput;
 import com.sunsetbeach.model.SpaMap;
 import com.sunsetbeach.model.SpaSchedule;
@@ -53,6 +54,11 @@ public class SpaController implements SpaApi {
     @Override
     public ResponseEntity<SpaAppointment> updateSpaAppointmentStatus(String id, SpaAppointmentStatusUpdateInput spaAppointmentStatusUpdateInput) {
         return ResponseEntity.ok(spaAppointmentService.updateStatus(id, spaAppointmentStatusUpdateInput, callerId()));
+    }
+
+    @Override
+    public ResponseEntity<SpaAppointment> updateSpaAppointmentSchedule(String id, SpaAppointmentScheduleInput spaAppointmentScheduleInput) {
+        return ResponseEntity.ok(spaAppointmentService.updateSchedule(id, spaAppointmentScheduleInput, callerId()));
     }
 
     @Override

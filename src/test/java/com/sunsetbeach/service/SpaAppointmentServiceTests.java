@@ -18,6 +18,7 @@ import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.SpaAppointment;
 import com.sunsetbeach.model.SpaAppointmentCreateInput;
 import com.sunsetbeach.model.SpaAppointmentResult;
+import com.sunsetbeach.model.SpaAppointmentScheduleInput;
 import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.model.SpaAppointmentStatusUpdateInput;
 import com.sunsetbeach.model.StaffBookingCreateInput;
@@ -473,5 +474,118 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
                 .getAppointment();
 
         assertThat(rebooked.getStatus()).isEqualTo(SpaAppointmentStatus.BOOKED);
+    }
+
+    // --- updateSchedule (drag to another table/time/therapist) ---------------------------------
+
+    @Test
+    void updateSchedule_movesToAFreeTableAndTime_durationUnchanged() {
+        LocalDate checkIn = LocalDate.now().plusDays(347);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity originalTable = createSpaTable();
+        TableEntity newTable = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity originalTherapist = createTherapist();
+        UserEntity newTherapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        SpaAppointment created = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(
+                                booking.getId(), originalTable.getId(), originalTherapist.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+
+        SpaAppointment moved = spaAppointmentService.updateSchedule(
+                created.getId(),
+                new SpaAppointmentScheduleInput(newTable.getId(), newTherapist.getId(), checkIn.toString(), "11:00"),
+                receptionist.getId());
+
+        assertThat(moved.getTableId()).isEqualTo(newTable.getId());
+        assertThat(moved.getTherapistUserId()).isEqualTo(newTherapist.getId());
+        assertThat(moved.getStartTime()).isEqualTo("11:00");
+        // Duration is frozen from creation - a drag moves the appointment, it doesn't resize it.
+        assertThat(moved.getDurationMinutes()).isEqualTo(60);
+        assertThat(moved.getStatus()).isEqualTo(SpaAppointmentStatus.BOOKED);
+    }
+
+    @Test
+    void updateSchedule_intoATableConflict_isRejected() {
+        LocalDate checkIn = LocalDate.now().plusDays(348);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity tableA = createSpaTable();
+        TableEntity tableB = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapistA = createTherapist();
+        UserEntity therapistB = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        // An existing appointment already occupies tableB at 10:00-11:00.
+        spaAppointmentService.create(
+                new SpaAppointmentCreateInput(booking.getId(), tableB.getId(), therapistB.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                receptionist.getId());
+        SpaAppointment toMove = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), tableA.getId(), therapistA.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+
+        assertThatThrownBy(() -> spaAppointmentService.updateSchedule(
+                        toMove.getId(),
+                        new SpaAppointmentScheduleInput(tableB.getId(), therapistA.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId()))
+                .isInstanceOf(ConflictException.class);
+        // Rejected write must not have moved the appointment.
+        assertThat(spaAppointmentService.getSchedule(checkIn).getAppointments().stream()
+                        .filter(a -> a.getId().equals(toMove.getId())).findFirst().orElseThrow().getTableId())
+                .isEqualTo(tableA.getId());
+    }
+
+    @Test
+    void updateSchedule_intoATherapistConflict_isRejected() {
+        LocalDate checkIn = LocalDate.now().plusDays(349);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity tableA = createSpaTable();
+        TableEntity tableB = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapistA = createTherapist();
+        UserEntity therapistB = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        // therapistB is already booked on tableB at 10:00-11:00.
+        spaAppointmentService.create(
+                new SpaAppointmentCreateInput(booking.getId(), tableB.getId(), therapistB.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                receptionist.getId());
+        SpaAppointment toMove = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), tableA.getId(), therapistA.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+
+        assertThatThrownBy(() -> spaAppointmentService.updateSchedule(
+                        toMove.getId(),
+                        new SpaAppointmentScheduleInput(tableA.getId(), therapistB.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId()))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void updateSchedule_onANonBookedAppointment_isRejected() {
+        LocalDate checkIn = LocalDate.now().plusDays(351);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity table = createSpaTable();
+        TableEntity otherTable = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        SpaAppointment created = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapist.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+        spaAppointmentService.updateStatus(created.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.CANCELLED), receptionist.getId());
+
+        assertThatThrownBy(() -> spaAppointmentService.updateSchedule(
+                        created.getId(),
+                        new SpaAppointmentScheduleInput(otherTable.getId(), therapist.getId(), checkIn.toString(), "11:00"),
+                        receptionist.getId()))
+                .isInstanceOf(BadRequestException.class);
     }
 }

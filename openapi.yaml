@@ -1731,7 +1731,12 @@ paths:
         same pattern as `POST /bookings`), so it gets its own operation. Only legal while the
         booking has exactly one segment (see `Booking.segments`) - once a booking has been split
         by `POST /bookings/{id}/relocate`, "the room" is no longer a single well-defined value
-        this endpoint's one `roomUnitId` can express; use `relocate`/`undo-relocation` instead.
+        this endpoint's one `roomUnitId` can express. `PUT /bookings/{id}/segments/{segmentId}/
+        room-unit` is the sibling built for that case - the same validation and race-safety
+        story, addressed at a named segment instead of implicitly "the sole segment"; this
+        endpoint stays as the convenient shorthand for the common never-relocated case, it isn't
+        superseded by the sibling existing. `relocate`/`undo-relocation` remain the tools for
+        anything that also changes dates.
       requestBody:
         required: true
         content:
@@ -1784,6 +1789,176 @@ paths:
                   value: { error: "Someone just assigned this room — please try again." }
                 multiSegment:
                   value: { error: "This booking has been split by a room relocation — change dates or rooms per segment via relocate/undo-relocate instead." }
+
+  /bookings/{id}/segments/{segmentId}/room-unit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: segmentId
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: assignBookingSegmentRoomUnit
+      tags: [Bookings]
+      summary: Assign or unassign the physical room for one segment of a booking
+      description: >
+        Requires CASHIER or above. The sibling `PUT /bookings/{id}/room-unit` was built for -
+        same validation (same room type as this segment's own `roomId`, active, free for this
+        segment's own dates) and the same SERIALIZABLE race-safety story, just addressed at a
+        named segment instead of implicitly "the sole segment", so it works on any segment of
+        any booking regardless of how many segments it has. Never touches dates, segment
+        boundaries, or any other segment's own row. Never reprices: moving between two units of
+        the *same* room type is not a new agreement - the segment's already-frozen nightly rates
+        (`BookingSegmentNightlyRate`) are untouched either way, the same "same type, same price"
+        guarantee `PUT /bookings/{id}/room-unit` already gives a never-relocated booking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomUnitAssignmentInput"
+      responses:
+        "200":
+          description: Updated booking.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: The room unit belongs to a different room type than this segment, or is not active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                wrongType:
+                  value: { error: "Room 5 is a different room type than requested" }
+                inactive:
+                  value: { error: "Room 5 is not active" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking not found, segment not found (or doesn't belong to this booking), or room unit not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            The room unit is blocked or already booked for an overlapping stay - either found
+            up front or from a concurrent conflicting assignment (Postgres serialization
+            failure, SQLSTATE `40001`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                blocked:
+                  value: { error: "Room 5 is blocked (under renovation) from 2026-08-05 to 2026-08-09" }
+                booked:
+                  value: { error: "Room 5 is already booked for an overlapping stay" }
+                raceLost:
+                  value: { error: "Someone just assigned this room — please try again." }
+
+  /bookings/{id}/segments/{segmentId}/swap-room-unit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: segmentId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: swapBookingSegmentRoomUnit
+      tags: [Bookings]
+      summary: Swap this segment's physical room with another segment's, atomically
+      description: >
+        Requires CASHIER or above. The operation a drag that drops one booking's bar onto
+        another's needs: two sequential `PUT .../room-unit` calls cannot do this, because moving
+        the first guest into the second guest's room fails the overlap check while the second
+        guest's own segment is still sitting there. This does both moves in one SERIALIZABLE
+        write, each side's availability checked against a world where neither move has happened
+        yet - each segment's own dates must be free in the *other's* current room unit,
+        excluding only these two named segments, not their whole parent bookings (a relocated
+        booking's *other* segments elsewhere still conflict-check normally) and not excluding
+        anyone else - a third segment genuinely occupying part of the target unit for an
+        overlapping sub-range still blocks the swap, named in the 409 the same way an ordinary
+        assignment names it.
+
+        Same room type only, checked before any availability work: the two segments' own `roomId`
+        must be equal, or this is a 400, not a 409. A cross-type swap would mean either repricing
+        both segments retroactively at today's rate, or leaving one guest paying the other
+        room type's already-agreed price - this API does neither silently, the same reasoning
+        `BookingWriter`'s "Nightly price snapshots" section already gives for every other
+        schedule-touching write. A same-type swap reprices nothing: each segment keeps its own
+        already-frozen nightly rates, only `roomUnitId` moves.
+
+        Both segments must already have a physical room assigned - swapping with nothing isn't a
+        swap, it's a single-sided assignment; use `PUT .../room-unit` for that. Writes one audit
+        entry under each booking's own id, naming the other guest, so each booking's own history
+        shows the move.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SwapSegmentRoomUnitInput"
+      responses:
+        "200":
+          description: >
+            This segment's own updated booking. The other booking named in the request also
+            changed (its own segment's `roomUnitId` swapped the other way) - fetch it separately
+            (`GET /bookings/{id}`) or refetch the calendar window to see it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: The two segments' room types differ, one of the segments has no room unit assigned, or the two segment ids are the same.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                wrongType:
+                  value: { error: "These segments are different room types and can't be swapped" }
+                unassigned:
+                  value: { error: "Both rooms must already have a physical room assigned to swap them" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking not found, this segment not found (or doesn't belong to this booking), or the other segment not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            One side's own dates are already booked in the other's room by a third segment, or a
+            concurrent conflicting write lost the race (Postgres serialization failure, SQLSTATE
+            `40001`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                booked:
+                  value: { error: "Room 5 is already booked for an overlapping stay" }
+                raceLost:
+                  value: { error: "Someone just changed one of these rooms — please try again." }
 
   /bookings/{id}/guest:
     parameters:
@@ -3191,6 +3366,76 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
+
+  /spa-appointments/{id}/schedule:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateSpaAppointmentSchedule
+      tags: [Spa]
+      summary: Move a spa appointment to another table, time, and/or therapist
+      description: >
+        Requires CASHIER or above. The operation a drag on the spa schedule grid needs. Full
+        replacement of all four fields, not a partial update - a drag always knows all four, and
+        this project's own convention is full replacement wherever the caller has no reason not
+        to send everything.
+
+        Only legal while `status` is `BOOKED` - the same lifecycle boundary
+        `PATCH /spa-appointments/{id}/status` already enforces (an appointment past that point is
+        an end state). Never touches the treatment or its frozen `durationMinutes`, so the
+        interval this checks is unchanged in length, just moved.
+
+        No pre-check query - same "let the database settle it" philosophy
+        `POST /spa-appointments` already documents: this writes the four fields directly and lets
+        the two GiST exclusion constraints (`spa_appointment_no_table_overlap`,
+        `spa_appointment_no_therapist_overlap` - see `V41__spa_appointment.sql`) decide, exactly
+        as they do for a fresh booking. Both apply to this update exactly as they apply to an
+        insert; the 409 on a lost race is the same message `POST /spa-appointments` already
+        gives, not a new one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpaAppointmentScheduleInput"
+      responses:
+        "200":
+          description: Updated appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaAppointment"
+        "400":
+          description: '`startTime` isn''t on a slot boundary, the treatment would run past closing, or the appointment isn''t `BOOKED`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Appointment, table, or therapist not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: This table or this therapist already has an appointment overlapping the requested time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                table:
+                  value: { error: "This table already has an appointment overlapping this time." }
+                therapist:
+                  value: { error: "This therapist already has an appointment overlapping this time." }
 
   /spa-map:
     get:
@@ -5919,6 +6164,27 @@ components:
           type: string
           nullable: true
 
+    SpaAppointmentScheduleInput:
+      type: object
+      description: >
+        Body of `PATCH /spa-appointments/{id}/schedule`. Full replacement of all four fields -
+        same `tableId`/`therapistUserId`/`date`/`startTime` shape as `SpaAppointmentCreateInput`,
+        minus `bookingId`/`treatmentMenuItemId` (neither changes here) and `durationMinutes`
+        stays frozen from creation (see `SpaAppointment.durationMinutes`), so the appointment's
+        own length is preserved regardless of where it moves.
+      required: [tableId, therapistUserId, date, startTime]
+      properties:
+        tableId:
+          type: string
+        therapistUserId:
+          type: string
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        startTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+
     SpaAppointmentStatusUpdateInput:
       type: object
       description: >
@@ -6302,6 +6568,18 @@ components:
         segmentId:
           type: string
           description: Which segment to reprice - required rather than inferred, since a relocated booking has more than one and there is no single unambiguous default.
+
+    SwapSegmentRoomUnitInput:
+      type: object
+      description: >
+        Body of `POST /bookings/{id}/segments/{segmentId}/swap-room-unit`. The dragged segment
+        is named by the URL (`{id}`/`{segmentId}`); this names the other side - the gesture has a
+        direction (someone drags A onto B), so the operation does too.
+      required: [withSegmentId]
+      properties:
+        withSegmentId:
+          type: string
+          description: The other segment to swap room units with. Must currently be assigned a room unit of the same room type as the URL's own segment.
 
     RepriceQuote:
       type: object
@@ -7838,6 +8116,9 @@ components:
         - GUEST_DELETED
         - BOOKING_GUEST_LINKED
         - SPA_MAP_IMAGE_UPDATED
+        - BOOKING_SEGMENT_ROOM_CHANGED
+        - BOOKING_ROOMS_SWAPPED
+        - SPA_APPOINTMENT_RESCHEDULED
 
     AuditEntityType:
       type: string

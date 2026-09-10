@@ -57,10 +57,12 @@ import com.sunsetbeach.model.ShiftTotals;
 import com.sunsetbeach.model.SpaAppointment;
 import com.sunsetbeach.model.SpaAppointmentCreateInput;
 import com.sunsetbeach.model.SpaAppointmentResult;
+import com.sunsetbeach.model.SpaAppointmentScheduleInput;
 import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.model.SpaAppointmentStatusUpdateInput;
 import com.sunsetbeach.model.SpaSchedule;
 import com.sunsetbeach.model.SpaTherapist;
+import com.sunsetbeach.model.SwapSegmentRoomUnitInput;
 import com.sunsetbeach.model.Table;
 import com.sunsetbeach.model.TablePositionInput;
 import com.sunsetbeach.model.Zone;
@@ -690,6 +692,25 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void updateSpaAppointmentSchedule_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/spa-appointments/appt-1/schedule")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SpaAppointmentScheduleInput("table-1", "user-1", "2027-01-01", "10:00"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateSpaAppointmentSchedule_withCashierToken_isOk() throws Exception {
+        when(spaAppointmentService.updateSchedule(eq("appt-1"), any(), anyString())).thenReturn(sampleSpaAppointment());
+        mockMvc.perform(patch("/spa-appointments/appt-1/schedule")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SpaAppointmentScheduleInput("table-1", "user-1", "2027-01-01", "10:00"))))
+                .andExpect(status().isOk());
+    }
+
     // --- Property map: viewing is CASHIER+ (same floor as GET /bookings/today), replacing the
     // background image is MANAGER+ (same floor as POST /rooms/{id}/images). ---
 
@@ -800,6 +821,48 @@ class PosRoleHierarchyTests {
                         .header("Authorization", token(Role.CASHIER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"roomUnitId\":null}"))
+                .andExpect(status().isOk());
+    }
+
+    // --- PUT /bookings/{id}/segments/{segmentId}/room-unit and POST .../swap-room-unit are the
+    // same CASHIER+ tier as PUT /bookings/{id}/room-unit just above, with their own explicit
+    // rules in SecurityConfig (three-segment paths past "/bookings/" need one). ---
+
+    @Test
+    void assignBookingSegmentRoomUnit_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(put("/bookings/booking-1/segments/segment-1/room-unit")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RoomUnitAssignmentInput().roomUnitId("unit-1"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void assignBookingSegmentRoomUnit_withCashierToken_isOk() throws Exception {
+        when(bookingService.assignSegmentRoomUnit(eq("booking-1"), eq("segment-1"), any())).thenReturn(sampleBooking());
+        mockMvc.perform(put("/bookings/booking-1/segments/segment-1/room-unit")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RoomUnitAssignmentInput().roomUnitId("unit-1"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void swapBookingSegmentRoomUnit_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/bookings/booking-1/segments/segment-1/swap-room-unit")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SwapSegmentRoomUnitInput("segment-2"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void swapBookingSegmentRoomUnit_withCashierToken_isOk() throws Exception {
+        when(bookingService.swapSegmentRoomUnit(eq("booking-1"), eq("segment-1"), any())).thenReturn(sampleBooking());
+        mockMvc.perform(post("/bookings/booking-1/segments/segment-1/swap-room-unit")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SwapSegmentRoomUnitInput("segment-2"))))
                 .andExpect(status().isOk());
     }
 

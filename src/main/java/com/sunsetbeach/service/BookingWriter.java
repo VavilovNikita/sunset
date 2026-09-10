@@ -68,12 +68,25 @@ import org.springframework.transaction.annotation.Transactional;
  * reverting a room is not a new agreement with the guest, it's correcting the record, and gets
  * the room's history back, not its current rate.
  *
- * <p><b>{@code assignRoomUnit}/{@code unassignRoomUnit} only operate on a booking with exactly
- * one segment.</b> Once a booking has been relocated, "the room" is no longer a single
- * well-defined value a bare {@code roomUnitId} can express - which segment would it apply to?
- * Rather than guess, these calls reject with a clear message once segments.size() > 1, and
- * direct the caller to {@link #relocate}/{@link #undoRelocation}, the two operations actually
- * built to reason about more than one segment at a time.
+ * <p><b>Room assignment comes in two shapes.</b> {@link #assignRoomUnit}/{@link #unassignRoomUnit}
+ * operate on a booking's <i>sole</i> segment - convenient shorthand for the common case, a
+ * booking that has never been relocated, where "the room" is unambiguous and a caller shouldn't
+ * have to know or name a segment id to change it. They still reject with a clear message once
+ * segments.size() > 1 (there is no way to guess which segment a bare {@code roomUnitId} would
+ * apply to), directing the caller to {@link #relocate}/{@link #undoRelocation} for anything that
+ * also changes dates, or to the segment-scoped siblings below for a room change that doesn't.
+ * {@link #reassignSegmentRoomUnit}/{@link #unassignSegmentRoomUnit} are the general primitive
+ * underneath - the same three checks (room type, active, free for the segment's own dates) and
+ * the same SERIALIZABLE race-safety, just addressed at a named segment instead of implicitly
+ * "the sole segment," so they work on any segment of any booking regardless of how many segments
+ * it has. Neither shape supersedes the other; the whole-booking pair isn't superseded by the
+ * sibling existing, it stays the convenient shorthand it always was. {@link
+ * #swapSegmentRoomUnits} builds on the segment-scoped shape for the one case neither
+ * single-segment call can express: moving two guests into each other's rooms in one atomic
+ * write, because two sequential single-segment calls can't (the second would see the first
+ * guest's segment still occupying the room it's trying to move into). See that method's own
+ * javadoc for the exclusion-set reasoning it needs to correctly ignore only the two segments
+ * actually swapping, not their whole parent bookings.
  *
  * <p><b>{@code updateSchedule}/{@code quoteSchedule} allow a narrower case on a multi-segment
  * booking:</b> a change that moves only the outer edge of the first or last segment (the
@@ -236,6 +249,125 @@ public class BookingWriter {
         segmentRepository.saveAndFlush(segment);
         syncBookingFromSegments(booking, List.of(segment));
         return bookingRepository.saveAndFlush(booking);
+    }
+
+    /**
+     * Reassigns one named segment's physical room - the general primitive {@link #assignRoomUnit}
+     * is a convenient shorthand for when a booking has exactly one segment (see the class
+     * javadoc). Same three checks (room type, active, free for this segment's own dates) and the
+     * same SERIALIZABLE race-safety, just addressed at a segment by id instead of implicitly "the
+     * sole segment," so this works on any segment of any booking regardless of how many segments
+     * it has. Never touches dates, segment boundaries, or any other segment's own row, and never
+     * reprices: moving between two units of the *same* room type is not a new agreement - the
+     * segment's already-frozen nightly rates are untouched, the same "same type, same price"
+     * guarantee {@link #assignRoomUnit} already gives.
+     */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public SegmentRoomUnitResult reassignSegmentRoomUnit(String bookingId, String segmentId, String roomUnitId) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        BookingSegmentEntity segment = requireSegmentOnBooking(bookingId, segmentId);
+        RoomUnitEntity unit = roomUnitRepository.findById(roomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
+
+        failIfUnassignable(checkUnitAssignable(unit, segment.getRoomId(), segment.getCheckIn(), segment.getCheckOut(), bookingId));
+
+        segment.setRoomUnitId(unit.getId());
+        segmentRepository.saveAndFlush(segment);
+        List<BookingSegmentEntity> allSegments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+        syncBookingFromSegments(booking, allSegments);
+        BookingEntity saved = bookingRepository.saveAndFlush(booking);
+        return new SegmentRoomUnitResult(saved, segment, unit);
+    }
+
+    /** No contention to protect against when clearing an assignment - same reasoning as {@link #unassignRoomUnit}. */
+    @Transactional
+    public SegmentRoomUnitResult unassignSegmentRoomUnit(String bookingId, String segmentId) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        BookingSegmentEntity segment = requireSegmentOnBooking(bookingId, segmentId);
+        segment.setRoomUnitId(null);
+        segmentRepository.saveAndFlush(segment);
+        List<BookingSegmentEntity> allSegments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+        syncBookingFromSegments(booking, allSegments);
+        BookingEntity saved = bookingRepository.saveAndFlush(booking);
+        return new SegmentRoomUnitResult(saved, segment, null);
+    }
+
+    /** Result of {@link #reassignSegmentRoomUnit}/{@link #unassignSegmentRoomUnit} - the saved booking, the segment that was actually changed, and its new unit (null when unassigning). */
+    public record SegmentRoomUnitResult(BookingEntity booking, BookingSegmentEntity segment, RoomUnitEntity unit) {
+    }
+
+    /**
+     * Swaps this segment's physical room with {@code withSegmentId}'s, atomically - the operation
+     * a drag that drops one booking's bar onto another's needs. Two sequential {@link
+     * #reassignSegmentRoomUnit} calls can't do this: moving the first guest into the second
+     * guest's room fails the overlap check while the second guest's own segment is still sitting
+     * there. This checks both sides in one pass against a world where neither move has happened
+     * yet - each segment's own dates must be free in the *other's current* room unit, excluding
+     * only these two named segments (via {@link #checkUnitAssignableExcludingSegments}), not
+     * their whole parent bookings and not any third segment - a segment genuinely occupying part
+     * of the target unit for an overlapping sub-range still blocks the swap, the same way it
+     * would block an ordinary assignment. Same room type only, checked before any availability
+     * work (a 400, not a 409): the two segments' own {@code roomId} must be equal, or this is
+     * rejected outright - a cross-type swap would mean either repricing both segments
+     * retroactively at today's rate or leaving one guest paying the other room type's
+     * already-agreed price, and this API does neither silently (see the class javadoc's "Nightly
+     * price snapshots" section). A same-type swap reprices nothing - each segment keeps its own
+     * already-frozen nightly rates, only {@code roomUnitId} moves. Both segments must already
+     * have a physical room assigned - swapping with nothing isn't a swap, it's a single-sided
+     * assignment ({@link #reassignSegmentRoomUnit}).
+     */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public SwapResult swapSegmentRoomUnits(String bookingId, String segmentId, String withSegmentId) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        BookingSegmentEntity segment = requireSegmentOnBooking(bookingId, segmentId);
+        if (segmentId.equals(withSegmentId)) {
+            throw new BadRequestException("Cannot swap a segment with itself");
+        }
+        BookingSegmentEntity other = segmentRepository.findById(withSegmentId).orElseThrow(() -> new NotFoundException("Segment not found"));
+        BookingEntity otherBooking =
+                bookingRepository.findById(other.getBookingId()).orElseThrow(() -> new NotFoundException("Booking not found"));
+
+        if (!segment.getRoomId().equals(other.getRoomId())) {
+            throw new BadRequestException("These two rooms are different room types - a swap can't change either one's type");
+        }
+        RoomEntity room = roomRepository.findById(segment.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        if (segment.getRoomUnitId() == null || other.getRoomUnitId() == null) {
+            throw new BadRequestException("Both rooms must already have a physical room assigned to swap them");
+        }
+
+        Set<String> excluded = Set.of(segment.getId(), other.getId());
+        RoomUnitEntity segmentsNewUnit =
+                roomUnitRepository.findById(other.getRoomUnitId()).orElseThrow(() -> new NotFoundException("Room unit not found"));
+        RoomUnitEntity othersNewUnit =
+                roomUnitRepository.findById(segment.getRoomUnitId()).orElseThrow(() -> new NotFoundException("Room unit not found"));
+
+        failIfUnassignable(
+                checkUnitAssignableExcludingSegments(segmentsNewUnit, room.getId(), segment.getCheckIn(), segment.getCheckOut(), excluded));
+        failIfUnassignable(
+                checkUnitAssignableExcludingSegments(othersNewUnit, room.getId(), other.getCheckIn(), other.getCheckOut(), excluded));
+
+        String segmentOldUnitId = segment.getRoomUnitId();
+        segment.setRoomUnitId(other.getRoomUnitId());
+        other.setRoomUnitId(segmentOldUnitId);
+        segmentRepository.saveAndFlush(segment);
+        segmentRepository.saveAndFlush(other);
+
+        List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+        syncBookingFromSegments(booking, segments);
+        BookingEntity savedBooking = bookingRepository.saveAndFlush(booking);
+
+        List<BookingSegmentEntity> otherSegments = segmentRepository.findByBookingIdOrderByCheckInAsc(otherBooking.getId());
+        syncBookingFromSegments(otherBooking, otherSegments);
+        BookingEntity savedOtherBooking = bookingRepository.saveAndFlush(otherBooking);
+
+        return new SwapResult(savedBooking, segment, room, savedOtherBooking, other);
+    }
+
+    /**
+     * Result of {@link #swapSegmentRoomUnits} - both bookings' saved rows plus the two segments
+     * that moved and the room type they share (same-type is enforced, so one {@link RoomEntity}
+     * covers both sides).
+     */
+    public record SwapResult(BookingEntity booking, BookingSegmentEntity segment, RoomEntity room, BookingEntity otherBooking, BookingSegmentEntity otherSegment) {
     }
 
     /**
@@ -821,15 +953,12 @@ public class BookingWriter {
     }
 
     /**
-     * The three checks {@code PUT /bookings/{id}/room-unit}, {@code PATCH /bookings/{id}/schedule},
-     * {@code POST /bookings/staff} and {@code POST /bookings/{id}/relocate} all need before
-     * letting a physical room take a segment: same room type, active, not blocked, not already
-     * booked by another segment for an overlapping stay. {@code excludeBookingId} is the booking
-     * being (re)assigned so its own other segment(s) never conflict with it - {@code null} only
-     * for a booking that doesn't exist yet ({@link #insertStaff}).
+     * The room-type/active/block checks shared by every way of putting a physical room under a
+     * segment - {@link #checkUnitAssignable} (excludes one booking's own segments) and
+     * {@link #checkUnitAssignableExcludingSegments} (excludes a named set of segments, for
+     * {@link #swapSegmentRoomUnits}) both layer their own overlap query on top of this.
      */
-    private UnitConflict checkUnitAssignable(
-            RoomUnitEntity unit, String roomId, LocalDate checkIn, LocalDate checkOut, String excludeBookingId) {
+    private UnitConflict checkUnitBasics(RoomUnitEntity unit, String roomId, LocalDate checkIn, LocalDate checkOut) {
         if (!unit.getRoomId().equals(roomId)) {
             return new UnitConflict("Room " + unit.getLabel() + " is a different room type than requested", true);
         }
@@ -844,12 +973,53 @@ public class BookingWriter {
             return new UnitConflict("Room " + unit.getLabel() + " is blocked (" + block.getReason() + ") from " + block.getFromDate()
                     + " to " + block.getToDate(), false);
         }
+        return null;
+    }
+
+    /**
+     * The three checks {@code PUT /bookings/{id}/room-unit}, {@code PUT /bookings/{id}/segments/
+     * {segmentId}/room-unit}, {@code PATCH /bookings/{id}/schedule}, {@code POST /bookings/staff}
+     * and {@code POST /bookings/{id}/relocate} all need before letting a physical room take a
+     * segment: same room type, active, not blocked, not already booked by another segment for an
+     * overlapping stay. {@code excludeBookingId} is the booking being (re)assigned so its own
+     * other segment(s) never conflict with it - {@code null} only for a booking that doesn't
+     * exist yet ({@link #insertStaff}).
+     */
+    private UnitConflict checkUnitAssignable(
+            RoomUnitEntity unit, String roomId, LocalDate checkIn, LocalDate checkOut, String excludeBookingId) {
+        UnitConflict basics = checkUnitBasics(unit, roomId, checkIn, checkOut);
+        if (basics != null) {
+            return basics;
+        }
 
         List<BookingSegmentEntity> overlapping = excludeBookingId == null
                 ? segmentRepository.findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThan(
                         unit.getId(), BookingStatus.CANCELLED, checkOut, checkIn)
                 : segmentRepository.findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThanAndBookingIdNot(
                         unit.getId(), BookingStatus.CANCELLED, checkOut, checkIn, excludeBookingId);
+        if (!overlapping.isEmpty()) {
+            return new UnitConflict("Room " + unit.getLabel() + " is already booked for an overlapping stay", false);
+        }
+        return null;
+    }
+
+    /**
+     * Same shape as {@link #checkUnitAssignable}, but excludes a named <em>set</em> of segment
+     * ids rather than one booking's own - {@link #swapSegmentRoomUnits}'s own conflict check,
+     * where only the two segments actually swapping should be excluded, not their whole parent
+     * bookings (a relocated booking's other segments, or a third booking entirely, must still
+     * conflict-check normally against the unit either side is moving into).
+     */
+    private UnitConflict checkUnitAssignableExcludingSegments(
+            RoomUnitEntity unit, String roomId, LocalDate checkIn, LocalDate checkOut, Set<String> excludeSegmentIds) {
+        UnitConflict basics = checkUnitBasics(unit, roomId, checkIn, checkOut);
+        if (basics != null) {
+            return basics;
+        }
+
+        List<BookingSegmentEntity> overlapping = segmentRepository
+                .findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThanAndIdNotIn(
+                        unit.getId(), BookingStatus.CANCELLED, checkOut, checkIn, excludeSegmentIds);
         if (!overlapping.isEmpty()) {
             return new UnitConflict("Room " + unit.getLabel() + " is already booked for an overlapping stay", false);
         }

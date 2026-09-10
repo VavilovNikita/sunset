@@ -36,6 +36,7 @@ import com.sunsetbeach.model.RepriceInput;
 import com.sunsetbeach.model.RepriceQuote;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.StaffBookingCreateInput;
+import com.sunsetbeach.model.SwapSegmentRoomUnitInput;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.FolioPaymentRepository;
@@ -332,6 +333,87 @@ public class BookingService {
                         + (newUnit != null ? newUnit.getLabel() : "unassigned") + " for " + saved.getGuestName() + " (" + room.getName()
                         + ")");
         return bookingMapper.toDto(saved, room, newUnit, findGuest(saved.getGuestId()), loadSegments(saved.getId()));
+    }
+
+    /**
+     * Assigns ({@code roomUnitId} non-null) or clears ({@code roomUnitId} null) the physical room
+     * for one named segment - the segment-scoped sibling of {@link #assignRoomUnit}, for a
+     * booking that has been split by a relocation (see {@link BookingWriter}'s class javadoc for
+     * why both shapes coexist). Same race-safety story: the actual validation and write happen in
+     * {@link BookingWriter#reassignSegmentRoomUnit}/{@link BookingWriter#unassignSegmentRoomUnit}.
+     */
+    public Booking assignSegmentRoomUnit(String bookingId, String segmentId, RoomUnitAssignmentInput input) {
+        String roomUnitId = requireRoomUnitIdPresent(input.getRoomUnitId());
+        BookingSegmentEntity before = segmentRepository.findById(segmentId).orElseThrow(() -> new NotFoundException("Segment not found"));
+        String oldRoomUnitId = before.getRoomUnitId();
+
+        BookingWriter.SegmentRoomUnitResult result;
+        try {
+            result = roomUnitId == null
+                    ? bookingWriter.unassignSegmentRoomUnit(bookingId, segmentId)
+                    : bookingWriter.reassignSegmentRoomUnit(bookingId, segmentId, roomUnitId);
+        } catch (DataAccessException | TransactionSystemException e) {
+            if (isSerializationFailure(e)) {
+                throw new ConflictException("Someone just assigned this room — please try again.");
+            }
+            throw e;
+        }
+
+        BookingEntity saved = result.booking();
+        RoomEntity segmentRoom = roomRepository.findById(result.segment().getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        RoomEntity bookingRoom = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        RoomUnitEntity oldUnit = findRoomUnit(oldRoomUnitId);
+        RoomUnitEntity newUnit = result.unit();
+        auditLogService.record(
+                AuditAction.BOOKING_SEGMENT_ROOM_CHANGED,
+                AuditEntityType.BOOKING,
+                saved.getId(),
+                "Room " + (oldUnit != null ? oldUnit.getLabel() : "unassigned") + " → "
+                        + (newUnit != null ? newUnit.getLabel() : "unassigned") + " for one segment of " + saved.getGuestName() + "'s stay ("
+                        + segmentRoom.getName() + ", " + result.segment().getCheckIn() + " to " + result.segment().getCheckOut() + ")");
+        return bookingMapper.toDto(saved, bookingRoom, findRoomUnit(saved.getRoomUnitId()), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
+    }
+
+    /**
+     * Swaps this segment's physical room with another segment's, atomically - the write path
+     * behind {@code POST /bookings/{id}/segments/{segmentId}/swap-room-unit}. The actual
+     * validation and write happen in {@link BookingWriter#swapSegmentRoomUnits}, which runs
+     * SERIALIZABLE against a world where neither move has happened yet (see that method's
+     * javadoc). Writes one audit entry under <em>each</em> booking's own id, naming the other
+     * guest, so each booking's own history shows the move - unlike every other write in this
+     * class, this one genuinely changes two bookings, not one. Returns only the dragged booking's
+     * own updated DTO, matching this API's single-booking-nesting convention; the other booking's
+     * own change must be fetched separately (see the endpoint's own description).
+     */
+    public Booking swapSegmentRoomUnit(String bookingId, String segmentId, SwapSegmentRoomUnitInput input) {
+        BookingWriter.SwapResult result;
+        try {
+            result = bookingWriter.swapSegmentRoomUnits(bookingId, segmentId, input.getWithSegmentId());
+        } catch (DataAccessException | TransactionSystemException e) {
+            if (isSerializationFailure(e)) {
+                throw new ConflictException("Someone just changed one of these rooms — please try again.");
+            }
+            throw e;
+        }
+
+        BookingEntity saved = result.booking();
+        BookingEntity otherSaved = result.otherBooking();
+        RoomUnitEntity newUnit = findRoomUnit(result.segment().getRoomUnitId());
+        RoomUnitEntity otherNewUnit = findRoomUnit(result.otherSegment().getRoomUnitId());
+        auditLogService.record(
+                AuditAction.BOOKING_ROOMS_SWAPPED,
+                AuditEntityType.BOOKING,
+                saved.getId(),
+                "Swapped rooms with " + otherSaved.getGuestName() + " in " + result.room().getName() + ": now "
+                        + (newUnit != null ? newUnit.getLabel() : "unassigned"));
+        auditLogService.record(
+                AuditAction.BOOKING_ROOMS_SWAPPED,
+                AuditEntityType.BOOKING,
+                otherSaved.getId(),
+                "Swapped rooms with " + saved.getGuestName() + " in " + result.room().getName() + ": now "
+                        + (otherNewUnit != null ? otherNewUnit.getLabel() : "unassigned"));
+
+        return bookingMapper.toDto(saved, result.room(), newUnit, findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
     /**

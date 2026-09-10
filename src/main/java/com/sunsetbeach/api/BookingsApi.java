@@ -27,6 +27,7 @@ import com.sunsetbeach.model.RepriceQuote;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.StaffBookingCreateInput;
+import com.sunsetbeach.model.SwapSegmentRoomUnitInput;
 import com.sunsetbeach.model.TodayBoard;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
@@ -105,7 +106,7 @@ public interface BookingsApi {
 
     /**
      * PUT /bookings/{id}/room-unit : Assign or unassign the physical room for a booking
-     * Requires CASHIER or above. One endpoint for both directions: a non-null &#x60;roomUnitId&#x60; assigns that physical room to the booking, &#x60;null&#x60; clears the assignment. Deliberately not part of &#x60;PATCH /bookings/{id}&#x60; - room assignment has its own validation (same room type, active, free for the whole stay) and its own race-safety story (SERIALIZABLE, same pattern as &#x60;POST /bookings&#x60;), so it gets its own operation. Only legal while the booking has exactly one segment (see &#x60;Booking.segments&#x60;) - once a booking has been split by &#x60;POST /bookings/{id}/relocate&#x60;, \&quot;the room\&quot; is no longer a single well-defined value this endpoint&#39;s one &#x60;roomUnitId&#x60; can express; use &#x60;relocate&#x60;/&#x60;undo-relocation&#x60; instead. 
+     * Requires CASHIER or above. One endpoint for both directions: a non-null &#x60;roomUnitId&#x60; assigns that physical room to the booking, &#x60;null&#x60; clears the assignment. Deliberately not part of &#x60;PATCH /bookings/{id}&#x60; - room assignment has its own validation (same room type, active, free for the whole stay) and its own race-safety story (SERIALIZABLE, same pattern as &#x60;POST /bookings&#x60;), so it gets its own operation. Only legal while the booking has exactly one segment (see &#x60;Booking.segments&#x60;) - once a booking has been split by &#x60;POST /bookings/{id}/relocate&#x60;, \&quot;the room\&quot; is no longer a single well-defined value this endpoint&#39;s one &#x60;roomUnitId&#x60; can express. &#x60;PUT /bookings/{id}/segments/{segmentId}/ room-unit&#x60; is the sibling built for that case - the same validation and race-safety story, addressed at a named segment instead of implicitly \&quot;the sole segment\&quot;; this endpoint stays as the convenient shorthand for the common never-relocated case, it isn&#39;t superseded by the sibling existing. &#x60;relocate&#x60;/&#x60;undo-relocation&#x60; remain the tools for anything that also changes dates. 
      *
      * @param id  (required)
      * @param roomUnitAssignmentInput  (required)
@@ -125,6 +126,71 @@ public interface BookingsApi {
     
     default ResponseEntity<Booking> assignBookingRoomUnit(
          @PathVariable("id") String id,
+         @Valid @RequestBody RoomUnitAssignmentInput roomUnitAssignmentInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"checkedInAt\" : \"2000-01-23T04:56:07.000+00:00\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"checkedOutAt\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"positionY\" : 0.6027456183070403, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\", \"positionX\" : 0.08008281904610115 }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"positionY\" : 0.6027456183070403, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\", \"positionX\" : 0.08008281904610115 }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"positionY\" : 0.6027456183070403, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\", \"positionX\" : 0.08008281904610115 }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"occupancyStatus\" : \"EXPECTED\", \"guest\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"notes\" : \"notes\", \"phone\" : \"phone\", \"name\" : \"name\", \"id\" : \"id\", \"email\" : \"email\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"guestId\" : \"guestId\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PUT /bookings/{id}/segments/{segmentId}/room-unit : Assign or unassign the physical room for one segment of a booking
+     * Requires CASHIER or above. The sibling &#x60;PUT /bookings/{id}/room-unit&#x60; was built for - same validation (same room type as this segment&#39;s own &#x60;roomId&#x60;, active, free for this segment&#39;s own dates) and the same SERIALIZABLE race-safety story, just addressed at a named segment instead of implicitly \&quot;the sole segment\&quot;, so it works on any segment of any booking regardless of how many segments it has. Never touches dates, segment boundaries, or any other segment&#39;s own row. Never reprices: moving between two units of the *same* room type is not a new agreement - the segment&#39;s already-frozen nightly rates (&#x60;BookingSegmentNightlyRate&#x60;) are untouched either way, the same \&quot;same type, same price\&quot; guarantee &#x60;PUT /bookings/{id}/room-unit&#x60; already gives a never-relocated booking. 
+     *
+     * @param id  (required)
+     * @param segmentId  (required)
+     * @param roomUnitAssignmentInput  (required)
+     * @return Updated booking. (status code 200)
+     *         or The room unit belongs to a different room type than this segment, or is not active. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Booking not found, segment not found (or doesn&#39;t belong to this booking), or room unit not found. (status code 404)
+     *         or The room unit is blocked or already booked for an overlapping stay - either found up front or from a concurrent conflicting assignment (Postgres serialization failure, SQLSTATE &#x60;40001&#x60;).  (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.PUT,
+        value = "/bookings/{id}/segments/{segmentId}/room-unit",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<Booking> assignBookingSegmentRoomUnit(
+         @PathVariable("id") String id,
+         @PathVariable("segmentId") String segmentId,
          @Valid @RequestBody RoomUnitAssignmentInput roomUnitAssignmentInput
     ) {
         getRequest().ifPresent(request -> {
@@ -1108,6 +1174,71 @@ public interface BookingsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /bookings/{id}/segments/{segmentId}/swap-room-unit : Swap this segment&#39;s physical room with another segment&#39;s, atomically
+     * Requires CASHIER or above. The operation a drag that drops one booking&#39;s bar onto another&#39;s needs: two sequential &#x60;PUT .../room-unit&#x60; calls cannot do this, because moving the first guest into the second guest&#39;s room fails the overlap check while the second guest&#39;s own segment is still sitting there. This does both moves in one SERIALIZABLE write, each side&#39;s availability checked against a world where neither move has happened yet - each segment&#39;s own dates must be free in the *other&#39;s* current room unit, excluding only these two named segments, not their whole parent bookings (a relocated booking&#39;s *other* segments elsewhere still conflict-check normally) and not excluding anyone else - a third segment genuinely occupying part of the target unit for an overlapping sub-range still blocks the swap, named in the 409 the same way an ordinary assignment names it. Same room type only, checked before any availability work: the two segments&#39; own &#x60;roomId&#x60; must be equal, or this is a 400, not a 409. A cross-type swap would mean either repricing both segments retroactively at today&#39;s rate, or leaving one guest paying the other room type&#39;s already-agreed price - this API does neither silently, the same reasoning &#x60;BookingWriter&#x60;&#39;s \&quot;Nightly price snapshots\&quot; section already gives for every other schedule-touching write. A same-type swap reprices nothing: each segment keeps its own already-frozen nightly rates, only &#x60;roomUnitId&#x60; moves. Both segments must already have a physical room assigned - swapping with nothing isn&#39;t a swap, it&#39;s a single-sided assignment; use &#x60;PUT .../room-unit&#x60; for that. Writes one audit entry under each booking&#39;s own id, naming the other guest, so each booking&#39;s own history shows the move. 
+     *
+     * @param id  (required)
+     * @param segmentId  (required)
+     * @param swapSegmentRoomUnitInput  (required)
+     * @return This segment&#39;s own updated booking. The other booking named in the request also changed (its own segment&#39;s &#x60;roomUnitId&#x60; swapped the other way) - fetch it separately (&#x60;GET /bookings/{id}&#x60;) or refetch the calendar window to see it.  (status code 200)
+     *         or The two segments&#39; room types differ, one of the segments has no room unit assigned, or the two segment ids are the same. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Booking not found, this segment not found (or doesn&#39;t belong to this booking), or the other segment not found. (status code 404)
+     *         or One side&#39;s own dates are already booked in the other&#39;s room by a third segment, or a concurrent conflicting write lost the race (Postgres serialization failure, SQLSTATE &#x60;40001&#x60;).  (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/bookings/{id}/segments/{segmentId}/swap-room-unit",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<Booking> swapBookingSegmentRoomUnit(
+         @PathVariable("id") String id,
+         @PathVariable("segmentId") String segmentId,
+         @Valid @RequestBody SwapSegmentRoomUnitInput swapSegmentRoomUnitInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"totalPrice\" : \"totalPrice\", \"guestEmail\" : \"guestEmail\", \"checkedInAt\" : \"2000-01-23T04:56:07.000+00:00\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"checkedOutAt\" : \"2000-01-23T04:56:07.000+00:00\", \"roomUnitId\" : \"roomUnitId\", \"guestName\" : \"guestName\", \"segments\" : [ { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"positionY\" : 0.6027456183070403, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\", \"positionX\" : 0.08008281904610115 }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" }, { \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"positionY\" : 0.6027456183070403, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\", \"positionX\" : 0.08008281904610115 }, \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomId\" : \"roomId\", \"room\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"activeUnitCount\" : 0, \"images\" : [ \"images\", \"images\" ], \"name\" : \"name\", \"description\" : \"description\", \"id\" : \"id\", \"capacity\" : 0, \"basePrice\" : \"basePrice\" }, \"roomUnitId\" : \"roomUnitId\" } ], \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomUnit\" : { \"positionY\" : 0.6027456183070403, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\", \"positionX\" : 0.08008281904610115 }, \"paymentNote\" : \"paymentNote\", \"guestPhone\" : \"guestPhone\", \"occupancyStatus\" : \"EXPECTED\", \"guest\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"notes\" : \"notes\", \"phone\" : \"phone\", \"name\" : \"name\", \"id\" : \"id\", \"email\" : \"email\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"guestId\" : \"guestId\", \"status\" : \"NEW\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

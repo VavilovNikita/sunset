@@ -17,6 +17,7 @@ import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.SpaAppointment;
 import com.sunsetbeach.model.SpaAppointmentCreateInput;
 import com.sunsetbeach.model.SpaAppointmentResult;
+import com.sunsetbeach.model.SpaAppointmentScheduleInput;
 import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.model.SpaAppointmentStatusUpdateInput;
 import com.sunsetbeach.model.SpaSchedule;
@@ -176,6 +177,52 @@ public class SpaAppointmentService {
                 AuditEntityType.SPA_APPOINTMENT,
                 saved.getId(),
                 "Spa appointment " + saved.getId() + " marked " + newStatus.getValue().toLowerCase());
+
+        return toDto(saved);
+    }
+
+    /**
+     * Moves an appointment to another table/time/therapist - the write path behind
+     * {@code PATCH /spa-appointments/{id}/schedule}, the operation a drag on the spa grid needs.
+     * Full replacement of all four fields, not a partial update: a drag always knows where it's
+     * dropping, so there's no "unspecified" case to preserve the old value for (see
+     * {@code SpaAppointmentScheduleInput}'s own description). Only legal while {@code status} is
+     * {@code BOOKED} - the same lifecycle rule {@link #updateStatus} already enforces elsewhere;
+     * an appointment that already ran or was cancelled isn't "moved," it's a new booking.
+     * {@code durationMinutes} is untouched - the treatment's length doesn't change just because
+     * it moved, only where/when it happens. Same "let the database settle it" philosophy as
+     * {@link #create} - no conflict pre-check, the two GiST exclusion constraints
+     * (V41/V43) fire on this UPDATE exactly as they do on that INSERT, translated the same way.
+     */
+    @Transactional
+    public SpaAppointment updateSchedule(String id, SpaAppointmentScheduleInput input, String actorUserId) {
+        SpaAppointmentEntity entity = spaAppointmentRepository.findById(id).orElseThrow(() -> new NotFoundException("Appointment not found"));
+        if (entity.getStatus() != SpaAppointmentStatus.BOOKED) {
+            throw new BadRequestException("This appointment is already " + entity.getStatus().getValue().toLowerCase() + " - only a BOOKED appointment can be rescheduled");
+        }
+        TableEntity table = tableRepository.findById(input.getTableId()).orElseThrow(() -> new NotFoundException("Table not found"));
+        UserEntity therapist = userRepository.findById(input.getTherapistUserId()).orElseThrow(() -> new NotFoundException("Therapist not found"));
+        LocalDate date = LocalDate.parse(input.getDate());
+        LocalTime startTime = LocalTime.parse(input.getStartTime());
+        validateWithinOpeningHours(startTime, entity.getDurationMinutes());
+
+        entity.setTableId(table.getId());
+        entity.setTherapistUserId(therapist.getId());
+        entity.setDate(date);
+        entity.setStartTime(startTime);
+
+        SpaAppointmentEntity saved;
+        try {
+            saved = spaAppointmentRepository.saveAndFlush(entity);
+        } catch (DataAccessException e) {
+            throw translateOverlap(e);
+        }
+
+        auditLogService.record(
+                AuditAction.SPA_APPOINTMENT_RESCHEDULED,
+                AuditEntityType.SPA_APPOINTMENT,
+                saved.getId(),
+                "Rescheduled to " + date + " " + startTime.format(TIME_FORMAT) + " (" + table.getLabel() + ", " + therapist.getEmail() + ")");
 
         return toDto(saved);
     }
