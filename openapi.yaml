@@ -3192,6 +3192,94 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
 
+  /spa-map:
+    get:
+      operationId: getSpaMap
+      tags: [Spa]
+      summary: Get the spa map's background image metadata
+      description: >
+        Requires CASHIER or above, same floor as `GET /spa-appointments`. Mirrors
+        `GET /property-map` in shape and purpose but carries no room/table list of its own - SPA-
+        zone tables (the map's actual content) already come from `GET /tables`, placed via
+        `PATCH /tables/positions`; this endpoint exists only so the frontend has `imageUpdatedAt`
+        to cache-bust `GET /spa-map/image` with, same reasoning as `PropertyMap.imageUpdatedAt`.
+      responses:
+        "200":
+          description: The spa map's image metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaMap"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+
+  /spa-map/image:
+    get:
+      operationId: getSpaMapImage
+      tags: [Spa]
+      summary: Serve the spa map's background image
+      description: >
+        Requires CASHIER or above. Mirrors `GET /property-map/image` exactly - staff-only, not
+        under the public `/uploads/**`, no filename in the path (there is exactly one current
+        image, resolved from the `SpaMap` row itself).
+      responses:
+        "200":
+          description: The image file.
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: No spa map image has been uploaded yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    post:
+      operationId: uploadSpaMapImage
+      tags: [Spa]
+      summary: Upload (or replace) the spa map's background image
+      description: >
+        Requires MANAGER or above. Same validation as `POST /property-map/image`/
+        `POST /rooms/{id}/images` (content-sniffed type, 8MB cap, randomized filename) - see
+        `ImageUploadValidator`. Replacing the image does not touch any `Table.positionX`/
+        `positionY` - those live in a separate table and are addressed only by
+        `PATCH /tables/positions`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        "201":
+          description: The updated spa map metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaMap"
+        "400":
+          description: No file provided, an unsupported MIME type, or a file over 8MB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /printers:
     get:
       operationId: listPrinters
@@ -5891,6 +5979,26 @@ components:
         email:
           type: string
 
+    SpaMap:
+      type: object
+      description: >
+        The spa's own floor-plan background image - `GET /spa-map`, with the actual bytes served
+        separately from `GET /spa-map/image`, same split as `PropertyMap`/`GET /property-map/
+        image`. Deliberately its own image, not the property map's: the spa's floor plan is SPA-
+        zone tables (placed via `PATCH /tables/positions`, see `Table.positionX`), a different
+        physical layout at a different scale than the property map's rooms, and a manager
+        replacing one must never be mistaken for replacing the other.
+      required: [imagePath, imageUpdatedAt]
+      properties:
+        imagePath:
+          type: string
+          nullable: true
+          description: Null until a manager uploads one via `POST /spa-map/image` - a normal state right after this ships.
+        imageUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
     PropertyMapMaintenanceTask:
       type: object
       description: >
@@ -7729,6 +7837,7 @@ components:
         - GUEST_UPDATED
         - GUEST_DELETED
         - BOOKING_GUEST_LINKED
+        - SPA_MAP_IMAGE_UPDATED
 
     AuditEntityType:
       type: string
@@ -7742,7 +7851,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP]
 
     AuditLogEntry:
       type: object

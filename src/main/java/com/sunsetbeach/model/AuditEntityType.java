@@ -44,7 +44,9 @@ public enum AuditEntityType {
   
   SPA_APPOINTMENT("SPA_APPOINTMENT"),
   
-  GUEST("GUEST");
+  GUEST("GUEST"),
+  
+  SPA_MAP("SPA_MAP");
 
   private String value;
 

@@ -221,6 +221,12 @@ public class SecurityConfig {
                         .hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/spa-appointments").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/spa-appointments/*/status").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Spa map background image - same CASHIER-read/MANAGER-write split as
+                        // GET/POST /property-map/image just above, mirrored deliberately (see
+                        // SpaMapService's own class javadoc for why this is a separate image, not
+                        // a reuse of the property map's).
+                        .requestMatchers(HttpMethod.GET, "/spa-map", "/spa-map/image").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/spa-map/image").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // More specific than the /orders/** rule below, so it must come first -
                         // authorizeHttpRequests matches in declaration order.
                         .requestMatchers(HttpMethod.POST, "/orders/*/close").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())

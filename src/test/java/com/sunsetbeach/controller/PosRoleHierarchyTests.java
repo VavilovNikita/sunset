@@ -82,6 +82,7 @@ import com.sunsetbeach.service.RoomService;
 import com.sunsetbeach.service.RoomUnitService;
 import com.sunsetbeach.service.ShiftService;
 import com.sunsetbeach.service.SpaAppointmentService;
+import com.sunsetbeach.service.SpaMapService;
 import com.sunsetbeach.service.TableService;
 import com.sunsetbeach.service.UserService;
 import java.math.BigDecimal;
@@ -194,6 +195,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private SpaAppointmentService spaAppointmentService;
+
+    @MockitoBean
+    private SpaMapService spaMapService;
 
     @MockitoBean
     private GuestService guestService;
@@ -720,6 +724,40 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isCreated());
     }
 
+    // --- Spa map: same CASHIER-viewing/MANAGER-replacing split as the property map just above -
+    // mirrored deliberately, see SpaMapService's own class javadoc. ---
+
+    @Test
+    void getSpaMap_withCashierToken_isOk() throws Exception {
+        when(spaMapService.get()).thenReturn(sampleSpaMap());
+        mockMvc.perform(get("/spa-map").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void getSpaMap_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/spa-map").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getSpaMapImage_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/spa-map/image").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void uploadSpaMapImage_withCashierToken_isForbidden() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "plan.jpg", "image/jpeg", new byte[] {1, 2, 3});
+        mockMvc.perform(multipart("/spa-map/image").file(file).header("Authorization", token(Role.CASHIER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void uploadSpaMapImage_withManagerToken_isCreated() throws Exception {
+        when(spaMapService.uploadImage(any())).thenReturn(sampleSpaMap());
+        MockMultipartFile file = new MockMultipartFile("file", "plan.jpg", "image/jpeg", new byte[] {1, 2, 3});
+        mockMvc.perform(multipart("/spa-map/image").file(file).header("Authorization", token(Role.MANAGER)))
+                .andExpect(status().isCreated());
+    }
+
     // --- PUT /bookings/{id}/room-unit requires CASHIER or above - and now that GET /room-units
     // is WAITER+, a CASHIER can actually list candidates before calling it. This is the
     // asymmetry (action allowed, prerequisite read blocked) this test class was missing
@@ -1166,6 +1204,10 @@ class PosRoleHierarchyTests {
 
     private static PropertyMap samplePropertyMap() {
         return new PropertyMap(null, null, List.of());
+    }
+
+    private static com.sunsetbeach.model.SpaMap sampleSpaMap() {
+        return new com.sunsetbeach.model.SpaMap(null, null);
     }
 
     private static Room sampleRoom() {
