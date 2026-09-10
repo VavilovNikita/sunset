@@ -2,6 +2,7 @@ package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
+import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.BadRequestException;
@@ -21,6 +22,7 @@ import com.sunsetbeach.model.TodayBoard;
 import com.sunsetbeach.model.TodayBoardEntry;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
+import com.sunsetbeach.repository.GuestRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import java.math.BigDecimal;
@@ -56,6 +58,7 @@ public class BookingOccupancyService {
     private final BookingSegmentRepository segmentRepository;
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
+    private final GuestRepository guestRepository;
     private final BookingMapper bookingMapper;
     private final BookingService bookingService;
     private final AuditLogService auditLogService;
@@ -65,6 +68,7 @@ public class BookingOccupancyService {
             BookingSegmentRepository segmentRepository,
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
+            GuestRepository guestRepository,
             BookingMapper bookingMapper,
             BookingService bookingService,
             AuditLogService auditLogService) {
@@ -72,6 +76,7 @@ public class BookingOccupancyService {
         this.segmentRepository = segmentRepository;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
+        this.guestRepository = guestRepository;
         this.bookingMapper = bookingMapper;
         this.bookingService = bookingService;
         this.auditLogService = auditLogService;
@@ -207,7 +212,8 @@ public class BookingOccupancyService {
     private Booking toDto(BookingEntity entity) {
         RoomEntity room = roomRepository.findById(entity.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         RoomUnitEntity roomUnit = entity.getRoomUnitId() != null ? roomUnitRepository.findById(entity.getRoomUnitId()).orElse(null) : null;
+        GuestEntity guest = entity.getGuestId() != null ? guestRepository.findById(entity.getGuestId()).orElse(null) : null;
         List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(entity.getId());
-        return bookingMapper.toDto(entity, room, roomUnit, segments);
+        return bookingMapper.toDto(entity, room, roomUnit, guest, segments);
     }
 }

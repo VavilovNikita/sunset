@@ -3,6 +3,7 @@ package com.sunsetbeach.service;
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.FolioPaymentEntity;
+import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PaymentEntity;
@@ -19,6 +20,7 @@ import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
+import com.sunsetbeach.model.BookingGuestLinkInput;
 import com.sunsetbeach.model.BookingPosOrder;
 import com.sunsetbeach.model.BookingPosOrderItem;
 import com.sunsetbeach.model.BookingScheduleInput;
@@ -37,6 +39,7 @@ import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.FolioPaymentRepository;
+import com.sunsetbeach.repository.GuestRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.PaymentRepository;
@@ -68,6 +71,7 @@ public class BookingService {
 
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
+    private final GuestRepository guestRepository;
     private final BookingRepository bookingRepository;
     private final BookingSegmentRepository segmentRepository;
     private final BookingWriter bookingWriter;
@@ -82,6 +86,7 @@ public class BookingService {
     public BookingService(
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
+            GuestRepository guestRepository,
             BookingRepository bookingRepository,
             BookingSegmentRepository segmentRepository,
             BookingWriter bookingWriter,
@@ -94,6 +99,7 @@ public class BookingService {
             AuditLogService auditLogService) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
+        this.guestRepository = guestRepository;
         this.bookingRepository = bookingRepository;
         this.segmentRepository = segmentRepository;
         this.bookingWriter = bookingWriter;
@@ -131,7 +137,7 @@ public class BookingService {
         }
 
         emailService.sendNewBookingEmail(saved, room);
-        return bookingMapper.toDto(saved, room, null, loadSegments(saved.getId()));
+        return bookingMapper.toDto(saved, room, null, null, loadSegments(saved.getId()));
     }
 
     /**
@@ -175,7 +181,7 @@ public class BookingService {
                 saved.getId(),
                 "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + checkIn + " to " + checkOut + ")"
                         + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : ""));
-        return bookingMapper.toDto(saved, room, assignedUnit, loadSegments(saved.getId()));
+        return bookingMapper.toDto(saved, room, assignedUnit, null, loadSegments(saved.getId()));
     }
 
     @Transactional
@@ -225,7 +231,7 @@ public class BookingService {
                             + " in " + room.getName());
         }
 
-        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()), loadSegments(saved.getId()));
+        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
     @Transactional(readOnly = true)
@@ -236,7 +242,8 @@ public class BookingService {
                 : segmentRepository.findByBookingIdIn(bookings.stream().map(BookingEntity::getId).toList()).stream()
                         .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
         return bookings.stream()
-                .map(b -> bookingMapper.toDto(b, b.getRoom(), b.getRoomUnit(), segmentsByBookingId.getOrDefault(b.getId(), List.of())))
+                .map(b -> bookingMapper.toDto(
+                        b, b.getRoom(), b.getRoomUnit(), b.getGuest(), segmentsByBookingId.getOrDefault(b.getId(), List.of())))
                 .toList();
     }
 
@@ -244,7 +251,51 @@ public class BookingService {
     public Booking getById(String id) {
         BookingEntity booking = bookingRepository.findById(id).orElseThrow(() -> new NotFoundException("Booking not found"));
         RoomEntity room = roomRepository.findById(booking.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
-        return bookingMapper.toDto(booking, room, findRoomUnit(booking.getRoomUnitId()), loadSegments(id));
+        return bookingMapper.toDto(booking, room, findRoomUnit(booking.getRoomUnitId()), findGuest(booking.getGuestId()), loadSegments(id));
+    }
+
+    /** A guest's full stay history for {@code GET /guests/{id}} - see {@link GuestService#getDetail}. Same bulk-load shape as {@link #list}. */
+    @Transactional(readOnly = true)
+    public List<Booking> listByGuestId(String guestId) {
+        List<BookingEntity> bookings = bookingRepository.findByGuestIdOrderByCreatedAtDesc(guestId);
+        Map<String, List<BookingSegmentEntity>> segmentsByBookingId = bookings.isEmpty()
+                ? Map.of()
+                : segmentRepository.findByBookingIdIn(bookings.stream().map(BookingEntity::getId).toList()).stream()
+                        .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+        return bookings.stream()
+                .map(b -> bookingMapper.toDto(
+                        b, b.getRoom(), b.getRoomUnit(), b.getGuest(), segmentsByBookingId.getOrDefault(b.getId(), List.of())))
+                .toList();
+    }
+
+    /**
+     * Links ({@code guestId} non-null) or clears ({@code guestId} null) the {@link GuestEntity}
+     * for a booking - see {@code PUT /bookings/{id}/guest} in openapi.yaml for why this needs no
+     * SERIALIZABLE transaction and no state check on relink, unlike {@link #assignRoomUnit}: a
+     * guest link contends for nothing, so an ordinary transaction is enough. Never touches
+     * {@code guestName}/{@code guestEmail}/{@code guestPhone} - those stay frozen regardless.
+     */
+    @Transactional
+    public Booking assignGuest(String bookingId, BookingGuestLinkInput input) {
+        if (!input.getGuestId().isPresent()) {
+            throw ValidationException.field("guestId", "guestId is required (send null to unlink)");
+        }
+        String guestId = input.getGuestId().get();
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        GuestEntity guest = guestId != null ? guestRepository.findById(guestId).orElseThrow(() -> new NotFoundException("Guest not found")) : null;
+
+        booking.setGuestId(guestId);
+        BookingEntity saved = bookingRepository.saveAndFlush(booking);
+
+        RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        auditLogService.record(
+                AuditAction.BOOKING_GUEST_LINKED,
+                AuditEntityType.BOOKING,
+                saved.getId(),
+                guest != null
+                        ? "Linked guest " + guest.getName() + " to booking for " + saved.getGuestName() + " in " + room.getName()
+                        : "Unlinked guest from booking for " + saved.getGuestName() + " in " + room.getName());
+        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()), guest, loadSegments(saved.getId()));
     }
 
     /**
@@ -280,7 +331,7 @@ public class BookingService {
                 "Room " + (oldUnit != null ? oldUnit.getLabel() : "unassigned") + " → "
                         + (newUnit != null ? newUnit.getLabel() : "unassigned") + " for " + saved.getGuestName() + " (" + room.getName()
                         + ")");
-        return bookingMapper.toDto(saved, room, newUnit, loadSegments(saved.getId()));
+        return bookingMapper.toDto(saved, room, newUnit, findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
     /**
@@ -338,7 +389,7 @@ public class BookingService {
         }
         auditLogService.record(AuditAction.BOOKING_SCHEDULE_CHANGED, AuditEntityType.BOOKING, saved.getId(), summary.toString());
 
-        return bookingMapper.toDto(saved, room, newUnit, loadSegments(saved.getId()));
+        return bookingMapper.toDto(saved, room, newUnit, findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
     /**
@@ -388,7 +439,7 @@ public class BookingService {
                 "Relocated " + saved.getGuestName() + " from " + result.oldRoom().getName()
                         + (result.oldUnitLabel() != null ? " (" + result.oldUnitLabel() + ")" : "") + " to " + result.newRoom().getName()
                         + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + ", effective " + effectiveDate);
-        return bookingMapper.toDto(saved, newRoom, result.newUnit(), loadSegments(saved.getId()));
+        return bookingMapper.toDto(saved, newRoom, result.newUnit(), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
     /**
@@ -431,7 +482,7 @@ public class BookingService {
                 "Undid relocation for " + saved.getGuestName() + " — discarded move to " + result.oldRoom().getName()
                         + (result.oldUnitLabel() != null ? " (" + result.oldUnitLabel() + ")" : "") + ", back to " + result.newRoom().getName()
                         + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + " from " + splitDate);
-        return bookingMapper.toDto(saved, currentRoom, result.newUnit(), loadSegments(saved.getId()));
+        return bookingMapper.toDto(saved, currentRoom, result.newUnit(), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
     /**
@@ -460,7 +511,7 @@ public class BookingService {
                 saved.getId(),
                 "Repriced " + result.nightsRepriced() + " night(s) for " + saved.getGuestName() + ": ฿" + result.oldSegmentTotal()
                         + " → ฿" + result.newSegmentTotal());
-        return bookingMapper.toDto(saved, room, unit, loadSegments(saved.getId()));
+        return bookingMapper.toDto(saved, room, unit, findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
     /**
@@ -495,6 +546,10 @@ public class BookingService {
 
     private RoomUnitEntity findRoomUnit(String roomUnitId) {
         return roomUnitId != null ? roomUnitRepository.findById(roomUnitId).orElse(null) : null;
+    }
+
+    private GuestEntity findGuest(String guestId) {
+        return guestId != null ? guestRepository.findById(guestId).orElse(null) : null;
     }
 
     /**

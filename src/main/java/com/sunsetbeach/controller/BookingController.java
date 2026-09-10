@@ -5,6 +5,7 @@ import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCalendarResponse;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
+import com.sunsetbeach.model.BookingGuestLinkInput;
 import com.sunsetbeach.model.BookingPosOrder;
 import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
@@ -84,6 +85,11 @@ public class BookingController implements BookingsApi {
     @Override
     public ResponseEntity<Booking> assignBookingRoomUnit(String id, RoomUnitAssignmentInput roomUnitAssignmentInput) {
         return ResponseEntity.ok(bookingService.assignRoomUnit(id, roomUnitAssignmentInput));
+    }
+
+    @Override
+    public ResponseEntity<Booking> assignBookingGuest(String id, BookingGuestLinkInput bookingGuestLinkInput) {
+        return ResponseEntity.ok(bookingService.assignGuest(id, bookingGuestLinkInput));
     }
 
     @Override

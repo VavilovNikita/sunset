@@ -22,6 +22,7 @@ class ToStringRedactsGuestPiiTests {
     private static final String REAL_EMAIL = "jane.doe@example.com";
     private static final String REAL_PHONE = "+66891234567";
     private static final String REAL_PAYMENT_NOTE = "Card ending 4242, ref JD-2031";
+    private static final String REAL_NOTES = "Allergic to shellfish, prefers a quiet room away from the pool";
 
     @Test
     void booking_toStringDoesNotContainGuestEmailPhoneOrPaymentNote() {
@@ -34,6 +35,8 @@ class ToStringRedactsGuestPiiTests {
                 "Jane Doe",
                 REAL_EMAIL,
                 REAL_PHONE,
+                null,
+                null,
                 "2026-01-01",
                 "2026-01-02",
                 "1500.00",
@@ -79,5 +82,32 @@ class ToStringRedactsGuestPiiTests {
         String rendered = input.toString();
 
         assertThat(rendered).doesNotContain(REAL_PAYMENT_NOTE);
+    }
+
+    @Test
+    void guest_toStringDoesNotContainEmailPhoneOrNotes() {
+        Guest guest = new Guest("guest-1", "Jane Doe", REAL_EMAIL, REAL_PHONE, REAL_NOTES, OffsetDateTime.now(), OffsetDateTime.now());
+
+        String rendered = guest.toString();
+
+        assertThat(rendered).doesNotContain(REAL_EMAIL).doesNotContain(REAL_PHONE).doesNotContain(REAL_NOTES);
+    }
+
+    @Test
+    void guestCreateInput_toStringDoesNotContainEmailPhoneOrNotes() {
+        GuestCreateInput input = new GuestCreateInput("Jane Doe").email(REAL_EMAIL).phone(REAL_PHONE).notes(REAL_NOTES);
+
+        String rendered = input.toString();
+
+        assertThat(rendered).doesNotContain(REAL_EMAIL).doesNotContain(REAL_PHONE).doesNotContain(REAL_NOTES);
+    }
+
+    @Test
+    void guestUpdateInput_toStringDoesNotContainEmailPhoneOrNotes() {
+        GuestUpdateInput input = new GuestUpdateInput("Jane Doe").email(REAL_EMAIL).phone(REAL_PHONE).notes(REAL_NOTES);
+
+        String rendered = input.toString();
+
+        assertThat(rendered).doesNotContain(REAL_EMAIL).doesNotContain(REAL_PHONE).doesNotContain(REAL_NOTES);
     }
 }

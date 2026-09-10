@@ -72,4 +72,7 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
 
     /** In-house list for {@code GET /bookings/today} - every currently checked-in guest, regardless of checkOut date. */
     List<BookingEntity> findByOccupancyStatusAndStatusNot(OccupancyStatus occupancyStatus, BookingStatus excludedStatus);
+
+    /** A guest's stay history for {@code GET /guests/{id}}, newest first - every status, cancelled included, see {@code GuestDetail}. */
+    List<BookingEntity> findByGuestIdOrderByCreatedAtDesc(String guestId);
 }

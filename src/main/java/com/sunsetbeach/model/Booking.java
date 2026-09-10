@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.Guest;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.Room;
 import com.sunsetbeach.model.RoomUnit;
@@ -25,7 +26,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Raw Prisma &#x60;Booking&#x60; row with &#x60;room&#x60; included. &#x60;totalPrice&#x60; serializes as a **string** (Prisma &#x60;Decimal&#x60;). &#x60;createdAt&#x60;/&#x60;updatedAt&#x60; are ISO-8601 datetime strings (real timestamps, not calendar days). &#x60;checkIn&#x60;/&#x60;checkOut&#x60; are plain &#x60;YYYY-MM-DD&#x60; dates, the same convention as &#x60;BookingSegment&#x60;/&#x60;CalendarBooking&#x60;/every other schema below that names a stay date - they used to serialize as a datetime with a legacy &#x60;T00:00:00.000Z&#x60; time component (a Prisma &#x60;Date&#x60;-object artifact), which caused three separate incidents (a dashboard revenue bug, and two near-misses while building the booking calendar) before the format was unified here. &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60; are null until a physical room is assigned via &#x60;PUT /bookings/{id}/room-unit&#x60;, or after a relocation that didn&#39;t name a specific unit for the new leg.  &#x60;roomId&#x60;/&#x60;room&#x60;/&#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60;/&#x60;checkIn&#x60;/&#x60;checkOut&#x60;/&#x60;totalPrice&#x60; are all derived from &#x60;segments&#x60; (the *last* segment&#39;s room, for roomId/roomUnitId/room/roomUnit; the first segment&#39;s checkIn and the last segment&#39;s checkOut; the sum of every segment&#39;s totalPrice) - they exist so every reader that only cares about \&quot;what room is this guest in right now\&quot; doesn&#39;t need to know segments exist at all. &#x60;roomId&#x60;/&#x60;room&#x60; are **not** \&quot;what was originally booked\&quot; - &#x60;POST /bookings/{id}/relocate&#x60; can move a booking to a different room *type* mid-stay (an upgrade, downgrade, or a move off a broken room, all ordinary front-desk operations), and once that happens these fields track the guest&#39;s current/most recent room, not their first one. Anything that needs the room at a specific point in the stay - a report broken out by leg, an original-type audit trail - must read &#x60;segments&#x60; directly; nothing else on this object preserves that history. A booking that has never been relocated has exactly one segment and these values equal that segment&#39;s own fields exactly - segments are not a special case that only shows up for split bookings. 
+ * Raw Prisma &#x60;Booking&#x60; row with &#x60;room&#x60; included. &#x60;totalPrice&#x60; serializes as a **string** (Prisma &#x60;Decimal&#x60;). &#x60;createdAt&#x60;/&#x60;updatedAt&#x60; are ISO-8601 datetime strings (real timestamps, not calendar days). &#x60;checkIn&#x60;/&#x60;checkOut&#x60; are plain &#x60;YYYY-MM-DD&#x60; dates, the same convention as &#x60;BookingSegment&#x60;/&#x60;CalendarBooking&#x60;/every other schema below that names a stay date - they used to serialize as a datetime with a legacy &#x60;T00:00:00.000Z&#x60; time component (a Prisma &#x60;Date&#x60;-object artifact), which caused three separate incidents (a dashboard revenue bug, and two near-misses while building the booking calendar) before the format was unified here. &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60; are null until a physical room is assigned via &#x60;PUT /bookings/{id}/room-unit&#x60;, or after a relocation that didn&#39;t name a specific unit for the new leg.  &#x60;guestName&#x60;/&#x60;guestEmail&#x60;/&#x60;guestPhone&#x60; are a frozen snapshot of what was given when the booking was made (same \&quot;agreed terms are frozen\&quot; convention as &#x60;BookingSegmentNightlyRate&#x60;, &#x60;OrderItem.unitPrice&#x60;, &#x60;Order.openedByEmail&#x60;) - they never change when &#x60;guest&#x60;/&#x60;guestId&#x60; is set or changed, and a booking that has never been linked to a &#x60;Guest&#x60; reads and behaves identically to one that has (see &#x60;PUT /bookings/{id}/guest&#x60; and the &#x60;Guest&#x60; schema for why the two are deliberately independent). &#x60;guestId&#x60;/&#x60;guest&#x60; are null until reception links one - most bookings, most of the time, especially a booking still fresh off the public site (that flow never touches this link at all).  &#x60;roomId&#x60;/&#x60;room&#x60;/&#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60;/&#x60;checkIn&#x60;/&#x60;checkOut&#x60;/&#x60;totalPrice&#x60; are all derived from &#x60;segments&#x60; (the *last* segment&#39;s room, for roomId/roomUnitId/room/roomUnit; the first segment&#39;s checkIn and the last segment&#39;s checkOut; the sum of every segment&#39;s totalPrice) - they exist so every reader that only cares about \&quot;what room is this guest in right now\&quot; doesn&#39;t need to know segments exist at all. &#x60;roomId&#x60;/&#x60;room&#x60; are **not** \&quot;what was originally booked\&quot; - &#x60;POST /bookings/{id}/relocate&#x60; can move a booking to a different room *type* mid-stay (an upgrade, downgrade, or a move off a broken room, all ordinary front-desk operations), and once that happens these fields track the guest&#39;s current/most recent room, not their first one. Anything that needs the room at a specific point in the stay - a report broken out by leg, an original-type audit trail - must read &#x60;segments&#x60; directly; nothing else on this object preserves that history. A booking that has never been relocated has exactly one segment and these values equal that segment&#39;s own fields exactly - segments are not a special case that only shows up for split bookings. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -46,6 +47,10 @@ public class Booking {
   private String guestEmail;
 
   private String guestPhone;
+
+  private JsonNullable<String> guestId = JsonNullable.<String>undefined();
+
+  private Guest guest;
 
   private String checkIn;
 
@@ -81,7 +86,7 @@ public class Booking {
   /**
    * Constructor with only required parameters
    */
-  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String checkIn, String checkOut, String totalPrice, BookingStatus status, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String guestId, Guest guest, String checkIn, String checkOut, String totalPrice, BookingStatus status, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.roomId = roomId;
     this.room = room;
@@ -90,6 +95,8 @@ public class Booking {
     this.guestName = guestName;
     this.guestEmail = guestEmail;
     this.guestPhone = guestPhone;
+    this.guestId = JsonNullable.of(guestId);
+    this.guest = guest;
     this.checkIn = checkIn;
     this.checkOut = checkOut;
     this.totalPrice = totalPrice;
@@ -253,6 +260,44 @@ public class Booking {
 
   public void setGuestPhone(String guestPhone) {
     this.guestPhone = guestPhone;
+  }
+
+  public Booking guestId(String guestId) {
+    this.guestId = JsonNullable.of(guestId);
+    return this;
+  }
+
+  /**
+   * Get guestId
+   * @return guestId
+   */
+  @NotNull 
+  @JsonProperty("guestId")
+  public JsonNullable<String> getGuestId() {
+    return guestId;
+  }
+
+  public void setGuestId(JsonNullable<String> guestId) {
+    this.guestId = guestId;
+  }
+
+  public Booking guest(Guest guest) {
+    this.guest = guest;
+    return this;
+  }
+
+  /**
+   * Get guest
+   * @return guest
+   */
+  @NotNull @Valid 
+  @JsonProperty("guest")
+  public Guest getGuest() {
+    return guest;
+  }
+
+  public void setGuest(Guest guest) {
+    this.guest = guest;
   }
 
   public Booking checkIn(String checkIn) {
@@ -489,6 +534,8 @@ public class Booking {
         Objects.equals(this.guestName, booking.guestName) &&
         Objects.equals(this.guestEmail, booking.guestEmail) &&
         Objects.equals(this.guestPhone, booking.guestPhone) &&
+        Objects.equals(this.guestId, booking.guestId) &&
+        Objects.equals(this.guest, booking.guest) &&
         Objects.equals(this.checkIn, booking.checkIn) &&
         Objects.equals(this.checkOut, booking.checkOut) &&
         Objects.equals(this.totalPrice, booking.totalPrice) &&
@@ -504,7 +551,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, checkIn, checkOut, totalPrice, status, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, segments, createdAt, updatedAt);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, status, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, segments, createdAt, updatedAt);
   }
 
   @Override
@@ -519,6 +566,8 @@ public class Booking {
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
     sb.append("    guestEmail: ").append("[REDACTED]").append("\n");
     sb.append("    guestPhone: ").append("[REDACTED]").append("\n");
+    sb.append("    guestId: ").append(toIndentedString(guestId)).append("\n");
+    sb.append("    guest: ").append(toIndentedString(guest)).append("\n");
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");

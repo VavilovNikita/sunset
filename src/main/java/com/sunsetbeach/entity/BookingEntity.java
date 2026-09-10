@@ -46,6 +46,12 @@ public class BookingEntity {
 
     private String guestPhone;
 
+    private String guestId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "guestId", insertable = false, updatable = false)
+    private GuestEntity guest;
+
     private LocalDate checkIn;
 
     private LocalDate checkOut;
@@ -139,6 +145,18 @@ public class BookingEntity {
 
     public void setGuestPhone(String guestPhone) {
         this.guestPhone = guestPhone;
+    }
+
+    public String getGuestId() {
+        return guestId;
+    }
+
+    public void setGuestId(String guestId) {
+        this.guestId = guestId;
+    }
+
+    public GuestEntity getGuest() {
+        return guest;
     }
 
     public LocalDate getCheckIn() {

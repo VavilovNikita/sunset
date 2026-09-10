@@ -22,7 +22,12 @@ import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingCalendarResponse;
 import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
+import com.sunsetbeach.model.BookingGuestLinkInput;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.Guest;
+import com.sunsetbeach.model.GuestCreateInput;
+import com.sunsetbeach.model.GuestDetail;
+import com.sunsetbeach.model.GuestUpdateInput;
 import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.StaffBookingCreateInput;
@@ -66,6 +71,7 @@ import com.sunsetbeach.security.SecurityConfig;
 import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.AvailabilityService;
 import com.sunsetbeach.service.BookingService;
+import com.sunsetbeach.service.GuestService;
 import com.sunsetbeach.service.MenuService;
 import com.sunsetbeach.service.OrderService;
 import com.sunsetbeach.service.PaymentService;
@@ -117,7 +123,8 @@ import tools.jackson.databind.json.JsonMapper;
             com.sunsetbeach.controller.AuditLogController.class,
             com.sunsetbeach.controller.MaintenanceTaskController.class,
             TableController.class,
-            SpaController.class
+            SpaController.class,
+            GuestController.class
         })
 @Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
         com.sunsetbeach.security.BookingRateLimiter.class})
@@ -187,6 +194,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private SpaAppointmentService spaAppointmentService;
+
+    @MockitoBean
+    private GuestService guestService;
 
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
     // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
@@ -755,6 +765,114 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isOk());
     }
 
+    // --- PUT /bookings/{id}/guest requires CASHIER or above, same tier as PUT /bookings/{id}/
+    // room-unit just above - and, unlike that endpoint, relinking to a different guest needs no
+    // confirmation/state check, so there's no equivalent of the room-unit 409 conflict cases to
+    // cover here. ---
+
+    @Test
+    void assignBookingGuest_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(put("/bookings/booking-1/guest")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new BookingGuestLinkInput().guestId("guest-1"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void assignBookingGuest_withCashierToken_isOk() throws Exception {
+        when(bookingService.assignGuest(eq("booking-1"), any())).thenReturn(sampleBooking());
+        mockMvc.perform(put("/bookings/booking-1/guest")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new BookingGuestLinkInput().guestId("guest-1"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void assignBookingGuest_withExplicitNull_unlinks() throws Exception {
+        when(bookingService.assignGuest(eq("booking-1"), any())).thenReturn(sampleBooking());
+        mockMvc.perform(put("/bookings/booking-1/guest")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"guestId\":null}"))
+                .andExpect(status().isOk());
+    }
+
+    // --- /guests/** is CASHIER or above across every operation - search, create, and the
+    // per-guest card (read/update/delete) all share the same floor as the rest of front-desk
+    // reservation work (GET /bookings, POST /bookings/staff). ---
+
+    @Test
+    void searchGuests_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/guests").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void searchGuests_withCashierToken_isOk() throws Exception {
+        when(guestService.search(any())).thenReturn(List.of(sampleGuest()));
+        mockMvc.perform(get("/guests").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void createGuest_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/guests")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new GuestCreateInput("Jane Doe"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createGuest_withCashierToken_isCreated() throws Exception {
+        when(guestService.create(any())).thenReturn(sampleGuest());
+        mockMvc.perform(post("/guests")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new GuestCreateInput("Jane Doe"))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void getGuest_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/guests/guest-1").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getGuest_withCashierToken_isOk() throws Exception {
+        when(guestService.getDetail("guest-1")).thenReturn(sampleGuestDetail());
+        mockMvc.perform(get("/guests/guest-1").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void updateGuest_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/guests/guest-1")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new GuestUpdateInput("Jane Doe"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateGuest_withCashierToken_isOk() throws Exception {
+        when(guestService.update(eq("guest-1"), any())).thenReturn(sampleGuest());
+        mockMvc.perform(patch("/guests/guest-1")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new GuestUpdateInput("Jane Doe"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void deleteGuest_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(delete("/guests/guest-1").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deleteGuest_withCashierToken_isOk() throws Exception {
+        mockMvc.perform(delete("/guests/guest-1").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
+    }
+
     // --- Access for /rooms/**, /pricing/**, GET /bookings*, GET /availability/{roomId} was
     // brought in line with what openapi.yaml documents (previously all of these silently fell
     // through to anyRequest().authenticated(), open to any staff role including WAITER
@@ -1076,6 +1194,8 @@ class PosRoleHierarchyTests {
                 "Guest",
                 "guest@example.com",
                 "+66800000000",
+                null,
+                null,
                 "2026-01-01",
                 "2026-01-02",
                 "1500.00",
@@ -1087,6 +1207,15 @@ class PosRoleHierarchyTests {
                 List.of(sampleBookingSegment()),
                 OffsetDateTime.now(),
                 OffsetDateTime.now());
+    }
+
+    private static Guest sampleGuest() {
+        return new Guest("guest-1", "Jane Doe", "jane@example.com", "+66800000000", null, OffsetDateTime.now(), OffsetDateTime.now());
+    }
+
+    private static GuestDetail sampleGuestDetail() {
+        return new GuestDetail(
+                "guest-1", "Jane Doe", "jane@example.com", "+66800000000", null, OffsetDateTime.now(), OffsetDateTime.now(), List.of());
     }
 
     private static PrintJob samplePrintJob() {

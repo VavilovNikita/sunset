@@ -42,7 +42,9 @@ public enum AuditEntityType {
   
   TABLE("TABLE"),
   
-  SPA_APPOINTMENT("SPA_APPOINTMENT");
+  SPA_APPOINTMENT("SPA_APPOINTMENT"),
+  
+  GUEST("GUEST");
 
   private String value;
 

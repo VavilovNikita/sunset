@@ -2,6 +2,7 @@ package com.sunsetbeach.mapper;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
+import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.model.Booking;
@@ -20,6 +21,7 @@ public class BookingMapper {
 
     private final RoomMapper roomMapper;
     private final RoomUnitMapper roomUnitMapper;
+    private final GuestMapper guestMapper;
     private final BookingSegmentMapper segmentMapper;
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
@@ -27,11 +29,13 @@ public class BookingMapper {
     public BookingMapper(
             RoomMapper roomMapper,
             RoomUnitMapper roomUnitMapper,
+            GuestMapper guestMapper,
             BookingSegmentMapper segmentMapper,
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository) {
         this.roomMapper = roomMapper;
         this.roomUnitMapper = roomUnitMapper;
+        this.guestMapper = guestMapper;
         this.segmentMapper = segmentMapper;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
@@ -43,7 +47,10 @@ public class BookingMapper {
      * used to render these as a datetime with a legacy {@code T00:00:00.000Z} artifact, unified
      * with everything else on 2026-08-30 (see {@code openapi.yaml}'s {@code Booking} schema
      * description for why). {@code roomUnit} is null until a physical room has been
-     * assigned via {@code PUT /bookings/{id}/room-unit}. {@code segments} must be this booking's
+     * assigned via {@code PUT /bookings/{id}/room-unit}. {@code guest} is null until reception
+     * links one via {@code PUT /bookings/{id}/guest} - independent of {@code roomUnit}'s own
+     * nullability, resolved by the same caller convention (see this class's own callers).
+     * {@code segments} must be this booking's
      * full, ordered segment list (never empty) - callers get it from
      * {@code BookingSegmentRepository.findByBookingIdOrderByCheckInAsc}, the one place that
      * query lives. {@code room}/{@code roomUnit} passed in are the *last* segment's (matching
@@ -57,7 +64,7 @@ public class BookingMapper {
      * transaction lives in `BookingWriter`, already committed by the time this mapper runs), so
      * a lazy nav here would throw `LazyInitializationException` outside that closed session.
      */
-    public Booking toDto(BookingEntity entity, RoomEntity room, RoomUnitEntity roomUnit, List<BookingSegmentEntity> segments) {
+    public Booking toDto(BookingEntity entity, RoomEntity room, RoomUnitEntity roomUnit, GuestEntity guest, List<BookingSegmentEntity> segments) {
         List<BookingSegmentEntity> sorted = segments.stream().sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn)).toList();
 
         Map<String, RoomEntity> roomsById = roomRepository
@@ -78,6 +85,8 @@ public class BookingMapper {
                 entity.getGuestName(),
                 entity.getGuestEmail(),
                 entity.getGuestPhone(),
+                entity.getGuestId(),
+                guest != null ? guestMapper.toDto(guest) : null,
                 entity.getCheckIn().toString(),
                 entity.getCheckOut().toString(),
                 PriceFormat.asDecimalString(entity.getTotalPrice()),

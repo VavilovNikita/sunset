@@ -147,6 +147,9 @@ public class SecurityConfig {
                         // operation - explicitly matched (rather than left to a general /bookings/**
                         // rule) since it has its own role independent of the PATCH above.
                         .requestMatchers(HttpMethod.PUT, "/bookings/*/room-unit").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Linking/unlinking a booking's Guest record - same CASHIER+ tier and same
+                        // explicit-rule requirement as PUT /bookings/*/room-unit just above.
+                        .requestMatchers(HttpMethod.PUT, "/bookings/*/guest").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Front-desk booking creation (POST /bookings/staff) and the booking
                         // calendar grid's schedule-change operations - all CASHIER+, all
                         // two-segment-plus paths past "/bookings/" so none of them are covered by
@@ -187,6 +190,10 @@ public class SecurityConfig {
                         // rather than the write's.
                         .requestMatchers(HttpMethod.GET, "/bookings/*/folio-payments").authenticated()
                         .requestMatchers(HttpMethod.POST, "/bookings/*/folio-payments").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Guests: every operation (search, create, read/update/delete a card) is
+                        // CASHIER+ alike, same floor as the rest of front-desk reservation work
+                        // above - one matcher covers the whole /guests/** surface.
+                        .requestMatchers("/guests/**").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // POS module: read endpoints (GET /menu, /tables, /orders/**) are open to any
                         // authenticated staff role, including WAITER - explicitly matched below rather
                         // than left to fall through to anyRequest(), so the EndpointCoverageTests
