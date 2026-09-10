@@ -45,4 +45,14 @@ public interface SpaAppointmentRepository extends JpaRepository<SpaAppointmentEn
      */
     List<SpaAppointmentEntity> findByBookingIdAndDateAndOrderIdIsNullAndStatusIn(
             String bookingId, LocalDate date, List<SpaAppointmentStatus> statuses);
+
+    /**
+     * Guards {@link com.sunsetbeach.service.OrderService#autoLinkSpaAppointment} against
+     * re-resolving an order that's already linked - auto-resolution runs on every
+     * {@code addItems} call (items can arrive in more than one batch), and without this check a
+     * second call would look for a *different* still-unlinked candidate near the same
+     * table/booking (the one already linked no longer qualifies, having a non-null orderId) and
+     * could wrongly attach this same order to a second appointment.
+     */
+    boolean existsByOrderId(String orderId);
 }

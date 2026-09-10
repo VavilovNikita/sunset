@@ -17,6 +17,7 @@ import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CloseOrderInput;
+import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.Order;
 import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderItemInput;
@@ -146,8 +147,7 @@ public class OrderService {
     @Transactional
     public Order create(OrderCreateInput input, String openedByUserId) {
         String tableId = input.getTableId().orElse(null);
-        TableEntity table = tableId != null ? tableRepository.findById(tableId).orElse(null) : null;
-        if (tableId != null && table == null) {
+        if (tableId != null && !tableRepository.existsById(tableId)) {
             throw new NotFoundException("Table not found");
         }
         String bookingId = input.getBookingId().orElse(null);
@@ -162,22 +162,52 @@ public class OrderService {
         entity.setOpenedByUserId(openedByUserId);
         OrderEntity saved = orderRepository.saveAndFlush(entity);
 
-        linkSpaAppointment(input.getSpaAppointmentId().orElse(null), bookingId, table, saved.getId(), LocalDateTime.now());
+        // Explicit override only, here - auto-resolution can never fire at creation, since an
+        // order has no items yet and, since the correction below, auto-resolution requires one.
+        // See #autoLinkSpaAppointment, run from #addItems instead.
+        String explicitSpaAppointmentId = input.getSpaAppointmentId().orElse(null);
+        if (explicitSpaAppointmentId != null) {
+            linkExplicitSpaAppointment(explicitSpaAppointmentId, saved.getId());
+        }
 
         return orderMapper.toDto(saved, List.of(), resolveEmail(openedByUserId), null);
     }
 
     /**
-     * The one way {@code SpaAppointment.orderId} gets set - see that field's own openapi.yaml
-     * description. Never blocks order creation (an id that doesn't resolve is silently ignored,
-     * same "don't let a side link fail the write it rides on" spirit as printing/audit).
+     * The unconditional override for {@code SpaAppointment.orderId} - see that field's own
+     * openapi.yaml description. An id that doesn't resolve to a real appointment is silently
+     * ignored, same "don't let a side link fail the write it rides on" spirit as printing/audit;
+     * order creation is never blocked by this. Deliberately has none of
+     * {@link #autoLinkSpaAppointment}'s gates (zone, item content, time/count matching) - staff
+     * naming a specific appointment is the case those gates exist to be overridden by.
+     */
+    private void linkExplicitSpaAppointment(String spaAppointmentId, String orderId) {
+        spaAppointmentRepository.findById(spaAppointmentId).ifPresent(appointment -> {
+            appointment.setOrderId(orderId);
+            spaAppointmentRepository.save(appointment);
+        });
+    }
+
+    /**
+     * The automatic path for {@code SpaAppointment.orderId} - see that field's own openapi.yaml
+     * description, and {@link #linkExplicitSpaAppointment} for the staff-named override this
+     * complements. Run from {@link #addItems}, not {@link #create}: an order has no items at
+     * creation, and this now requires one, so creation is structurally too early for it to ever
+     * fire.
      *
-     * <p>An explicit {@code spaAppointmentId} always wins. Otherwise this auto-resolves it - see
-     * the class javadoc on why this, not an explicit field a screen has to remember to send, is
-     * the mechanism that actually keeps the link reachable: {@code POST /orders} is the one place
-     * both `/pos` and `/admin/pos` open an order, so resolving it here covers every screen that
-     * ever will exist, structurally, rather than something each frontend has to remember to wire
-     * up (and can drift apart on - see CLAUDE.md's own note on that asymmetry recurring).
+     * <p><b>Gated on the order actually containing a SPA-department item</b> - the correction
+     * this exists for. Auto-resolution used to run at order-open time, keyed only on table/
+     * booking, with no idea what the order would eventually bill; a table-less, item-less order
+     * (nothing stops one existing - {@code OrderCreateInput}'s own schema documents "an order
+     * with none of tableId/bookingId/guestName is a valid but untraceable tab" - though no
+     * current frontend caller happens to produce one carrying a bookingId today) still resolved
+     * on the booking axis and could link to that guest's real appointment despite billing nothing
+     * of the kind - the ⚠ this module exists to raise would go silent in exactly the case it's
+     * for, which is worse than the over-eager version it replaced. "Contains a SPA-department
+     * item" is true of every order that genuinely bills a treatment and false of everything else,
+     * so it's checked once, ahead of both axes below, not bolted onto the table axis alone -
+     * the same masking risk exists there too (a spa-table order for a bottle of water, timed to
+     * coincide with a live appointment, is no more a treatment than a table-less one is).
      *
      * <p>Skipped entirely when the order is tied to a table outside the SPA zone (a restaurant
      * dinner charged to the room is never a treatment, no matter how the booking axis below would
@@ -195,27 +225,47 @@ public class OrderService {
      * order-open moment is unique by construction (the exclusion constraint guarantees no two
      * BOOKED/COMPLETED appointments overlap on one table); failing that, one that ended within
      * {@code spaOrderLinkGraceMinutes} covers the ordinary case of the order being opened a few
-     * minutes after the guest's treatment actually finished.
+     * minutes after the guest's treatment actually finished. The "moment" used throughout is the
+     * order's own {@code createdAt} (when the tab was opened), not when this method happens to
+     * run - items can be added well after opening, and the table axis is about which appointment
+     * the *order* corresponds to, not when a line was rung in.
      */
-    private void linkSpaAppointment(String explicitSpaAppointmentId, String bookingId, TableEntity table, String orderId, LocalDateTime openedAt) {
-        String spaAppointmentId = explicitSpaAppointmentId;
+    private void autoLinkSpaAppointment(OrderEntity order, List<OrderItemEntity> items) {
+        if (spaAppointmentRepository.existsByOrderId(order.getId())) {
+            return; // already linked (explicitly, or by an earlier addItems call) - never re-resolve onto a second appointment
+        }
+        if (items.stream().map(this::departmentOf).noneMatch(MenuDepartment.SPA::equals)) {
+            return;
+        }
+
+        String tableId = order.getTableId();
+        TableEntity table = tableId != null ? tableRepository.findById(tableId).orElse(null) : null;
         boolean tableRulesOutSpa = table != null && table.getZone() != Zone.SPA;
-        if (spaAppointmentId == null && !tableRulesOutSpa) {
-            if (bookingId != null) {
-                spaAppointmentId = resolveByBooking(bookingId, openedAt.toLocalDate());
-            }
-            if (spaAppointmentId == null && table != null) {
-                spaAppointmentId = resolveByTable(table.getId(), openedAt);
-            }
+        if (tableRulesOutSpa) {
+            return;
+        }
+
+        LocalDateTime openedAt = order.getCreatedAt();
+        String spaAppointmentId = null;
+        String bookingId = order.getBookingId();
+        if (bookingId != null) {
+            spaAppointmentId = resolveByBooking(bookingId, openedAt.toLocalDate());
+        }
+        if (spaAppointmentId == null && table != null) {
+            spaAppointmentId = resolveByTable(table.getId(), openedAt);
         }
         if (spaAppointmentId == null) {
             return;
         }
         String resolvedId = spaAppointmentId;
         spaAppointmentRepository.findById(resolvedId).ifPresent(appointment -> {
-            appointment.setOrderId(orderId);
+            appointment.setOrderId(order.getId());
             spaAppointmentRepository.save(appointment);
         });
+    }
+
+    private MenuDepartment departmentOf(OrderItemEntity item) {
+        return menuItemRepository.findById(item.getMenuItemId()).map(MenuItemEntity::getDepartment).orElse(null);
     }
 
     private String resolveByBooking(String bookingId, LocalDate today) {
@@ -335,6 +385,10 @@ public class OrderService {
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
         order.setTotal(sumTotal(items));
         OrderEntity saved = orderRepository.saveAndFlush(order);
+
+        // The earliest point an order can actually be a candidate for the spa auto-link - see
+        // that method's own javadoc for why creation is structurally too early now.
+        autoLinkSpaAppointment(saved, items);
 
         // The order was already dispatched at least once - there's no "send" button left for
         // staff to press for this round, so the ticket for whatever just became unsent goes out
