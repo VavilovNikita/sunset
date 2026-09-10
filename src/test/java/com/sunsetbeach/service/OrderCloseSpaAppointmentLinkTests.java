@@ -397,13 +397,19 @@ class OrderCloseSpaAppointmentLinkTests extends AbstractIntegrationTest {
         TableEntity liveTable = createSpaTable();
         MenuItemEntity treatment = createTreatment();
         UserEntity therapist = createTherapist();
+        // A second, distinct therapist for the room-charge booking's own appointment - the
+        // exclusion constraint is scoped per therapist (see V41's own comment), so a fixed
+        // clock-time appointment on the SAME therapist as the "live" one below (LocalTime.now(),
+        // a 120-minute window) can spuriously collide depending on what time the suite happens to
+        // run at. Nothing about this test cares whether the two appointments share a therapist.
+        UserEntity secondTherapist = createTherapist();
 
         Booking tableBooking = createBooking(LocalDate.now().plusDays(300));
         SpaAppointmentEntity liveAppointment = persistAppointment(liveTable, tableBooking, treatment, therapist, LocalTime.now(), 120);
 
         Booking roomChargeBooking = createBooking(LocalDate.now().plusDays(301));
         SpaAppointmentEntity roomChargeBookingsOwnAppointment =
-                persistAppointment(createSpaTable(), roomChargeBooking, treatment, therapist, LocalTime.of(20, 0), 60);
+                persistAppointment(createSpaTable(), roomChargeBooking, treatment, secondTherapist, LocalTime.of(20, 0), 60);
         openShift();
 
         Order order = openOrder(liveTable.getId());
