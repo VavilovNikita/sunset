@@ -14,7 +14,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Body of &#x60;POST /spa-appointments&#x60;. &#x60;treatmentMenuItemId&#x60; must reference a &#x60;SPA&#x60;-department item with &#x60;durationMinutes&#x60; set (400 otherwise). &#x60;date&#x60; outside the named booking&#39;s &#x60;[checkIn, checkOut]&#x60; (inclusive both ends - the guest is still in the hotel on the departure day) is a warning, not a rejection - see &#x60;SpaAppointmentResult&#x60;. 
+ * Body of &#x60;POST /spa-appointments&#x60;. &#x60;treatmentMenuItemId&#x60; must reference a &#x60;SPA&#x60;-department item with &#x60;durationMinutes&#x60; set (400 otherwise) - the appointment&#39;s first treatment; add more afterward with &#x60;POST /spa-appointments/{id}/treatments&#x60;. &#x60;date&#x60; outside the named booking&#39;s &#x60;[checkIn, checkOut]&#x60; (inclusive both ends - the guest is still in the hotel on the departure day) is a warning, not a rejection - see &#x60;SpaAppointmentResult&#x60;. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

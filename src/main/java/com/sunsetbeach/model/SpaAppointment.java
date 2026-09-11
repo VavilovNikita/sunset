@@ -6,7 +6,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.SpaAppointmentStatus;
+import com.sunsetbeach.model.SpaAppointmentTreatment;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -18,7 +22,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A half-hour-grid treatment slot - occupies both a POS &#x60;Table&#x60; (in the SPA zone) and a therapist (a staff &#x60;User&#x60; holding the &#x60;THERAPIST&#x60; job function) for &#x60;[startTime, startTime + durationMinutes)&#x60; on &#x60;date&#x60;. Always names a booking - there is no walk-in path and no separate client record (hotel guests only); &#x60;guestName&#x60; is resolved from that booking at read time, not stored here. &#x60;durationMinutes&#x60; is copied from &#x60;MenuItem.durationMinutes&#x60; once, at creation - the appointment&#39;s own frozen record of how long the treatment takes, immune to the menu item being re-timed later (same \&quot;agreed terms are frozen\&quot; precedent as &#x60;BookingSegmentNightlyRate&#x60;). The appointment&#39;s end is never stored - it&#39;s always &#x60;startTime + durationMinutes&#x60;, computed wherever needed (including by the two &#x60;EXCLUDE USING gist&#x60; constraints on the &#x60;SpaAppointment&#x60; table, one keyed on &#x60;tableId&#x60; and one on &#x60;therapistUserId&#x60;, each restricted to &#x60;status IN (&#39;BOOKED&#39;, &#39;COMPLETED&#39;)&#x60; rows - see &#x60;V41__spa_appointment.sql&#x60; and &#x60;V43__spa_appointment_completed_still_occupies_slot.sql&#x60;). &#x60;date&#x60;/&#x60;startTime&#x60; are a plain date-only string and a plain local &#x60;HH:mm&#x60; string - the hotel is a single location and nothing in this API converts time zones, so there is deliberately no offset anywhere on this schema. The appointment carries no money - see &#x60;orderId&#x60;. A therapist losing the &#x60;THERAPIST&#x60; function or being deactivated while holding future &#x60;BOOKED&#x60; appointments does not cascade to this row automatically - &#x60;PATCH /users/{id}/active&#x60; / &#x60;PATCH /users/{id}/functions&#x60; instead return a warning listing the affected future appointments, the same warn-don&#39;t- block shape as &#x60;RoomUnitBlockResult&#x60;. Cancelling/shortening/early-checking-out the named booking has no equivalent warning today - nothing in this system cascades a booking-date change to this row, and no write path checks for an affected future appointment the way the therapist-side paths do. That gap is real, not yet closed. 
+ * A half-hour-grid treatment slot - occupies both a POS &#x60;Table&#x60; (in the SPA zone) and a therapist (a staff &#x60;User&#x60; holding the &#x60;THERAPIST&#x60; job function) for &#x60;[startTime, startTime + durationMinutes)&#x60; on &#x60;date&#x60;. Always names a booking - there is no walk-in path and no separate client record (hotel guests only); &#x60;guestName&#x60; is resolved from that booking at read time, not stored here. &#x60;treatments&#x60; is one row per treatment booked on this appointment - the same treatment added twice is two rows, not a quantity of two (see &#x60;SpaAppointmentTreatment&#x60;). &#x60;durationMinutes&#x60; on this object is a maintained sum of &#x60;treatments[].durationMinutes&#x60;, kept as its own number so the two &#x60;EXCLUDE USING gist&#x60; constraints on the &#x60;SpaAppointment&#x60; table (one keyed on &#x60;tableId&#x60;, one on &#x60;therapistUserId&#x60;, each restricted to &#x60;status IN (&#39;BOOKED&#39;, &#39;COMPLETED&#39;)&#x60; rows - see &#x60;V41__spa_appointment.sql&#x60; and &#x60;V43__spa_appointment_completed_still_occupies_slot.sql&#x60;) keep reading one plain column and never need to know the treatment table exists. The appointment&#39;s end is never stored - it&#39;s always &#x60;startTime + durationMinutes&#x60;, computed wherever needed. &#x60;date&#x60;/ &#x60;startTime&#x60; are a plain date-only string and a plain local &#x60;HH:mm&#x60; string - the hotel is a single location and nothing in this API converts time zones, so there is deliberately no offset anywhere on this schema. The appointment stores no price - see &#x60;SpaAppointmentTreatment.currentPrice&#x60; and &#x60;orderId&#x60;. Only &#x60;durationMinutes&#x60; is frozen per treatment; unlike a room night, a treatment bills through the ordinary POS &#x60;OrderItem&#x60;/menu path, which prices every line live off the menu at the moment it&#39;s added to an order - freezing a second price here would just manufacture a number that can silently disagree with the one actually charged, not protect a guest-facing quote (none is shown when an appointment is booked). See CLAUDE.md&#39;s Spa billing section for the full reasoning. &#x60;missingTreatmentNames&#x60; names the completeness warning: which of this appointment&#39;s treatments the linked order does not (yet) carry. Only meaningful once &#x60;status&#x60; is &#x60;COMPLETED&#x60; - empty for every other status, regardless of &#x60;orderId&#x60;. A &#x60;CANCELLED&#x60; linked order counts as carrying nothing (a cancelled order bills nothing), so an appointment linked to one still shows every treatment as missing. A therapist losing the &#x60;THERAPIST&#x60; function or being deactivated while holding future &#x60;BOOKED&#x60; appointments does not cascade to this row automatically - &#x60;PATCH /users/{id}/active&#x60; / &#x60;PATCH /users/{id}/functions&#x60; instead return a warning listing the affected future appointments, the same warn-don&#39;t- block shape as &#x60;RoomUnitBlockResult&#x60;. Cancelling/shortening/early-checking-out the named booking has no equivalent warning today - nothing in this system cascades a booking-date change to this row, and no write path checks for an affected future appointment the way the therapist-side paths do. That gap is real, not yet closed. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -38,9 +42,8 @@ public class SpaAppointment {
 
   private String therapistEmail;
 
-  private String treatmentMenuItemId;
-
-  private String treatmentName;
+  @Valid
+  private List<@Valid SpaAppointmentTreatment> treatments = new ArrayList<>();
 
   private String date;
 
@@ -51,6 +54,9 @@ public class SpaAppointment {
   private SpaAppointmentStatus status;
 
   private JsonNullable<String> orderId = JsonNullable.<String>undefined();
+
+  @Valid
+  private List<String> missingTreatmentNames = new ArrayList<>();
 
   private String createdByUserId;
 
@@ -71,7 +77,7 @@ public class SpaAppointment {
   /**
    * Constructor with only required parameters
    */
-  public SpaAppointment(String id, String bookingId, String guestName, String tableId, String tableLabel, String therapistUserId, String therapistEmail, String treatmentMenuItemId, String treatmentName, String date, String startTime, Integer durationMinutes, SpaAppointmentStatus status, String orderId, String createdByUserId, String cancelledByUserId, String cancelReason, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public SpaAppointment(String id, String bookingId, String guestName, String tableId, String tableLabel, String therapistUserId, String therapistEmail, List<@Valid SpaAppointmentTreatment> treatments, String date, String startTime, Integer durationMinutes, SpaAppointmentStatus status, String orderId, List<String> missingTreatmentNames, String createdByUserId, String cancelledByUserId, String cancelReason, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.bookingId = bookingId;
     this.guestName = guestName;
@@ -79,13 +85,13 @@ public class SpaAppointment {
     this.tableLabel = tableLabel;
     this.therapistUserId = therapistUserId;
     this.therapistEmail = therapistEmail;
-    this.treatmentMenuItemId = treatmentMenuItemId;
-    this.treatmentName = treatmentName;
+    this.treatments = treatments;
     this.date = date;
     this.startTime = startTime;
     this.durationMinutes = durationMinutes;
     this.status = status;
     this.orderId = JsonNullable.of(orderId);
+    this.missingTreatmentNames = missingTreatmentNames;
     this.createdByUserId = createdByUserId;
     this.cancelledByUserId = JsonNullable.of(cancelledByUserId);
     this.cancelReason = JsonNullable.of(cancelReason);
@@ -226,42 +232,31 @@ public class SpaAppointment {
     this.therapistEmail = therapistEmail;
   }
 
-  public SpaAppointment treatmentMenuItemId(String treatmentMenuItemId) {
-    this.treatmentMenuItemId = treatmentMenuItemId;
+  public SpaAppointment treatments(List<@Valid SpaAppointmentTreatment> treatments) {
+    this.treatments = treatments;
+    return this;
+  }
+
+  public SpaAppointment addTreatmentsItem(SpaAppointmentTreatment treatmentsItem) {
+    if (this.treatments == null) {
+      this.treatments = new ArrayList<>();
+    }
+    this.treatments.add(treatmentsItem);
     return this;
   }
 
   /**
-   * Get treatmentMenuItemId
-   * @return treatmentMenuItemId
+   * One row per treatment, in no particular guaranteed order. Always at least one - an appointment cannot exist with zero treatments.
+   * @return treatments
    */
-  @NotNull 
-  @JsonProperty("treatmentMenuItemId")
-  public String getTreatmentMenuItemId() {
-    return treatmentMenuItemId;
+  @NotNull @Valid 
+  @JsonProperty("treatments")
+  public List<@Valid SpaAppointmentTreatment> getTreatments() {
+    return treatments;
   }
 
-  public void setTreatmentMenuItemId(String treatmentMenuItemId) {
-    this.treatmentMenuItemId = treatmentMenuItemId;
-  }
-
-  public SpaAppointment treatmentName(String treatmentName) {
-    this.treatmentName = treatmentName;
-    return this;
-  }
-
-  /**
-   * Denormalized `MenuItem.name` at read time - the treatment's current name, not frozen (unlike `durationMinutes`).
-   * @return treatmentName
-   */
-  @NotNull 
-  @JsonProperty("treatmentName")
-  public String getTreatmentName() {
-    return treatmentName;
-  }
-
-  public void setTreatmentName(String treatmentName) {
-    this.treatmentName = treatmentName;
+  public void setTreatments(List<@Valid SpaAppointmentTreatment> treatments) {
+    this.treatments = treatments;
   }
 
   public SpaAppointment date(String date) {
@@ -308,7 +303,7 @@ public class SpaAppointment {
   }
 
   /**
-   * Frozen at creation from `MenuItem.durationMinutes` - see the class description.
+   * A maintained sum of `treatments[].durationMinutes` - see the class description.
    * @return durationMinutes
    */
   @NotNull 
@@ -357,6 +352,33 @@ public class SpaAppointment {
 
   public void setOrderId(JsonNullable<String> orderId) {
     this.orderId = orderId;
+  }
+
+  public SpaAppointment missingTreatmentNames(List<String> missingTreatmentNames) {
+    this.missingTreatmentNames = missingTreatmentNames;
+    return this;
+  }
+
+  public SpaAppointment addMissingTreatmentNamesItem(String missingTreatmentNamesItem) {
+    if (this.missingTreatmentNames == null) {
+      this.missingTreatmentNames = new ArrayList<>();
+    }
+    this.missingTreatmentNames.add(missingTreatmentNamesItem);
+    return this;
+  }
+
+  /**
+   * See the class description. Empty when there's nothing to warn about.
+   * @return missingTreatmentNames
+   */
+  @NotNull 
+  @JsonProperty("missingTreatmentNames")
+  public List<String> getMissingTreatmentNames() {
+    return missingTreatmentNames;
+  }
+
+  public void setMissingTreatmentNames(List<String> missingTreatmentNames) {
+    this.missingTreatmentNames = missingTreatmentNames;
   }
 
   public SpaAppointment createdByUserId(String createdByUserId) {
@@ -470,13 +492,13 @@ public class SpaAppointment {
         Objects.equals(this.tableLabel, spaAppointment.tableLabel) &&
         Objects.equals(this.therapistUserId, spaAppointment.therapistUserId) &&
         Objects.equals(this.therapistEmail, spaAppointment.therapistEmail) &&
-        Objects.equals(this.treatmentMenuItemId, spaAppointment.treatmentMenuItemId) &&
-        Objects.equals(this.treatmentName, spaAppointment.treatmentName) &&
+        Objects.equals(this.treatments, spaAppointment.treatments) &&
         Objects.equals(this.date, spaAppointment.date) &&
         Objects.equals(this.startTime, spaAppointment.startTime) &&
         Objects.equals(this.durationMinutes, spaAppointment.durationMinutes) &&
         Objects.equals(this.status, spaAppointment.status) &&
         Objects.equals(this.orderId, spaAppointment.orderId) &&
+        Objects.equals(this.missingTreatmentNames, spaAppointment.missingTreatmentNames) &&
         Objects.equals(this.createdByUserId, spaAppointment.createdByUserId) &&
         Objects.equals(this.cancelledByUserId, spaAppointment.cancelledByUserId) &&
         Objects.equals(this.cancelReason, spaAppointment.cancelReason) &&
@@ -486,7 +508,7 @@ public class SpaAppointment {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, bookingId, guestName, tableId, tableLabel, therapistUserId, therapistEmail, treatmentMenuItemId, treatmentName, date, startTime, durationMinutes, status, orderId, createdByUserId, cancelledByUserId, cancelReason, createdAt, updatedAt);
+    return Objects.hash(id, bookingId, guestName, tableId, tableLabel, therapistUserId, therapistEmail, treatments, date, startTime, durationMinutes, status, orderId, missingTreatmentNames, createdByUserId, cancelledByUserId, cancelReason, createdAt, updatedAt);
   }
 
   @Override
@@ -500,13 +522,13 @@ public class SpaAppointment {
     sb.append("    tableLabel: ").append(toIndentedString(tableLabel)).append("\n");
     sb.append("    therapistUserId: ").append(toIndentedString(therapistUserId)).append("\n");
     sb.append("    therapistEmail: ").append(toIndentedString(therapistEmail)).append("\n");
-    sb.append("    treatmentMenuItemId: ").append(toIndentedString(treatmentMenuItemId)).append("\n");
-    sb.append("    treatmentName: ").append(toIndentedString(treatmentName)).append("\n");
+    sb.append("    treatments: ").append(toIndentedString(treatments)).append("\n");
     sb.append("    date: ").append(toIndentedString(date)).append("\n");
     sb.append("    startTime: ").append(toIndentedString(startTime)).append("\n");
     sb.append("    durationMinutes: ").append(toIndentedString(durationMinutes)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    orderId: ").append(toIndentedString(orderId)).append("\n");
+    sb.append("    missingTreatmentNames: ").append(toIndentedString(missingTreatmentNames)).append("\n");
     sb.append("    createdByUserId: ").append(toIndentedString(createdByUserId)).append("\n");
     sb.append("    cancelledByUserId: ").append(toIndentedString(cancelledByUserId)).append("\n");
     sb.append("    cancelReason: ").append(toIndentedString(cancelReason)).append("\n");

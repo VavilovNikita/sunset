@@ -229,6 +229,11 @@ public class SecurityConfig {
                         // Rescheduling (drag to another table/time) - same CASHIER+ tier and same
                         // explicit-rule requirement as PATCH .../status just above.
                         .requestMatchers(HttpMethod.PATCH, "/spa-appointments/*/schedule").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Adding/removing a treatment - same CASHIER+ tier as the rest of this
+                        // surface; the BOOKED/COMPLETED lifecycle gating is a service-level rule
+                        // (SpaAppointmentService), not a role distinction.
+                        .requestMatchers(HttpMethod.POST, "/spa-appointments/*/treatments").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.DELETE, "/spa-appointments/*/treatments/*").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Spa map background image - same CASHIER-read/MANAGER-write split as
                         // GET/POST /property-map/image just above, mirrored deliberately (see
                         // SpaMapService's own class javadoc for why this is a separate image, not

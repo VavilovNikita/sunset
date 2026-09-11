@@ -60,6 +60,8 @@ import com.sunsetbeach.model.SpaAppointmentResult;
 import com.sunsetbeach.model.SpaAppointmentScheduleInput;
 import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.model.SpaAppointmentStatusUpdateInput;
+import com.sunsetbeach.model.SpaAppointmentTreatment;
+import com.sunsetbeach.model.SpaAppointmentTreatmentCreateInput;
 import com.sunsetbeach.model.SpaSchedule;
 import com.sunsetbeach.model.SpaTherapist;
 import com.sunsetbeach.model.SwapSegmentRoomUnitInput;
@@ -696,6 +698,38 @@ class PosRoleHierarchyTests {
                         .header("Authorization", token(Role.CASHIER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new SpaAppointmentScheduleInput("table-1", "user-1", "2027-01-01", "10:00"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void addSpaAppointmentTreatment_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/spa-appointments/appt-1/treatments")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SpaAppointmentTreatmentCreateInput("menu-1"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void addSpaAppointmentTreatment_withCashierToken_isCreated() throws Exception {
+        when(spaAppointmentService.addTreatment(eq("appt-1"), any(), anyString())).thenReturn(sampleSpaAppointment());
+        mockMvc.perform(post("/spa-appointments/appt-1/treatments")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SpaAppointmentTreatmentCreateInput("menu-1"))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void removeSpaAppointmentTreatment_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(delete("/spa-appointments/appt-1/treatments/treatment-1").header("Authorization", token(Role.WAITER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void removeSpaAppointmentTreatment_withCashierToken_isOk() throws Exception {
+        when(spaAppointmentService.removeTreatment(eq("appt-1"), eq("treatment-1"), anyString())).thenReturn(sampleSpaAppointment());
+        mockMvc.perform(delete("/spa-appointments/appt-1/treatments/treatment-1").header("Authorization", token(Role.CASHIER)))
                 .andExpect(status().isOk());
     }
 
@@ -1340,13 +1374,13 @@ class PosRoleHierarchyTests {
                 "Spa Table 1",
                 "user-1",
                 "therapist@example.com",
-                "menu-1",
-                "Massage",
+                List.of(new SpaAppointmentTreatment("treatment-1", "menu-1", "Massage", 60, "1500.00")),
                 "2027-01-01",
                 "10:00",
                 60,
                 SpaAppointmentStatus.BOOKED,
                 null,
+                List.of(),
                 "user-2",
                 null,
                 null,

@@ -87,6 +87,9 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
     private SpaAppointmentRepository spaAppointmentRepository;
 
     @Autowired
+    private com.sunsetbeach.repository.SpaAppointmentTreatmentRepository spaAppointmentTreatmentRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     private final List<String> createdRoomIds = new ArrayList<>();
@@ -96,9 +99,14 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
 
     @AfterEach
     void cleanUp() {
-        spaAppointmentRepository.deleteAll(spaAppointmentRepository.findAll().stream()
+        // Treatment rows before their parent appointment - SpaAppointmentTreatment.spaAppointmentId
+        // FK-references SpaAppointment, with no cascade (see V50's own comment).
+        List<com.sunsetbeach.entity.SpaAppointmentEntity> appointments = spaAppointmentRepository.findAll().stream()
                 .filter(a -> createdTableIds.contains(a.getTableId()))
-                .toList());
+                .toList();
+        spaAppointmentTreatmentRepository.deleteAll(
+                spaAppointmentTreatmentRepository.findBySpaAppointmentIdIn(appointments.stream().map(a -> a.getId()).toList()));
+        spaAppointmentRepository.deleteAll(appointments);
         createdTableIds.forEach(tableRepository::deleteById);
         createdMenuItemIds.forEach(menuItemRepository::deleteById);
         createdUserIds.forEach(userRepository::deleteById);

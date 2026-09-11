@@ -21,6 +21,10 @@ import org.hibernate.type.SqlTypes;
  * {@code endTime} is deliberately not a field: it's always {@code startTime + durationMinutes},
  * computed wherever needed (including by the migration's own exclusion constraints), so
  * durationMinutes stays the single source of truth rather than two columns that could drift.
+ * <p>
+ * The treatments themselves live in {@link SpaAppointmentTreatmentEntity}, one row each - see
+ * that entity's javadoc and V50__spa_appointment_treatment.sql. This row's own durationMinutes
+ * is a maintained sum over those, never a second, independently-set number.
  */
 @Entity
 @Table(name = "SpaAppointment")
@@ -36,13 +40,16 @@ public class SpaAppointmentEntity {
 
     private String therapistUserId;
 
-    private String treatmentMenuItemId;
-
     private LocalDate date;
 
     private LocalTime startTime;
 
-    /** Frozen at creation from MenuItem.durationMinutes - see the class javadoc. */
+    /**
+     * A maintained sum of {@link SpaAppointmentTreatmentEntity#getDurationMinutes()} over this
+     * appointment's treatment rows, kept as a real column so the two GiST exclusion constraints
+     * (V41/V43) keep reading one plain column off this row and never need to know the treatment
+     * table exists.
+     */
     private int durationMinutes;
 
     @Enumerated(EnumType.STRING)
@@ -90,14 +97,6 @@ public class SpaAppointmentEntity {
 
     public void setTherapistUserId(String therapistUserId) {
         this.therapistUserId = therapistUserId;
-    }
-
-    public String getTreatmentMenuItemId() {
-        return treatmentMenuItemId;
-    }
-
-    public void setTreatmentMenuItemId(String treatmentMenuItemId) {
-        this.treatmentMenuItemId = treatmentMenuItemId;
     }
 
     public LocalDate getDate() {

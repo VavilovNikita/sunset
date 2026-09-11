@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
+import com.sunsetbeach.entity.SpaAppointmentEntity;
 import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
@@ -82,6 +83,9 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
     private SpaAppointmentRepository spaAppointmentRepository;
 
     @Autowired
+    private com.sunsetbeach.repository.SpaAppointmentTreatmentRepository spaAppointmentTreatmentRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     private final List<String> createdRoomIds = new ArrayList<>();
@@ -91,9 +95,13 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
 
     @AfterEach
     void cleanUp() {
-        spaAppointmentRepository.deleteAll(spaAppointmentRepository.findAll().stream()
-                .filter(a -> createdTableIds.contains(a.getTableId()))
-                .toList());
+        // Treatment rows before their parent appointment - SpaAppointmentTreatment.spaAppointmentId
+        // FK-references SpaAppointment, with no cascade (see V50's own comment).
+        List<SpaAppointmentEntity> appointments =
+                spaAppointmentRepository.findAll().stream().filter(a -> createdTableIds.contains(a.getTableId())).toList();
+        spaAppointmentTreatmentRepository.deleteAll(
+                spaAppointmentTreatmentRepository.findBySpaAppointmentIdIn(appointments.stream().map(SpaAppointmentEntity::getId).toList()));
+        spaAppointmentRepository.deleteAll(appointments);
         createdTableIds.forEach(tableRepository::deleteById);
         createdMenuItemIds.forEach(menuItemRepository::deleteById);
         createdUserIds.forEach(userRepository::deleteById);

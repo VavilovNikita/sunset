@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Where a MenuItem's kitchen/bar ticket prints - independent of `category`, which is a free-text display grouping for the menu itself (e.g. \"Mains\", \"Cocktails\") and has no effect on print routing. `SPA` is not a real ticket-printer department: a treatment item never generates a kitchen/bar ticket at all (see `OrderPrintingService`) - the guest's receipt still prints normally, since that's a separate print path keyed off the order, not this field. `SpaAppointment.treatmentMenuItemId` must reference a `SPA`-department item with `durationMinutes` set; that's what makes an item schedulable. 
+ * Where a MenuItem's kitchen/bar ticket prints - independent of `category`, which is a free-text display grouping for the menu itself (e.g. \"Mains\", \"Cocktails\") and has no effect on print routing. `SPA` is not a real ticket-printer department: a treatment item never generates a kitchen/bar ticket at all (see `OrderPrintingService`) - the guest's receipt still prints normally, since that's a separate print path keyed off the order, not this field. `SpaAppointmentTreatment.treatmentMenuItemId` must reference a `SPA`- department item with `durationMinutes` set; that's what makes an item schedulable. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

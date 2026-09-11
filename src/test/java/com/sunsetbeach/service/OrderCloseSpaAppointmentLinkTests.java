@@ -269,7 +269,6 @@ class OrderCloseSpaAppointmentLinkTests extends AbstractIntegrationTest {
         SpaAppointmentEntity entity = new SpaAppointmentEntity();
         entity.setTableId(table.getId());
         entity.setBookingId(booking.getId());
-        entity.setTreatmentMenuItemId(treatment.getId());
         entity.setTherapistUserId(therapist.getId());
         entity.setCreatedByUserId(cashierId);
         entity.setDate(LocalDate.now());

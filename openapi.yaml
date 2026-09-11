@@ -3369,6 +3369,107 @@ paths:
                 therapist:
                   value: { error: "This therapist already has an appointment overlapping this time." }
 
+  /spa-appointments/{id}/treatments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: addSpaAppointmentTreatment
+      tags: [Spa]
+      summary: Add a treatment to a spa appointment
+      description: >
+        Requires CASHIER or above, same floor as the rest of the spa-appointments surface. Only
+        legal while `status` is `BOOKED` - adding to a `COMPLETED` appointment is refused (400):
+        a `COMPLETED` row is a record of what happened, not a plan still being negotiated, see
+        CLAUDE.md's Naming section on why this project keeps "what was planned" and "what
+        actually happened" apart. Grows the appointment's maintained `durationMinutes`, widening
+        the interval the two GiST exclusion constraints check - same "let the database settle
+        it" philosophy as `POST /spa-appointments`, no pre-check, a lost race surfaces as 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpaAppointmentTreatmentCreateInput"
+      responses:
+        "201":
+          description: Updated appointment, including the new treatment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaAppointment"
+        "400":
+          description: Body failed validation, `treatmentMenuItemId` isn't a `SPA`-department item with a duration, the appointment isn't `BOOKED`, or the new total would run past closing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Appointment or treatmentMenuItemId not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The table or the therapist already has an overlapping BOOKED appointment once this treatment is added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /spa-appointments/{id}/treatments/{treatmentId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: treatmentId
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      operationId: removeSpaAppointmentTreatment
+      tags: [Spa]
+      summary: Remove a treatment from a spa appointment
+      description: >
+        Requires CASHIER or above. Legal while `status` is `BOOKED` or `COMPLETED` - removing
+        (unlike adding) can only shrink the appointment's maintained `durationMinutes`, which can
+        never create a new overlap, so this never risks a 409 and is allowed even on a
+        `COMPLETED` row to correct an over-count. Refused (400) if this is the appointment's only
+        remaining treatment - an appointment cannot exist with zero; cancel it instead.
+      responses:
+        "200":
+          description: Updated appointment, with the treatment removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaAppointment"
+        "400":
+          description: This is the appointment's only treatment, or the appointment is CANCELLED/NO_SHOW.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Appointment not found, or treatmentId does not belong to this appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /spa-map:
     get:
       operationId: getSpaMap
@@ -5160,8 +5261,8 @@ components:
         effect on print routing. `SPA` is not a real ticket-printer department: a treatment item
         never generates a kitchen/bar ticket at all (see `OrderPrintingService`) - the guest's
         receipt still prints normally, since that's a separate print path keyed off the order,
-        not this field. `SpaAppointment.treatmentMenuItemId` must reference a `SPA`-department
-        item with `durationMinutes` set; that's what makes an item schedulable.
+        not this field. `SpaAppointmentTreatment.treatmentMenuItemId` must reference a `SPA`-
+        department item with `durationMinutes` set; that's what makes an item schedulable.
 
     PrinterDepartment:
       type: string
@@ -5872,19 +5973,34 @@ components:
         no walk-in path and no separate client record (hotel guests only); `guestName` is
         resolved from that booking at read time, not stored here.
 
-        `durationMinutes` is copied from `MenuItem.durationMinutes` once, at creation - the
-        appointment's own frozen record of how long the treatment takes, immune to the menu item
-        being re-timed later (same "agreed terms are frozen" precedent as
-        `BookingSegmentNightlyRate`). The appointment's end is never stored - it's always
-        `startTime + durationMinutes`, computed wherever needed (including by the two
-        `EXCLUDE USING gist` constraints on the `SpaAppointment` table, one keyed on `tableId`
-        and one on `therapistUserId`, each restricted to `status IN ('BOOKED', 'COMPLETED')` rows
-        - see `V41__spa_appointment.sql` and `V43__spa_appointment_completed_still_occupies_slot.sql`).
-        `date`/`startTime` are a plain date-only string and a plain
-        local `HH:mm` string - the hotel is a single location and nothing in this API converts
-        time zones, so there is deliberately no offset anywhere on this schema.
+        `treatments` is one row per treatment booked on this appointment - the same treatment
+        added twice is two rows, not a quantity of two (see `SpaAppointmentTreatment`).
+        `durationMinutes` on this object is a maintained sum of `treatments[].durationMinutes`,
+        kept as its own number so the two `EXCLUDE USING gist` constraints on the
+        `SpaAppointment` table (one keyed on `tableId`, one on `therapistUserId`, each restricted
+        to `status IN ('BOOKED', 'COMPLETED')` rows - see `V41__spa_appointment.sql` and
+        `V43__spa_appointment_completed_still_occupies_slot.sql`) keep reading one plain column
+        and never need to know the treatment table exists. The appointment's end is never
+        stored - it's always `startTime + durationMinutes`, computed wherever needed. `date`/
+        `startTime` are a plain date-only string and a plain local `HH:mm` string - the hotel is
+        a single location and nothing in this API converts time zones, so there is deliberately
+        no offset anywhere on this schema.
 
-        The appointment carries no money - see `orderId`. A therapist losing the `THERAPIST`
+        The appointment stores no price - see `SpaAppointmentTreatment.currentPrice` and
+        `orderId`. Only `durationMinutes` is frozen per treatment; unlike a room night, a
+        treatment bills through the ordinary POS `OrderItem`/menu path, which prices every line
+        live off the menu at the moment it's added to an order - freezing a second price here
+        would just manufacture a number that can silently disagree with the one actually
+        charged, not protect a guest-facing quote (none is shown when an appointment is booked).
+        See CLAUDE.md's Spa billing section for the full reasoning.
+
+        `missingTreatmentNames` names the completeness warning: which of this appointment's
+        treatments the linked order does not (yet) carry. Only meaningful once `status` is
+        `COMPLETED` - empty for every other status, regardless of `orderId`. A `CANCELLED` linked
+        order counts as carrying nothing (a cancelled order bills nothing), so an appointment
+        linked to one still shows every treatment as missing.
+
+        A therapist losing the `THERAPIST`
         function or being deactivated while holding future `BOOKED` appointments does not cascade
         to this row automatically - `PATCH /users/{id}/active` / `PATCH /users/{id}/functions`
         instead return a warning listing the affected future appointments, the same warn-don't-
@@ -5901,13 +6017,13 @@ components:
           tableLabel,
           therapistUserId,
           therapistEmail,
-          treatmentMenuItemId,
-          treatmentName,
+          treatments,
           date,
           startTime,
           durationMinutes,
           status,
           orderId,
+          missingTreatmentNames,
           createdByUserId,
           cancelledByUserId,
           cancelReason,
@@ -5932,11 +6048,11 @@ components:
         therapistEmail:
           type: string
           description: Denormalized from the named therapist at read time - same convention as `Order.openedByEmail`.
-        treatmentMenuItemId:
-          type: string
-        treatmentName:
-          type: string
-          description: Denormalized `MenuItem.name` at read time - the treatment's current name, not frozen (unlike `durationMinutes`).
+        treatments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpaAppointmentTreatment"
+          description: One row per treatment, in no particular guaranteed order. Always at least one - an appointment cannot exist with zero treatments.
         date:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
@@ -5946,7 +6062,7 @@ components:
           description: Local 24-hour `HH:mm`. No time zone anywhere on this schema - see the class description.
         durationMinutes:
           type: integer
-          description: Frozen at creation from `MenuItem.durationMinutes` - see the class description.
+          description: A maintained sum of `treatments[].durationMinutes` - see the class description.
         status:
           $ref: "#/components/schemas/SpaAppointmentStatus"
         orderId:
@@ -5960,6 +6076,11 @@ components:
             here. A `COMPLETED` appointment with `orderId: null` is a real, visible gap (a
             treatment settled another way, or one nobody rang up yet) - deliberately not blocked,
             see the class description.
+        missingTreatmentNames:
+          type: array
+          items:
+            type: string
+          description: See the class description. Empty when there's nothing to warn about.
         createdByUserId:
           type: string
         cancelledByUserId:
@@ -5975,13 +6096,54 @@ components:
           type: string
           format: date-time
 
+    SpaAppointmentTreatment:
+      type: object
+      description: >
+        One treatment on a `SpaAppointment` - see that schema's own description for why this is
+        a child row and not a quantity. `durationMinutes` is frozen at add time from
+        `MenuItem.durationMinutes`, same "agreed terms are frozen" precedent the appointment
+        itself already uses for its own maintained sum. `currentPrice` is deliberately not
+        frozen - it's a live read of `MenuItem.price` at response time, the same "denormalized,
+        not frozen" convention `treatmentName` already uses, shown so reception can see what a
+        treatment currently costs. It is never authoritative for billing and never sent to any
+        write endpoint - the server always prices the actual charge live off the menu when a
+        treatment is added to an order, the ordinary `POST /orders/{id}/items` path every other
+        department already uses.
+      required: [id, treatmentMenuItemId, treatmentName, durationMinutes, currentPrice]
+      properties:
+        id:
+          type: string
+        treatmentMenuItemId:
+          type: string
+        treatmentName:
+          type: string
+          description: Denormalized `MenuItem.name` at read time - the treatment's current name, not frozen (unlike `durationMinutes`).
+        durationMinutes:
+          type: integer
+          description: Frozen at add time from `MenuItem.durationMinutes`.
+        currentPrice:
+          type: string
+          description: Live `MenuItem.price` at response time - see the class description for why this isn't frozen and isn't billing-authoritative.
+
+    SpaAppointmentTreatmentCreateInput:
+      type: object
+      description: >
+        Body of `POST /spa-appointments/{id}/treatments`. `treatmentMenuItemId` must reference a
+        `SPA`-department item with `durationMinutes` set, same validation as
+        `SpaAppointmentCreateInput`.
+      required: [treatmentMenuItemId]
+      properties:
+        treatmentMenuItemId:
+          type: string
+
     SpaAppointmentCreateInput:
       type: object
       description: >
         Body of `POST /spa-appointments`. `treatmentMenuItemId` must reference a `SPA`-department
-        item with `durationMinutes` set (400 otherwise). `date` outside the named booking's
-        `[checkIn, checkOut]` (inclusive both ends - the guest is still in the hotel on the
-        departure day) is a warning, not a rejection - see `SpaAppointmentResult`.
+        item with `durationMinutes` set (400 otherwise) - the appointment's first treatment; add
+        more afterward with `POST /spa-appointments/{id}/treatments`. `date` outside the named
+        booking's `[checkIn, checkOut]` (inclusive both ends - the guest is still in the hotel on
+        the departure day) is a warning, not a rejection - see `SpaAppointmentResult`.
       required: [bookingId, tableId, therapistUserId, treatmentMenuItemId, date, startTime]
       properties:
         bookingId:
@@ -7965,6 +8127,8 @@ components:
         - BOOKING_SEGMENT_ROOM_CHANGED
         - BOOKING_ROOMS_SWAPPED
         - SPA_APPOINTMENT_RESCHEDULED
+        - SPA_APPOINTMENT_TREATMENT_ADDED
+        - SPA_APPOINTMENT_TREATMENT_REMOVED
 
     AuditEntityType:
       type: string
