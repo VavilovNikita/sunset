@@ -105,6 +105,14 @@ Write tests for the thing that would silently produce a wrong number, not for fr
 
 Run the whole suite, not only new classes.
 
+## Naming
+
+**"Shift" means a cash shift, and only a cash shift — never reuse it for the staff module's work-schedule concept.** `Shift`/`ShiftEntity`/`ShiftService` and everything else under that name is a cashier's session at a till: opened with a cash float, closed by counting the drawer, reconciled against `Payment` rows. The staff module (planned, not yet built) needs two other concepts, and they get their own words, reserved now so nobody reaches for "Shift" once that module is underway and has to invent a name under pressure:
+- **"Roster"** for the planned schedule — who is due to work when.
+- **"Attendance"** for what actually happened — clock in, clock out, hours worked.
+
+These are deliberately two different words, not "roster" for both a plan and its own record: the whole point of that module is comparing what was planned against what happened, and one word for both would make that comparison unsayable — there'd be no way to ask "does the roster match attendance" without the question answering itself by definition. Keeping all three words - shift, roster, attendance - apart is what keeps that comparison a real question with a real answer, instead of a tautology.
+
 ## Working style
 
 Investigate before changing. Several bugs in this project were "fixed" in the wrong place because behaviour was assumed rather than read.
