@@ -194,21 +194,6 @@ public class PrinterService {
     }
 
     /**
-     * {@code GET /print-jobs/{id}/preview} - the same text that would come out of the printer,
-     * with the ESC/POS control sequences (init, code page, bold, centering, cut) stripped out.
-     * Lets staff check a document before it prints, or see what a FAILED job actually contained
-     * without walking over to a dead printer.
-     */
-    @Transactional(readOnly = true)
-    public String previewPrintJob(String id, Role callerRole) {
-        PrintJobEntity job = findVisibleOrThrow(id, callerRole);
-        PrinterEntity printer = printerRepository
-                .findById(job.getPrinterId())
-                .orElseThrow(() -> new NotFoundException("Printer not found"));
-        return EscPosPreview.render(job.getPayload(), printer.getCodepage());
-    }
-
-    /**
      * Shared by {@link #retryPrintJob} and {@link #previewPrintJob}: 404, not 403, for a job
      * outside the caller's visible set - it must look identical to a job that doesn't exist, or
      * the id could be used to confirm/probe for (or force a reprint/read the content of) e.g. a

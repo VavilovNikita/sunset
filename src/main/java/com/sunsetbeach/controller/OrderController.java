@@ -8,7 +8,6 @@ import com.sunsetbeach.model.OrderItemInput;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.OrderUpdateInput;
 import com.sunsetbeach.model.PrintAttemptResult;
-import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.security.CurrentUser;
 import com.sunsetbeach.service.OrderService;
 import java.time.LocalDate;
@@ -27,9 +26,8 @@ public class OrderController implements OrdersApi {
     }
 
     @Override
-    public ResponseEntity<List<Order>> listOrders(
-            OrderStatus status, Zone zone, String tableId, String bookingId, String staffId, LocalDate from, LocalDate to, String shiftId) {
-        return ResponseEntity.ok(orderService.list(status, zone, tableId, bookingId, staffId, from, to, shiftId));
+    public ResponseEntity<List<Order>> listOrders(OrderStatus status, String tableId, LocalDate from, LocalDate to, String shiftId) {
+        return ResponseEntity.ok(orderService.list(status, tableId, from, to, shiftId));
     }
 
     @Override

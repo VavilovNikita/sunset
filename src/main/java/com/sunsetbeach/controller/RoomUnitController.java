@@ -31,11 +31,6 @@ public class RoomUnitController implements RoomUnitsApi {
     }
 
     @Override
-    public ResponseEntity<RoomUnit> getRoomUnit(String id) {
-        return ResponseEntity.ok(roomUnitService.getById(id));
-    }
-
-    @Override
     public ResponseEntity<RoomUnit> createRoomUnit(RoomUnitInput roomUnitInput) {
         return ResponseEntity.status(HttpStatus.CREATED).body(roomUnitService.create(roomUnitInput));
     }

@@ -8,7 +8,6 @@ import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.ShiftEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.model.Order;
-import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.OrderRepository;
@@ -28,12 +27,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * DB-backed (real dev Postgres, rolled back after each test): the new {@code GET /orders}
- * filters that back the closed-order review list - {@code staffId}, the {@code from}/{@code to}
- * period (bounded on both ends inclusive, same convention as {@link ShiftListTests}), and
- * {@code shiftId} (joining through {@code Payment}, since {@code Order} itself carries no
- * shiftId - see {@code ShiftsApi}). {@code status} itself already had test coverage via
- * {@link OrderCloseAndShiftGuardTests} and friends.
+ * DB-backed (real dev Postgres, rolled back after each test): the {@code GET /orders} filters
+ * that back the closed-order review list - the {@code from}/{@code to} period (bounded on both
+ * ends inclusive, same convention as {@link ShiftListTests}), and {@code shiftId} (joining
+ * through {@code Payment}, since {@code Order} itself carries no shiftId - see {@code
+ * ShiftsApi}). {@code status} itself already had test coverage via {@link
+ * OrderCloseAndShiftGuardTests} and friends. {@code zone}/{@code bookingId}/{@code staffId} were
+ * removed as dead API surface - no real caller ever sent them.
  */
 @SpringBootTest
 @Transactional
@@ -58,12 +58,10 @@ class OrderListTests extends AbstractIntegrationTest {
     private EntityManager entityManager;
 
     private UserEntity staffOne;
-    private UserEntity staffTwo;
 
     @BeforeEach
     void setUp() {
         staffOne = persistUser();
-        staffTwo = persistUser();
     }
 
     private UserEntity persistUser() {
@@ -90,19 +88,6 @@ class OrderListTests extends AbstractIntegrationTest {
     }
 
     @Test
-    void list_filtersByStaffId_excludesOtherStaffsOrders() {
-        OrderEntity own = persistOrder(staffOne, LocalDateTime.now());
-        OrderEntity other = persistOrder(staffTwo, LocalDateTime.now());
-
-        List<String> ids = orderService.list(null, null, null, null, staffOne.getId(), null, null, null).stream()
-                .map(Order::getId)
-                .toList();
-
-        assertThat(ids).contains(own.getId());
-        assertThat(ids).doesNotContain(other.getId());
-    }
-
-    @Test
     void list_filtersByDateRange_boundedOnBothEndsInclusive() {
         LocalDate from = LocalDate.now().minusDays(5);
         LocalDate to = LocalDate.now().minusDays(3);
@@ -111,7 +96,7 @@ class OrderListTests extends AbstractIntegrationTest {
         OrderEntity onToDate = persistOrder(staffOne, to.atTime(23, 30));
         OrderEntity afterRange = persistOrder(staffOne, to.plusDays(1).atTime(12, 0));
 
-        List<String> ids = orderService.list(null, null, null, null, staffOne.getId(), from, to, null).stream()
+        List<String> ids = orderService.list(null, null, from, to, null).stream()
                 .map(Order::getId)
                 .toList();
 
@@ -137,8 +122,7 @@ class OrderListTests extends AbstractIntegrationTest {
 
         OrderEntity unrelatedOrder = persistOrder(staffOne, LocalDateTime.now()); // no Payment at all
 
-        List<String> ids =
-                orderService.list(null, null, null, null, null, null, null, shift.getId()).stream().map(Order::getId).toList();
+        List<String> ids = orderService.list(null, null, null, null, shift.getId()).stream().map(Order::getId).toList();
 
         assertThat(ids).containsExactly(paidInShift.getId());
         assertThat(ids).doesNotContain(unrelatedOrder.getId());
@@ -152,7 +136,7 @@ class OrderListTests extends AbstractIntegrationTest {
         shift = shiftRepository.saveAndFlush(shift);
         persistOrder(staffOne, LocalDateTime.now());
 
-        List<Order> results = orderService.list(null, null, null, null, null, null, null, shift.getId());
+        List<Order> results = orderService.list(null, null, null, null, shift.getId());
 
         assertThat(results).isEmpty();
     }
@@ -180,26 +164,9 @@ class OrderListTests extends AbstractIntegrationTest {
         assertThat(fetched.getPaymentMethod().get()).isEqualTo(PaymentMethod.CARD);
         assertThat(fetched.getOpenedByEmail()).isEqualTo(staffOne.getEmail());
         // list() must carry the same values through its batched lookups, not just getById's single ones.
-        List<Order> listed = orderService.list(null, null, null, null, staffOne.getId(), null, null, null);
+        List<Order> listed = orderService.list(null, null, null, null, null);
         Order listedPaid = listed.stream().filter(o -> o.getId().equals(paidOrder.getId())).findFirst().orElseThrow();
         assertThat(listedPaid.getPaymentMethod().get()).isEqualTo(PaymentMethod.CARD);
         assertThat(listedPaid.getOpenedByEmail()).isEqualTo(staffOne.getEmail());
-    }
-
-    @Test
-    void list_filtersCombineWithAnd_statusAndStaffId() {
-        OrderEntity open = persistOrder(staffOne, LocalDateTime.now());
-        OrderEntity cancelled = persistOrder(staffOne, LocalDateTime.now());
-        orderService.cancel(cancelled.getId());
-        persistOrder(staffTwo, LocalDateTime.now()); // wrong staff, must never match
-
-        List<String> ids = orderService
-                .list(OrderStatus.CANCELLED, null, null, null, staffOne.getId(), null, null, null)
-                .stream()
-                .map(Order::getId)
-                .toList();
-
-        assertThat(ids).containsExactly(cancelled.getId());
-        assertThat(ids).doesNotContain(open.getId());
     }
 }

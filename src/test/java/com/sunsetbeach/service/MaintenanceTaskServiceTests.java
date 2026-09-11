@@ -194,7 +194,8 @@ class MaintenanceTaskServiceTests extends AbstractIntegrationTest {
         assertThat(result.getBlockResult().getWarning().get()).isNotNull();
         assertThat(result.getBlockResult().getAffectedBookings()).extracting("bookingId").containsExactly(booking.getId());
 
-        MaintenanceTask reloaded = maintenanceTaskService.getById(task.getId());
+        MaintenanceTask reloaded =
+                maintenanceTaskService.list().stream().filter(t -> t.getId().equals(task.getId())).findFirst().orElseThrow();
         assertThat(reloaded.getBlockId().get()).isEqualTo(result.getBlockResult().getBlock().getId());
     }
 
@@ -254,16 +255,4 @@ class MaintenanceTaskServiceTests extends AbstractIntegrationTest {
         assertThatThrownBy(() -> maintenanceTaskService.updateStatus(task.getId(), MaintenanceTaskStatus.IN_PROGRESS)).isInstanceOf(ConflictException.class);
     }
 
-    // --- list: optional filters ------------------------------------------------------------------
-
-    @Test
-    void list_filtersByStatusAndRoomUnitId() {
-        MaintenanceTask open = maintenanceTaskService.create(unit.getId(), "Open task", List.of(), reporterId);
-        MaintenanceTask done = maintenanceTaskService.create(unit.getId(), "Done task", List.of(), reporterId);
-        maintenanceTaskService.updateStatus(done.getId(), MaintenanceTaskStatus.DONE);
-
-        List<MaintenanceTask> openOnly = maintenanceTaskService.list(MaintenanceTaskStatus.OPEN, unit.getId());
-
-        assertThat(openOnly).extracting("id").containsExactly(open.getId());
-    }
 }

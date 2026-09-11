@@ -256,48 +256,6 @@ public interface RoomUnitsApi {
 
 
     /**
-     * GET /room-units/{id} : Get a physical room by id
-     * Requires any authenticated staff session (ADMIN/MANAGER/CASHIER/WAITER).
-     *
-     * @param id  (required)
-     * @return The room unit. (status code 200)
-     *         or No valid JWT. (status code 401)
-     *         or Room unit not found. (status code 404)
-     */
-    @RequestMapping(
-        method = RequestMethod.GET,
-        value = "/room-units/{id}",
-        produces = { "application/json" }
-    )
-    
-    default ResponseEntity<RoomUnit> getRoomUnit(
-         @PathVariable("id") String id
-    ) {
-        getRequest().ifPresent(request -> {
-            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"positionY\" : 0.6027456183070403, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"label\" : \"label\", \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\", \"positionX\" : 0.08008281904610115 }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-            }
-        });
-        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
-
-    }
-
-
-    /**
      * GET /room-units/{id}/blocks : List manual blocks for a physical room
      * Requires MANAGER or above - deliberately more restricted than &#x60;GET /room-units&#x60;/ &#x60;GET /room-units/{id}&#x60;, which any staff role may call. &#x60;reason&#x60; is free text staff write for each other and can carry internal notes, so this list is not exposed to CASHIER/ WAITER the way the room list itself is; do not assume the two endpoints share visibility. 
      *

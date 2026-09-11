@@ -55,12 +55,6 @@ public class UserService {
         return userRepository.findAll().stream().map(userMapper::toDto).toList();
     }
 
-    @Transactional(readOnly = true)
-    public User getById(String id) {
-        UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
-        return userMapper.toDto(entity);
-    }
-
     @Transactional
     public User create(UserCreateInput input) {
         UserEntity entity = new UserEntity();

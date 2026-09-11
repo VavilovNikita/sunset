@@ -487,12 +487,6 @@ class PosRoleHierarchyTests {
     }
 
     @Test
-    void previewPrintJob_withWaiterToken_isOk() throws Exception {
-        when(printerService.previewPrintJob(anyString(), eq(Role.WAITER))).thenReturn("KITCHEN TICKET\nTable 4");
-        mockMvc.perform(get("/print-jobs/job-1/preview").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
-    }
-
-    @Test
     void retryPrintJob_withWaiterToken_isOk() throws Exception {
         when(printerService.retryPrintJob(anyString(), eq(Role.WAITER))).thenReturn(samplePrintJob());
         mockMvc.perform(post("/print-jobs/job-1/retry").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
@@ -510,20 +504,14 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isOk());
     }
 
-    // --- GET /room-units and GET /room-units/{id} are open to any staff role, including WAITER
-    // - room numbers aren't sensitive, and a CASHIER needs this list to pick a candidate before
-    // calling PUT /bookings/{id}/room-unit below. Mutating endpoints stay MANAGER-only. ---
+    // --- GET /room-units is open to any staff role, including WAITER - room numbers aren't
+    // sensitive, and a CASHIER needs this list to pick a candidate before calling
+    // PUT /bookings/{id}/room-unit below. Mutating endpoints stay MANAGER-only. ---
 
     @Test
     void listRoomUnits_withWaiterToken_isOk() throws Exception {
         when(roomUnitService.list(null)).thenReturn(List.of());
         mockMvc.perform(get("/room-units").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
-    }
-
-    @Test
-    void getRoomUnit_withWaiterToken_isOk() throws Exception {
-        when(roomUnitService.getById("unit-1")).thenReturn(sampleRoomUnit());
-        mockMvc.perform(get("/room-units/unit-1").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
     }
 
     @Test
@@ -1178,12 +1166,6 @@ class PosRoleHierarchyTests {
                         .param("description", "AC is leaking")
                         .header("Authorization", token(Role.WAITER)))
                 .andExpect(status().isCreated());
-    }
-
-    @Test
-    void getMaintenanceTask_withWaiterToken_isOk() throws Exception {
-        when(maintenanceTaskService.getById("task-1")).thenReturn(sampleMaintenanceTask());
-        mockMvc.perform(get("/maintenance-tasks/task-1").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
     }
 
     @Test

@@ -45,7 +45,6 @@ public class SecurityConfig {
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/bookings").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/auth/logout").permitAll()
                         // Self-service password change: any authenticated staff role, no ADMIN
                         // needed - this is the one account-security action every user can take
                         // on their own account without help. See PATCH /users/{id}/password for
@@ -83,7 +82,7 @@ public class SecurityConfig {
                         // ("owner's dog chewed the carpet, do not sell until replaced") and can carry
                         // internal notes not meant for every role - frontend should treat this list as
                         // MANAGER-only, not assume it follows GET /room-units's visibility.
-                        .requestMatchers(HttpMethod.GET, "/room-units", "/room-units/*").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())
+                        .requestMatchers(HttpMethod.GET, "/room-units").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())
                         // Housekeeping status is a deliberately lower bar than the rest of
                         // /room-units/** (MANAGER+ below) - front desk flips this day to day, not
                         // just managers - so it needs its own rule ahead of the catch-all, same
@@ -110,7 +109,7 @@ public class SecurityConfig {
                         // see the /room-units and /rooms notes above/below). Blocking the room stays a
                         // manager decision. Status transitions use .access(...) rather than hasRole()/
                         // hasAuthority() alone - see engineerOrManagerPlus() below for why.
-                        .requestMatchers(HttpMethod.GET, "/maintenance-tasks", "/maintenance-tasks/*", "/maintenance-tasks/*/photos/*")
+                        .requestMatchers(HttpMethod.GET, "/maintenance-tasks", "/maintenance-tasks/*/photos/*")
                         .authenticated()
                         .requestMatchers(HttpMethod.POST, "/maintenance-tasks").authenticated()
                         .requestMatchers(HttpMethod.POST, "/maintenance-tasks/*/block").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())

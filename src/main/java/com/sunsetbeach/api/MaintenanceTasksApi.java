@@ -8,7 +8,6 @@ package com.sunsetbeach.api;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.MaintenanceTask;
 import com.sunsetbeach.model.MaintenanceTaskBlockResult;
-import com.sunsetbeach.model.MaintenanceTaskStatus;
 import com.sunsetbeach.model.MaintenanceTaskStatusUpdateInput;
 import com.sunsetbeach.model.RoomUnitBlockInput;
 import org.springframework.http.HttpStatus;
@@ -145,48 +144,6 @@ public interface MaintenanceTasksApi {
 
 
     /**
-     * GET /maintenance-tasks/{id} : Get one maintenance task
-     * Requires any authenticated staff session.
-     *
-     * @param id  (required)
-     * @return The task. (status code 200)
-     *         or No valid JWT. (status code 401)
-     *         or Task not found. (status code 404)
-     */
-    @RequestMapping(
-        method = RequestMethod.GET,
-        value = "/maintenance-tasks/{id}",
-        produces = { "application/json" }
-    )
-    
-    default ResponseEntity<MaintenanceTask> getMaintenanceTask(
-         @PathVariable("id") String id
-    ) {
-        getRequest().ifPresent(request -> {
-            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"description\" : \"description\", \"reportedByEmail\" : \"reportedByEmail\", \"photos\" : [ \"photos\", \"photos\" ], \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"roomUnitId\" : \"roomUnitId\", \"reportedByUserId\" : \"reportedByUserId\", \"blockId\" : \"blockId\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"unitLabel\" : \"unitLabel\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"OPEN\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-            }
-        });
-        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
-
-    }
-
-
-    /**
      * GET /maintenance-tasks/{id}/photos/{filename} : Serve one photo attached to a maintenance task
      * Requires any authenticated staff session. Staff-only, like &#x60;GET /property-map/image&#x60; - not reachable under &#x60;/uploads/_**&#x60;: a photo of, say, a broken air conditioner in a guest room is not public-site content the way a room&#39;s own marketing photos are. 
      *
@@ -227,11 +184,9 @@ public interface MaintenanceTasksApi {
 
     /**
      * GET /maintenance-tasks : List maintenance tasks
-     * Requires any authenticated staff session - the same floor as filing one (&#x60;POST&#x60;, below). A role that can file a task must be able to see it again; this project already treats that \&quot;can act but can&#39;t see\&quot; asymmetry as a bug it has introduced and fixed three times elsewhere (see &#x60;SecurityConfig&#x60;&#39;s own notes on &#x60;/room-units&#x60;/&#x60;/rooms&#x60;/&#x60;/availability&#x60;). 
+     * Requires any authenticated staff session - the same floor as filing one (&#x60;POST&#x60;, below). A role that can file a task must be able to see it again; this project already treats that \&quot;can act but can&#39;t see\&quot; asymmetry as a bug it has introduced and fixed three times elsewhere (see &#x60;SecurityConfig&#x60;&#39;s own notes on &#x60;/room-units&#x60;/&#x60;/rooms&#x60;/&#x60;/availability&#x60;). No filters - the admin board loads every task and filters client-side (see &#x60;MaintenanceTaskBoard.tsx&#x60;); a &#x60;status&#x60;/&#x60;roomUnitId&#x60; query filter used to exist here but was never sent by any real caller and was removed. 
      *
-     * @param status  (optional)
-     * @param roomUnitId  (optional)
-     * @return Matching tasks, newest first. (status code 200)
+     * @return Every task, newest first. (status code 200)
      *         or No valid JWT. (status code 401)
      */
     @RequestMapping(
@@ -241,8 +196,7 @@ public interface MaintenanceTasksApi {
     )
     
     default ResponseEntity<List<MaintenanceTask>> listMaintenanceTasks(
-         @Valid @RequestParam(value = "status", required = false) MaintenanceTaskStatus status,
-         @Valid @RequestParam(value = "roomUnitId", required = false) String roomUnitId
+        
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {

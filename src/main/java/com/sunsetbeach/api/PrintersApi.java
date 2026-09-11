@@ -283,48 +283,6 @@ public interface PrintersApi {
 
 
     /**
-     * GET /print-jobs/{id}/preview : Preview a print job&#39;s rendered content
-     * Requires role &#x60;WAITER&#x60; or above, subject to the same per-role document-type visibility as &#x60;GET /print-jobs&#x60; (404, not 403, for a job outside the caller&#39;s visible set - see that operation&#39;s description). Returns the same text that would come out of the printer, with the ESC/POS control sequences (init, code page selection, bold, centering, paper cut) stripped out - not a hex dump of &#x60;payload&#x60;. Useful both to check a document before it prints and to see what a &#x60;FAILED&#x60; job actually contained without walking over to a dead printer. 
-     *
-     * @param id  (required)
-     * @return Plain-text rendering of the job&#39;s payload. (status code 200)
-     *         or No valid JWT. (status code 401)
-     *         or Print job not found, or its document type isn&#39;t visible to the caller&#39;s role. (status code 404)
-     */
-    @RequestMapping(
-        method = RequestMethod.GET,
-        value = "/print-jobs/{id}/preview",
-        produces = { "text/plain", "application/json" }
-    )
-    
-    default ResponseEntity<String> previewPrintJob(
-         @PathVariable("id") String id
-    ) {
-        getRequest().ifPresent(request -> {
-            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
-                if (mediaType.isCompatibleWith(MediaType.valueOf(""))) {
-                    String exampleString = "";
-                    ApiUtil.setExampleResponse(request, "", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"error\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-            }
-        });
-        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
-
-    }
-
-
-    /**
      * POST /print-jobs/{id}/retry : Manually retry a print job
      * Requires role &#x60;WAITER&#x60; or above, subject to the same per-role document-type visibility as &#x60;GET /print-jobs&#x60;. Attempts delivery immediately regardless of the job&#39;s current &#x60;status&#x60; or &#x60;attempts&#x60; count (a human asking for a retry overrides the automatic-retry attempt ceiling). The original &#x60;payload&#x60; is replayed byte-for-byte - this re-sends exactly what was originally queued, it does not regenerate the document from current data. A job whose document type the caller&#39;s role can&#39;t see (e.g. a &#x60;WAITER&#x60; targeting a &#x60;Z_REPORT&#x60; job id) returns 404, not 403 - the id must not be usable to confirm the job exists, let alone force a reprint of it. 
      *

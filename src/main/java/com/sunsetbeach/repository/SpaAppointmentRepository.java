@@ -12,12 +12,6 @@ public interface SpaAppointmentRepository extends JpaRepository<SpaAppointmentEn
     List<SpaAppointmentEntity> findByDate(LocalDate date);
 
     /**
-     * Future, still-BOOKED appointments for one booking - used to warn (not block, see
-     * CLAUDE.md's Failure handling section) when that booking is cancelled or shortened.
-     */
-    List<SpaAppointmentEntity> findByBookingIdAndStatusAndDateGreaterThanEqual(String bookingId, SpaAppointmentStatus status, LocalDate date);
-
-    /**
      * Future, still-BOOKED appointments for one therapist - used to warn (not block) when they
      * are deactivated or lose the THERAPIST function. See {@link com.sunsetbeach.service.UserService}.
      */

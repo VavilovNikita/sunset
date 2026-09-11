@@ -632,38 +632,6 @@ class PrintingTests extends AbstractIntegrationTest {
         }
     }
 
-    // --- Preview: same text a printer would render, ESC/POS control bytes stripped, role-gated like retry ---
-
-    @Test
-    void previewPrintJob_visibleType_returnsReadableTextWithoutEscPosBytes() throws IOException {
-        persistPrinter(PrinterDepartment.KITCHEN, unreachablePort());
-
-        Order order = orderService.create(new OrderCreateInput(), cashier.getId());
-        orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 2)));
-        sendOrder(order.getId());
-
-        PrintJobEntity job = jobsFor(order.getId()).get(0);
-
-        String preview = printerService.previewPrintJob(job.getId(), Role.WAITER);
-
-        assertThat(preview).contains("KITCHEN TICKET");
-        assertThat(preview).contains("2x Caesar Salad");
-        // No stray ESC (0x1B) / GS (0x1D) control bytes left in what's returned.
-        assertThat(preview.chars()).noneMatch(c -> c == 0x1B || c == 0x1D);
-    }
-
-    @Test
-    void previewPrintJob_waiterRole_hiddenDocumentType_throwsNotFound() throws IOException {
-        PrinterEntity printer = persistPrinter(PrinterDepartment.CASHIER, unreachablePort());
-        PrintJob testPageJob = printerService.testPrint(printer.getId()); // TEST_PAGE - not staff-visible
-
-        assertThatThrownBy(() -> printerService.previewPrintJob(testPageJob.getId(), Role.WAITER))
-                .isInstanceOf(NotFoundException.class);
-
-        // MANAGER can still see it.
-        assertThat(printerService.previewPrintJob(testPageJob.getId(), Role.MANAGER)).contains("TEST PAGE");
-    }
-
     @Test
     void retryPrintJob_waiterRole_documentTypeNotVisible_throwsNotFound_managerCanStillRetryIt() throws IOException {
         PrinterEntity printer = persistPrinter(PrinterDepartment.CASHIER, unreachablePort());

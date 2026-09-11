@@ -71,11 +71,6 @@ public class RoomUnitService {
         return entities.stream().map(roomUnitMapper::toDto).toList();
     }
 
-    @Transactional(readOnly = true)
-    public RoomUnit getById(String id) {
-        return roomUnitMapper.toDto(findEntity(id));
-    }
-
     @Transactional
     public RoomUnit create(RoomUnitInput input) {
         if (!roomRepository.existsById(input.getRoomId())) {

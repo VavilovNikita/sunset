@@ -109,9 +109,4 @@ public class AuthController {
         return ResponseEntity.ok(userMapper.toDto(entity));
     }
 
-    @PostMapping("/auth/logout")
-    public ResponseEntity<Void> logout() {
-        // Stateless JWT, nothing to revoke server-side - the client drops the token.
-        return ResponseEntity.noContent().build();
-    }
 }

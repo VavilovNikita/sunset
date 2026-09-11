@@ -83,23 +83,8 @@ public class MaintenanceTaskService {
     }
 
     @Transactional(readOnly = true)
-    public List<MaintenanceTask> list(MaintenanceTaskStatus status, String roomUnitId) {
-        List<MaintenanceTaskEntity> entities;
-        if (status != null && roomUnitId != null) {
-            entities = maintenanceTaskRepository.findByRoomUnitIdAndStatusOrderByCreatedAtDesc(roomUnitId, status);
-        } else if (status != null) {
-            entities = maintenanceTaskRepository.findByStatusOrderByCreatedAtDesc(status);
-        } else if (roomUnitId != null) {
-            entities = maintenanceTaskRepository.findByRoomUnitIdOrderByCreatedAtDesc(roomUnitId);
-        } else {
-            entities = maintenanceTaskRepository.findAllByOrderByCreatedAtDesc();
-        }
-        return toDtos(entities);
-    }
-
-    @Transactional(readOnly = true)
-    public MaintenanceTask getById(String id) {
-        return toDtos(List.of(findEntity(id))).get(0);
+    public List<MaintenanceTask> list() {
+        return toDtos(maintenanceTaskRepository.findAllByOrderByCreatedAtDesc());
     }
 
     /**

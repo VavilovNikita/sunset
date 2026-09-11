@@ -31,11 +31,6 @@ public class UserController implements UsersApi {
     }
 
     @Override
-    public ResponseEntity<User> getUser(String id) {
-        return ResponseEntity.ok(userService.getById(id));
-    }
-
-    @Override
     public ResponseEntity<User> createUser(UserCreateInput userCreateInput) {
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.create(userCreateInput));
     }

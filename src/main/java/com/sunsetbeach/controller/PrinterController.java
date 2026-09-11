@@ -12,7 +12,6 @@ import com.sunsetbeach.security.CurrentUser;
 import com.sunsetbeach.service.PrinterService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -65,10 +64,5 @@ public class PrinterController implements PrintersApi {
     @Override
     public ResponseEntity<PrintJob> retryPrintJob(String id) {
         return ResponseEntity.ok(printerService.retryPrintJob(id, CurrentUser.role()));
-    }
-
-    @Override
-    public ResponseEntity<String> previewPrintJob(String id) {
-        return ResponseEntity.ok().contentType(MediaType.TEXT_PLAIN).body(printerService.previewPrintJob(id, CurrentUser.role()));
     }
 }

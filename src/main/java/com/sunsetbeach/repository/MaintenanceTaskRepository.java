@@ -9,12 +9,6 @@ public interface MaintenanceTaskRepository extends JpaRepository<MaintenanceTask
 
     List<MaintenanceTaskEntity> findAllByOrderByCreatedAtDesc();
 
-    List<MaintenanceTaskEntity> findByStatusOrderByCreatedAtDesc(MaintenanceTaskStatus status);
-
-    List<MaintenanceTaskEntity> findByRoomUnitIdOrderByCreatedAtDesc(String roomUnitId);
-
-    List<MaintenanceTaskEntity> findByRoomUnitIdAndStatusOrderByCreatedAtDesc(String roomUnitId, MaintenanceTaskStatus status);
-
     /** {@link com.sunsetbeach.service.PropertyMapService}'s per-unit "open task" lookup - every OPEN/IN_PROGRESS task across all units, not paged, matching how it already loads blocks/bookings for the whole map in one go. */
     List<MaintenanceTaskEntity> findByStatusIn(List<MaintenanceTaskStatus> statuses);
 }

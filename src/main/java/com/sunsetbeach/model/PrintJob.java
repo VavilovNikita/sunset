@@ -137,7 +137,7 @@ public class PrintJob {
   }
 
   /**
-   * Human-readable one-liner, e.g. \"Kitchen ticket — Order #ab12cd34\" or \"Bar ticket — Order #ab12cd34\" or, for a `GUEST_RECEIPT`, \"Guest receipt — Order #ab12cd34 (CARD)\" / \"Guest receipt — Order #ab12cd34 (ROOM_CHARGE — Jane Doe)\" - enough to tell two receipts on the same order apart without opening `GET /print-jobs/{id}/preview`. Never carries a money amount. 
+   * Human-readable one-liner, e.g. \"Kitchen ticket — Order #ab12cd34\" or \"Bar ticket — Order #ab12cd34\" or, for a `GUEST_RECEIPT`, \"Guest receipt — Order #ab12cd34 (CARD)\" / \"Guest receipt — Order #ab12cd34 (ROOM_CHARGE — Jane Doe)\" - enough to tell two receipts on the same order apart at a glance. Never carries a money amount. 
    * @return summary
    */
   @NotNull 

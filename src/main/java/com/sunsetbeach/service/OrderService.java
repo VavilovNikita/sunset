@@ -108,22 +108,7 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
-    public List<Order> list(
-            OrderStatus status,
-            Zone zone,
-            String tableId,
-            String bookingId,
-            String staffId,
-            LocalDate from,
-            LocalDate to,
-            String shiftId) {
-        List<String> zoneTableIds = null;
-        if (zone != null) {
-            zoneTableIds = tableRepository.findByZone(zone).stream().map(TableEntity::getId).toList();
-            if (zoneTableIds.isEmpty()) {
-                return List.of();
-            }
-        }
+    public List<Order> list(OrderStatus status, String tableId, LocalDate from, LocalDate to, String shiftId) {
         // Order carries no shiftId (only Payment does, and only once the order is closed - see
         // ShiftsApi) - resolve the membership the same way ShiftService's own reconciliation
         // does, then filter on Order.id, rather than a Criteria subquery.
@@ -135,8 +120,7 @@ public class OrderService {
             }
         }
 
-        List<OrderEntity> orders =
-                orderRepository.findAll(buildSpecification(status, zoneTableIds, tableId, bookingId, staffId, from, to, shiftOrderIds));
+        List<OrderEntity> orders = orderRepository.findAll(buildSpecification(status, tableId, from, to, shiftOrderIds));
         return toDtos(orders);
     }
 
@@ -624,14 +608,7 @@ public class OrderService {
 
     /** Shared by {@link #list}. */
     private static Specification<OrderEntity> buildSpecification(
-            OrderStatus status,
-            List<String> zoneTableIds,
-            String tableId,
-            String bookingId,
-            String staffId,
-            LocalDate from,
-            LocalDate to,
-            List<String> shiftOrderIds) {
+            OrderStatus status, String tableId, LocalDate from, LocalDate to, List<String> shiftOrderIds) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (status != null) {
@@ -639,15 +616,6 @@ public class OrderService {
             }
             if (tableId != null) {
                 predicates.add(cb.equal(root.get("tableId"), tableId));
-            }
-            if (bookingId != null) {
-                predicates.add(cb.equal(root.get("bookingId"), bookingId));
-            }
-            if (zoneTableIds != null) {
-                predicates.add(root.get("tableId").in(zoneTableIds));
-            }
-            if (staffId != null && !staffId.isBlank()) {
-                predicates.add(cb.equal(root.get("openedByUserId"), staffId));
             }
             if (from != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from.atStartOfDay()));

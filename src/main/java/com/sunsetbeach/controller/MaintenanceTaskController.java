@@ -3,7 +3,6 @@ package com.sunsetbeach.controller;
 import com.sunsetbeach.api.MaintenanceTasksApi;
 import com.sunsetbeach.model.MaintenanceTask;
 import com.sunsetbeach.model.MaintenanceTaskBlockResult;
-import com.sunsetbeach.model.MaintenanceTaskStatus;
 import com.sunsetbeach.model.MaintenanceTaskStatusUpdateInput;
 import com.sunsetbeach.model.RoomUnitBlockInput;
 import com.sunsetbeach.security.StaffPrincipal;
@@ -28,19 +27,14 @@ public class MaintenanceTaskController implements MaintenanceTasksApi {
     }
 
     @Override
-    public ResponseEntity<List<MaintenanceTask>> listMaintenanceTasks(MaintenanceTaskStatus status, String roomUnitId) {
-        return ResponseEntity.ok(maintenanceTaskService.list(status, roomUnitId));
+    public ResponseEntity<List<MaintenanceTask>> listMaintenanceTasks() {
+        return ResponseEntity.ok(maintenanceTaskService.list());
     }
 
     @Override
     public ResponseEntity<MaintenanceTask> createMaintenanceTask(String roomUnitId, String description, List<MultipartFile> photos) {
         String callerId = ((StaffPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).id();
         return ResponseEntity.status(HttpStatus.CREATED).body(maintenanceTaskService.create(roomUnitId, description, photos, callerId));
-    }
-
-    @Override
-    public ResponseEntity<MaintenanceTask> getMaintenanceTask(String id) {
-        return ResponseEntity.ok(maintenanceTaskService.getById(id));
     }
 
     @Override

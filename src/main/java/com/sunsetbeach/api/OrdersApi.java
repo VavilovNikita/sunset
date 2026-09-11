@@ -17,7 +17,6 @@ import com.sunsetbeach.model.OrderUpdateInput;
 import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.ValidationError;
-import com.sunsetbeach.model.Zone;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -349,10 +348,7 @@ public interface OrdersApi {
      * Requires any authenticated staff session - same as &#x60;GET /orders/{id}&#x60;, order visibility has no ownership boundary between staff (the whole floor already needs to see every table). Filters combine with AND; this is the one endpoint that covers both the live floor board (&#x60;status&#x3D;OPEN&#x60;/&#x60;SENT&#x60;) and looking up a closed order (&#x60;status&#x3D;PAID&#x60;/ &#x60;CANCELLED&#x60;) for a dispute or a till reconciliation - there&#39;s no separate \&quot;history\&quot; endpoint. 
      *
      * @param status  (optional)
-     * @param zone Filters by the zone of the order&#39;s table; orders with no table never match. (optional)
      * @param tableId  (optional)
-     * @param bookingId  (optional)
-     * @param staffId Exact match against &#x60;Order.openedByUserId&#x60;. (optional)
      * @param from Inclusive lower bound on &#x60;Order.createdAt&#x60; (whole day, local to the server). (optional)
      * @param to Inclusive upper bound on &#x60;Order.createdAt&#x60; (whole day, local to the server). (optional)
      * @param shiftId Orders paid during the given &#x60;Shift&#x60; - joins through &#x60;Payment.shiftId&#x60;, since &#x60;Order&#x60; itself carries no &#x60;shiftId&#x60; (see &#x60;ShiftsApi&#x60;). An order still &#x60;OPEN&#x60;/&#x60;SENT&#x60; (no &#x60;Payment&#x60; yet) never matches, even if opened during that shift.  (optional)
@@ -367,10 +363,7 @@ public interface OrdersApi {
     
     default ResponseEntity<List<Order>> listOrders(
          @Valid @RequestParam(value = "status", required = false) OrderStatus status,
-         @Valid @RequestParam(value = "zone", required = false) Zone zone,
          @Valid @RequestParam(value = "tableId", required = false) String tableId,
-         @Valid @RequestParam(value = "bookingId", required = false) String bookingId,
-         @Valid @RequestParam(value = "staffId", required = false) String staffId,
          @Valid @RequestParam(value = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
          @Valid @RequestParam(value = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
          @Valid @RequestParam(value = "shiftId", required = false) String shiftId

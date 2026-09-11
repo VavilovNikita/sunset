@@ -94,17 +94,20 @@ import org.springframework.transaction.annotation.Transactional;
  * neighboring segment. That covers the two most common front-desk requests on an
  * already-relocated stay - "one more night" (extend the last segment, same room it's already
  * in) and an earlier arrival (extend the first segment) - without forcing the roundabout
- * undo-relocate / update / re-relocate dance. Anything else against a multi-segment booking
- * (both ends moving at once, a date range that would cross a segment boundary, or a bare room
- * change with no date change - none of which map to a single unambiguous segment given this
- * endpoint's one roomUnitId/checkIn/checkOut shape) is rejected the same way, in favor of
- * {@link #relocate}/{@link #undoRelocation}. See {@link #resolveScheduleTarget}.
+ * undo-relocate / update / re-relocate dance. Anything else against this endpoint's one
+ * roomUnitId/checkIn/checkOut shape (both ends moving at once, or a date range that would cross
+ * a segment boundary) is rejected in favor of {@link #relocate}/{@link #undoRelocation}. A bare
+ * room change with no date change is rejected by *this* endpoint for the same reason - no single
+ * segment is named - but is not rejected overall: {@link #reassignSegmentRoomUnit} is the tool
+ * for exactly that case, addressed at a named segment instead of guessing which one a dateless
+ * request meant. See {@link #resolveScheduleTarget}.
  */
 @Service
 public class BookingWriter {
 
     static final String MULTI_SEGMENT_MESSAGE =
-            "This booking has been split by a room relocation — change dates or rooms per segment via relocate/undo-relocate instead.";
+            "This booking has been split by a room relocation — change dates via relocate/undo-relocate, or one "
+                    + "segment's own room via PUT .../segments/{segmentId}/room-unit.";
 
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
@@ -509,8 +512,10 @@ public class BookingWriter {
      *       schedule change, it's an undo-relocation or a new relocation.</li>
      *   <li>Everything else - both dates moving at once, or neither moving (a bare room change,
      *       which segment that would apply to is not stated anywhere in the request) - has no
-     *       single segment this endpoint's shape can name, so it's rejected in favor of
-     *       {@link #relocate}/{@link #undoRelocation}.</li>
+     *       single segment this endpoint's shape can name. Both-ends-moving is rejected in favor
+     *       of {@link #relocate}/{@link #undoRelocation}; a bare room change is rejected in favor
+     *       of {@link #reassignSegmentRoomUnit}, which takes a segment id instead of guessing
+     *       one from a dateless request.</li>
      * </ul>
      */
     private ScheduleTarget resolveScheduleTarget(List<BookingSegmentEntity> sortedSegments, LocalDate newCheckIn, LocalDate newCheckOut) {

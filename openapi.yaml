@@ -66,8 +66,7 @@ tags:
     description: >
       ESC/POS network printer CRUD and connection testing (MANAGER or above), plus the durable
       print-job queue (WAITER or above, with per-role document visibility - see
-      `GET /print-jobs`) including a text preview of a job's rendered content
-      (`GET /print-jobs/{id}/preview`). Printing is best-effort and asynchronous where it needs
+      `GET /print-jobs`). Printing is best-effort and asynchronous where it needs
       to be: an unreachable printer never fails the order/shift operation that triggered it - it
       leaves a `PENDING`/`FAILED` `PrintJob` behind instead, retried automatically in the
       background and retriable by hand from here. A `FAILED` job that a retry can't fix (the
@@ -213,19 +212,6 @@ paths:
                 $ref: "#/components/schemas/User"
         "401":
           $ref: "#/components/responses/Unauthorized"
-
-  /auth/logout:
-    post:
-      operationId: logout
-      tags: [Auth]
-      summary: Log out
-      description: >
-        No-op on this side - JWTs are stateless and not revoked server-side.
-        Real logout is the client discarding the token.
-      security: []
-      responses:
-        "204":
-          description: Always succeeds.
 
   /auth/password:
     patch:
@@ -770,26 +756,6 @@ paths:
         required: true
         schema:
           type: string
-    get:
-      operationId: getRoomUnit
-      tags: [RoomUnits]
-      summary: Get a physical room by id
-      description: Requires any authenticated staff session (ADMIN/MANAGER/CASHIER/WAITER).
-      responses:
-        "200":
-          description: The room unit.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RoomUnit"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Room unit not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorMessage"
     patch:
       operationId: updateRoomUnit
       tags: [RoomUnits]
@@ -1199,20 +1165,12 @@ paths:
         A role that can file a task must be able to see it again; this project already treats
         that "can act but can't see" asymmetry as a bug it has introduced and fixed three times
         elsewhere (see `SecurityConfig`'s own notes on `/room-units`/`/rooms`/`/availability`).
-      parameters:
-        - name: status
-          in: query
-          required: false
-          schema:
-            $ref: "#/components/schemas/MaintenanceTaskStatus"
-        - name: roomUnitId
-          in: query
-          required: false
-          schema:
-            type: string
+        No filters - the admin board loads every task and filters client-side (see
+        `MaintenanceTaskBoard.tsx`); a `status`/`roomUnitId` query filter used to exist here but
+        was never sent by any real caller and was removed.
       responses:
         "200":
-          description: Matching tasks, newest first.
+          description: Every task, newest first.
           content:
             application/json:
               schema:
@@ -1269,34 +1227,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: Room unit not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorMessage"
-
-  /maintenance-tasks/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-    get:
-      operationId: getMaintenanceTask
-      tags: [MaintenanceTasks]
-      summary: Get one maintenance task
-      description: Requires any authenticated staff session.
-      responses:
-        "200":
-          description: The task.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MaintenanceTask"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Task not found.
           content:
             application/json:
               schema:
@@ -1788,7 +1718,7 @@ paths:
                 raceLost:
                   value: { error: "Someone just assigned this room — please try again." }
                 multiSegment:
-                  value: { error: "This booking has been split by a room relocation — change dates or rooms per segment via relocate/undo-relocate instead." }
+                  value: { error: "This booking has been split by a room relocation — change dates via relocate/undo-relocate, or one segment's own room via PUT .../segments/{segmentId}/room-unit." }
 
   /bookings/{id}/segments/{segmentId}/room-unit:
     parameters:
@@ -2158,9 +2088,11 @@ paths:
         on an already-relocated booking), each without crossing into the segment next to it. Any
         other combination - both dates moving at once, or neither (a bare room change with no
         segment named to apply it to) - has no single segment this shape can address, and is
-        rejected with 409 in favor of `relocate`/`undo-relocation`, the operations built to name
-        one explicitly. A date that crosses into the neighboring segment is rejected with 400
-        instead - it is a genuinely invalid request, not a race or an ambiguity.
+        rejected with 409: both-dates-moving in favor of `relocate`/`undo-relocation`, a bare room
+        change in favor of `PUT /bookings/{id}/segments/{segmentId}/room-unit`, which names a
+        segment explicitly instead of guessing one from a dateless request. A date that crosses
+        into the neighboring segment is rejected with 400 instead - it is a genuinely invalid
+        request, not a race or an ambiguity.
       requestBody:
         required: true
         content:
@@ -2214,7 +2146,7 @@ paths:
                 raceLost:
                   value: { error: "Someone just changed this booking's schedule — please try again." }
                 multiSegment:
-                  value: { error: "This booking has been split by a room relocation — change dates or rooms per segment via relocate/undo-relocate instead." }
+                  value: { error: "This booking has been split by a room relocation — change dates via relocate/undo-relocate, or one segment's own room via PUT .../segments/{segmentId}/room-unit." }
 
   /bookings/{id}/schedule/quote:
     parameters:
@@ -3857,51 +3789,6 @@ paths:
               example:
                 error: Print job not found
 
-  /print-jobs/{id}/preview:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-    get:
-      operationId: previewPrintJob
-      tags: [Printers]
-      summary: Preview a print job's rendered content
-      description: >
-        Requires role `WAITER` or above, subject to the same per-role document-type visibility
-        as `GET /print-jobs` (404, not 403, for a job outside the caller's visible set - see
-        that operation's description). Returns the same text that would come out of the
-        printer, with the ESC/POS control sequences (init, code page selection, bold,
-        centering, paper cut) stripped out - not a hex dump of `payload`. Useful both to check a
-        document before it prints and to see what a `FAILED` job actually contained without
-        walking over to a dead printer.
-      responses:
-        "200":
-          description: Plain-text rendering of the job's payload.
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: |
-                  KITCHEN TICKET
-                  Restaurant – Table 4
-                  Time: 2026-08-16 20:05:00 UTC
-                  Waiter: waiter@sunsetbeach.example
-                  ------------------------------------------
-                  2x Caesar Salad
-                     note: no croutons
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Print job not found, or its document type isn't visible to the caller's role.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorMessage"
-              example:
-                error: Print job not found
-
   /orders:
     get:
       operationId: listOrders
@@ -3920,28 +3807,11 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/OrderStatus"
-        - name: zone
-          in: query
-          required: false
-          schema:
-            $ref: "#/components/schemas/Zone"
-          description: Filters by the zone of the order's table; orders with no table never match.
         - name: tableId
           in: query
           required: false
           schema:
             type: string
-        - name: bookingId
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: staffId
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Exact match against `Order.openedByUserId`.
         - name: from
           in: query
           required: false
@@ -4824,30 +4694,6 @@ paths:
         required: true
         schema:
           type: string
-    get:
-      operationId: getUser
-      tags: [Users]
-      summary: Get a staff user by id
-      description: Requires an authenticated session with role `ADMIN`.
-      responses:
-        "200":
-          description: The staff user (no `passwordHash`).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/User"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          description: User not found.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorMessage"
-              example:
-                error: User not found
     patch:
       operationId: updateUserRole
       tags: [Users]
@@ -5429,8 +5275,7 @@ components:
             "Bar ticket — Order #ab12cd34" or, for a
             `GUEST_RECEIPT`, "Guest receipt — Order #ab12cd34 (CARD)" /
             "Guest receipt — Order #ab12cd34 (ROOM_CHARGE — Jane Doe)" - enough to tell two
-            receipts on the same order apart without opening `GET /print-jobs/{id}/preview`.
-            Never carries a money amount.
+            receipts on the same order apart at a glance. Never carries a money amount.
         status:
           $ref: "#/components/schemas/PrintJobStatus"
         attempts:
@@ -6039,13 +5884,14 @@ components:
         local `HH:mm` string - the hotel is a single location and nothing in this API converts
         time zones, so there is deliberately no offset anywhere on this schema.
 
-        The appointment carries no money - see `orderId`. Cancelling/shortening/early-checking-
-        out the named booking does not cascade to this row automatically (nothing in this system
-        cascades booking-date changes to anything else yet); those write paths instead return a
-        warning listing affected future appointments, the same warn-don't-block shape as
-        `RoomUnitBlockResult`. The same applies to a therapist losing the `THERAPIST` function or
-        being deactivated while holding future `BOOKED` appointments - see
-        `PATCH /users/{id}/active` / `PATCH /users/{id}/functions`.
+        The appointment carries no money - see `orderId`. A therapist losing the `THERAPIST`
+        function or being deactivated while holding future `BOOKED` appointments does not cascade
+        to this row automatically - `PATCH /users/{id}/active` / `PATCH /users/{id}/functions`
+        instead return a warning listing the affected future appointments, the same warn-don't-
+        block shape as `RoomUnitBlockResult`. Cancelling/shortening/early-checking-out the named
+        booking has no equivalent warning today - nothing in this system cascades a booking-date
+        change to this row, and no write path checks for an affected future appointment the way
+        the therapist-side paths do. That gap is real, not yet closed.
       required:
         [
           id,
@@ -7569,17 +7415,17 @@ components:
           type: string
           nullable: true
           description: >
-            Settable only via `OrderCreateInput.bookingId` at creation - no real frontend caller
-            populates it today, so it reads null on effectively every order in this system,
-            including a `ROOM_CHARGE`-closed one. It is *not* the record of what a closed order
-            was charged to - that's `Payment.bookingId` (see that field's own description), set
-            independently at `POST /orders/{id}/close` and never mirrored back here. Money reads
-            (a booking's folio, its room-charges list) and the spa auto-link's booking axis both
-            go through `Payment.bookingId` for exactly this reason. Left as-is rather than
-            populated at close alongside it: doing so would be a second, deliberate change with
-            its own callers to think through (this field, `GET /orders?bookingId=`, and the one
-            frontend read of it are effectively dormant today, not exercised by anything real),
-            not a side effect of the spa-link fix this description was last touched for.
+            Settable only via `OrderCreateInput.bookingId` at creation. The spa billing door
+            (`billSpaAppointment`, `lib/spaOrderClient.ts`) sends it as a pre-fill convenience -
+            "which guest is this treatment for" - so it reads non-null there; most other order
+            creation paths never send it, so it reads null everywhere else. Either way, it is
+            *not* the record of what a closed order was charged to - that's `Payment.bookingId`
+            (see that field's own description), set independently at `POST /orders/{id}/close`
+            and never mirrored back here. Money reads (a booking's folio, its room-charges list)
+            and the spa auto-link's booking axis both go through `Payment.bookingId` for exactly
+            this reason - never this field. The one live reader of this field is the "Linked
+            booking" link on the admin order ticket, a plain navigation convenience back to the
+            booking a spa-billed order was opened for; it is not a billing signal.
         guestName:
           type: string
           nullable: true

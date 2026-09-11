@@ -210,11 +210,6 @@ class AuthControllerTests {
     }
 
     @Test
-    void logout_isNoContent() throws Exception {
-        mockMvc.perform(post("/auth/logout")).andExpect(status().isNoContent());
-    }
-
-    @Test
     void changeOwnPassword_withoutToken_isUnauthorized() throws Exception {
         mockMvc.perform(patch("/auth/password")
                         .contentType(MediaType.APPLICATION_JSON)
