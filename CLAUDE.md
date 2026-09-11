@@ -38,13 +38,22 @@ Some migrations are destructive (dropped columns, deleted rows) — V4 and V11 a
 
 Undoing a relocation restores the preserved original rates. It is not a new agreement.
 
+## Spa billing
+
+**What links a POS order to a spa appointment is presence, not a status.** `SpaAppointment.orderId` is set once — explicitly by the spa billing door (`POST /orders` with `spaAppointmentId`) or by `OrderService`'s own auto-link (by table, then by booking, tried at different moments — see `OrderService#autoLinkSpaAppointment`'s own javadoc) — and answers exactly one question: is this the order that bills this appointment's treatment. `Order.bookingId` is not the same fact and never was — see that field's own openapi.yaml description; the record of what a *closed* order was actually charged to is `Payment.bookingId`, set independently at `POST /orders/{id}/close`.
+
+The billing *warning* is a separate question from the link, asked by the frontend (`SpaAppointmentPanel`), not by `OrderService`: an appointment is unbilled when it is `COMPLETED` and has no linked order at all. A future multi-treatment appointment (planned, not yet built) would generalize this to "`COMPLETED` and the linked order doesn't carry every treatment on it" — presence still decides the *link*, completeness decides the *warning*. Don't fold the two questions back into one gate; keeping them apart is what let the warning's rule generalize to more than one treatment without reopening the link itself.
+
 ## Concurrency
 
 Availability writes run `SERIALIZABLE` in `BookingWriter`, and PostgreSQL serialization failures (SQLSTATE 40001) are translated to `ConflictException` with a human message. `BookingWriter` is a separate bean specifically so the `@Transactional` proxy applies — self-invocation would bypass it.
 
 Do not copy `SERIALIZABLE` to writes that do not contend for inventory. POS order and payment writes use ordinary transactions; using SERIALIZABLE there would produce spurious conflicts during service hours.
 
-Where a race is better solved by the database, use the database: one payment per order is enforced by a unique constraint, not by a check-then-write.
+Where a race is better solved by the database, use the database. Three tools exist here for three different shapes of conflict, and picking the wrong one either misses real races or produces spurious ones:
+- **SERIALIZABLE** (`BookingWriter`) — when availability itself has to be recomputed from several sources (unit counts, blocks, other segments) and can't be expressed as a single row-level constraint.
+- **A unique constraint** — when the rule is "at most one," not "no two may overlap": one payment per order is enforced this way, not by a check-then-write.
+- **A Postgres `EXCLUDE USING gist` constraint** — when the rule is "no two rows may overlap on a range," and the database can express that directly. The spa module uses one per axis (`spa_appointment_no_table_overlap`, `spa_appointment_no_therapist_overlap` — see `V41__spa_appointment.sql`/`V43__spa_appointment_completed_still_occupies_slot.sql`) instead of a pre-write query: `SpaAppointmentService` never checks for a conflict before writing, it writes directly and lets the constraint reject, translated to a human message by matching the constraint's own name in the root-cause exception (`translateOverlap`). This is cheaper than SERIALIZABLE and correct here specifically because the check needs no unit-counting or block-checking — just "does this interval overlap that one" - which is exactly what the constraint already computes.
 
 ## Availability model
 
@@ -55,6 +64,8 @@ Occupancy (`checkIn <= date < checkOut`) — the departure day is free. Back-to-
 `isActive = false` (permanently out of service) and `RoomUnitBlock` (temporarily out of sale, with dates and a reason) are **independent facts**. A blocked room is still active. Never collapse them into one "unavailable".
 
 Occupancy state (checked in / departed) is a separate axis from booking status and does **not** affect availability.
+
+**A relocated booking's room can still be changed without changing dates.** `BookingWriter#assignRoomUnit`/`unassignRoomUnit` only ever operate on a booking's *sole* segment — convenient shorthand for the common never-relocated case — and reject once a booking has more than one segment. For a long time that rejection was the whole story: the only way to touch a relocated booking's room was `relocate`/`undo-relocation`, both of which also move dates. It no longer is. `reassignSegmentRoomUnit`/`unassignSegmentRoomUnit` (`PUT /bookings/{id}/segments/{segmentId}/room-unit`) are the general primitive underneath the whole-booking pair — same three checks (room type, active, free for that segment's own dates), same SERIALIZABLE race-safety, addressed at a named segment instead of implicitly "the sole segment." `swapSegmentRoomUnits` (`POST .../swap-room-unit`) builds on that for the one case a single segment-scoped call can't express: exchanging two bookings' rooms atomically, because two sequential single-segment calls would let the second call see the first guest's segment still occupying the room it's moving into. Same room type only, checked before any availability work (a 400, not a 409) — a cross-type swap would mean either retroactive repricing or a guest paying the other room's frozen rate, neither of which this API does silently. Treat any comment or description that still frames a relocated booking's room as fixed-until-undo as describing the *whole-booking shorthand* only, not a ceiling on what's possible.
 
 The availability engine has been rewritten three times. Keep changes out of it unless the task is about it.
 
@@ -68,6 +79,8 @@ Hierarchy: `ADMIN > MANAGER > CASHIER > WAITER`. `/users/**` is `ADMIN` only and
 
 **If a role may perform an action, it must be able to read the data that action requires.** This asymmetry has been introduced and fixed three times — a cashier allowed to assign a room but not to list rooms, and so on.
 
+**Job functions are a second, independent authorization axis — not a fifth role.** `JobFunction` (`User.jobFunctions`, a set — see the Migrations section for why it's `TEXT[]`, not a native enum array) marks what a person can be assigned as (ENGINEER, HOUSEKEEPER, THERAPIST), not how much they can authorize. A role is one value on a strict ladder where each tier inherits everything below it; a function is a set a user can hold none, one, or several of, unrelated to seniority — a WAITER can also hold ENGINEER without that granting anything role-hierarchy-wide, and conversely a MANAGER can stand in for an engineer-gated action without ever holding the function (`SecurityConfig#engineerOrManagerPlus`). Folding a function into the role ladder would either grant privilege it shouldn't (inheriting up the hierarchy along with it) or force one skill per role tier, neither of which matches how a small hotel actually staffs. `JwtAuthFilter` grants each held function as its own `FUNCTION_<NAME>` authority; gate a path on one with `hasAuthority("FUNCTION_...")`, never `hasRole()`/`hasAnyRole()`, which would route it through the hierarchy and let it inherit along the role ladder. Most functions gate nothing at all today — THERAPIST and HOUSEKEEPER are pure domain-eligibility tags (who can be assigned as a spa therapist; nothing about permission) — ENGINEER is the one exception so far, and even there a MANAGER is an explicit fallback, not an implied one.
+
 Tokens carry a version. Changing a role, resetting a password, or disabling an account invalidates existing tokens immediately; `JwtAuthFilter` re-reads the user on every request. This is deliberate: without it a departing employee keeps access for a week.
 
 ## Failure handling
@@ -75,6 +88,8 @@ Tokens carry a version. Changing a role, resetting a password, or disabling an a
 **Printing, email and audit writes must never break the operation they accompany.** An unreachable printer does not stop an order from being created or a shift from closing; the job is queued and retried. Audit records are written in their own transaction so a failure there cannot poison the main one.
 
 Front-desk operations warn rather than block. Checking a guest into an uncleaned room, or checking out with an outstanding balance, is allowed with a visible warning — a person stands at the desk and the system is not the one deciding.
+
+The same rule covers blocking a room out of service (`RoomUnitService#createBlock`): a block is created even when it overlaps an existing booking, with a warning listing the affected booking(s) instead of a rejection. A burst pipe or a broken air conditioner is a fact about the room, not a request the software gets to veto because a reservation disagrees — refusing the block would leave staff unable to record what's actually true about the property, and would not fix the pipe. The warning exists so nobody unknowingly checks a guest into the affected room, or forgets to move one already there; deciding what to do about that guest stays a front-desk judgment call, same as everywhere else this rule applies.
 
 ## Dates
 
