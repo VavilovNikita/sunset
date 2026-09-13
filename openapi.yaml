@@ -3369,6 +3369,84 @@ paths:
                 therapist:
                   value: { error: "This therapist already has an appointment overlapping this time." }
 
+  /spa-appointments/{id}/swap-table:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: swapSpaAppointmentTable
+      tags: [Spa]
+      summary: Swap this appointment's table with another appointment's, atomically
+      description: >
+        Requires CASHIER or above. Table only - `date`, `startTime`, `therapistUserId`, and
+        `durationMinutes` are untouched on both sides, which is what makes this well-defined
+        regardless of how long either treatment runs: a 30-minute treatment and a 90-minute one
+        trade tables exactly the same way two 90-minute ones would, because nothing about "how
+        long" or "when" ever moves. A full slot exchange (time included) only stays coherent
+        between equal-length treatments, and isn't offered here - see `SwapSpaAppointmentTableInput`.
+
+        Both appointments must already be `BOOKED` - the same lifecycle boundary
+        `PATCH /spa-appointments/{id}/schedule` already enforces.
+
+        Moves both rows in one native `UPDATE`, not two sequential saves: PostgreSQL checks a
+        `NOT DEFERRABLE` exclusion constraint at the end of the *statement*, not per row and not
+        per transaction, so a single statement that sets both `tableId` values at once is checked
+        exactly once, against both rows' final state - never against the transient moment where
+        one side has already moved into a table the other hasn't vacated yet, which is the trap
+        two separate `UPDATE`s (even inside one transaction) would fall into. No deferred
+        constraints, no migration to make `spa_appointment_no_table_overlap` `DEFERRABLE` - see
+        `SpaAppointmentTableSwapConstraintTimingTests`, which exists specifically to fail loudly
+        if a future Postgres/JDBC/Hibernate change ever makes that assumption false.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SwapSpaAppointmentTableInput"
+      responses:
+        "200":
+          description: >
+            This appointment's own updated record. The other appointment named in the request
+            also changed (its own `tableId` swapped the other way) - fetch it separately or
+            refetch the day's schedule to see it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaAppointment"
+        "400":
+          description: The other appointment is the same as this one, or either appointment isn't BOOKED.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                self:
+                  value: { error: "Can't swap an appointment with itself" }
+                notBooked:
+                  value: { error: "Both appointments must be BOOKED to swap tables" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: This appointment not found, or the other appointment not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The table this appointment would move into already has an overlapping appointment on it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                table:
+                  value: { error: "This table already has an appointment overlapping this time." }
+
   /spa-appointments/{id}/treatments:
     parameters:
       - name: id
@@ -6240,6 +6318,22 @@ components:
           type: string
           maxLength: 500
 
+    SwapSpaAppointmentTableInput:
+      type: object
+      description: >
+        Body of `POST /spa-appointments/{id}/swap-table`. The dragged appointment is named by the
+        URL (`{id}`); this names the other side - same "the gesture has a direction" reasoning as
+        `SwapSegmentRoomUnitInput`. Only the table changes for either side - `date`, `startTime`,
+        `therapistUserId`, and `durationMinutes` all stay exactly as they were, which is what
+        makes this well-defined regardless of how long either treatment runs: a 30-minute
+        treatment and a 90-minute one trade tables exactly the same way two 90-minute ones would,
+        because nothing about "how long" or "when" ever moves.
+      required: [otherAppointmentId]
+      properties:
+        otherAppointmentId:
+          type: string
+          description: The other appointment to trade tables with. Must currently be BOOKED, same as the URL's own appointment.
+
     SpaSchedule:
       type: object
       description: >
@@ -8244,6 +8338,7 @@ components:
         - SPA_APPOINTMENT_RESCHEDULED
         - SPA_APPOINTMENT_TREATMENT_ADDED
         - SPA_APPOINTMENT_TREATMENT_REMOVED
+        - SPA_APPOINTMENT_TABLES_SWAPPED
 
     AuditEntityType:
       type: string

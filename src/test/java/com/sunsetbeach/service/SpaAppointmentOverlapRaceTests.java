@@ -16,6 +16,7 @@ import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.SpaAppointmentCreateInput;
 import com.sunsetbeach.model.SpaAppointmentResult;
 import com.sunsetbeach.model.StaffBookingCreateInput;
+import com.sunsetbeach.model.SwapSpaAppointmentTableInput;
 import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
@@ -271,6 +272,82 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
         assertThat(outcome.conflicted()).isEqualTo(1);
         assertThat(spaAppointmentRepository.findByDate(java.time.LocalDate.parse(booking.getCheckIn())).stream()
                         .filter(a -> a.getTherapistUserId().equals(therapist.getId()))
+                        .count())
+                .isEqualTo(1);
+    }
+
+    /**
+     * The swap side of the same guarantee: {@code swapTables} defers its own two saves and only
+     * checks them at the very end (see {@code SpaAppointmentTableSwapDeferredConstraintTests}),
+     * so it never sees a genuine third-party conflict early - it has to be caught by the forced
+     * immediate check right before commit. A concurrent, ordinary (non-deferred) create racing
+     * for the exact table one side of the swap is moving into must still resolve to exactly one
+     * winner: PostgreSQL's exclusion-constraint machinery makes an immediate-checked writer wait
+     * on a possibly-conflicting row from a still-open, deferred transaction rather than skip past
+     * it, so this isn't a gap deferring the swap's own checks could open up.
+     */
+    @Test
+    void concurrentSwapAndCreate_racingForTheSameTable_exactlyOneSucceeds() throws Exception {
+        Booking booking = createBooking();
+        TableEntity tableA = createSpaTable();
+        TableEntity tableB = createSpaTable();
+        MenuItemEntity treatment = createTreatment();
+        UserEntity therapistA = createTherapist();
+        UserEntity therapistB = createTherapist();
+        UserEntity therapistC = createTherapist();
+        UserEntity receptionist = createReceptionist();
+
+        SpaAppointmentResult resultA = spaAppointmentService.create(
+                new SpaAppointmentCreateInput(booking.getId(), tableA.getId(), therapistA.getId(), treatment.getId(), booking.getCheckIn(), "10:00"),
+                receptionist.getId());
+        SpaAppointmentResult resultB = spaAppointmentService.create(
+                new SpaAppointmentCreateInput(booking.getId(), tableB.getId(), therapistB.getId(), treatment.getId(), booking.getCheckIn(), "10:00"),
+                receptionist.getId());
+        String appointmentAId = resultA.getAppointment().getId();
+        String appointmentBId = resultB.getAppointment().getId();
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        Callable<Object> swap = () -> {
+            barrier.await();
+            return spaAppointmentService.swapTables(appointmentAId, new SwapSpaAppointmentTableInput(appointmentBId), receptionist.getId());
+        };
+        // Races for tableB - exactly what appointmentA is trying to move into.
+        Callable<Object> thirdPartyCreate = () -> {
+            barrier.await();
+            return spaAppointmentService.create(
+                    new SpaAppointmentCreateInput(booking.getId(), tableB.getId(), therapistC.getId(), treatment.getId(), booking.getCheckIn(), "10:00"),
+                    receptionist.getId());
+        };
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        int succeeded = 0;
+        int conflicted = 0;
+        try {
+            Future<Object> swapFuture = executor.submit(swap);
+            Future<Object> createFuture = executor.submit(thirdPartyCreate);
+            for (Future<Object> f : List.of(swapFuture, createFuture)) {
+                try {
+                    f.get();
+                    succeeded++;
+                } catch (Exception e) {
+                    if (e.getCause() instanceof ConflictException) {
+                        conflicted++;
+                    } else {
+                        throw e;
+                    }
+                }
+            }
+        } finally {
+            executor.shutdown();
+        }
+
+        assertThat(succeeded).isEqualTo(1);
+        assertThat(conflicted).isEqualTo(1);
+        // Whichever won, tableB has exactly one BOOKED occupant at this time - not zero (both
+        // somehow failed) and not two (both somehow "succeeded" against the same slot).
+        assertThat(spaAppointmentRepository.findByDate(java.time.LocalDate.parse(booking.getCheckIn())).stream()
+                        .filter(a -> a.getTableId().equals(tableB.getId())
+                                && a.getStatus() == com.sunsetbeach.model.SpaAppointmentStatus.BOOKED)
                         .count())
                 .isEqualTo(1);
     }

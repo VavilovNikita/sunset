@@ -229,6 +229,9 @@ public class SecurityConfig {
                         // Rescheduling (drag to another table/time) - same CASHIER+ tier and same
                         // explicit-rule requirement as PATCH .../status just above.
                         .requestMatchers(HttpMethod.PATCH, "/spa-appointments/*/schedule").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Table swap (drag one appointment onto another) - same CASHIER+ tier as
+                        // reschedule; see SwapSpaAppointmentTableInput for why this stays table-only.
+                        .requestMatchers(HttpMethod.POST, "/spa-appointments/*/swap-table").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Adding/removing a treatment - same CASHIER+ tier as the rest of this
                         // surface; the BOOKED/COMPLETED lifecycle gating is a service-level rule
                         // (SpaAppointmentService), not a role distinction.

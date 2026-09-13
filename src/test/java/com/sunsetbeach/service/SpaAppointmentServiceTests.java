@@ -23,6 +23,7 @@ import com.sunsetbeach.model.SpaAppointmentScheduleInput;
 import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.model.SpaAppointmentStatusUpdateInput;
 import com.sunsetbeach.model.StaffBookingCreateInput;
+import com.sunsetbeach.model.SwapSpaAppointmentTableInput;
 import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
@@ -595,5 +596,131 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
                         new SpaAppointmentScheduleInput(otherTable.getId(), therapist.getId(), checkIn.toString(), "11:00"),
                         receptionist.getId()))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    // --- swapTables (drag one appointment onto another) ----------------------------------------
+
+    @Test
+    void swapTables_tradesTablesOnly_timeAndDurationUnchanged() {
+        LocalDate checkIn = LocalDate.now().plusDays(352);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity tableA = createSpaTable();
+        TableEntity tableB = createSpaTable();
+        // Different durations, same time - the coherence answer this feature depends on: table
+        // only, so unequal lengths never enter into it.
+        MenuItemEntity shortTreatment = createTreatment(30, MenuDepartment.SPA);
+        MenuItemEntity longTreatment = createTreatment(90, MenuDepartment.SPA);
+        UserEntity therapistA = createTherapist();
+        UserEntity therapistB = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        SpaAppointment appointmentA = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), tableA.getId(), therapistA.getId(), shortTreatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+        SpaAppointment appointmentB = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), tableB.getId(), therapistB.getId(), longTreatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+
+        SpaAppointment swapped =
+                spaAppointmentService.swapTables(appointmentA.getId(), new SwapSpaAppointmentTableInput(appointmentB.getId()), receptionist.getId());
+
+        assertThat(swapped.getTableId()).isEqualTo(tableB.getId());
+        assertThat(swapped.getStartTime()).isEqualTo("10:00");
+        assertThat(swapped.getDurationMinutes()).isEqualTo(30);
+        assertThat(swapped.getTherapistUserId()).isEqualTo(therapistA.getId());
+        SpaAppointment other = spaAppointmentService.getSchedule(checkIn).getAppointments().stream()
+                .filter(a -> a.getId().equals(appointmentB.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(other.getTableId()).isEqualTo(tableA.getId());
+        assertThat(other.getDurationMinutes()).isEqualTo(90);
+    }
+
+    @Test
+    void swapTables_withItself_isRejected() {
+        LocalDate checkIn = LocalDate.now().plusDays(353);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        SpaAppointment created = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapist.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+
+        assertThatThrownBy(() -> spaAppointmentService.swapTables(
+                        created.getId(), new SwapSpaAppointmentTableInput(created.getId()), receptionist.getId()))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void swapTables_oneSideNotBooked_isRejected() {
+        LocalDate checkIn = LocalDate.now().plusDays(354);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity tableA = createSpaTable();
+        TableEntity tableB = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapistA = createTherapist();
+        UserEntity therapistB = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        SpaAppointment appointmentA = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), tableA.getId(), therapistA.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+        SpaAppointment appointmentB = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), tableB.getId(), therapistB.getId(), treatment.getId(), checkIn.toString(), "11:00"),
+                        receptionist.getId())
+                .getAppointment();
+        spaAppointmentService.updateStatus(appointmentB.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.CANCELLED), receptionist.getId());
+
+        assertThatThrownBy(() -> spaAppointmentService.swapTables(
+                        appointmentA.getId(), new SwapSpaAppointmentTableInput(appointmentB.getId()), receptionist.getId()))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void swapTables_intoAThirdAppointmentsConflict_isRejectedAndNeitherSideMoves() {
+        LocalDate checkIn = LocalDate.now().plusDays(355);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity tableA = createSpaTable();
+        TableEntity tableB = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapistA = createTherapist();
+        UserEntity therapistB = createTherapist();
+        UserEntity therapistC = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        SpaAppointment appointmentA = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), tableA.getId(), therapistA.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                        receptionist.getId())
+                .getAppointment();
+        SpaAppointment appointmentB = spaAppointmentService
+                .create(
+                        new SpaAppointmentCreateInput(booking.getId(), tableB.getId(), therapistB.getId(), treatment.getId(), checkIn.toString(), "14:00"),
+                        receptionist.getId())
+                .getAppointment();
+        // A third appointment already sits on tableB at appointmentA's own time - swapping A into
+        // tableB must still be refused, even though tableB's own occupant (appointmentB) is one
+        // of the two rows this swap is moving.
+        spaAppointmentService.create(
+                new SpaAppointmentCreateInput(booking.getId(), tableB.getId(), therapistC.getId(), treatment.getId(), checkIn.toString(), "10:00"),
+                receptionist.getId());
+
+        assertThatThrownBy(() -> spaAppointmentService.swapTables(
+                        appointmentA.getId(), new SwapSpaAppointmentTableInput(appointmentB.getId()), receptionist.getId()))
+                .isInstanceOf(ConflictException.class);
+        assertThat(spaAppointmentService.getSchedule(checkIn).getAppointments().stream()
+                        .filter(a -> a.getId().equals(appointmentA.getId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .getTableId())
+                .isEqualTo(tableA.getId());
     }
 }

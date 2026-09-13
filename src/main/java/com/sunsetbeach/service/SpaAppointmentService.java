@@ -28,6 +28,7 @@ import com.sunsetbeach.model.SpaAppointmentTreatment;
 import com.sunsetbeach.model.SpaAppointmentTreatmentCreateInput;
 import com.sunsetbeach.model.SpaSchedule;
 import com.sunsetbeach.model.SpaTherapist;
+import com.sunsetbeach.model.SwapSpaAppointmentTableInput;
 import com.sunsetbeach.model.Table;
 import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.repository.BookingRepository;
@@ -386,6 +387,114 @@ public class SpaAppointmentService {
                 "Rescheduled to " + date + " " + startTime.format(TIME_FORMAT) + " (" + table.getLabel() + ", " + therapist.getEmail() + ")");
 
         return toDto(saved);
+    }
+
+    /**
+     * Swaps two appointments' tables, atomically. Table only - {@code date}, {@code startTime},
+     * {@code therapistUserId}, and the frozen {@code durationMinutes} are untouched on both
+     * sides, which is what makes this well-defined no matter how long either treatment runs: a
+     * 30-minute treatment and a 90-minute one trade tables exactly the same way two equal-length
+     * ones would, because nothing about "how long" or "when" ever moves. A full slot exchange
+     * (time included) would only stay coherent between equal-length treatments and isn't offered
+     * here - see {@code SwapSpaAppointmentTableInput}'s own description.
+     *
+     * <p>Both appointments must be {@code BOOKED} - the same lifecycle boundary
+     * {@link #updateSchedule} already enforces.
+     *
+     * <p><b>Mechanism.</b> A genuine swap can only be expressed as two ordinary {@code UPDATE}s
+     * (each appointment keeps its own row; only {@code tableId} moves), and under the default
+     * constraint timing that's unworkable: {@code spa_appointment_no_table_overlap} was
+     * {@code NOT DEFERRABLE}, checked synchronously as each row is written, so the first
+     * {@code UPDATE} always finds the other appointment still sitting on the table it's moving
+     * into. A single statement moving both rows at once was tried and fails the same way - see
+     * {@link SpaAppointmentTableSwapConstraintTimingTests}, kept specifically as the record of
+     * why that doesn't work, and CLAUDE.md's Concurrency section for the same reasoning written
+     * down for whoever reaches for a swap next. V56's migration made both exclusion constraints
+     * {@code DEFERRABLE INITIALLY IMMEDIATE}, so this method can defer them for just this
+     * transaction ({@link SpaAppointmentRepository#deferOverlapConstraints}), apply both ordinary
+     * updates, then force the checks to run immediately, right here
+     * ({@link SpaAppointmentRepository#restoreImmediateOverlapConstraints}) - proven correct
+     * (both the success and the still-genuinely-conflicting case) in
+     * {@link SpaAppointmentTableSwapDeferredConstraintTests} before this method was written to
+     * depend on it.
+     *
+     * <p>{@code saveAndFlush}, not {@code save}, for both updates: forcing each one to the
+     * database immediately, in this exact order, is what makes "defer, move both, force the
+     * check" a real sequence rather than something Hibernate's own write-behind batching could
+     * reorder or coalesce - restoreImmediateOverlapConstraints only means what it's supposed to
+     * mean if both UPDATEs have actually reached Postgres by the time it runs.
+     *
+     * <p><b>The audit entry only follows a confirmed swap.</b> {@code AuditLogService.record} runs
+     * {@code REQUIRES_NEW} and commits independently and immediately - had either record() call
+     * happened before {@code restoreImmediateOverlapConstraints()} returned successfully, a swap
+     * that fails at that check would still leave a permanent audit entry describing a swap that
+     * never happened (this is exactly the hazard that ruled out deferring the check all the way
+     * to this transaction's own COMMIT: nothing between here and commit would still be able to
+     * stop a REQUIRES_NEW write that already happened). Both records only run after both
+     * {@code saveAndFlush} calls and the forced check have all already succeeded.
+     *
+     * <p><b>Concurrency.</b> No SERIALIZABLE, no pre-check query - same "let the database settle
+     * it" philosophy as every other write in this service. Two swaps racing to touch the *same*
+     * appointment serialize on Postgres's own row-level lock: whichever transaction's
+     * {@code UPDATE} reaches that row first holds it until it commits or rolls back, and the
+     * second one simply waits, then proceeds against the already-updated state - ordinary MVCC,
+     * nothing extra needed. A third, unrelated write (an ordinary {@code create}/
+     * {@code updateSchedule}) racing for one of the two tables this swap is moving appointments
+     * onto is handled by PostgreSQL's own exclusion-constraint machinery: an immediate-checked
+     * writer that finds a possibly-conflicting, not-yet-committed row from this (deferred)
+     * transaction waits for it to resolve rather than erroring out early, then re-checks against
+     * whatever actually got committed. Whichever side loses that race - this swap, if a
+     * concurrent write claimed a table out from under it before {@code restoreImmediateOverlapConstraints}
+     * runs, or the concurrent write itself, if this swap committed first - surfaces a
+     * {@link DataAccessException} carrying the same constraint name either way, so
+     * {@link #translateOverlap} turns it into the identical friendly message {@code create}/
+     * {@code updateSchedule} already give for this exact conflict; nothing here is a new failure
+     * mode.
+     */
+    @Transactional
+    public SpaAppointment swapTables(String id, SwapSpaAppointmentTableInput input, String actorUserId) {
+        String otherId = input.getOtherAppointmentId();
+        if (otherId.equals(id)) {
+            throw new BadRequestException("Can't swap an appointment with itself");
+        }
+        SpaAppointmentEntity entity = spaAppointmentRepository.findById(id).orElseThrow(() -> new NotFoundException("Appointment not found"));
+        SpaAppointmentEntity other = spaAppointmentRepository.findById(otherId).orElseThrow(() -> new NotFoundException("Other appointment not found"));
+        if (entity.getStatus() != SpaAppointmentStatus.BOOKED || other.getStatus() != SpaAppointmentStatus.BOOKED) {
+            throw new BadRequestException("Both appointments must be BOOKED to swap tables");
+        }
+
+        String entityOldTableId = entity.getTableId();
+        String otherOldTableId = other.getTableId();
+        BookingEntity entityBooking = bookingRepository.findById(entity.getBookingId()).orElseThrow(() -> new NotFoundException("Booking not found"));
+        BookingEntity otherBooking = bookingRepository.findById(other.getBookingId()).orElseThrow(() -> new NotFoundException("Booking not found"));
+        TableEntity entityOldTable = tableRepository.findById(entityOldTableId).orElseThrow(() -> new NotFoundException("Table not found"));
+        TableEntity otherOldTable = tableRepository.findById(otherOldTableId).orElseThrow(() -> new NotFoundException("Table not found"));
+
+        try {
+            spaAppointmentRepository.deferOverlapConstraints();
+            entity.setTableId(otherOldTableId);
+            spaAppointmentRepository.saveAndFlush(entity);
+            other.setTableId(entityOldTableId);
+            spaAppointmentRepository.saveAndFlush(other);
+            spaAppointmentRepository.restoreImmediateOverlapConstraints();
+        } catch (DataAccessException e) {
+            throw translateOverlap(e);
+        }
+
+        auditLogService.record(
+                AuditAction.SPA_APPOINTMENT_TABLES_SWAPPED,
+                AuditEntityType.SPA_APPOINTMENT,
+                entity.getId(),
+                "Swapped tables with " + otherBooking.getGuestName() + "'s appointment: now at " + otherOldTable.getLabel() + " (was "
+                        + entityOldTable.getLabel() + ")");
+        auditLogService.record(
+                AuditAction.SPA_APPOINTMENT_TABLES_SWAPPED,
+                AuditEntityType.SPA_APPOINTMENT,
+                other.getId(),
+                "Swapped tables with " + entityBooking.getGuestName() + "'s appointment: now at " + entityOldTable.getLabel() + " (was "
+                        + otherOldTable.getLabel() + ")");
+
+        return toDto(entity);
     }
 
     private MenuItemEntity validateTreatment(String treatmentMenuItemId) {

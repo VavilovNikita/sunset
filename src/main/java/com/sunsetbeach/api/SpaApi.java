@@ -15,6 +15,7 @@ import com.sunsetbeach.model.SpaAppointmentTreatmentCreateInput;
 import com.sunsetbeach.model.SpaMap;
 import com.sunsetbeach.model.SpaSchedule;
 import com.sunsetbeach.model.SpaTherapist;
+import com.sunsetbeach.model.SwapSpaAppointmentTableInput;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -360,6 +361,69 @@ public interface SpaApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"date\" : \"date\", \"createdByUserId\" : \"createdByUserId\", \"orderId\" : \"orderId\", \"therapistEmail\" : \"therapistEmail\", \"cancelledByUserId\" : \"cancelledByUserId\", \"bookingId\" : \"bookingId\", \"treatments\" : [ { \"durationMinutes\" : 6, \"treatmentMenuItemId\" : \"treatmentMenuItemId\", \"currentPrice\" : \"currentPrice\", \"id\" : \"id\", \"treatmentName\" : \"treatmentName\" }, { \"durationMinutes\" : 6, \"treatmentMenuItemId\" : \"treatmentMenuItemId\", \"currentPrice\" : \"currentPrice\", \"id\" : \"id\", \"treatmentName\" : \"treatmentName\" } ], \"guestName\" : \"guestName\", \"durationMinutes\" : 1, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"therapistUserId\" : \"therapistUserId\", \"tableId\" : \"tableId\", \"tableLabel\" : \"tableLabel\", \"startTime\" : \"startTime\", \"id\" : \"id\", \"cancelReason\" : \"cancelReason\", \"missingTreatmentNames\" : [ \"missingTreatmentNames\", \"missingTreatmentNames\" ], \"status\" : \"BOOKED\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /spa-appointments/{id}/swap-table : Swap this appointment&#39;s table with another appointment&#39;s, atomically
+     * Requires CASHIER or above. Table only - &#x60;date&#x60;, &#x60;startTime&#x60;, &#x60;therapistUserId&#x60;, and &#x60;durationMinutes&#x60; are untouched on both sides, which is what makes this well-defined regardless of how long either treatment runs: a 30-minute treatment and a 90-minute one trade tables exactly the same way two 90-minute ones would, because nothing about \&quot;how long\&quot; or \&quot;when\&quot; ever moves. A full slot exchange (time included) only stays coherent between equal-length treatments, and isn&#39;t offered here - see &#x60;SwapSpaAppointmentTableInput&#x60;. Both appointments must already be &#x60;BOOKED&#x60; - the same lifecycle boundary &#x60;PATCH /spa-appointments/{id}/schedule&#x60; already enforces. Moves both rows in one native &#x60;UPDATE&#x60;, not two sequential saves: PostgreSQL checks a &#x60;NOT DEFERRABLE&#x60; exclusion constraint at the end of the *statement*, not per row and not per transaction, so a single statement that sets both &#x60;tableId&#x60; values at once is checked exactly once, against both rows&#39; final state - never against the transient moment where one side has already moved into a table the other hasn&#39;t vacated yet, which is the trap two separate &#x60;UPDATE&#x60;s (even inside one transaction) would fall into. No deferred constraints, no migration to make &#x60;spa_appointment_no_table_overlap&#x60; &#x60;DEFERRABLE&#x60; - see &#x60;SpaAppointmentTableSwapConstraintTimingTests&#x60;, which exists specifically to fail loudly if a future Postgres/JDBC/Hibernate change ever makes that assumption false. 
+     *
+     * @param id  (required)
+     * @param swapSpaAppointmentTableInput  (required)
+     * @return This appointment&#39;s own updated record. The other appointment named in the request also changed (its own &#x60;tableId&#x60; swapped the other way) - fetch it separately or refetch the day&#39;s schedule to see it.  (status code 200)
+     *         or The other appointment is the same as this one, or either appointment isn&#39;t BOOKED. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or This appointment not found, or the other appointment not found. (status code 404)
+     *         or The table this appointment would move into already has an overlapping appointment on it. (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/spa-appointments/{id}/swap-table",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<SpaAppointment> swapSpaAppointmentTable(
+         @PathVariable("id") String id,
+         @Valid @RequestBody SwapSpaAppointmentTableInput swapSpaAppointmentTableInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"date\" : \"date\", \"createdByUserId\" : \"createdByUserId\", \"orderId\" : \"orderId\", \"therapistEmail\" : \"therapistEmail\", \"cancelledByUserId\" : \"cancelledByUserId\", \"bookingId\" : \"bookingId\", \"treatments\" : [ { \"durationMinutes\" : 6, \"treatmentMenuItemId\" : \"treatmentMenuItemId\", \"currentPrice\" : \"currentPrice\", \"id\" : \"id\", \"treatmentName\" : \"treatmentName\" }, { \"durationMinutes\" : 6, \"treatmentMenuItemId\" : \"treatmentMenuItemId\", \"currentPrice\" : \"currentPrice\", \"id\" : \"id\", \"treatmentName\" : \"treatmentName\" } ], \"guestName\" : \"guestName\", \"durationMinutes\" : 1, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"therapistUserId\" : \"therapistUserId\", \"tableId\" : \"tableId\", \"tableLabel\" : \"tableLabel\", \"startTime\" : \"startTime\", \"id\" : \"id\", \"cancelReason\" : \"cancelReason\", \"missingTreatmentNames\" : [ \"missingTreatmentNames\", \"missingTreatmentNames\" ], \"status\" : \"BOOKED\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

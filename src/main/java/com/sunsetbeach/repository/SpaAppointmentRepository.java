@@ -5,6 +5,8 @@ import com.sunsetbeach.model.SpaAppointmentStatus;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
 
 public interface SpaAppointmentRepository extends JpaRepository<SpaAppointmentEntity, String> {
 
@@ -49,4 +51,42 @@ public interface SpaAppointmentRepository extends JpaRepository<SpaAppointmentEn
      * could wrongly attach this same order to a second appointment.
      */
     boolean existsByOrderId(String orderId);
+
+    /**
+     * Pushes both {@code SpaAppointment} exclusion constraints' checks to the end of the current
+     * transaction instead of the end of the current statement - the primitive
+     * {@link com.sunsetbeach.service.SpaAppointmentService#swapTables} depends on. A genuine swap
+     * (two appointments trading tables) can only be expressed as two ordinary {@code UPDATE}s,
+     * and under the default {@code NOT DEFERRABLE} timing each one is checked as it runs - the
+     * first would find the second appointment still sitting on the table it's moving into and
+     * fail, regardless of which one goes first, since neither table is free until both rows have
+     * moved. A single statement moving both rows was tried and still fails the same way (see
+     * {@code SpaAppointmentTableSwapConstraintTimingTests}) - {@code NOT DEFERRABLE} constraints
+     * are enforced synchronously per row as each row's index entry is written, not once at the
+     * end of the statement. Requires V56's migration ({@code DEFERRABLE INITIALLY IMMEDIATE}) -
+     * {@code SET CONSTRAINTS} on a name that isn't actually deferrable is itself an error.
+     *
+     * <p>Only in effect for the transaction that calls it - see {@link #restoreImmediateOverlapConstraints()},
+     * which every caller of this method must call before returning, so a genuine conflict still
+     * surfaces as a catchable exception at a point this code controls, not as an opaque failure
+     * at the outer transaction's own commit after the calling method has already returned.
+     */
+    @Modifying
+    @Query(value = "SET CONSTRAINTS spa_appointment_no_table_overlap, spa_appointment_no_therapist_overlap DEFERRED", nativeQuery = true)
+    void deferOverlapConstraints();
+
+    /**
+     * Forces the deferred checks queued by {@link #deferOverlapConstraints()} to run right now,
+     * inside this same transaction, instead of waiting for commit. If the two appointments' final
+     * table/time/therapist state is genuinely conflict-free (with each other, and with every
+     * other row), this returns normally. If not - a real race, or a bug upstream that let this
+     * get called with a state that still conflicts - Postgres raises the same exclusion violation
+     * here it would otherwise raise at COMMIT, except the caller can actually catch it (a
+     * {@code DataAccessException}, same as every other write in this service) and translate it
+     * with {@code translateOverlap} instead of it surfacing as an unhandled failure the
+     * transaction manager reports on its own.
+     */
+    @Modifying
+    @Query(value = "SET CONSTRAINTS spa_appointment_no_table_overlap, spa_appointment_no_therapist_overlap IMMEDIATE", nativeQuery = true)
+    void restoreImmediateOverlapConstraints();
 }

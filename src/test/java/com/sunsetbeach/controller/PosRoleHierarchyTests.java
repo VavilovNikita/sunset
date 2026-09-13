@@ -65,6 +65,7 @@ import com.sunsetbeach.model.SpaAppointmentTreatmentCreateInput;
 import com.sunsetbeach.model.SpaSchedule;
 import com.sunsetbeach.model.SpaTherapist;
 import com.sunsetbeach.model.SwapSegmentRoomUnitInput;
+import com.sunsetbeach.model.SwapSpaAppointmentTableInput;
 import com.sunsetbeach.model.Table;
 import com.sunsetbeach.model.TablePositionInput;
 import com.sunsetbeach.model.Zone;
@@ -698,6 +699,25 @@ class PosRoleHierarchyTests {
                         .header("Authorization", token(Role.CASHIER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new SpaAppointmentScheduleInput("table-1", "user-1", "2027-01-01", "10:00"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void swapSpaAppointmentTable_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/spa-appointments/appt-1/swap-table")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SwapSpaAppointmentTableInput("appt-2"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void swapSpaAppointmentTable_withCashierToken_isOk() throws Exception {
+        when(spaAppointmentService.swapTables(eq("appt-1"), any(), anyString())).thenReturn(sampleSpaAppointment());
+        mockMvc.perform(post("/spa-appointments/appt-1/swap-table")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SwapSpaAppointmentTableInput("appt-2"))))
                 .andExpect(status().isOk());
     }
 
