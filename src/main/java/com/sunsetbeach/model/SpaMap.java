@@ -4,7 +4,11 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.sunsetbeach.model.SpaMapTable;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -16,7 +20,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * The spa&#39;s own floor-plan background image - &#x60;GET /spa-map&#x60;, with the actual bytes served separately from &#x60;GET /spa-map/image&#x60;, same split as &#x60;PropertyMap&#x60;/&#x60;GET /property-map/ image&#x60;. Deliberately its own image, not the property map&#39;s: the spa&#39;s floor plan is SPA- zone tables (placed via &#x60;PATCH /tables/positions&#x60;, see &#x60;Table.positionX&#x60;), a different physical layout at a different scale than the property map&#39;s rooms, and a manager replacing one must never be mistaken for replacing the other. 
+ * The spa&#39;s own floor-plan background image and its tables&#39; today-state - &#x60;GET /spa-map&#x60;, with the actual image bytes served separately from &#x60;GET /spa-map/image&#x60;, same split as &#x60;PropertyMap&#x60;/&#x60;GET /property-map/image&#x60;. Deliberately its own image, not the property map&#39;s: the spa&#39;s floor plan is SPA-zone tables (placed via &#x60;PATCH /tables/positions&#x60;, see &#x60;Table.positionX&#x60;), a different physical layout at a different scale than the property map&#39;s rooms, and a manager replacing one must never be mistaken for replacing the other. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -27,6 +31,9 @@ public class SpaMap {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private JsonNullable<OffsetDateTime> imageUpdatedAt = JsonNullable.<OffsetDateTime>undefined();
 
+  @Valid
+  private List<@Valid SpaMapTable> tables = new ArrayList<>();
+
   public SpaMap() {
     super();
   }
@@ -34,9 +41,10 @@ public class SpaMap {
   /**
    * Constructor with only required parameters
    */
-  public SpaMap(String imagePath, OffsetDateTime imageUpdatedAt) {
+  public SpaMap(String imagePath, OffsetDateTime imageUpdatedAt, List<@Valid SpaMapTable> tables) {
     this.imagePath = JsonNullable.of(imagePath);
     this.imageUpdatedAt = JsonNullable.of(imageUpdatedAt);
+    this.tables = tables;
   }
 
   public SpaMap imagePath(String imagePath) {
@@ -77,6 +85,33 @@ public class SpaMap {
     this.imageUpdatedAt = imageUpdatedAt;
   }
 
+  public SpaMap tables(List<@Valid SpaMapTable> tables) {
+    this.tables = tables;
+    return this;
+  }
+
+  public SpaMap addTablesItem(SpaMapTable tablesItem) {
+    if (this.tables == null) {
+      this.tables = new ArrayList<>();
+    }
+    this.tables.add(tablesItem);
+    return this;
+  }
+
+  /**
+   * Every SPA-zone table (placed on the map or not, active or not), enriched with today's occupancy - see `SpaMapTable`.
+   * @return tables
+   */
+  @NotNull @Valid 
+  @JsonProperty("tables")
+  public List<@Valid SpaMapTable> getTables() {
+    return tables;
+  }
+
+  public void setTables(List<@Valid SpaMapTable> tables) {
+    this.tables = tables;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -87,12 +122,13 @@ public class SpaMap {
     }
     SpaMap spaMap = (SpaMap) o;
     return Objects.equals(this.imagePath, spaMap.imagePath) &&
-        Objects.equals(this.imageUpdatedAt, spaMap.imageUpdatedAt);
+        Objects.equals(this.imageUpdatedAt, spaMap.imageUpdatedAt) &&
+        Objects.equals(this.tables, spaMap.tables);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(imagePath, imageUpdatedAt);
+    return Objects.hash(imagePath, imageUpdatedAt, tables);
   }
 
   @Override
@@ -101,6 +137,7 @@ public class SpaMap {
     sb.append("class SpaMap {\n");
     sb.append("    imagePath: ").append(toIndentedString(imagePath)).append("\n");
     sb.append("    imageUpdatedAt: ").append(toIndentedString(imageUpdatedAt)).append("\n");
+    sb.append("    tables: ").append(toIndentedString(tables)).append("\n");
     sb.append("}");
     return sb.toString();
   }

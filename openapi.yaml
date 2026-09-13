@@ -3474,13 +3474,16 @@ paths:
     get:
       operationId: getSpaMap
       tags: [Spa]
-      summary: Get the spa map's background image metadata
+      summary: Get the spa map's background image and its tables' today-state
       description: >
-        Requires CASHIER or above, same floor as `GET /spa-appointments`. Mirrors
-        `GET /property-map` in shape and purpose but carries no room/table list of its own - SPA-
-        zone tables (the map's actual content) already come from `GET /tables`, placed via
-        `PATCH /tables/positions`; this endpoint exists only so the frontend has `imageUpdatedAt`
-        to cache-bust `GET /spa-map/image` with, same reasoning as `PropertyMap.imageUpdatedAt`.
+        Requires CASHIER or above, same floor as `GET /spa-appointments` - a receptionist reading
+        which table is free right now is exactly the reader this level serves; only placing
+        tables and replacing the image stay MANAGER+ (`PATCH /tables/positions`,
+        `POST /spa-map/image`). Mirrors `GET /property-map` in shape and purpose: every SPA-zone
+        table (placed or not, active or not), enriched with today's occupancy - see `SpaMapTable`.
+        The enrichment costs one call to `SpaAppointmentService#getSchedule` for today (itself
+        already batched, not one query per table - see that method's own doc) plus the table list
+        itself; nothing here queries per-table.
       responses:
         "200":
           description: The spa map's image metadata.
@@ -6253,16 +6256,93 @@ components:
         email:
           type: string
 
+    SpaMapTableAppointment:
+      type: object
+      description: >
+        A summary of one of today's appointments on a `SpaMapTable`, for the map's own detail
+        panel - every status, not just `BOOKED`/`COMPLETED` (a cancelled/no-show slot is still
+        part of the day's own story, same "still needs to render" reasoning `SpaSchedule.appointments`
+        already documents). Not a substitute for `SpaAppointment` - no id-level editing lives here,
+        only enough to list and link out to the real schedule.
+      required: [id, startTime, durationMinutes, status, guestName, treatmentNames]
+      properties:
+        id:
+          type: string
+        startTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        durationMinutes:
+          type: integer
+        status:
+          $ref: "#/components/schemas/SpaAppointmentStatus"
+        guestName:
+          type: string
+        treatmentNames:
+          type: array
+          items:
+            type: string
+
+    SpaMapTable:
+      type: object
+      description: >
+        One SPA-zone table on the map (`GET /spa-map`), enriched with today's occupancy - the
+        same kind of enrichment `PropertyMapUnit` already does for a room unit, computed the same
+        way: once, server-side, from data already fetched for another read
+        (`SpaAppointmentService#getSchedule`, the day grid's own batched query), not a per-table
+        query. `busy` and `nextAppointmentStartTime` are two sides of one axis - a table is
+        occupied by a `BOOKED`/`COMPLETED` appointment covering this exact moment (the same
+        occupying-statuses set the two `EXCLUDE USING gist` constraints use, see
+        `V43__spa_appointment_completed_still_occupies_slot.sql`), or it's free, in which case
+        `nextAppointmentStartTime` names when that stops being true (or stays `null` for the rest
+        of the day). `isActive` is a third, independent fact, exactly like
+        `PropertyMapUnit.isActive` - a deactivated table is still listed here, dimmed, never
+        excluded, and its `busy`/`nextAppointmentStartTime`/`appointments` are still the real
+        values (whatever inactive-but-still-technically-scheduled state that implies) rather than
+        being zeroed out - which state wins visually is a frontend decision, not encoded here.
+      required: [tableId, label, capacity, isActive, positionX, positionY, busy, nextAppointmentStartTime, appointments]
+      properties:
+        tableId:
+          type: string
+        label:
+          type: string
+        capacity:
+          type: integer
+        isActive:
+          type: boolean
+        positionX:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+        positionY:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+        busy:
+          type: boolean
+          description: True when a BOOKED or COMPLETED appointment on this table covers this exact moment.
+        nextAppointmentStartTime:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: The next BOOKED appointment's startTime today, after now - null when nothing is left today, regardless of `busy`.
+        appointments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpaMapTableAppointment"
+          description: Every one of today's appointments on this table, regardless of status.
+
     SpaMap:
       type: object
       description: >
-        The spa's own floor-plan background image - `GET /spa-map`, with the actual bytes served
-        separately from `GET /spa-map/image`, same split as `PropertyMap`/`GET /property-map/
-        image`. Deliberately its own image, not the property map's: the spa's floor plan is SPA-
-        zone tables (placed via `PATCH /tables/positions`, see `Table.positionX`), a different
-        physical layout at a different scale than the property map's rooms, and a manager
-        replacing one must never be mistaken for replacing the other.
-      required: [imagePath, imageUpdatedAt]
+        The spa's own floor-plan background image and its tables' today-state - `GET /spa-map`,
+        with the actual image bytes served separately from `GET /spa-map/image`, same split as
+        `PropertyMap`/`GET /property-map/image`. Deliberately its own image, not the property
+        map's: the spa's floor plan is SPA-zone tables (placed via `PATCH /tables/positions`, see
+        `Table.positionX`), a different physical layout at a different scale than the property
+        map's rooms, and a manager replacing one must never be mistaken for replacing the other.
+      required: [imagePath, imageUpdatedAt, tables]
       properties:
         imagePath:
           type: string
@@ -6272,6 +6352,11 @@ components:
           type: string
           format: date-time
           nullable: true
+        tables:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpaMapTable"
+          description: Every SPA-zone table (placed on the map or not, active or not), enriched with today's occupancy - see `SpaMapTable`.
 
     PropertyMapMaintenanceTask:
       type: object

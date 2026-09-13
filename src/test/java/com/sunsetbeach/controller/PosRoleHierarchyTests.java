@@ -1286,7 +1286,7 @@ class PosRoleHierarchyTests {
     }
 
     private static com.sunsetbeach.model.SpaMap sampleSpaMap() {
-        return new com.sunsetbeach.model.SpaMap(null, null);
+        return new com.sunsetbeach.model.SpaMap(null, null, List.of());
     }
 
     private static Room sampleRoom() {

@@ -163,8 +163,8 @@ public interface SpaApi {
 
 
     /**
-     * GET /spa-map : Get the spa map&#39;s background image metadata
-     * Requires CASHIER or above, same floor as &#x60;GET /spa-appointments&#x60;. Mirrors &#x60;GET /property-map&#x60; in shape and purpose but carries no room/table list of its own - SPA- zone tables (the map&#39;s actual content) already come from &#x60;GET /tables&#x60;, placed via &#x60;PATCH /tables/positions&#x60;; this endpoint exists only so the frontend has &#x60;imageUpdatedAt&#x60; to cache-bust &#x60;GET /spa-map/image&#x60; with, same reasoning as &#x60;PropertyMap.imageUpdatedAt&#x60;. 
+     * GET /spa-map : Get the spa map&#39;s background image and its tables&#39; today-state
+     * Requires CASHIER or above, same floor as &#x60;GET /spa-appointments&#x60; - a receptionist reading which table is free right now is exactly the reader this level serves; only placing tables and replacing the image stay MANAGER+ (&#x60;PATCH /tables/positions&#x60;, &#x60;POST /spa-map/image&#x60;). Mirrors &#x60;GET /property-map&#x60; in shape and purpose: every SPA-zone table (placed or not, active or not), enriched with today&#39;s occupancy - see &#x60;SpaMapTable&#x60;. The enrichment costs one call to &#x60;SpaAppointmentService#getSchedule&#x60; for today (itself already batched, not one query per table - see that method&#39;s own doc) plus the table list itself; nothing here queries per-table. 
      *
      * @return The spa map&#39;s image metadata. (status code 200)
      *         or No valid JWT. (status code 401)
@@ -182,7 +182,7 @@ public interface SpaApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"imageUpdatedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"imagePath\" : \"imagePath\" }";
+                    String exampleString = "{ \"imageUpdatedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"tables\" : [ { \"positionY\" : 0.14658129805029452, \"appointments\" : [ { \"durationMinutes\" : 5, \"startTime\" : \"startTime\", \"id\" : \"id\", \"status\" : \"BOOKED\", \"guestName\" : \"guestName\", \"treatmentNames\" : [ \"treatmentNames\", \"treatmentNames\" ] }, { \"durationMinutes\" : 5, \"startTime\" : \"startTime\", \"id\" : \"id\", \"status\" : \"BOOKED\", \"guestName\" : \"guestName\", \"treatmentNames\" : [ \"treatmentNames\", \"treatmentNames\" ] } ], \"nextAppointmentStartTime\" : \"nextAppointmentStartTime\", \"busy\" : true, \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"appointments\" : [ { \"durationMinutes\" : 5, \"startTime\" : \"startTime\", \"id\" : \"id\", \"status\" : \"BOOKED\", \"guestName\" : \"guestName\", \"treatmentNames\" : [ \"treatmentNames\", \"treatmentNames\" ] }, { \"durationMinutes\" : 5, \"startTime\" : \"startTime\", \"id\" : \"id\", \"status\" : \"BOOKED\", \"guestName\" : \"guestName\", \"treatmentNames\" : [ \"treatmentNames\", \"treatmentNames\" ] } ], \"nextAppointmentStartTime\" : \"nextAppointmentStartTime\", \"busy\" : true, \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ], \"imagePath\" : \"imagePath\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -533,7 +533,7 @@ public interface SpaApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"imageUpdatedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"imagePath\" : \"imagePath\" }";
+                    String exampleString = "{ \"imageUpdatedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"tables\" : [ { \"positionY\" : 0.14658129805029452, \"appointments\" : [ { \"durationMinutes\" : 5, \"startTime\" : \"startTime\", \"id\" : \"id\", \"status\" : \"BOOKED\", \"guestName\" : \"guestName\", \"treatmentNames\" : [ \"treatmentNames\", \"treatmentNames\" ] }, { \"durationMinutes\" : 5, \"startTime\" : \"startTime\", \"id\" : \"id\", \"status\" : \"BOOKED\", \"guestName\" : \"guestName\", \"treatmentNames\" : [ \"treatmentNames\", \"treatmentNames\" ] } ], \"nextAppointmentStartTime\" : \"nextAppointmentStartTime\", \"busy\" : true, \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"appointments\" : [ { \"durationMinutes\" : 5, \"startTime\" : \"startTime\", \"id\" : \"id\", \"status\" : \"BOOKED\", \"guestName\" : \"guestName\", \"treatmentNames\" : [ \"treatmentNames\", \"treatmentNames\" ] }, { \"durationMinutes\" : 5, \"startTime\" : \"startTime\", \"id\" : \"id\", \"status\" : \"BOOKED\", \"guestName\" : \"guestName\", \"treatmentNames\" : [ \"treatmentNames\", \"treatmentNames\" ] } ], \"nextAppointmentStartTime\" : \"nextAppointmentStartTime\", \"busy\" : true, \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ], \"imagePath\" : \"imagePath\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
