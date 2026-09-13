@@ -181,6 +181,53 @@ class BookingSegmentSwapTests extends AbstractIntegrationTest {
         assertThat(new BigDecimal(bookingService.getById(bookingTwo.getId()).getTotalPrice())).isEqualByComparingTo(priceTwoBefore);
     }
 
+    /**
+     * A single-direction test is what let a direction-dependent bug through before: this performs
+     * the identical swap twice, from independent room pairs, once initiated from each side, and
+     * requires both to succeed the same way. Regression coverage for the report that swapping out
+     * of one room succeeded while the identical swap initiated from the other side failed with
+     * "already booked for an overlapping stay" - if the two checks in swapSegmentRoomUnits ever
+     * stop excluding the same {segment, other} pair on both sides, this is what catches it.
+     */
+    @Test
+    void swap_bothDirections_bothSucceed() {
+        RoomEntity room = createRoom(4, new BigDecimal("1000.00"));
+        LocalDate checkIn = LocalDate.now().plusDays(360);
+        LocalDate checkOut = checkIn.plusDays(3);
+        RoomUnitEntity unitA = roomUnitRepository.findByRoomId(room.getId()).get(0);
+        RoomUnitEntity unitB = roomUnitRepository.findByRoomId(room.getId()).get(1);
+        RoomUnitEntity unitC = roomUnitRepository.findByRoomId(room.getId()).get(2);
+        RoomUnitEntity unitD = roomUnitRepository.findByRoomId(room.getId()).get(3);
+
+        // Direction one: swap initiated from the booking in unitA.
+        Booking bookingOne = createBooking(room.getId(), checkIn, checkOut);
+        bookingService.assignRoomUnit(bookingOne.getId(), new RoomUnitAssignmentInput().roomUnitId(unitA.getId()));
+        Booking bookingTwo = createBooking(room.getId(), checkIn, checkOut);
+        bookingService.assignRoomUnit(bookingTwo.getId(), new RoomUnitAssignmentInput().roomUnitId(unitB.getId()));
+        String segmentOneId = segmentsOf(bookingOne.getId()).get(0).getId();
+        String segmentTwoId = segmentsOf(bookingTwo.getId()).get(0).getId();
+
+        bookingService.swapSegmentRoomUnit(bookingOne.getId(), segmentOneId, new SwapSegmentRoomUnitInput(segmentTwoId));
+
+        assertThat(segmentsOf(bookingOne.getId()).get(0).getRoomUnitId()).isEqualTo(unitB.getId());
+        assertThat(segmentsOf(bookingTwo.getId()).get(0).getRoomUnitId()).isEqualTo(unitA.getId());
+
+        // Direction two: the identical setup (same dates, same room, same starting units C/D), but
+        // the swap is initiated from the booking in unitD instead - the side that was the "other"
+        // in direction one is the caller here.
+        Booking bookingThree = createBooking(room.getId(), checkIn, checkOut);
+        bookingService.assignRoomUnit(bookingThree.getId(), new RoomUnitAssignmentInput().roomUnitId(unitC.getId()));
+        Booking bookingFour = createBooking(room.getId(), checkIn, checkOut);
+        bookingService.assignRoomUnit(bookingFour.getId(), new RoomUnitAssignmentInput().roomUnitId(unitD.getId()));
+        String segmentThreeId = segmentsOf(bookingThree.getId()).get(0).getId();
+        String segmentFourId = segmentsOf(bookingFour.getId()).get(0).getId();
+
+        bookingService.swapSegmentRoomUnit(bookingFour.getId(), segmentFourId, new SwapSegmentRoomUnitInput(segmentThreeId));
+
+        assertThat(segmentsOf(bookingThree.getId()).get(0).getRoomUnitId()).isEqualTo(unitD.getId());
+        assertThat(segmentsOf(bookingFour.getId()).get(0).getRoomUnitId()).isEqualTo(unitC.getId());
+    }
+
     @Test
     void swap_crossRoomType_isRejectedAsBadRequest_beforeAnyAvailabilityWork() {
         RoomEntity roomA = createRoom(1, new BigDecimal("1000.00"));
