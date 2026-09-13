@@ -2,6 +2,7 @@ package com.sunsetbeach.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -130,7 +131,8 @@ import tools.jackson.databind.json.JsonMapper;
             com.sunsetbeach.controller.MaintenanceTaskController.class,
             TableController.class,
             SpaController.class,
-            GuestController.class
+            GuestController.class,
+            com.sunsetbeach.controller.RosterController.class
         })
 @Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
         com.sunsetbeach.security.BookingRateLimiter.class})
@@ -206,6 +208,24 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private GuestService guestService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.ShiftCodeService shiftCodeService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.EmployeePatternService employeePatternService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.RosterService rosterService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.StaffAreaCoverageRuleService staffAreaCoverageRuleService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.AttendanceService attendanceService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.EmployeePayRateService employeePayRateService;
 
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
     // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
@@ -1370,6 +1390,172 @@ class PosRoleHierarchyTests {
                 null,
                 OffsetDateTime.now(),
                 OffsetDateTime.now());
+    }
+
+    // --- Roster ---------------------------------------------------------------------------
+
+    @Test
+    void listShiftCodes_withWaiterToken_isOk() throws Exception {
+        // Any authenticated staff member - an employee reading their own schedule needs to know
+        // what a code means as much as a manager does, see the Roster tag description.
+        when(shiftCodeService.list(any())).thenReturn(java.util.List.of());
+        mockMvc.perform(get("/shift-codes").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void createShiftCode_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/shift-codes")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new com.sunsetbeach.model.ShiftCodeCreateInput(com.sunsetbeach.model.StaffArea.RESTAURANT, "9", true, true, "2027-01-01"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createShiftCode_withManagerToken_isCreated() throws Exception {
+        when(shiftCodeService.create(any(), anyString())).thenReturn(sampleShiftCode());
+        mockMvc.perform(post("/shift-codes")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new com.sunsetbeach.model.ShiftCodeCreateInput(com.sunsetbeach.model.StaffArea.RESTAURANT, "9", true, true, "2027-01-01"))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void getMyRoster_withWaiterToken_isOk() throws Exception {
+        when(rosterService.getMyRoster(anyString(), anyInt(), anyInt())).thenReturn(java.util.List.of());
+        mockMvc.perform(get("/roster/me?year=2027&month=1").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void getRosterMonth_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/roster?year=2027&month=1").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getRosterMonth_withManagerToken_isOk() throws Exception {
+        when(rosterService.getMonth(anyInt(), anyInt())).thenReturn(sampleRosterMonth());
+        mockMvc.perform(get("/roster?year=2027&month=1").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void moveRosterEntry_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/roster/entries/entry-1/date")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.sunsetbeach.model.RosterMoveInput("2027-01-02"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void moveRosterEntry_withManagerToken_isOk() throws Exception {
+        when(rosterService.moveEntry(eq("entry-1"), any(), anyString())).thenReturn(sampleRosterEntry());
+        mockMvc.perform(patch("/roster/entries/entry-1/date")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.sunsetbeach.model.RosterMoveInput("2027-01-02"))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void setStaffAreaCoverageRule_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(put("/staff-area-coverage-rules/KITCHEN")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.sunsetbeach.model.StaffAreaCoverageRuleInput(2))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void setStaffAreaCoverageRule_withManagerToken_isOk() throws Exception {
+        when(staffAreaCoverageRuleService.set(any(), any(), anyString())).thenReturn(sampleCoverageRule());
+        mockMvc.perform(put("/staff-area-coverage-rules/KITCHEN")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.sunsetbeach.model.StaffAreaCoverageRuleInput(2))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void recordAttendancePunch_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/attendance")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.sunsetbeach.model.AttendancePunchCreateInput(
+                                "user-1", OffsetDateTime.now(), com.sunsetbeach.model.PunchDirection.IN))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void recordAttendancePunch_withManagerToken_isCreated() throws Exception {
+        when(attendanceService.recordPunch(any(), anyString())).thenReturn(sampleAttendancePunch());
+        mockMvc.perform(post("/attendance")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.sunsetbeach.model.AttendancePunchCreateInput(
+                                "user-1", OffsetDateTime.now(), com.sunsetbeach.model.PunchDirection.IN))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void createEmployeePayRate_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/employee-pay-rates")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.sunsetbeach.model.EmployeePayRateCreateInput("user-1", "700.00", "2027-01-01"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createEmployeePayRate_withManagerToken_isCreated() throws Exception {
+        when(employeePayRateService.create(any(), anyString())).thenReturn(sampleEmployeePayRate());
+        mockMvc.perform(post("/employee-pay-rates")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new com.sunsetbeach.model.EmployeePayRateCreateInput("user-1", "700.00", "2027-01-01"))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void exportRosterActuals_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/roster/actuals-export?year=2027&month=1").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void exportRosterActuals_withManagerToken_isOk() throws Exception {
+        when(rosterService.exportActualsCsv(anyInt(), anyInt(), anyString())).thenReturn("Employee,Days worked,Gross pay (before advances and deductions)\r\n");
+        mockMvc.perform(get("/roster/actuals-export?year=2027&month=1").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    private static com.sunsetbeach.model.ShiftCode sampleShiftCode() {
+        return new com.sunsetbeach.model.ShiftCode(
+                "code-1", com.sunsetbeach.model.StaffArea.RESTAURANT, "9", true, true, "2027-01-01", true, "manager@example.com", OffsetDateTime.now());
+    }
+
+    private static com.sunsetbeach.model.RosterEntry sampleRosterEntry() {
+        return new com.sunsetbeach.model.RosterEntry(
+                "entry-1", "user-1", "waiter@example.com", "2027-01-02", sampleShiftCode(), false, OffsetDateTime.now(), OffsetDateTime.now());
+    }
+
+    private static com.sunsetbeach.model.RosterMonth sampleRosterMonth() {
+        return new com.sunsetbeach.model.RosterMonth(2027, 1, java.util.List.of(), java.util.List.of(), java.util.List.of());
+    }
+
+    private static com.sunsetbeach.model.StaffAreaCoverageRule sampleCoverageRule() {
+        return new com.sunsetbeach.model.StaffAreaCoverageRule(com.sunsetbeach.model.StaffArea.KITCHEN, 2, "manager@example.com", OffsetDateTime.now());
+    }
+
+    private static com.sunsetbeach.model.AttendancePunch sampleAttendancePunch() {
+        return new com.sunsetbeach.model.AttendancePunch(
+                "punch-1", "user-1", "waiter@example.com", OffsetDateTime.now(), com.sunsetbeach.model.PunchDirection.IN,
+                com.sunsetbeach.model.PunchSource.MANUAL, OffsetDateTime.now());
+    }
+
+    private static com.sunsetbeach.model.EmployeePayRate sampleEmployeePayRate() {
+        return new com.sunsetbeach.model.EmployeePayRate(
+                "rate-1", "user-1", "waiter@example.com", "700.00", "2027-01-01", "manager@example.com", OffsetDateTime.now());
     }
 
     private static MenuItemInput sampleMenuItemInput() {

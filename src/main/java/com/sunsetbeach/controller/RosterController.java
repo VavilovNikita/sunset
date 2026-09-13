@@ -6,6 +6,8 @@ import com.sunsetbeach.model.AttendancePunch;
 import com.sunsetbeach.model.AttendancePunchCreateInput;
 import com.sunsetbeach.model.EmployeePattern;
 import com.sunsetbeach.model.EmployeePatternInput;
+import com.sunsetbeach.model.EmployeePayRate;
+import com.sunsetbeach.model.EmployeePayRateCreateInput;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.RosterEntry;
 import com.sunsetbeach.model.RosterEntryCreateInput;
@@ -23,19 +25,17 @@ import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
 import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.AttendanceService;
 import com.sunsetbeach.service.EmployeePatternService;
+import com.sunsetbeach.service.EmployeePayRateService;
 import com.sunsetbeach.service.RosterService;
 import com.sunsetbeach.service.ShiftCodeService;
 import com.sunsetbeach.service.StaffAreaCoverageRuleService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Adds attendance on top of the coverage commit before this one - pay rates and export still
- * answer 501 (RosterApi's own default) until their own commit.
- */
 @RestController
 public class RosterController implements RosterApi {
 
@@ -44,18 +44,21 @@ public class RosterController implements RosterApi {
     private final RosterService rosterService;
     private final StaffAreaCoverageRuleService staffAreaCoverageRuleService;
     private final AttendanceService attendanceService;
+    private final EmployeePayRateService employeePayRateService;
 
     public RosterController(
             ShiftCodeService shiftCodeService,
             EmployeePatternService employeePatternService,
             RosterService rosterService,
             StaffAreaCoverageRuleService staffAreaCoverageRuleService,
-            AttendanceService attendanceService) {
+            AttendanceService attendanceService,
+            EmployeePayRateService employeePayRateService) {
         this.shiftCodeService = shiftCodeService;
         this.employeePatternService = employeePatternService;
         this.rosterService = rosterService;
         this.staffAreaCoverageRuleService = staffAreaCoverageRuleService;
         this.attendanceService = attendanceService;
+        this.employeePayRateService = employeePayRateService;
     }
 
     @Override
@@ -152,6 +155,23 @@ public class RosterController implements RosterApi {
     @Override
     public ResponseEntity<List<AttendanceDaySummary>> getAttendanceSummary(String employeeUserId, Integer year, Integer month) {
         return ResponseEntity.ok(attendanceService.summary(employeeUserId, year, month));
+    }
+
+    @Override
+    public ResponseEntity<List<EmployeePayRate>> listEmployeePayRates(String employeeUserId) {
+        return ResponseEntity.ok(employeePayRateService.list(employeeUserId));
+    }
+
+    @Override
+    public ResponseEntity<EmployeePayRate> createEmployeePayRate(EmployeePayRateCreateInput employeePayRateCreateInput) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(employeePayRateService.create(employeePayRateCreateInput, callerId()));
+    }
+
+    @Override
+    public ResponseEntity<String> exportRosterActuals(Integer year, Integer month) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
+                .body(rosterService.exportActualsCsv(year, month, callerId()));
     }
 
     private static String callerId() {

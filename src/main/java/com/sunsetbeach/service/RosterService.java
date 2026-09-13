@@ -43,6 +43,7 @@ public class RosterService {
     private final EmployeePatternRepository employeePatternRepository;
     private final ShiftCodeRepository shiftCodeRepository;
     private final StaffAreaCoverageRuleRepository staffAreaCoverageRuleRepository;
+    private final EmployeePayRateService employeePayRateService;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
 
@@ -51,12 +52,14 @@ public class RosterService {
             EmployeePatternRepository employeePatternRepository,
             ShiftCodeRepository shiftCodeRepository,
             StaffAreaCoverageRuleRepository staffAreaCoverageRuleRepository,
+            EmployeePayRateService employeePayRateService,
             UserRepository userRepository,
             AuditLogService auditLogService) {
         this.rosterEntryRepository = rosterEntryRepository;
         this.employeePatternRepository = employeePatternRepository;
         this.shiftCodeRepository = shiftCodeRepository;
         this.staffAreaCoverageRuleRepository = staffAreaCoverageRuleRepository;
+        this.employeePayRateService = employeePayRateService;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
     }
@@ -338,6 +341,53 @@ public class RosterService {
         }
 
         return new RosterMonth(year, month, entryDtos, employeeDtos, warnings);
+    }
+
+    /**
+     * One row per employee: days actually worked that month ({@code countsAsWorked} entries -
+     * {@code OP} counts, {@code PH} does not) times whichever daily rate was in effect on each
+     * of those days, summed. The column is headed "Gross pay (before advances and deductions)",
+     * deliberately, not "Pay" - this total is not what anyone is actually owed once an advance
+     * against salary is netted out (real practice at this hotel, per the source spreadsheet's
+     * own cell comments), and a number that reads as final when it isn't is the exact debt
+     * {@code Booking.status=PAID} already represents elsewhere in this system.
+     */
+    @Transactional(readOnly = true)
+    public String exportActualsCsv(int year, int month, String actorUserId) {
+        YearMonth ym = YearMonth.of(year, month);
+        List<RosterEntryEntity> entries = rosterEntryRepository.findByDateBetween(ym.atDay(1), ym.atEndOfMonth());
+        Map<String, ShiftCodeEntity> shiftCodes = resolveShiftCodes(entries);
+
+        Map<String, List<RosterEntryEntity>> entriesByEmployee = entries.stream()
+                .filter(e -> {
+                    ShiftCodeEntity sc = shiftCodes.get(e.getShiftCodeId());
+                    return sc != null && sc.isCountsAsWorked();
+                })
+                .collect(Collectors.groupingBy(RosterEntryEntity::getEmployeeUserId));
+
+        List<String> employeeIds = entriesByEmployee.keySet().stream().sorted().toList();
+        Map<String, String> emails = resolveEmails(employeeIds);
+        Map<String, List<com.sunsetbeach.entity.EmployeePayRateEntity>> rateHistoryByEmployee =
+                employeePayRateService.historyFor(employeeIds).stream()
+                        .collect(Collectors.groupingBy(com.sunsetbeach.entity.EmployeePayRateEntity::getEmployeeUserId));
+
+        CsvBuilder csv = new CsvBuilder();
+        csv.row("Employee", "Days worked", "Gross pay (before advances and deductions)");
+        for (String employeeId : employeeIds) {
+            List<RosterEntryEntity> employeeEntries = entriesByEmployee.get(employeeId);
+            List<com.sunsetbeach.entity.EmployeePayRateEntity> history = rateHistoryByEmployee.getOrDefault(employeeId, List.of());
+            java.math.BigDecimal gross = java.math.BigDecimal.ZERO;
+            for (RosterEntryEntity entry : employeeEntries) {
+                gross = gross.add(EmployeePayRateService.rateAsOf(history, entry.getDate()));
+            }
+            csv.row(emails.get(employeeId), String.valueOf(employeeEntries.size()), com.sunsetbeach.mapper.PriceFormat.asDecimalString(gross));
+        }
+
+        auditLogService.record(
+                AuditAction.ROSTER_ACTUALS_EXPORTED, AuditEntityType.ROSTER_ENTRY, null,
+                "Exported " + ym + " roster actuals for " + employeeIds.size() + " employee(s)");
+
+        return csv.toString();
     }
 
     private Map<String, String> resolveEmails(List<String> userIds) {
