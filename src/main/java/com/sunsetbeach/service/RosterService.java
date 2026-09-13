@@ -8,6 +8,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
+import com.sunsetbeach.model.RosterCoverageWarning;
 import com.sunsetbeach.model.RosterEmployee;
 import com.sunsetbeach.model.RosterEntry;
 import com.sunsetbeach.model.RosterEntryCreateInput;
@@ -15,12 +16,16 @@ import com.sunsetbeach.model.RosterMonth;
 import com.sunsetbeach.model.RosterMoveInput;
 import com.sunsetbeach.model.RosterReassignInput;
 import com.sunsetbeach.model.RosterSwapInput;
+import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.repository.EmployeePatternRepository;
 import com.sunsetbeach.repository.RosterEntryRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
+import com.sunsetbeach.repository.StaffAreaCoverageRuleRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -30,10 +35,6 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * The roster grid and its editing surface. A day off is the absence of a {@code RosterEntry},
  * never a row of its own - see that model's own description.
- *
- * <p>Coverage warnings are always empty for now - {@link #buildMonth} returns {@code List.of()}
- * until the coverage-rule commit adds the real computation on top of this one, the same
- * "one working slice at a time" staging the shift-code/pattern commit before this one used.
  */
 @Service
 public class RosterService {
@@ -41,6 +42,7 @@ public class RosterService {
     private final RosterEntryRepository rosterEntryRepository;
     private final EmployeePatternRepository employeePatternRepository;
     private final ShiftCodeRepository shiftCodeRepository;
+    private final StaffAreaCoverageRuleRepository staffAreaCoverageRuleRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
 
@@ -48,11 +50,13 @@ public class RosterService {
             RosterEntryRepository rosterEntryRepository,
             EmployeePatternRepository employeePatternRepository,
             ShiftCodeRepository shiftCodeRepository,
+            StaffAreaCoverageRuleRepository staffAreaCoverageRuleRepository,
             UserRepository userRepository,
             AuditLogService auditLogService) {
         this.rosterEntryRepository = rosterEntryRepository;
         this.employeePatternRepository = employeePatternRepository;
         this.shiftCodeRepository = shiftCodeRepository;
+        this.staffAreaCoverageRuleRepository = staffAreaCoverageRuleRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
     }
@@ -308,7 +312,32 @@ public class RosterService {
         List<RosterEntry> entryDtos = entities.stream().map(e -> toDto(e, emails.get(e.getEmployeeUserId()), shiftCodes.get(e.getShiftCodeId()), null)).toList();
         List<RosterEmployee> employeeDtos = listEmployees();
 
-        return new RosterMonth(year, month, entryDtos, employeeDtos, List.of());
+        // Coverage: only countsAsWorked entries count toward a day's working total for that area.
+        Map<String, Integer> workingCountByAreaDate = new HashMap<>();
+        for (RosterEntryEntity e : entities) {
+            ShiftCodeEntity shiftCode = shiftCodes.get(e.getShiftCodeId());
+            if (shiftCode != null && shiftCode.isCountsAsWorked()) {
+                String key = shiftCode.getStaffArea().name() + "|" + e.getDate();
+                workingCountByAreaDate.merge(key, 1, Integer::sum);
+            }
+        }
+        Map<StaffArea, Integer> minimumByArea = staffAreaCoverageRuleRepository.findAll().stream()
+                .collect(Collectors.toMap(r -> r.getStaffArea(), r -> r.getMinimumWorking()));
+
+        List<RosterCoverageWarning> warnings = new ArrayList<>();
+        YearMonth ym = YearMonth.of(year, month);
+        for (Map.Entry<StaffArea, Integer> ruleEntry : minimumByArea.entrySet()) {
+            StaffArea area = ruleEntry.getKey();
+            int minimum = ruleEntry.getValue();
+            for (LocalDate date = ym.atDay(1); !date.isAfter(ym.atEndOfMonth()); date = date.plusDays(1)) {
+                int working = workingCountByAreaDate.getOrDefault(area.name() + "|" + date, 0);
+                if (working < minimum) {
+                    warnings.add(new RosterCoverageWarning(area, date.toString(), working, minimum));
+                }
+            }
+        }
+
+        return new RosterMonth(year, month, entryDtos, employeeDtos, warnings);
     }
 
     private Map<String, String> resolveEmails(List<String> userIds) {

@@ -18,10 +18,12 @@ import com.sunsetbeach.model.RosterSwapInput;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
 import com.sunsetbeach.model.StaffArea;
+import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
 import com.sunsetbeach.model.Weekday;
 import com.sunsetbeach.repository.EmployeePatternRepository;
 import com.sunsetbeach.repository.RosterEntryRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
+import com.sunsetbeach.repository.StaffAreaCoverageRuleRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -53,6 +55,9 @@ class RosterServiceTests extends AbstractIntegrationTest {
     private EmployeePatternService employeePatternService;
 
     @Autowired
+    private StaffAreaCoverageRuleService staffAreaCoverageRuleService;
+
+    @Autowired
     private RosterEntryRepository rosterEntryRepository;
 
     @Autowired
@@ -60,6 +65,9 @@ class RosterServiceTests extends AbstractIntegrationTest {
 
     @Autowired
     private EmployeePatternRepository employeePatternRepository;
+
+    @Autowired
+    private StaffAreaCoverageRuleRepository staffAreaCoverageRuleRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -75,6 +83,7 @@ class RosterServiceTests extends AbstractIntegrationTest {
     void cleanUp() {
         rosterEntryRepository.deleteAll(rosterEntryRepository.findAll().stream().filter(e -> createdUserIds.contains(e.getEmployeeUserId())).toList());
         createdUserIds.forEach(employeePatternRepository::deleteById);
+        staffAreaCoverageRuleRepository.deleteAll();
         shiftCodeRepository.deleteAllById(createdShiftCodeIds);
         createdUserIds.forEach(userRepository::deleteById);
     }
@@ -292,6 +301,19 @@ class RosterServiceTests extends AbstractIntegrationTest {
         assertThat(secondRun).hasSameSizeAs(entries);
     }
 
-    // Coverage warnings are covered in their own commit's tests, once StaffAreaCoverageRule
-    // exists - see that commit's own addition to this class.
+    @Test
+    void getMonth_belowMinimum_warnsForThatAreaAndDateOnly() {
+        UserEntity mgr = createUser(Role.MANAGER);
+        UserEntity employee = createUser(Role.WAITER);
+        ShiftCode code = createCode(StaffArea.KITCHEN, "12:00", "21:00");
+        staffAreaCoverageRuleService.set(StaffArea.KITCHEN, new StaffAreaCoverageRuleInput(2), mgr.getId());
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), "2027-05-02", code.getId()), mgr.getId());
+
+        RosterMonth month = rosterService.getMonth(2027, 5);
+
+        assertThat(month.getCoverageWarnings())
+                .anyMatch(w -> w.getStaffArea() == StaffArea.KITCHEN && w.getDate().equals("2027-05-02") && w.getWorkingCount() == 1 && w.getMinimumWorking() == 2);
+        // A day with nobody in Kitchen at all still warns (0 < 2).
+        assertThat(month.getCoverageWarnings()).anyMatch(w -> w.getStaffArea() == StaffArea.KITCHEN && w.getDate().equals("2027-05-03") && w.getWorkingCount() == 0);
+    }
 }

@@ -15,10 +15,13 @@ import com.sunsetbeach.model.RosterLockInput;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
 import com.sunsetbeach.model.StaffArea;
+import com.sunsetbeach.model.StaffAreaCoverageRule;
+import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
 import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.EmployeePatternService;
 import com.sunsetbeach.service.RosterService;
 import com.sunsetbeach.service.ShiftCodeService;
+import com.sunsetbeach.service.StaffAreaCoverageRuleService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,9 +29,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Adds the roster grid and its editing surface on top of the shift-code/pattern commit before
- * this one. Coverage, attendance, pay rates, and export still answer 501 (RosterApi's own
- * default) until their own commits add the real implementation.
+ * Adds coverage-rule management on top of the roster-editing commit before this one - attendance,
+ * pay rates, and export still answer 501 (RosterApi's own default) until their own commits.
  */
 @RestController
 public class RosterController implements RosterApi {
@@ -36,11 +38,17 @@ public class RosterController implements RosterApi {
     private final ShiftCodeService shiftCodeService;
     private final EmployeePatternService employeePatternService;
     private final RosterService rosterService;
+    private final StaffAreaCoverageRuleService staffAreaCoverageRuleService;
 
-    public RosterController(ShiftCodeService shiftCodeService, EmployeePatternService employeePatternService, RosterService rosterService) {
+    public RosterController(
+            ShiftCodeService shiftCodeService,
+            EmployeePatternService employeePatternService,
+            RosterService rosterService,
+            StaffAreaCoverageRuleService staffAreaCoverageRuleService) {
         this.shiftCodeService = shiftCodeService;
         this.employeePatternService = employeePatternService;
         this.rosterService = rosterService;
+        this.staffAreaCoverageRuleService = staffAreaCoverageRuleService;
     }
 
     @Override
@@ -112,6 +120,16 @@ public class RosterController implements RosterApi {
     @Override
     public ResponseEntity<RosterEntry> setRosterEntryLocked(String id, RosterLockInput rosterLockInput) {
         return ResponseEntity.ok(rosterService.setLocked(id, rosterLockInput.getLocked()));
+    }
+
+    @Override
+    public ResponseEntity<List<StaffAreaCoverageRule>> listStaffAreaCoverageRules() {
+        return ResponseEntity.ok(staffAreaCoverageRuleService.list());
+    }
+
+    @Override
+    public ResponseEntity<StaffAreaCoverageRule> setStaffAreaCoverageRule(StaffArea staffArea, StaffAreaCoverageRuleInput staffAreaCoverageRuleInput) {
+        return ResponseEntity.ok(staffAreaCoverageRuleService.set(staffArea, staffAreaCoverageRuleInput, callerId()));
     }
 
     private static String callerId() {
