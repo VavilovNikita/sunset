@@ -34,8 +34,12 @@ import com.sunsetbeach.security.StaffPrincipal;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +47,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -56,10 +63,49 @@ import org.springframework.transaction.annotation.Transactional;
  * own javadoc for why this isn't a reuse of {@code PropertyMapEntity}). The one guarantee worth
  * testing twice: replacing the spa map's image must never disturb a SPA-zone table's own
  * position, same as the property map's image never disturbs a RoomUnit's.
+ *
+ * <p><b>Time is fixed, not real.</b> {@link SpaMapService#get()} reads {@code Clock} to decide
+ * "is this appointment upcoming" - this class overrides that bean with a fixed one ({@link
+ * FixedClockConfig}) instead of building appointment times off {@code LocalTime.now()}. An
+ * earlier version of this test did exactly that ({@code LocalTime.now().plusHours(2)}, with
+ * {@code persistAppointment} always dating the row to {@code LocalDate.now()}), and it was wrong:
+ * adding hours to a {@code LocalTime} wraps at midnight without ever rolling the date over, so
+ * whenever the suite happened to run within about two hours of midnight, the "2 hours from now"
+ * appointment silently landed on *this morning*, hours in the past, and
+ * {@code nextAppointmentStartTime} correctly reported nothing. That was chased down as a
+ * suspected production bug first (per this project's own "confirm before changing" rule) -
+ * {@link SpaMapService}'s date/time comparisons turned out to be correct for every appointment
+ * the real API can actually produce ({@code SpaAppointmentService#validateWithinOpeningHours}
+ * keeps every real appointment's time comfortably inside business hours, nowhere near midnight,
+ * and always carries its own explicit, correct date) - the bug was entirely in this test
+ * constructing a same-day time that {@code validateWithinOpeningHours} would have rejected had it
+ * gone through the real service instead of writing the row directly. Fixed at the root instead of
+ * patched around: this class now controls "now" completely, so no fact it asserts can ever depend
+ * on when the suite happens to run.
  */
 @SpringBootTest
 @Transactional
 class SpaMapServiceTests extends AbstractIntegrationTest {
+
+    // A fixed, arbitrary weekday afternoon - safely mid-day so every offset used below (-3h to
+    // +4h) stays on the same calendar date in both directions, with no midnight wraparound to
+    // reason about. FIXED_DATE is what persistAppointment dates every row to; FIXED_TIME is the
+    // anchor every test builds its own appointment's startTime from.
+    private static final LocalDate FIXED_DATE = LocalDate.of(2027, 6, 15);
+    private static final LocalTime FIXED_TIME = LocalTime.of(14, 0);
+
+    // Registered automatically by @SpringBootTest as a nested @TestConfiguration - @Primary wins
+    // the by-type injection into SpaMapService's constructor over ClockConfig's own real-clock
+    // bean, without needing to name this bean "clock" (which would collide with it instead).
+    @TestConfiguration
+    static class FixedClockConfig {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            Instant fixedInstant = LocalDateTime.of(FIXED_DATE, FIXED_TIME).atZone(ZoneId.systemDefault()).toInstant();
+            return Clock.fixed(fixedInstant, ZoneId.systemDefault());
+        }
+    }
 
     // Minimal valid 1x1 PNG - same bytes PropertyMapServiceTests/RoomServiceUploadTests use.
     private static final byte[] PNG_BYTES = {
@@ -179,9 +225,10 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
 
     /**
      * Persisted directly (bypassing SpaAppointmentService's opening-hours validation, same
-     * reasoning as OrderSpaAppointmentLinkTests) so startTime can be built relative to the real
-     * clock - the only way to deterministically land "covers this exact moment" vs. "later today"
-     * without depending on the spa's configured opening hours.
+     * reasoning as OrderSpaAppointmentLinkTests) so startTime can be built relative to
+     * FIXED_TIME - a real appointment could never land at some of the times these tests use
+     * (well outside business hours by design, see this class's own javadoc), but SpaMapService
+     * itself doesn't care where an appointment came from, only what its date/time say.
      */
     private void persistAppointment(
             TableEntity table, Booking booking, MenuItemEntity treatment, UserEntity therapist, LocalTime startTime, int durationMinutes, SpaAppointmentStatus status) {
@@ -190,7 +237,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
         entity.setBookingId(booking.getId());
         entity.setTherapistUserId(therapist.getId());
         entity.setCreatedByUserId(therapist.getId()); // any real User id - actor isn't under test here
-        entity.setDate(LocalDate.now());
+        entity.setDate(FIXED_DATE);
         entity.setStartTime(startTime);
         entity.setDurationMinutes(durationMinutes);
         entity.setStatus(status);
@@ -228,7 +275,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
         MenuItemEntity treatment = createTreatment(60);
         UserEntity therapist = createTherapist();
         // Started 10 minutes ago, runs 60 minutes - covers right now regardless of when the suite runs.
-        persistAppointment(table, booking, treatment, therapist, LocalTime.now().minusMinutes(10), 60, SpaAppointmentStatus.BOOKED);
+        persistAppointment(table, booking, treatment, therapist, FIXED_TIME.minusMinutes(10), 60, SpaAppointmentStatus.BOOKED);
 
         SpaMapTable dto = findMapTable(spaMapService.get(), table.getId());
 
@@ -242,7 +289,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
         Booking booking = createBooking();
         MenuItemEntity treatment = createTreatment(60);
         UserEntity therapist = createTherapist();
-        persistAppointment(table, booking, treatment, therapist, LocalTime.now().minusMinutes(10), 60, SpaAppointmentStatus.COMPLETED);
+        persistAppointment(table, booking, treatment, therapist, FIXED_TIME.minusMinutes(10), 60, SpaAppointmentStatus.COMPLETED);
 
         SpaMapTable dto = findMapTable(spaMapService.get(), table.getId());
 
@@ -255,7 +302,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
         Booking booking = createBooking();
         MenuItemEntity treatment = createTreatment(60);
         UserEntity therapist = createTherapist();
-        persistAppointment(table, booking, treatment, therapist, LocalTime.now().minusMinutes(10), 60, SpaAppointmentStatus.CANCELLED);
+        persistAppointment(table, booking, treatment, therapist, FIXED_TIME.minusMinutes(10), 60, SpaAppointmentStatus.CANCELLED);
 
         SpaMapTable dto = findMapTable(spaMapService.get(), table.getId());
 
@@ -268,7 +315,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
         Booking booking = createBooking();
         MenuItemEntity treatment = createTreatment(30);
         UserEntity therapist = createTherapist();
-        LocalTime start = LocalTime.now().plusHours(2).withSecond(0).withNano(0);
+        LocalTime start = FIXED_TIME.plusHours(2).withSecond(0).withNano(0);
         persistAppointment(table, booking, treatment, therapist, start, 30, SpaAppointmentStatus.BOOKED);
 
         SpaMapTable dto = findMapTable(spaMapService.get(), table.getId());
@@ -284,7 +331,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
         MenuItemEntity treatment = createTreatment(30);
         UserEntity therapist = createTherapist();
         // Ended in the past, well clear of "covers this moment" too.
-        persistAppointment(table, booking, treatment, therapist, LocalTime.now().minusHours(3), 30, SpaAppointmentStatus.COMPLETED);
+        persistAppointment(table, booking, treatment, therapist, FIXED_TIME.minusHours(3), 30, SpaAppointmentStatus.COMPLETED);
 
         SpaMapTable dto = findMapTable(spaMapService.get(), table.getId());
 
@@ -300,7 +347,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
         Booking booking = createBooking();
         MenuItemEntity treatment = createTreatment(60);
         UserEntity therapist = createTherapist();
-        persistAppointment(table, booking, treatment, therapist, LocalTime.now().minusMinutes(10), 60, SpaAppointmentStatus.BOOKED);
+        persistAppointment(table, booking, treatment, therapist, FIXED_TIME.minusMinutes(10), 60, SpaAppointmentStatus.BOOKED);
 
         SpaMapTable dto = findMapTable(spaMapService.get(), table.getId());
 
@@ -316,7 +363,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
         Booking booking = createBooking();
         MenuItemEntity treatment = createTreatment(45);
         UserEntity therapist = createTherapist();
-        persistAppointment(table, booking, treatment, therapist, LocalTime.now().plusHours(4), 45, SpaAppointmentStatus.CANCELLED);
+        persistAppointment(table, booking, treatment, therapist, FIXED_TIME.plusHours(4), 45, SpaAppointmentStatus.CANCELLED);
 
         SpaMapTable dto = findMapTable(spaMapService.get(), table.getId());
 

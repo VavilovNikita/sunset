@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -67,6 +68,7 @@ public class SpaMapService {
     private final ImageUploadValidator imageUploadValidator;
     private final AuditLogService auditLogService;
     private final Path uploadsRoot;
+    private final Clock clock;
 
     public SpaMapService(
             SpaMapRepository spaMapRepository,
@@ -74,21 +76,23 @@ public class SpaMapService {
             SpaAppointmentService spaAppointmentService,
             ImageUploadValidator imageUploadValidator,
             AuditLogService auditLogService,
-            @Value("${app.uploads.root}") String uploadsRoot) {
+            @Value("${app.uploads.root}") String uploadsRoot,
+            Clock clock) {
         this.spaMapRepository = spaMapRepository;
         this.tableRepository = tableRepository;
         this.spaAppointmentService = spaAppointmentService;
         this.imageUploadValidator = imageUploadValidator;
         this.auditLogService = auditLogService;
         this.uploadsRoot = Path.of(uploadsRoot);
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
     public SpaMap get() {
         List<TableEntity> spaTables = tableRepository.findByZone(Zone.SPA);
 
-        LocalDate today = LocalDate.now();
-        LocalTime now = LocalTime.now();
+        LocalDate today = LocalDate.now(clock);
+        LocalTime now = LocalTime.now(clock);
         SpaSchedule schedule = spaAppointmentService.getSchedule(today);
         Map<String, List<SpaAppointment>> appointmentsByTableId =
                 schedule.getAppointments().stream().collect(Collectors.groupingBy(SpaAppointment::getTableId));
