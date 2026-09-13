@@ -103,6 +103,15 @@ tags:
       (`PATCH /room-units/positions`) and replacing the background image are MANAGER or above;
       viewing is CASHIER or above, same floor as `GET /bookings/today`. Internal only - unlike
       Rooms' image endpoints, nothing here is reachable from the public site.
+  - name: Roster
+    description: >
+      The staff work schedule - not `Shifts` (a cash-drawer session) or `Payments` (cross-shift
+      cash reconciliation). See `RosterEntry`'s own description for the roster/attendance
+      naming split this module is built around. Viewing the full grid, editing it, setting
+      coverage minimums and employee patterns, and reading pay/attendance data are all MANAGER
+      or above - every employee (any role) may read their own entries via `GET /roster/me`, and
+      `GET /shift-codes` (what a code on the grid actually means) is open to any authenticated
+      staff member for exactly that reason.
 
 security:
   - bearerAuth: []
@@ -5245,6 +5254,802 @@ paths:
               example:
                 error: Not found
 
+  /shift-codes:
+    get:
+      operationId: listShiftCodes
+      tags: [Roster]
+      summary: List the shift codes currently offered
+      description: >
+        Any authenticated staff member - an employee reading their own schedule needs to know
+        what "9" or "PH" actually means as much as a manager building the grid does. Returns
+        only `active` rows (the current version of each `(staffArea, code)` pair); a historical
+        `RosterEntry` may reference a retired version not returned here, and still resolves
+        correctly by id - see `ShiftCode`'s own description.
+      parameters:
+        - name: staffArea
+          in: query
+          schema:
+            $ref: "#/components/schemas/StaffArea"
+      responses:
+        "200":
+          description: Active shift codes, optionally filtered to one area.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShiftCode"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createShiftCode
+      tags: [Roster]
+      summary: Define a new shift code, or a new version of an existing one
+      description: >
+        Requires MANAGER or above. `ShiftCode` rows are never edited - creating one with the
+        same `staffArea`+`code` as an existing active row retires that row (`active` becomes
+        `false`) and this one takes its place for new entries, while every `RosterEntry` already
+        pointing at the retired row keeps meaning exactly what it meant. This is the same
+        "agreed terms are frozen" precedent `BookingSegmentNightlyRate` already applies to room
+        rates - a code's hours changing today must never reinterpret what an entry from last
+        month meant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShiftCodeCreateInput"
+      responses:
+        "201":
+          description: The new shift code version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftCode"
+        "400":
+          description: A second interval was given without a first, or an interval's end isn't after its start.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /employee-patterns:
+    get:
+      operationId: listEmployeePatterns
+      tags: [Roster]
+      summary: List every employee's roster pattern
+      description: >
+        Requires MANAGER or above. One row per employee who has a pattern set - an employee
+        with none yet (just added, not set up) simply doesn't appear; `POST /roster/generate`
+        only ever fills dates for employees who do.
+      responses:
+        "200":
+          description: Every set pattern.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeePattern"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /employee-patterns/{employeeUserId}:
+    parameters:
+      - name: employeeUserId
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: setEmployeePattern
+      tags: [Roster]
+      summary: Set (or replace) one employee's roster pattern
+      description: >
+        Requires MANAGER or above. Full replacement, not a partial update - matches this
+        project's own convention wherever the caller has no reason not to send everything.
+        `defaultShiftCodeId`, if given, must be an active code belonging to the same
+        `staffArea` named in this same body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployeePatternInput"
+      responses:
+        "200":
+          description: The saved pattern.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeePattern"
+        "400":
+          description: '`defaultShiftCodeId` belongs to a different `staffArea` than the one given, or isn''t active.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such employee.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /roster/employees:
+    get:
+      operationId: listRosterEmployees
+      tags: [Roster]
+      summary: List active employees for building the roster
+      description: >
+        Requires MANAGER or above. Deliberately narrower than `GET /users` (`ADMIN` only,
+        Staff account management) - the same reasoning `GET /spa-appointments/therapists`
+        already documents for its own narrower read: a manager building the roster needs
+        names to assign shifts to, not the account-management surface. Active employees only.
+      responses:
+        "200":
+          description: Active employees, with their roster pattern's area if one is set.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RosterEmployee"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /roster:
+    get:
+      operationId: getRosterMonth
+      tags: [Roster]
+      summary: The whole roster grid for one month
+      description: >
+        Requires MANAGER or above. `coverageWarnings` is computed here, not on the frontend -
+        every `(staffArea, date)` whose `countsAsWorked` entries fall below that area's
+        `StaffAreaCoverageRule.minimumWorking` (default 0, meaning no rule set yet, never
+        warns). This is a warning, not a block: the roster this endpoint returns can already be
+        under-covered, same "the software doesn't get to veto a fact about the world" reasoning
+        `RoomUnitService#createBlock` already documents.
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          description: 1-12.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        "200":
+          description: The month's entries, the employees who have any, and any coverage warnings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterMonth"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /roster/me:
+    get:
+      operationId: getMyRoster
+      tags: [Roster]
+      summary: My own schedule for one month
+      description: >
+        Any authenticated staff member - their own `RosterEntry` rows only, read-only. No pay,
+        no coverage warnings, no other employee's schedule - those stay a manager's concern.
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        "200":
+          description: The caller's own entries for the month.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RosterEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /roster/generate:
+    post:
+      operationId: generateRosterMonth
+      tags: [Roster]
+      summary: Seed a month's roster from every employee's pattern
+      description: >
+        Requires MANAGER or above. For every employee with a pattern, fills every date in the
+        named month with their `defaultShiftCodeId` except their own `weeklyDayOff` weekday -
+        only where that date has no entry yet. Never overwrites an existing entry, which is
+        what makes this safe to run again (after adding a new employee's pattern partway through
+        setting up a month, for instance) without disturbing anything already hand-edited.
+        Everything after this is the ordinary drag-editing surface - this is a starting draft,
+        not a final schedule.
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        "200":
+          description: The month, after generation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterMonth"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /roster/entries:
+    post:
+      operationId: createRosterEntry
+      tags: [Roster]
+      summary: Assign a shift directly (fill a blank cell)
+      description: Requires MANAGER or above. Fails if the employee already has an entry that date.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterEntryCreateInput"
+      responses:
+        "201":
+          description: The new entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterEntry"
+        "400":
+          description: This employee already has an entry on this date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such employee or shift code.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /roster/entries/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      operationId: deleteRosterEntry
+      tags: [Roster]
+      summary: Remove an entry (turn the day back into a day off)
+      description: Requires MANAGER or above. Refused on a `locked` entry - unlock it first.
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+        "400":
+          description: This entry is locked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /roster/entries/{id}/date:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: moveRosterEntry
+      tags: [Roster]
+      summary: Move this entry to another date (same employee)
+      description: >
+        Requires MANAGER or above. The drag-to-another-date gesture. Refused (400) if this
+        entry is `locked`, or if the employee already has a different entry on the target date -
+        cancelled, not guessed at, the same "a miss cancels" rule the calendar/spa grids settled
+        on for their own drags.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterMoveInput"
+      responses:
+        "200":
+          description: The moved entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterEntry"
+        "400":
+          description: This entry is locked, or the employee already has an entry on the target date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /roster/entries/{id}/employee:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: reassignRosterEntry
+      tags: [Roster]
+      summary: Give this day to a different employee
+      description: >
+        Requires MANAGER or above. The drag-onto-a-different-person's-empty-cell gesture -
+        ownership of the shift moves to the named employee, same date, same shift code.
+        Crosses `staffArea` freely (covering another area for a day is a normal, wanted
+        operation here, unlike the booking/spa swaps' same-type restriction - there's no frozen
+        price or duration at stake). Refused (400) if this entry is `locked`, or the target
+        employee already has an entry that date.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterReassignInput"
+      responses:
+        "200":
+          description: The reassigned entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterEntry"
+        "400":
+          description: This entry is locked, or the target employee already has an entry on this date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such entry, or no such employee.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /roster/entries/{id}/swap:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: swapRosterEntries
+      tags: [Roster]
+      summary: Exchange two employees' days
+      description: >
+        Requires MANAGER or above. The drag-onto-another-person's-occupied-cell gesture: this
+        entry's `(date, shiftCodeId)` trades with the other one's. Unlike the booking room swap
+        or the spa table swap, this needs no SERIALIZABLE write and no deferred constraint -
+        a person's own calendar dates aren't a resource a third party can be contending for the
+        way a room unit or a spa table is, so an ordinary two-row update inside one transaction
+        is enough; see `RosterService#swapEntries`'s own comment before reaching for either of
+        those two mechanisms here. Refused (400) if either entry is `locked`, or if either
+        employee already has an entry on the other's date.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterSwapInput"
+      responses:
+        "200":
+          description: This entry, after the swap.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterEntry"
+        "400":
+          description: Either entry is locked, the two ids are the same, or either employee already has an entry on the other's date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: This entry not found, or the other entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /roster/entries/{id}/lock:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: setRosterEntryLocked
+      tags: [Roster]
+      summary: Lock or unlock an entry against being moved
+      description: >
+        Requires MANAGER or above. The system-recognized form of "do not move" - already
+        written by hand as a cell comment in the spreadsheet this module replaces. A locked
+        entry refuses to be dragged as a source, or overwritten as a target, by move, reassign,
+        or swap alike, until unlocked - a hard refusal, not a warning, since it's a deliberate
+        per-entry choice the scheduler themselves made, not the system second-guessing a fact
+        about the world the way the coverage warning below has to.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterLockInput"
+      responses:
+        "200":
+          description: The entry, with its new lock state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /staff-area-coverage-rules:
+    get:
+      operationId: listStaffAreaCoverageRules
+      tags: [Roster]
+      summary: List every area's minimum-staffing rule
+      description: Requires MANAGER or above. An area with no rule set simply doesn't appear - treated as no minimum (never warns).
+      responses:
+        "200":
+          description: Every rule currently set.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StaffAreaCoverageRule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /staff-area-coverage-rules/{staffArea}:
+    parameters:
+      - name: staffArea
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/StaffArea"
+    put:
+      operationId: setStaffAreaCoverageRule
+      tags: [Roster]
+      summary: Set one area's minimum-staffing rule
+      description: Requires MANAGER or above.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffAreaCoverageRuleInput"
+      responses:
+        "200":
+          description: The saved rule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffAreaCoverageRule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /attendance:
+    get:
+      operationId: listAttendancePunches
+      tags: [Roster]
+      summary: List raw attendance punches
+      description: >
+        Requires MANAGER or above. The raw stream, not paired sessions - see `AttendancePunch`'s
+        own description for why a split shift's four punches need no special handling here.
+      parameters:
+        - name: employeeUserId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+      responses:
+        "200":
+          description: Every punch for this employee in the range, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AttendancePunch"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+    post:
+      operationId: recordAttendancePunch
+      tags: [Roster]
+      summary: Record a punch by hand
+      description: >
+        Requires MANAGER or above in v1 - an employee punching themselves on a shared device
+        needs the same identity-confirmation decision the phone POS already makes for money
+        actions, deliberately not decided here (see this module's own proposal). `source` is
+        always `MANUAL` from this endpoint; a future scanner integration writes the same table
+        with `source=SCANNER` and no separate write path.
+
+        Also the mechanism behind closing an "incomplete" day (an odd punch count) - there is no
+        separate correction endpoint, a correction is just another punch recorded here, with a
+        note explaining it, and `ATTENDANCE_PUNCH_CORRECTED` used instead of
+        `ATTENDANCE_PUNCH_RECORDED` for its own audit entry when `note` is given alongside a
+        punch that resolves a day that was previously incomplete.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttendancePunchCreateInput"
+      responses:
+        "201":
+          description: The recorded punch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendancePunch"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such employee.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /attendance/summary:
+    get:
+      operationId: getAttendanceSummary
+      tags: [Roster]
+      summary: Planned vs. actual, one employee, one month
+      description: >
+        Requires MANAGER or above - same visibility floor as pay, since this is the data pay
+        depends on. One entry per day: the planned shift (if any - `OP` and a day off both carry
+        no planned interval, distinguished by whether a `RosterEntry` exists at all, and `OP`'s
+        own zero-interval shape means this never shows a fabricated zero planned. A day with an
+        odd number of punches is `incomplete`, closed only by another punch recorded through
+        `POST /attendance` with an explanatory note.
+      parameters:
+        - name: employeeUserId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        "200":
+          description: One summary row per day of the month.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AttendanceDaySummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /employee-pay-rates:
+    get:
+      operationId: listEmployeePayRates
+      tags: [Roster]
+      summary: List one employee's daily-rate history
+      description: Requires MANAGER or above.
+      parameters:
+        - name: employeeUserId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Every rate version, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeePayRate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+    post:
+      operationId: createEmployeePayRate
+      tags: [Roster]
+      summary: Set a new daily rate, effective from a given date
+      description: >
+        Requires MANAGER or above. Never edits an existing rate - a raise creates a new
+        versioned row, so a month straddling the change (a rise partway through, say, August)
+        computes each day's pay from whichever rate was actually in effect that day. Same
+        "agreed terms are frozen" shape as `ShiftCode` and `BookingSegmentNightlyRate`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployeePayRateCreateInput"
+      responses:
+        "201":
+          description: The new rate version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeePayRate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such employee.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /roster/actuals-export:
+    get:
+      operationId: exportRosterActuals
+      tags: [Roster]
+      summary: Export a month's actual worked days and gross pay, as CSV
+      description: >
+        Requires MANAGER or above - same floor as viewing pay at all. Each row is days actually
+        worked that month (from `RosterEntry`s whose `shiftCode.countsAsWorked` is true - `OP`
+        counts, `PH` does not) times the rate in effect on each of those days, summed. The
+        column is headed "Gross pay (before advances and deductions)", deliberately, not "Pay"
+        or "Amount owed" - this number is not what anyone is actually owed once an advance
+        against salary is accounted for (real practice at this hotel, evidenced by the source
+        spreadsheet this module replaces), and a total that reads as final when it isn't is the
+        exact debt `Booking.status=PAID` already represents elsewhere in this system. Advances
+        themselves are out of scope for this export; it only has to stop implying it already
+        includes them.
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        "200":
+          description: CSV, one row per employee.
+          content:
+            text/csv:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -8339,6 +9144,20 @@ components:
         - SPA_APPOINTMENT_TREATMENT_ADDED
         - SPA_APPOINTMENT_TREATMENT_REMOVED
         - SPA_APPOINTMENT_TABLES_SWAPPED
+        - SHIFT_CODE_CREATED
+        - EMPLOYEE_PATTERN_CHANGED
+        - ROSTER_ENTRY_CREATED
+        - ROSTER_ENTRY_MOVED
+        - ROSTER_ENTRY_REASSIGNED
+        - ROSTER_ENTRIES_SWAPPED
+        - ROSTER_ENTRY_DELETED
+        - ROSTER_ENTRY_LOCKED_CHANGED
+        - ROSTER_MONTH_GENERATED
+        - STAFF_AREA_COVERAGE_RULE_CHANGED
+        - ATTENDANCE_PUNCH_RECORDED
+        - ATTENDANCE_PUNCH_CORRECTED
+        - EMPLOYEE_PAY_RATE_CHANGED
+        - ROSTER_ACTUALS_EXPORTED
 
     AuditEntityType:
       type: string
@@ -8352,7 +9171,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE]
 
     AuditLogEntry:
       type: object
@@ -8414,3 +9233,456 @@ components:
         totalCount:
           type: integer
           description: Total number of matching entries across all pages, for rendering pagination controls - not just `items.length`.
+
+    StaffArea:
+      type: string
+      description: >
+        Which part of the hotel an employee normally works in - Admin, Front Office,
+        Maintenance, Housekeeping, Restaurant, Kitchen, matching the source spreadsheet's own
+        grouping exactly. Deliberately not named `Department`: `PrinterDepartment` and
+        `MenuDepartment` already exist in this API and mean something unrelated (print/ticket
+        routing) - reusing the word here would be the same naming collision CLAUDE.md's Naming
+        section already warns against for "Shift".
+      enum: [ADMIN, FRONT_OFFICE, MAINTENANCE, HOUSEKEEPING, RESTAURANT, KITCHEN]
+
+    Weekday:
+      type: string
+      description: A day of the week, used for an employee's fixed weekly day off.
+      enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY]
+
+    PunchDirection:
+      type: string
+      description: Whether an `AttendancePunch` is a clock-in or a clock-out.
+      enum: [IN, OUT]
+
+    PunchSource:
+      type: string
+      description: >
+        Who produced an `AttendancePunch` - `MANUAL` (typed in by a manager) today, `SCANNER`
+        once a real punch clock exists. The attendance model doesn't change when that arrives,
+        only who's writing rows - see `AttendancePunch`'s own description.
+      enum: [MANUAL, SCANNER]
+
+    ShiftCode:
+      type: object
+      description: >
+        One version of one shift code in one `StaffArea` - never edited once any `RosterEntry`
+        references it. `startTime1`/`endTime1` is the first (or only) interval; `startTime2`/
+        `endTime2` is present only for a split shift (both null together, never one without the
+        other). Zero intervals (all four null) means `OP` - worked, with no fixed hours.
+        `countsAsWorked` and `isPaid` are independent: an ordinary shift is both true; `OP` is
+        `countsAsWorked` true with no intervals; `PH` is `isPaid` true, `countsAsWorked` false -
+        this is what removes the ambiguity of "holiday, annual leave, or a kept day off" being
+        one label on the grid without splitting them on screen. The same `code` string can mean
+        different hours in a different `StaffArea` (the source file's own "9" is a 09:00-13:00/
+        16:00-21:00 split in Restaurant/Kitchen, a single 09:00-18:00 shift in Front Office) -
+        every code is scoped to exactly one area for this reason, even the ones that happen to
+        mean the same thing everywhere today. `active=false` means retired: no longer offered
+        for a *new* entry, but every entry already pointing at this row is untouched.
+      required: [id, staffArea, code, countsAsWorked, isPaid, effectiveFrom, active, createdByEmail, createdAt]
+      properties:
+        id:
+          type: string
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+        code:
+          type: string
+          description: The short label as staff already know it - "9", "8.3", "OP", "PH".
+        startTime1:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        endTime1:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        startTime2:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        endTime2:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        countsAsWorked:
+          type: boolean
+        isPaid:
+          type: boolean
+        effectiveFrom:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        active:
+          type: boolean
+        createdByEmail:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    ShiftCodeCreateInput:
+      type: object
+      description: Body of `POST /shift-codes`.
+      required: [staffArea, code, countsAsWorked, isPaid, effectiveFrom]
+      properties:
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+        code:
+          type: string
+        startTime1:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        endTime1:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        startTime2:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        endTime2:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        countsAsWorked:
+          type: boolean
+        isPaid:
+          type: boolean
+        effectiveFrom:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+
+    RosterEmployee:
+      type: object
+      description: >
+        `GET /roster/employees` - deliberately narrower than `User`/`GET /users`, see that
+        endpoint's own description.
+      required: [id, email, active]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        active:
+          type: boolean
+        staffArea:
+          allOf: [{ $ref: "#/components/schemas/StaffArea" }]
+          nullable: true
+          description: From this employee's `EmployeePattern`, if one has been set.
+
+    EmployeePattern:
+      type: object
+      description: >
+        An employee's normal roster shape - what `POST /roster/generate` reads. `defaultShiftCodeId`
+        is nullable: some employees genuinely have no single "usual" code (several rows in the
+        source spreadsheet had none), so generation simply leaves their dates blank for the
+        manager to fill by hand in that case.
+      required: [employeeUserId, employeeEmail, staffArea, workDaysPerWeek, weeklyDayOff, updatedByEmail, updatedAt]
+      properties:
+        employeeUserId:
+          type: string
+        employeeEmail:
+          type: string
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+        defaultShiftCodeId:
+          type: string
+          nullable: true
+        workDaysPerWeek:
+          type: integer
+          minimum: 0
+          maximum: 7
+        weeklyDayOff:
+          $ref: "#/components/schemas/Weekday"
+        updatedByEmail:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    EmployeePatternInput:
+      type: object
+      description: Body of `PUT /employee-patterns/{employeeUserId}`. Full replacement.
+      required: [staffArea, workDaysPerWeek, weeklyDayOff]
+      properties:
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+        defaultShiftCodeId:
+          type: string
+          nullable: true
+        workDaysPerWeek:
+          type: integer
+          minimum: 0
+          maximum: 7
+        weeklyDayOff:
+          $ref: "#/components/schemas/Weekday"
+
+    RosterEntry:
+      type: object
+      description: >
+        One employee's shift on one date. A day off is the *absence* of a row here, never a row
+        of its own - see this schema's own module description for why that's deliberate.
+      required: [id, employeeUserId, employeeEmail, date, shiftCode, locked, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        employeeUserId:
+          type: string
+        employeeEmail:
+          type: string
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        shiftCode:
+          $ref: "#/components/schemas/ShiftCode"
+        note:
+          type: string
+          nullable: true
+        locked:
+          type: boolean
+          description: '"Do not move" - see `PATCH /roster/entries/{id}/lock`.'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    RosterEntryCreateInput:
+      type: object
+      description: Body of `POST /roster/entries`.
+      required: [employeeUserId, date, shiftCodeId]
+      properties:
+        employeeUserId:
+          type: string
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        shiftCodeId:
+          type: string
+        note:
+          type: string
+          nullable: true
+
+    RosterMoveInput:
+      type: object
+      description: Body of `PATCH /roster/entries/{id}/date`.
+      required: [date]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+
+    RosterReassignInput:
+      type: object
+      description: Body of `PATCH /roster/entries/{id}/employee`.
+      required: [employeeUserId]
+      properties:
+        employeeUserId:
+          type: string
+
+    RosterSwapInput:
+      type: object
+      description: Body of `POST /roster/entries/{id}/swap`. The dragged entry is named by the URL; this names the other side.
+      required: [otherEntryId]
+      properties:
+        otherEntryId:
+          type: string
+
+    RosterLockInput:
+      type: object
+      description: Body of `PATCH /roster/entries/{id}/lock`.
+      required: [locked]
+      properties:
+        locked:
+          type: boolean
+
+    RosterCoverageWarning:
+      type: object
+      description: One `(staffArea, date)` below its `StaffAreaCoverageRule.minimumWorking` - a warning, never a reason a roster can't be saved.
+      required: [staffArea, date, workingCount, minimumWorking]
+      properties:
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        workingCount:
+          type: integer
+        minimumWorking:
+          type: integer
+
+    RosterMonth:
+      type: object
+      description: Response of `GET /roster` and `POST /roster/generate`.
+      required: [year, month, entries, employees, coverageWarnings]
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterEntry"
+        employees:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterEmployee"
+        coverageWarnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterCoverageWarning"
+
+    StaffAreaCoverageRule:
+      type: object
+      required: [staffArea, minimumWorking, updatedByEmail, updatedAt]
+      properties:
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+        minimumWorking:
+          type: integer
+        updatedByEmail:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    StaffAreaCoverageRuleInput:
+      type: object
+      description: Body of `PUT /staff-area-coverage-rules/{staffArea}`.
+      required: [minimumWorking]
+      properties:
+        minimumWorking:
+          type: integer
+          minimum: 0
+
+    AttendancePunch:
+      type: object
+      description: >
+        One raw clock-in or clock-out - not a paired session. A split shift's four punches are
+        simply four rows; pairing consecutive `IN`/`OUT` punches into worked intervals happens
+        at read time (`GET /attendance/summary`), never at write time, so nothing here needs to
+        know in advance whether a day is a single shift, a split, or `OP`.
+      required: [id, employeeUserId, employeeEmail, punchAt, direction, source, createdAt]
+      properties:
+        id:
+          type: string
+        employeeUserId:
+          type: string
+        employeeEmail:
+          type: string
+        punchAt:
+          type: string
+          format: date-time
+        direction:
+          $ref: "#/components/schemas/PunchDirection"
+        source:
+          $ref: "#/components/schemas/PunchSource"
+        recordedByEmail:
+          type: string
+          nullable: true
+          description: Who typed this in, for a `MANUAL` punch. Null for `SCANNER`.
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    AttendancePunchCreateInput:
+      type: object
+      description: Body of `POST /attendance`.
+      required: [employeeUserId, punchAt, direction]
+      properties:
+        employeeUserId:
+          type: string
+        punchAt:
+          type: string
+          format: date-time
+        direction:
+          $ref: "#/components/schemas/PunchDirection"
+        note:
+          type: string
+          nullable: true
+
+    ShiftInterval:
+      type: object
+      required: [startTime, endTime]
+      properties:
+        startTime:
+          type: string
+        endTime:
+          type: string
+
+    AttendanceDaySummary:
+      type: object
+      description: >
+        One day of `GET /attendance/summary`. `shiftCode` is null on a day with no `RosterEntry`
+        (a day off) - distinct from `OP`, which has a `shiftCode` but an empty `plannedIntervals`,
+        so a day genuinely without a plan is never shown as "0 minutes planned" next to one that
+        was deliberately left open. `incomplete` is true when this day's punches don't pair off
+        evenly (an odd count) - closed only by recording another punch with a note through
+        `POST /attendance`, never inferred.
+      required: [date, plannedIntervals, punches, incomplete]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        shiftCode:
+          allOf: [{ $ref: "#/components/schemas/ShiftCode" }]
+          nullable: true
+        plannedIntervals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShiftInterval"
+        punches:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttendancePunch"
+        workedMinutes:
+          type: integer
+          nullable: true
+          description: Null when there are no punches yet for this day, not zero.
+        incomplete:
+          type: boolean
+
+    EmployeePayRate:
+      type: object
+      description: >
+        One version of an employee's daily rate - never edited, only superseded, the same
+        "agreed terms are frozen" shape as `ShiftCode` and `BookingSegmentNightlyRate`, so a
+        rate change partway through a month prices each day correctly against whichever rate
+        was actually in effect that day.
+      required: [id, employeeUserId, employeeEmail, dailyRate, effectiveFrom, createdByEmail, createdAt]
+      properties:
+        id:
+          type: string
+        employeeUserId:
+          type: string
+        employeeEmail:
+          type: string
+        dailyRate:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        effectiveFrom:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        createdByEmail:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    EmployeePayRateCreateInput:
+      type: object
+      description: Body of `POST /employee-pay-rates`.
+      required: [employeeUserId, dailyRate, effectiveFrom]
+      properties:
+        employeeUserId:
+          type: string
+        dailyRate:
+          type: string
+        effectiveFrom:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'

@@ -46,7 +46,17 @@ public enum AuditEntityType {
   
   GUEST("GUEST"),
   
-  SPA_MAP("SPA_MAP");
+  SPA_MAP("SPA_MAP"),
+  
+  SHIFT_CODE("SHIFT_CODE"),
+  
+  ROSTER_ENTRY("ROSTER_ENTRY"),
+  
+  STAFF_AREA_COVERAGE_RULE("STAFF_AREA_COVERAGE_RULE"),
+  
+  ATTENDANCE_PUNCH("ATTENDANCE_PUNCH"),
+  
+  EMPLOYEE_PAY_RATE("EMPLOYEE_PAY_RATE");
 
   private String value;
 

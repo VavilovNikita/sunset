@@ -275,6 +275,30 @@ public class SecurityConfig {
                         // able to close it without escalating to a manager - see dismissPrintJobs's javadoc.
                         .requestMatchers("/printers/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/print-jobs/**").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())
+                        // Roster: reading a shift code's own meaning, and reading your own
+                        // schedule, are open to any authenticated staff member - see the Roster
+                        // tag description for why (an employee reading their own grid needs to
+                        // know what "9" means as much as a manager does). Both must be listed
+                        // before nothing else, since neither is a prefix of a MANAGER-only path
+                        // below - "/roster" (exact) and "/roster/me" (exact) never collide.
+                        .requestMatchers(HttpMethod.GET, "/shift-codes", "/roster/me").authenticated()
+                        // Everything else roster-shaped is MANAGER or above - the whole grid,
+                        // editing it (move/reassign/swap/lock/generate), employee patterns,
+                        // coverage minimums, pay rates, attendance, and the actuals export all
+                        // sit behind the same floor as pay itself, per this module's own
+                        // proposal ("visible only to admin and manager... not merely hidden on a
+                        // screen"). Bare resource path and its "/**" nested paths are both listed
+                        // explicitly, deliberately, rather than relying on "/**" alone to also
+                        // match the bare path - not worth leaving to an AntPathMatcher edge case
+                        // EndpointCoverageTests wouldn't catch either (it confirms every path has
+                        // *a* rule, not that the rule actually matches every method on it).
+                        .requestMatchers(HttpMethod.POST, "/shift-codes").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers("/employee-patterns", "/employee-patterns/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers("/roster/employees", "/roster/generate", "/roster/actuals-export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers("/roster", "/roster/entries", "/roster/entries/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers("/staff-area-coverage-rules", "/staff-area-coverage-rules/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers("/attendance", "/attendance/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers("/employee-pay-rates", "/employee-pay-rates/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // GET /auth/me is the one endpoint outside all the tag groups above - any
                         // valid JWT, no role check (it just echoes back who the token belongs to).
                         .requestMatchers(HttpMethod.GET, "/auth/me").authenticated()
