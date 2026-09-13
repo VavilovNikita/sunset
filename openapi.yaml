@@ -5776,12 +5776,31 @@ components:
           minimum: 0
           maximum: 1
 
+    RoomUnitBlockMaintenanceTask:
+      type: object
+      description: >
+        Summary of the maintenance task this block was raised for, if any - a block can exist
+        with no task at all, and a task can be linked to an existing block after the fact (see
+        `MaintenanceTask.blockId`), so this is resolved live at read time, not stored on the
+        block itself. Deliberately not the same shape as `PropertyMapMaintenanceTask` - no
+        `blockExpired` here, since that field answers "has this block's own date range already
+        passed while the task is still open," which is meaningless when the block being described
+        is the very one already on screen.
+      required: [taskId, description, status]
+      properties:
+        taskId:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/MaintenanceTaskStatus"
+
     RoomUnitBlock:
       type: object
       description: >
         A physical room pulled off sale for a date range, with a reason. Replaces the old
         Room-level `Availability.blockedCount`. `fromDate`/`toDate` are both inclusive.
-      required: [id, roomUnitId, fromDate, toDate, reason, createdAt]
+      required: [id, roomUnitId, fromDate, toDate, reason, createdAt, createdByEmail, maintenanceTask]
       properties:
         id:
           type: string
@@ -5798,6 +5817,17 @@ components:
         createdAt:
           type: string
           format: date-time
+        createdByEmail:
+          type: string
+          nullable: true
+          description: >
+            Denormalized from the creating user at read time, same convention as
+            `Order.openedByEmail` - null for a block created before this was tracked, not a
+            display bug; there is no "unknown user" placeholder to invent for history that was
+            never captured.
+        maintenanceTask:
+          $ref: "#/components/schemas/RoomUnitBlockMaintenanceTask"
+          nullable: true
 
     RoomUnitBlockInput:
       type: object

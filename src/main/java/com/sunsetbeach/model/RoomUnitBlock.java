@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.sunsetbeach.model.RoomUnitBlockMaintenanceTask;
 import java.time.OffsetDateTime;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -35,6 +36,10 @@ public class RoomUnitBlock {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
+  private JsonNullable<String> createdByEmail = JsonNullable.<String>undefined();
+
+  private RoomUnitBlockMaintenanceTask maintenanceTask;
+
   public RoomUnitBlock() {
     super();
   }
@@ -42,13 +47,15 @@ public class RoomUnitBlock {
   /**
    * Constructor with only required parameters
    */
-  public RoomUnitBlock(String id, String roomUnitId, String fromDate, String toDate, String reason, OffsetDateTime createdAt) {
+  public RoomUnitBlock(String id, String roomUnitId, String fromDate, String toDate, String reason, OffsetDateTime createdAt, String createdByEmail, RoomUnitBlockMaintenanceTask maintenanceTask) {
     this.id = id;
     this.roomUnitId = roomUnitId;
     this.fromDate = fromDate;
     this.toDate = toDate;
     this.reason = reason;
     this.createdAt = createdAt;
+    this.createdByEmail = JsonNullable.of(createdByEmail);
+    this.maintenanceTask = maintenanceTask;
   }
 
   public RoomUnitBlock id(String id) {
@@ -165,6 +172,44 @@ public class RoomUnitBlock {
     this.createdAt = createdAt;
   }
 
+  public RoomUnitBlock createdByEmail(String createdByEmail) {
+    this.createdByEmail = JsonNullable.of(createdByEmail);
+    return this;
+  }
+
+  /**
+   * Denormalized from the creating user at read time, same convention as `Order.openedByEmail` - null for a block created before this was tracked, not a display bug; there is no \"unknown user\" placeholder to invent for history that was never captured. 
+   * @return createdByEmail
+   */
+  @NotNull 
+  @JsonProperty("createdByEmail")
+  public JsonNullable<String> getCreatedByEmail() {
+    return createdByEmail;
+  }
+
+  public void setCreatedByEmail(JsonNullable<String> createdByEmail) {
+    this.createdByEmail = createdByEmail;
+  }
+
+  public RoomUnitBlock maintenanceTask(RoomUnitBlockMaintenanceTask maintenanceTask) {
+    this.maintenanceTask = maintenanceTask;
+    return this;
+  }
+
+  /**
+   * Get maintenanceTask
+   * @return maintenanceTask
+   */
+  @NotNull @Valid 
+  @JsonProperty("maintenanceTask")
+  public RoomUnitBlockMaintenanceTask getMaintenanceTask() {
+    return maintenanceTask;
+  }
+
+  public void setMaintenanceTask(RoomUnitBlockMaintenanceTask maintenanceTask) {
+    this.maintenanceTask = maintenanceTask;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -179,12 +224,14 @@ public class RoomUnitBlock {
         Objects.equals(this.fromDate, roomUnitBlock.fromDate) &&
         Objects.equals(this.toDate, roomUnitBlock.toDate) &&
         Objects.equals(this.reason, roomUnitBlock.reason) &&
-        Objects.equals(this.createdAt, roomUnitBlock.createdAt);
+        Objects.equals(this.createdAt, roomUnitBlock.createdAt) &&
+        Objects.equals(this.createdByEmail, roomUnitBlock.createdByEmail) &&
+        Objects.equals(this.maintenanceTask, roomUnitBlock.maintenanceTask);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomUnitId, fromDate, toDate, reason, createdAt);
+    return Objects.hash(id, roomUnitId, fromDate, toDate, reason, createdAt, createdByEmail, maintenanceTask);
   }
 
   @Override
@@ -197,6 +244,8 @@ public class RoomUnitBlock {
     sb.append("    toDate: ").append(toIndentedString(toDate)).append("\n");
     sb.append("    reason: ").append(toIndentedString(reason)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
+    sb.append("    createdByEmail: ").append(toIndentedString(createdByEmail)).append("\n");
+    sb.append("    maintenanceTask: ").append(toIndentedString(maintenanceTask)).append("\n");
     sb.append("}");
     return sb.toString();
   }

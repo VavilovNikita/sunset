@@ -280,7 +280,7 @@ class DateOnlyFieldsContractTests extends AbstractIntegrationTest {
                 new StaffBookingCreateInput(room.getId(), "Contract Guest", checkIn.toString(), checkOut.toString())
                         .roomUnitId(unitA.getId()));
         roomUnitService.createBlock(
-                unitB.getId(), new RoomUnitBlockInput(checkIn.toString(), checkOut.toString(), "Contract test block"));
+                unitB.getId(), new RoomUnitBlockInput(checkIn.toString(), checkOut.toString(), "Contract test block"), testUserId);
 
         String from = checkIn.minusDays(1).toString();
         String to = checkOut.plusDays(1).toString();
@@ -305,7 +305,7 @@ class DateOnlyFieldsContractTests extends AbstractIntegrationTest {
         RoomUnitEntity unit = roomUnitRepository.findByRoomId(room.getId()).get(0);
         LocalDate from = LocalDate.now().plusDays(310);
         LocalDate to = from.plusDays(2);
-        roomUnitService.createBlock(unit.getId(), new RoomUnitBlockInput(from.toString(), to.toString(), "Contract test block"));
+        roomUnitService.createBlock(unit.getId(), new RoomUnitBlockInput(from.toString(), to.toString(), "Contract test block"), testUserId);
 
         JsonNode json = getJson("/room-units/" + unit.getId() + "/blocks");
         assertDateOnly(json, 1);

@@ -1204,7 +1204,7 @@ class PosRoleHierarchyTests {
 
     @Test
     void blockMaintenanceTaskRoom_withManagerToken_isOk() throws Exception {
-        when(maintenanceTaskService.addBlock(eq("task-1"), any()))
+        when(maintenanceTaskService.addBlock(eq("task-1"), any(), any()))
                 .thenReturn(new com.sunsetbeach.model.MaintenanceTaskBlockResult(sampleMaintenanceTask(), sampleRoomUnitBlockResult()));
         mockMvc.perform(post("/maintenance-tasks/task-1/block")
                         .header("Authorization", token(Role.MANAGER))
@@ -1273,7 +1273,7 @@ class PosRoleHierarchyTests {
 
     private static com.sunsetbeach.model.RoomUnitBlockResult sampleRoomUnitBlockResult() {
         return new com.sunsetbeach.model.RoomUnitBlockResult(
-                new com.sunsetbeach.model.RoomUnitBlock("block-1", "unit-1", "2031-01-01", "2031-01-02", "repair", OffsetDateTime.now()),
+                new com.sunsetbeach.model.RoomUnitBlock("block-1", "unit-1", "2031-01-01", "2031-01-02", "repair", OffsetDateTime.now(), "user-1@example.com", null),
                 null, List.of(), List.of());
     }
 

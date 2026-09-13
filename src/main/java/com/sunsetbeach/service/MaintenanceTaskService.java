@@ -173,13 +173,13 @@ public class MaintenanceTaskService {
      * rather than reimplementing it. Rejected if this task already has a block.
      */
     @Transactional
-    public MaintenanceTaskBlockResult addBlock(String taskId, RoomUnitBlockInput input) {
+    public MaintenanceTaskBlockResult addBlock(String taskId, RoomUnitBlockInput input, String actorUserId) {
         MaintenanceTaskEntity task = findEntity(taskId);
         if (task.getBlockId() != null) {
             throw new BadRequestException("This task already has a block");
         }
 
-        RoomUnitBlockResult blockResult = roomUnitService.createBlock(task.getRoomUnitId(), input);
+        RoomUnitBlockResult blockResult = roomUnitService.createBlock(task.getRoomUnitId(), input, actorUserId);
         task.setBlockId(blockResult.getBlock().getId());
         MaintenanceTaskEntity saved = maintenanceTaskRepository.saveAndFlush(task);
 

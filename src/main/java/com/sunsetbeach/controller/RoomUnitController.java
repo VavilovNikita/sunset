@@ -10,10 +10,12 @@ import com.sunsetbeach.model.RoomUnitBlockResult;
 import com.sunsetbeach.model.RoomUnitInput;
 import com.sunsetbeach.model.RoomUnitPositionInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
+import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.RoomUnitService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -63,12 +65,16 @@ public class RoomUnitController implements RoomUnitsApi {
 
     @Override
     public ResponseEntity<RoomUnitBlockResult> createRoomUnitBlock(String id, RoomUnitBlockInput roomUnitBlockInput) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(roomUnitService.createBlock(id, roomUnitBlockInput));
+        return ResponseEntity.status(HttpStatus.CREATED).body(roomUnitService.createBlock(id, roomUnitBlockInput, callerId()));
     }
 
     @Override
     public ResponseEntity<OkTrue> deleteRoomUnitBlock(String id, String blockId) {
         roomUnitService.deleteBlock(id, blockId);
         return ResponseEntity.ok(new OkTrue(true));
+    }
+
+    private static String callerId() {
+        return ((StaffPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).id();
     }
 }

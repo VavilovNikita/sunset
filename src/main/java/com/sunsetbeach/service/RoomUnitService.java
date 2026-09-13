@@ -2,8 +2,10 @@ package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
+import com.sunsetbeach.entity.MaintenanceTaskEntity;
 import com.sunsetbeach.entity.RoomUnitBlockEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
+import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
@@ -17,21 +19,25 @@ import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.RoomUnitBlock;
 import com.sunsetbeach.model.RoomUnitBlockAffectedBooking;
 import com.sunsetbeach.model.RoomUnitBlockInput;
+import com.sunsetbeach.model.RoomUnitBlockMaintenanceTask;
 import com.sunsetbeach.model.RoomUnitBlockResult;
 import com.sunsetbeach.model.RoomUnitInput;
 import com.sunsetbeach.model.RoomUnitPositionInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
+import com.sunsetbeach.repository.MaintenanceTaskRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
+import com.sunsetbeach.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -47,6 +53,8 @@ public class RoomUnitService {
     private final BookingRepository bookingRepository;
     private final RoomUnitMapper roomUnitMapper;
     private final AuditLogService auditLogService;
+    private final UserRepository userRepository;
+    private final MaintenanceTaskRepository maintenanceTaskRepository;
 
     public RoomUnitService(
             RoomRepository roomRepository,
@@ -55,7 +63,9 @@ public class RoomUnitService {
             BookingSegmentRepository segmentRepository,
             BookingRepository bookingRepository,
             RoomUnitMapper roomUnitMapper,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            UserRepository userRepository,
+            MaintenanceTaskRepository maintenanceTaskRepository) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
@@ -63,6 +73,8 @@ public class RoomUnitService {
         this.bookingRepository = bookingRepository;
         this.roomUnitMapper = roomUnitMapper;
         this.auditLogService = auditLogService;
+        this.userRepository = userRepository;
+        this.maintenanceTaskRepository = maintenanceTaskRepository;
     }
 
     @Transactional(readOnly = true)
@@ -245,7 +257,31 @@ public class RoomUnitService {
     @Transactional(readOnly = true)
     public List<RoomUnitBlock> listBlocks(String roomUnitId) {
         findEntity(roomUnitId);
-        return roomUnitBlockRepository.findByRoomUnitId(roomUnitId).stream().map(roomUnitMapper::toDto).toList();
+        return toBlockDtos(roomUnitBlockRepository.findByRoomUnitId(roomUnitId));
+    }
+
+    /**
+     * Batched, not one query per block - the same "resolve creator email + linked task in one
+     * pass" enrichment {@link com.sunsetbeach.service.BookingCalendarService} does for the
+     * calendar's own block segments, reused here so a block looks the same regardless of which
+     * endpoint returned it.
+     */
+    private List<RoomUnitBlock> toBlockDtos(List<RoomUnitBlockEntity> blocks) {
+        Set<String> creatorIds = blocks.stream().map(RoomUnitBlockEntity::getCreatedByUserId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<String, String> emailByUserId =
+                userRepository.findAllById(creatorIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
+
+        List<String> blockIds = blocks.stream().map(RoomUnitBlockEntity::getId).toList();
+        Map<String, RoomUnitBlockMaintenanceTask> taskByBlockId = maintenanceTaskRepository.findByBlockIdIn(blockIds).stream()
+                .collect(Collectors.toMap(
+                        MaintenanceTaskEntity::getBlockId,
+                        t -> new RoomUnitBlockMaintenanceTask(t.getId(), t.getDescription(), t.getStatus()),
+                        (a, b) -> a));
+
+        return blocks.stream()
+                .map(b -> roomUnitMapper.toDto(
+                        b, b.getCreatedByUserId() != null ? emailByUserId.get(b.getCreatedByUserId()) : null, taskByBlockId.get(b.getId())))
+                .toList();
     }
 
     /**
@@ -258,7 +294,7 @@ public class RoomUnitService {
      * bookingId is known to be affected.
      */
     @Transactional
-    public RoomUnitBlockResult createBlock(String roomUnitId, RoomUnitBlockInput input) {
+    public RoomUnitBlockResult createBlock(String roomUnitId, RoomUnitBlockInput input, String actorUserId) {
         RoomUnitEntity unit = findEntity(roomUnitId);
 
         LocalDate fromDate = LocalDate.parse(input.getFromDate());
@@ -272,6 +308,7 @@ public class RoomUnitService {
         entity.setFromDate(fromDate);
         entity.setToDate(toDate);
         entity.setReason(input.getReason().trim());
+        entity.setCreatedByUserId(actorUserId);
         RoomUnitBlockEntity saved = roomUnitBlockRepository.saveAndFlush(entity);
 
         List<RoomUnitBlockAffectedBooking> affectedBookings = findAffectedBookings(roomUnitId, fromDate, toDate);
@@ -288,7 +325,10 @@ public class RoomUnitService {
                                 ? ""
                                 : " - overlaps " + affectedUnassignedBookings.size() + " unassigned booking(s) of this room type"));
 
-        return new RoomUnitBlockResult(roomUnitMapper.toDto(saved), warning, affectedBookings, affectedUnassignedBookings);
+        // A freshly created block never has a maintenance task yet - one can only be linked
+        // afterward (see RoomUnitMapper#toDto's own comment).
+        String createdByEmail = actorUserId != null ? userRepository.findById(actorUserId).map(UserEntity::getEmail).orElse(null) : null;
+        return new RoomUnitBlockResult(roomUnitMapper.toDto(saved, createdByEmail, null), warning, affectedBookings, affectedUnassignedBookings);
     }
 
     private static String buildWarning(List<RoomUnitBlockAffectedBooking> affectedBookings, List<RoomUnitBlockAffectedBooking> affectedUnassignedBookings) {

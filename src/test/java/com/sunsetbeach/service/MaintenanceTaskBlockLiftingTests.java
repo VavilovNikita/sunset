@@ -84,7 +84,7 @@ class MaintenanceTaskBlockLiftingTests extends AbstractIntegrationTest {
 
     private MaintenanceTask createTaskWithBlock(LocalDate fromDate, LocalDate toDate) {
         MaintenanceTask task = maintenanceTaskService.create(unit.getId(), "AC is broken", List.of(), reporterId);
-        return maintenanceTaskService.addBlock(task.getId(), new RoomUnitBlockInput(fromDate.toString(), toDate.toString(), "AC repair")).getTask();
+        return maintenanceTaskService.addBlock(task.getId(), new RoomUnitBlockInput(fromDate.toString(), toDate.toString(), "AC repair"), reporterId).getTask();
     }
 
     private boolean isBlockedToday(LocalDate today) {

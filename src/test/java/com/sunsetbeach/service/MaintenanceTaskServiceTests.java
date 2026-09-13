@@ -188,7 +188,7 @@ class MaintenanceTaskServiceTests extends AbstractIntegrationTest {
                 new StaffBookingCreateInput(unit.getRoomId(), "Blocked Room Guest", checkIn.toString(), checkOut.toString()).roomUnitId(unit.getId()));
 
         MaintenanceTaskBlockResult result =
-                maintenanceTaskService.addBlock(task.getId(), new RoomUnitBlockInput(checkIn.toString(), checkOut.toString(), "AC repair"));
+                maintenanceTaskService.addBlock(task.getId(), new RoomUnitBlockInput(checkIn.toString(), checkOut.toString(), "AC repair"), reporterId);
 
         assertThat(result.getTask().getBlockId().get()).isEqualTo(result.getBlockResult().getBlock().getId());
         assertThat(result.getBlockResult().getWarning().get()).isNotNull();
@@ -204,9 +204,9 @@ class MaintenanceTaskServiceTests extends AbstractIntegrationTest {
         MaintenanceTask task = maintenanceTaskService.create(unit.getId(), "AC is leaking", List.of(), reporterId);
         LocalDate from = LocalDate.now().plusDays(5);
         LocalDate to = from.plusDays(1);
-        maintenanceTaskService.addBlock(task.getId(), new RoomUnitBlockInput(from.toString(), to.toString(), "AC repair"));
+        maintenanceTaskService.addBlock(task.getId(), new RoomUnitBlockInput(from.toString(), to.toString(), "AC repair"), reporterId);
 
-        assertThatThrownBy(() -> maintenanceTaskService.addBlock(task.getId(), new RoomUnitBlockInput(from.toString(), to.toString(), "Second block")))
+        assertThatThrownBy(() -> maintenanceTaskService.addBlock(task.getId(), new RoomUnitBlockInput(from.toString(), to.toString(), "Second block"), reporterId))
                 .isInstanceOf(BadRequestException.class);
     }
 

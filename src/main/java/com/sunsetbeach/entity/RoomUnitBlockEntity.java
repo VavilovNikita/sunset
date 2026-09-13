@@ -25,6 +25,9 @@ public class RoomUnitBlockEntity {
 
     private String reason;
 
+    /** Nullable - a block created before this was tracked has no way to know who created it. */
+    private String createdByUserId;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -66,6 +69,14 @@ public class RoomUnitBlockEntity {
 
     public void setReason(String reason) {
         this.reason = reason;
+    }
+
+    public String getCreatedByUserId() {
+        return createdByUserId;
+    }
+
+    public void setCreatedByUserId(String createdByUserId) {
+        this.createdByUserId = createdByUserId;
     }
 
     public LocalDateTime getCreatedAt() {

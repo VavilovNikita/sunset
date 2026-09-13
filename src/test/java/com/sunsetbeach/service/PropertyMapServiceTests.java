@@ -350,7 +350,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         RoomUnitEntity unit = persistUnit("215");
         com.sunsetbeach.model.MaintenanceTask task = maintenanceTaskService.create(unit.getId(), "AC is leaking", List.of(), staffUserId);
         maintenanceTaskService.addBlock(
-                task.getId(), new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().toString(), LocalDate.now().plusDays(5).toString(), "AC repair"));
+                task.getId(), new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().toString(), LocalDate.now().plusDays(5).toString(), "AC repair"), staffUserId);
 
         com.sunsetbeach.model.PropertyMapMaintenanceTask dto = findUnit(unit.getId()).getOpenMaintenanceTask();
 
@@ -367,7 +367,8 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         // past, simulating exactly the "room silently back on sale, still broken" scenario.
         maintenanceTaskService.addBlock(
                 task.getId(),
-                new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().minusDays(10).toString(), LocalDate.now().minusDays(1).toString(), "AC repair"));
+                new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().minusDays(10).toString(), LocalDate.now().minusDays(1).toString(), "AC repair"),
+                staffUserId);
 
         com.sunsetbeach.model.PropertyMapMaintenanceTask dto = findUnit(unit.getId()).getOpenMaintenanceTask();
 
@@ -383,7 +384,8 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         com.sunsetbeach.model.MaintenanceTask expiredBlockTask = maintenanceTaskService.create(unit.getId(), "AC is leaking", List.of(), staffUserId);
         maintenanceTaskService.addBlock(
                 expiredBlockTask.getId(),
-                new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().minusDays(10).toString(), LocalDate.now().minusDays(1).toString(), "AC repair"));
+                new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().minusDays(10).toString(), LocalDate.now().minusDays(1).toString(), "AC repair"),
+                staffUserId);
 
         com.sunsetbeach.model.PropertyMapMaintenanceTask dto = findUnit(unit.getId()).getOpenMaintenanceTask();
 

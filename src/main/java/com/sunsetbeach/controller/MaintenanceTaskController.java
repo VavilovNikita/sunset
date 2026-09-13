@@ -46,7 +46,8 @@ public class MaintenanceTaskController implements MaintenanceTasksApi {
 
     @Override
     public ResponseEntity<MaintenanceTaskBlockResult> blockMaintenanceTaskRoom(String id, RoomUnitBlockInput roomUnitBlockInput) {
-        return ResponseEntity.ok(maintenanceTaskService.addBlock(id, roomUnitBlockInput));
+        String callerId = ((StaffPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).id();
+        return ResponseEntity.ok(maintenanceTaskService.addBlock(id, roomUnitBlockInput, callerId));
     }
 
     @Override

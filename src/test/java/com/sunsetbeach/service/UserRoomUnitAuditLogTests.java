@@ -209,7 +209,7 @@ class UserRoomUnitAuditLogTests extends AbstractIntegrationTest {
         LocalDate from = LocalDate.now().plusDays(20);
         LocalDate to = LocalDate.now().plusDays(22);
         RoomUnitBlock block =
-                roomUnitService.createBlock(unit.getId(), new RoomUnitBlockInput(from.toString(), to.toString(), "Maintenance")).getBlock();
+                roomUnitService.createBlock(unit.getId(), new RoomUnitBlockInput(from.toString(), to.toString(), "Maintenance"), null).getBlock();
 
         List<AuditLogEntity> createEntries = entriesFor(AuditEntityType.ROOM_UNIT, unit.getId()).stream()
                 .filter(e -> e.getAction() == AuditAction.ROOM_UNIT_BLOCK_CREATED)

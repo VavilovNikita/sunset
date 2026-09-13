@@ -1,9 +1,11 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingSegmentEntity;
+import com.sunsetbeach.entity.MaintenanceTaskEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitBlockEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
+import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.RoomUnitMapper;
@@ -13,15 +15,20 @@ import com.sunsetbeach.model.CalendarBooking;
 import com.sunsetbeach.model.RoomTypeCalendar;
 import com.sunsetbeach.model.RoomTypeDailyAvailability;
 import com.sunsetbeach.model.RoomUnitBlock;
+import com.sunsetbeach.model.RoomUnitBlockMaintenanceTask;
 import com.sunsetbeach.repository.BookingSegmentRepository;
+import com.sunsetbeach.repository.MaintenanceTaskRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
+import com.sunsetbeach.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,18 +59,24 @@ public class BookingCalendarService {
     private final RoomUnitBlockRepository roomUnitBlockRepository;
     private final BookingSegmentRepository segmentRepository;
     private final RoomUnitMapper roomUnitMapper;
+    private final UserRepository userRepository;
+    private final MaintenanceTaskRepository maintenanceTaskRepository;
 
     public BookingCalendarService(
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             RoomUnitBlockRepository roomUnitBlockRepository,
             BookingSegmentRepository segmentRepository,
-            RoomUnitMapper roomUnitMapper) {
+            RoomUnitMapper roomUnitMapper,
+            UserRepository userRepository,
+            MaintenanceTaskRepository maintenanceTaskRepository) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
         this.segmentRepository = segmentRepository;
         this.roomUnitMapper = roomUnitMapper;
+        this.userRepository = userRepository;
+        this.maintenanceTaskRepository = maintenanceTaskRepository;
     }
 
     @Transactional(readOnly = true)
@@ -112,9 +125,34 @@ public class BookingCalendarService {
                 .map(s -> toCalendarBooking(s, segmentCountByBookingId.getOrDefault(s.getBookingId(), 1L).intValue()))
                 .toList();
 
-        List<RoomUnitBlock> blockDtos = blocks.stream().map(roomUnitMapper::toDto).toList();
+        List<RoomUnitBlock> blockDtos = toBlockDtos(blocks);
 
         return new BookingCalendarResponse(from.toString(), to.toString(), roomTypes, calendarBookings, blockDtos);
+    }
+
+    /**
+     * Batched, not one query per block - the calendar can show a whole year at once, and a block
+     * spans however many rows are on screen. Same enrichment {@link RoomUnitService#listBlocks}
+     * does for its own read, kept independent (a different repository set, a different service)
+     * rather than forcing a shared dependency between two services that otherwise have nothing to
+     * do with each other, for the sake of one private helper.
+     */
+    private List<RoomUnitBlock> toBlockDtos(List<RoomUnitBlockEntity> blocks) {
+        Set<String> creatorIds = blocks.stream().map(RoomUnitBlockEntity::getCreatedByUserId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<String, String> emailByUserId =
+                userRepository.findAllById(creatorIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
+
+        List<String> blockIds = blocks.stream().map(RoomUnitBlockEntity::getId).toList();
+        Map<String, RoomUnitBlockMaintenanceTask> taskByBlockId = maintenanceTaskRepository.findByBlockIdIn(blockIds).stream()
+                .collect(Collectors.toMap(
+                        MaintenanceTaskEntity::getBlockId,
+                        t -> new RoomUnitBlockMaintenanceTask(t.getId(), t.getDescription(), t.getStatus()),
+                        (a, b) -> a));
+
+        return blocks.stream()
+                .map(b -> roomUnitMapper.toDto(
+                        b, b.getCreatedByUserId() != null ? emailByUserId.get(b.getCreatedByUserId()) : null, taskByBlockId.get(b.getId())))
+                .toList();
     }
 
     private RoomTypeCalendar toRoomTypeCalendar(
