@@ -1,6 +1,9 @@
 package com.sunsetbeach.controller;
 
 import com.sunsetbeach.api.RosterApi;
+import com.sunsetbeach.model.AttendanceDaySummary;
+import com.sunsetbeach.model.AttendancePunch;
+import com.sunsetbeach.model.AttendancePunchCreateInput;
 import com.sunsetbeach.model.EmployeePattern;
 import com.sunsetbeach.model.EmployeePatternInput;
 import com.sunsetbeach.model.OkTrue;
@@ -18,6 +21,7 @@ import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.StaffAreaCoverageRule;
 import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
 import com.sunsetbeach.security.StaffPrincipal;
+import com.sunsetbeach.service.AttendanceService;
 import com.sunsetbeach.service.EmployeePatternService;
 import com.sunsetbeach.service.RosterService;
 import com.sunsetbeach.service.ShiftCodeService;
@@ -29,8 +33,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Adds coverage-rule management on top of the roster-editing commit before this one - attendance,
- * pay rates, and export still answer 501 (RosterApi's own default) until their own commits.
+ * Adds attendance on top of the coverage commit before this one - pay rates and export still
+ * answer 501 (RosterApi's own default) until their own commit.
  */
 @RestController
 public class RosterController implements RosterApi {
@@ -39,16 +43,19 @@ public class RosterController implements RosterApi {
     private final EmployeePatternService employeePatternService;
     private final RosterService rosterService;
     private final StaffAreaCoverageRuleService staffAreaCoverageRuleService;
+    private final AttendanceService attendanceService;
 
     public RosterController(
             ShiftCodeService shiftCodeService,
             EmployeePatternService employeePatternService,
             RosterService rosterService,
-            StaffAreaCoverageRuleService staffAreaCoverageRuleService) {
+            StaffAreaCoverageRuleService staffAreaCoverageRuleService,
+            AttendanceService attendanceService) {
         this.shiftCodeService = shiftCodeService;
         this.employeePatternService = employeePatternService;
         this.rosterService = rosterService;
         this.staffAreaCoverageRuleService = staffAreaCoverageRuleService;
+        this.attendanceService = attendanceService;
     }
 
     @Override
@@ -130,6 +137,21 @@ public class RosterController implements RosterApi {
     @Override
     public ResponseEntity<StaffAreaCoverageRule> setStaffAreaCoverageRule(StaffArea staffArea, StaffAreaCoverageRuleInput staffAreaCoverageRuleInput) {
         return ResponseEntity.ok(staffAreaCoverageRuleService.set(staffArea, staffAreaCoverageRuleInput, callerId()));
+    }
+
+    @Override
+    public ResponseEntity<List<AttendancePunch>> listAttendancePunches(String employeeUserId, String from, String to) {
+        return ResponseEntity.ok(attendanceService.list(employeeUserId, java.time.LocalDate.parse(from), java.time.LocalDate.parse(to)));
+    }
+
+    @Override
+    public ResponseEntity<AttendancePunch> recordAttendancePunch(AttendancePunchCreateInput attendancePunchCreateInput) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(attendanceService.recordPunch(attendancePunchCreateInput, callerId()));
+    }
+
+    @Override
+    public ResponseEntity<List<AttendanceDaySummary>> getAttendanceSummary(String employeeUserId, Integer year, Integer month) {
+        return ResponseEntity.ok(attendanceService.summary(employeeUserId, year, month));
     }
 
     private static String callerId() {
