@@ -490,14 +490,20 @@ public class SpaAppointmentService {
 
         // Lock the two rows in a deterministic (lowest id first) order, not in whichever order
         // the caller happened to name entity/other - see this method's own Concurrency section.
-        // Decided from the ids alone, before either entity is touched: deferOverlapConstraints()
-        // is a native query, and Hibernate's default flush mode flushes any already-dirty entity
-        // before running one (it can't otherwise know a native statement doesn't depend on
-        // pending changes) - setting tableId here first would flush both UPDATEs immediately,
-        // before deferral even takes effect, silently defeating this whole method.
         SpaAppointmentEntity first = entity.getId().compareTo(other.getId()) <= 0 ? entity : other;
         SpaAppointmentEntity second = first == entity ? other : entity;
         try {
+            // deferOverlapConstraints() must run before either setTableId() call below, never
+            // after: it's a native query, and Hibernate's default flush mode flushes any
+            // already-dirty entity before running one (a native statement's own dependencies
+            // aren't visible to it, so it flushes conservatively rather than risk running against
+            // stale data). Move the two setTableId() calls above this line and both UPDATEs go
+            // out while the constraints are still IMMEDIATE - deferral never actually takes
+            // effect, and every swap starts failing with a genuine, self-inflicted overlap
+            // violation against its own two rows. This looks like a harmless statement reorder;
+            // it isn't - it silently broke this method while the lock-order fix above was being
+            // built, caught only because the race test's own outcome changed, not because
+            // anything failed to compile or an existing assertion tripped.
             spaAppointmentRepository.deferOverlapConstraints();
             entity.setTableId(otherOldTableId);
             other.setTableId(entityOldTableId);
