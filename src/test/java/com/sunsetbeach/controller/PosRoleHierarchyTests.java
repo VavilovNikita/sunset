@@ -1553,7 +1553,7 @@ class PosRoleHierarchyTests {
 
     private static com.sunsetbeach.model.AttendancePunch sampleAttendancePunch() {
         return new com.sunsetbeach.model.AttendancePunch(
-                "punch-1", "user-1", "waiter@example.com", OffsetDateTime.now(), com.sunsetbeach.model.PunchDirection.IN,
+                "punch-1", "user-1", "Waiter One", OffsetDateTime.now(), com.sunsetbeach.model.PunchDirection.IN,
                 com.sunsetbeach.model.PunchSource.MANUAL, OffsetDateTime.now());
     }
 

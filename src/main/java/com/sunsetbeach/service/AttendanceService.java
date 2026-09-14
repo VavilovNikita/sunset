@@ -65,7 +65,7 @@ public class AttendanceService {
         List<AttendancePunchEntity> entities =
                 attendancePunchRepository.findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employeeUserId, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
         Map<String, String> recorderEmails = resolveEmails(entities.stream().map(AttendancePunchEntity::getRecordedByUserId).filter(java.util.Objects::nonNull).distinct().toList());
-        return entities.stream().map(e -> toDto(e, employee.getEmail(), recorderEmails.get(e.getRecordedByUserId()))).toList();
+        return entities.stream().map(e -> toDto(e, employee, recorderEmails.get(e.getRecordedByUserId()))).toList();
     }
 
     /**
@@ -101,10 +101,10 @@ public class AttendanceService {
                 closesAnIncompleteDay ? AuditAction.ATTENDANCE_PUNCH_CORRECTED : AuditAction.ATTENDANCE_PUNCH_RECORDED,
                 AuditEntityType.ATTENDANCE_PUNCH,
                 saved.getId(),
-                (closesAnIncompleteDay ? "Corrected " : "Recorded ") + employee.getEmail() + "'s " + saved.getDirection().getValue() + " punch at "
+                (closesAnIncompleteDay ? "Corrected " : "Recorded ") + employee.getName() + "'s " + saved.getDirection().getValue() + " punch at "
                         + punchAt.format(TIME_FORMAT) + " on " + day);
 
-        return toDto(saved, employee.getEmail(), actor.getEmail());
+        return toDto(saved, employee, actor.getEmail());
     }
 
     /**
@@ -114,7 +114,7 @@ public class AttendanceService {
      */
     @Transactional(readOnly = true)
     public List<AttendanceDaySummary> summary(String employeeUserId, int year, int month) {
-        userRepository.findById(employeeUserId).orElseThrow(() -> new NotFoundException("Employee not found"));
+        UserEntity employee = userRepository.findById(employeeUserId).orElseThrow(() -> new NotFoundException("Employee not found"));
         YearMonth ym = YearMonth.of(year, month);
         LocalDate from = ym.atDay(1);
         LocalDate to = ym.atEndOfMonth();
@@ -147,7 +147,7 @@ public class AttendanceService {
 
             List<AttendancePunchEntity> dayPunches = punchesByDate.getOrDefault(date, List.of());
             List<AttendancePunch> punchDtos = dayPunches.stream()
-                    .map(p -> toDto(p, null, recorderEmails.get(p.getRecordedByUserId())))
+                    .map(p -> toDto(p, employee, recorderEmails.get(p.getRecordedByUserId())))
                     .toList();
 
             boolean incomplete = dayPunches.size() % 2 != 0;
@@ -189,10 +189,11 @@ public class AttendanceService {
         return userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
     }
 
-    private static AttendancePunch toDto(AttendancePunchEntity e, String employeeEmail, String recordedByEmail) {
+    private static AttendancePunch toDto(AttendancePunchEntity e, UserEntity employee, String recordedByEmail) {
         AttendancePunch dto = new AttendancePunch(
-                e.getId(), e.getEmployeeUserId(), employeeEmail, TimestampFormat.toUtc(e.getPunchAt()), e.getDirection(), e.getSource(),
+                e.getId(), e.getEmployeeUserId(), employee.getName(), TimestampFormat.toUtc(e.getPunchAt()), e.getDirection(), e.getSource(),
                 TimestampFormat.toUtc(e.getCreatedAt()));
+        dto.setEmployeeEmail(employee.getEmail());
         if (recordedByEmail != null) {
             dto.recordedByEmail(recordedByEmail);
         }

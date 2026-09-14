@@ -22,7 +22,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * One raw clock-in or clock-out - not a paired session. A split shift&#39;s four punches are simply four rows; pairing consecutive &#x60;IN&#x60;/&#x60;OUT&#x60; punches into worked intervals happens at read time (&#x60;GET /attendance/summary&#x60;), never at write time, so nothing here needs to know in advance whether a day is a single shift, a split, or &#x60;OP&#x60;. 
+ * One raw clock-in or clock-out - not a paired session. A split shift&#39;s four punches are simply four rows; pairing consecutive &#x60;IN&#x60;/&#x60;OUT&#x60; punches into worked intervals happens at read time (&#x60;GET /attendance/summary&#x60;), never at write time, so nothing here needs to know in advance whether a day is a single shift, a split, or &#x60;OP&#x60;. &#x60;employeeEmail&#x60; is null for a no-login account (see &#x60;UserCreateInput&#x60;) - attendance exists specifically for staff who punch in and out without ever signing into this system, so &#x60;employeeName&#x60; is the field to display, never absent. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -31,6 +31,8 @@ public class AttendancePunch {
   private String id;
 
   private String employeeUserId;
+
+  private String employeeName;
 
   private String employeeEmail;
 
@@ -55,10 +57,10 @@ public class AttendancePunch {
   /**
    * Constructor with only required parameters
    */
-  public AttendancePunch(String id, String employeeUserId, String employeeEmail, OffsetDateTime punchAt, PunchDirection direction, PunchSource source, OffsetDateTime createdAt) {
+  public AttendancePunch(String id, String employeeUserId, String employeeName, OffsetDateTime punchAt, PunchDirection direction, PunchSource source, OffsetDateTime createdAt) {
     this.id = id;
     this.employeeUserId = employeeUserId;
-    this.employeeEmail = employeeEmail;
+    this.employeeName = employeeName;
     this.punchAt = punchAt;
     this.direction = direction;
     this.source = source;
@@ -103,6 +105,25 @@ public class AttendancePunch {
     this.employeeUserId = employeeUserId;
   }
 
+  public AttendancePunch employeeName(String employeeName) {
+    this.employeeName = employeeName;
+    return this;
+  }
+
+  /**
+   * Get employeeName
+   * @return employeeName
+   */
+  @NotNull 
+  @JsonProperty("employeeName")
+  public String getEmployeeName() {
+    return employeeName;
+  }
+
+  public void setEmployeeName(String employeeName) {
+    this.employeeName = employeeName;
+  }
+
   public AttendancePunch employeeEmail(String employeeEmail) {
     this.employeeEmail = employeeEmail;
     return this;
@@ -112,7 +133,7 @@ public class AttendancePunch {
    * Get employeeEmail
    * @return employeeEmail
    */
-  @NotNull 
+  
   @JsonProperty("employeeEmail")
   public String getEmployeeEmail() {
     return employeeEmail;
@@ -247,6 +268,7 @@ public class AttendancePunch {
     AttendancePunch attendancePunch = (AttendancePunch) o;
     return Objects.equals(this.id, attendancePunch.id) &&
         Objects.equals(this.employeeUserId, attendancePunch.employeeUserId) &&
+        Objects.equals(this.employeeName, attendancePunch.employeeName) &&
         Objects.equals(this.employeeEmail, attendancePunch.employeeEmail) &&
         Objects.equals(this.punchAt, attendancePunch.punchAt) &&
         Objects.equals(this.direction, attendancePunch.direction) &&
@@ -262,7 +284,7 @@ public class AttendancePunch {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, employeeUserId, employeeEmail, punchAt, direction, source, hashCodeNullable(recordedByEmail), hashCodeNullable(note), createdAt);
+    return Objects.hash(id, employeeUserId, employeeName, employeeEmail, punchAt, direction, source, hashCodeNullable(recordedByEmail), hashCodeNullable(note), createdAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -278,6 +300,7 @@ public class AttendancePunch {
     sb.append("class AttendancePunch {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    employeeUserId: ").append(toIndentedString(employeeUserId)).append("\n");
+    sb.append("    employeeName: ").append(toIndentedString(employeeName)).append("\n");
     sb.append("    employeeEmail: ").append(toIndentedString(employeeEmail)).append("\n");
     sb.append("    punchAt: ").append(toIndentedString(punchAt)).append("\n");
     sb.append("    direction: ").append(toIndentedString(direction)).append("\n");

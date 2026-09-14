@@ -9688,12 +9688,17 @@ components:
         One raw clock-in or clock-out - not a paired session. A split shift's four punches are
         simply four rows; pairing consecutive `IN`/`OUT` punches into worked intervals happens
         at read time (`GET /attendance/summary`), never at write time, so nothing here needs to
-        know in advance whether a day is a single shift, a split, or `OP`.
-      required: [id, employeeUserId, employeeEmail, punchAt, direction, source, createdAt]
+        know in advance whether a day is a single shift, a split, or `OP`. `employeeEmail` is
+        null for a no-login account (see `UserCreateInput`) - attendance exists specifically for
+        staff who punch in and out without ever signing into this system, so `employeeName` is
+        the field to display, never absent.
+      required: [id, employeeUserId, employeeName, punchAt, direction, source, createdAt]
       properties:
         id:
           type: string
         employeeUserId:
+          type: string
+        employeeName:
           type: string
         employeeEmail:
           type: string

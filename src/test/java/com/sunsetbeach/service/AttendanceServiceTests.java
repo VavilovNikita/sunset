@@ -89,8 +89,49 @@ class AttendanceServiceTests extends AbstractIntegrationTest {
         return saved;
     }
 
+    /** Attendance exists specifically for staff who punch in and out but never sign in. */
+    private UserEntity createNoLoginUser() {
+        UserEntity user = new UserEntity();
+        user.setName("No Login Employee " + UUID.randomUUID());
+        user.setRole(Role.WAITER);
+        user.setActive(true);
+        UserEntity saved = userRepository.saveAndFlush(user);
+        createdUserIds.add(saved.getId());
+        return saved;
+    }
+
     private static OffsetDateTime at(LocalDate date, int hour, int minute) {
         return date.atTime(hour, minute).atOffset(ZoneOffset.UTC);
+    }
+
+    /**
+     * The population this module exists for. Every read path must show the same name, and no
+     * email at all - including the punches nested inside a day summary, which used to pass a
+     * hardcoded null for employeeEmail regardless of whether the employee actually had one.
+     */
+    @Test
+    void recordPunch_forNoLoginEmployee_showsNameNotEmail() {
+        UserEntity mgr = createUser(Role.MANAGER);
+        UserEntity employee = createNoLoginUser();
+        LocalDate date = LocalDate.of(2027, 6, 5);
+
+        AttendancePunch recorded =
+                attendanceService.recordPunch(new AttendancePunchCreateInput(employee.getId(), at(date, 9, 0), PunchDirection.IN), mgr.getId());
+        assertThat(recorded.getEmployeeName()).isEqualTo(employee.getName());
+        assertThat(recorded.getEmployeeEmail()).isNull();
+
+        List<AttendancePunch> listed = attendanceService.list(employee.getId(), date, date);
+        assertThat(listed).hasSize(1);
+        assertThat(listed.get(0).getEmployeeName()).isEqualTo(employee.getName());
+        assertThat(listed.get(0).getEmployeeEmail()).isNull();
+
+        AttendanceDaySummary day = attendanceService.summary(employee.getId(), 2027, 6).stream()
+                .filter(s -> s.getDate().equals(date.toString()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(day.getPunches()).hasSize(1);
+        assertThat(day.getPunches().get(0).getEmployeeName()).isEqualTo(employee.getName());
+        assertThat(day.getPunches().get(0).getEmployeeEmail()).isNull();
     }
 
     @Test
