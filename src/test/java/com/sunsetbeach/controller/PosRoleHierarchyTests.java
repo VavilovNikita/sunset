@@ -661,7 +661,7 @@ class PosRoleHierarchyTests {
 
     @Test
     void listSpaTherapists_withCashierToken_isOk() throws Exception {
-        when(spaAppointmentService.listTherapists()).thenReturn(List.of(new SpaTherapist("user-1", "therapist@example.com")));
+        when(spaAppointmentService.listTherapists()).thenReturn(List.of(new SpaTherapist("user-1", "Therapist One").email("therapist@example.com")));
         mockMvc.perform(get("/spa-appointments/therapists").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());
     }
 
@@ -1583,7 +1583,7 @@ class PosRoleHierarchyTests {
                 "table-1",
                 "Spa Table 1",
                 "user-1",
-                "therapist@example.com",
+                "Therapist One",
                 List.of(new SpaAppointmentTreatment("treatment-1", "menu-1", "Massage", 60, "1500.00")),
                 "2027-01-01",
                 "10:00",

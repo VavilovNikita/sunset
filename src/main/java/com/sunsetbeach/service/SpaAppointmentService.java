@@ -190,7 +190,7 @@ public class SpaAppointmentService {
         return userRepository.findAll().stream()
                 .filter(UserEntity::isActive)
                 .filter(u -> Arrays.asList(u.getJobFunctions()).contains(JobFunction.THERAPIST.getValue()))
-                .map(u -> new SpaTherapist(u.getId(), u.getEmail()))
+                .map(u -> new SpaTherapist(u.getId(), u.getName()).email(u.getEmail()))
                 .toList();
     }
 
@@ -229,7 +229,7 @@ public class SpaAppointmentService {
                 AuditEntityType.SPA_APPOINTMENT,
                 saved.getId(),
                 "Booked " + treatment.getName() + " for " + booking.getGuestName() + " on " + date + " " + startTime.format(TIME_FORMAT) + " ("
-                        + table.getLabel() + ", " + therapist.getEmail() + ")");
+                        + table.getLabel() + ", " + therapist.getName() + ")");
 
         // Inclusive both ends - the guest is still in the hotel on the departure day (see
         // CORRECTION 1: this is not the same [checkIn, checkOut) convention room occupancy uses,
@@ -384,7 +384,7 @@ public class SpaAppointmentService {
                 AuditAction.SPA_APPOINTMENT_RESCHEDULED,
                 AuditEntityType.SPA_APPOINTMENT,
                 saved.getId(),
-                "Rescheduled to " + date + " " + startTime.format(TIME_FORMAT) + " (" + table.getLabel() + ", " + therapist.getEmail() + ")");
+                "Rescheduled to " + date + " " + startTime.format(TIME_FORMAT) + " (" + table.getLabel() + ", " + therapist.getName() + ")");
 
         return toDto(saved);
     }
@@ -599,14 +599,14 @@ public class SpaAppointmentService {
 
         List<String> missingTreatmentNames = computeMissingTreatmentNames(e.getStatus(), treatmentRows, menuItemsById, orderBills, orderItems);
 
-        return new SpaAppointment(
+        SpaAppointment dto = new SpaAppointment(
                 e.getId(),
                 e.getBookingId(),
                 booking.getGuestName(),
                 e.getTableId(),
                 table.getLabel(),
                 e.getTherapistUserId(),
-                therapist.getEmail(),
+                therapist.getName(),
                 treatments,
                 e.getDate().toString(),
                 e.getStartTime().format(TIME_FORMAT),
@@ -619,6 +619,8 @@ public class SpaAppointmentService {
                 e.getCancelReason(),
                 TimestampFormat.toUtc(e.getCreatedAt()),
                 TimestampFormat.toUtc(e.getUpdatedAt()));
+        dto.setTherapistEmail(therapist.getEmail());
+        return dto;
     }
 
     /**

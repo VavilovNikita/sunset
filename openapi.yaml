@@ -7001,7 +7001,7 @@ components:
           tableId,
           tableLabel,
           therapistUserId,
-          therapistEmail,
+          therapistName,
           treatments,
           date,
           startTime,
@@ -7030,9 +7030,18 @@ components:
           description: Denormalized from the named table at read time.
         therapistUserId:
           type: string
+        therapistName:
+          type: string
+          description: >
+            Denormalized from the named therapist at read time. Unlike `Order.openedByEmail`,
+            this names an appointment's *subject*, not an actor - THERAPIST is an ordinary staff
+            tag (see `JobFunction`), so the named therapist may have no login at all, which is
+            exactly why this is `therapistName` and not `therapistEmail`.
         therapistEmail:
           type: string
-          description: Denormalized from the named therapist at read time - same convention as `Order.openedByEmail`.
+          description: >
+            Absent for a no-login therapist (see `UserCreateInput`) - `therapistName` is the
+            field to display, never absent.
         treatments:
           type: array
           items:
@@ -7246,10 +7255,15 @@ components:
         outside the role hierarchy) so a CASHIER creating an appointment can list valid
         therapists without that escalation, the same "a role that may act must be able to read
         what the action needs" fix already applied to `GET /room-units`/`GET /availability`.
-        Excludes an inactive user - see `PATCH /users/{id}/active`.
-      required: [id, email]
+        Excludes an inactive user - see `PATCH /users/{id}/active`. `email` is absent for a
+        no-login account (see `UserCreateInput`) - THERAPIST is an ordinary staff tag, unrelated
+        to whether the account can sign in, so `name` is the field this picker displays, never
+        absent.
+      required: [id, name]
       properties:
         id:
+          type: string
+        name:
           type: string
         email:
           type: string

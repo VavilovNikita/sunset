@@ -22,6 +22,7 @@ import com.sunsetbeach.model.SpaAppointmentResult;
 import com.sunsetbeach.model.SpaAppointmentScheduleInput;
 import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.model.SpaAppointmentStatusUpdateInput;
+import com.sunsetbeach.model.SpaTherapist;
 import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.model.SwapSpaAppointmentTableInput;
 import com.sunsetbeach.model.Zone;
@@ -174,6 +175,21 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
         return saved;
     }
 
+    /**
+     * THERAPIST is an ordinary staff tag, unrelated to login (see JobFunction's own description) -
+     * this is the actual, unremarkable shape a masseuse hired without a system account takes.
+     */
+    private UserEntity createNoLoginTherapist() {
+        UserEntity user = new UserEntity();
+        user.setName("No Login Therapist " + UUID.randomUUID());
+        user.setRole(Role.WAITER);
+        user.setActive(true);
+        user.setJobFunctions(new String[] {JobFunction.THERAPIST.getValue()});
+        UserEntity saved = userRepository.saveAndFlush(user);
+        createdUserIds.add(saved.getId());
+        return saved;
+    }
+
     private UserEntity createReceptionist() {
         UserEntity user = new UserEntity();
         user.setEmail("spa-reception-" + UUID.randomUUID() + "@example.com");
@@ -206,8 +222,39 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
         assertThat(appointment.getDurationMinutes()).isEqualTo(60);
         assertThat(appointment.getGuestName()).isEqualTo("Spa Test Guest");
         assertThat(appointment.getTableLabel()).isEqualTo(table.getLabel());
+        assertThat(appointment.getTherapistName()).isEqualTo(therapist.getName());
         assertThat(appointment.getTherapistEmail()).isEqualTo(therapist.getEmail());
         assertThat(appointment.getOrderId().get()).isNull();
+    }
+
+    /**
+     * The scenario the correction named directly: a therapist with no login is an ordinary,
+     * bookable therapist - the picker (listTherapists) and the appointment it produces must both
+     * show the therapist's name, never a blank where a name should be.
+     */
+    @Test
+    void listTherapists_andCreatedAppointment_showNoLoginTherapistsName() {
+        UserEntity noLoginTherapist = createNoLoginTherapist();
+
+        List<SpaTherapist> therapists = spaAppointmentService.listTherapists();
+        SpaTherapist listed = therapists.stream().filter(t -> t.getId().equals(noLoginTherapist.getId())).findFirst().orElseThrow();
+        assertThat(listed.getName()).isEqualTo(noLoginTherapist.getName());
+        assertThat(listed.getEmail()).isNull();
+
+        LocalDate checkIn = LocalDate.now().plusDays(321);
+        LocalDate checkOut = checkIn.plusDays(3);
+        Booking booking = createBooking(checkIn, checkOut);
+        TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity receptionist = createReceptionist();
+
+        SpaAppointmentResult result = spaAppointmentService.create(
+                new SpaAppointmentCreateInput(booking.getId(), table.getId(), noLoginTherapist.getId(), treatment.getId(), checkIn.plusDays(1).toString(), "10:00"),
+                receptionist.getId());
+
+        SpaAppointment appointment = result.getAppointment();
+        assertThat(appointment.getTherapistName()).isEqualTo(noLoginTherapist.getName());
+        assertThat(appointment.getTherapistEmail()).isNull();
     }
 
     /** CORRECTION 1: the stay window is inclusive of the departure day - the guest is still in the hotel that morning. */

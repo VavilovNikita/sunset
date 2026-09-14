@@ -40,6 +40,8 @@ public class SpaAppointment {
 
   private String therapistUserId;
 
+  private String therapistName;
+
   private String therapistEmail;
 
   @Valid
@@ -77,14 +79,14 @@ public class SpaAppointment {
   /**
    * Constructor with only required parameters
    */
-  public SpaAppointment(String id, String bookingId, String guestName, String tableId, String tableLabel, String therapistUserId, String therapistEmail, List<@Valid SpaAppointmentTreatment> treatments, String date, String startTime, Integer durationMinutes, SpaAppointmentStatus status, String orderId, List<String> missingTreatmentNames, String createdByUserId, String cancelledByUserId, String cancelReason, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public SpaAppointment(String id, String bookingId, String guestName, String tableId, String tableLabel, String therapistUserId, String therapistName, List<@Valid SpaAppointmentTreatment> treatments, String date, String startTime, Integer durationMinutes, SpaAppointmentStatus status, String orderId, List<String> missingTreatmentNames, String createdByUserId, String cancelledByUserId, String cancelReason, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.bookingId = bookingId;
     this.guestName = guestName;
     this.tableId = tableId;
     this.tableLabel = tableLabel;
     this.therapistUserId = therapistUserId;
-    this.therapistEmail = therapistEmail;
+    this.therapistName = therapistName;
     this.treatments = treatments;
     this.date = date;
     this.startTime = startTime;
@@ -213,16 +215,35 @@ public class SpaAppointment {
     this.therapistUserId = therapistUserId;
   }
 
+  public SpaAppointment therapistName(String therapistName) {
+    this.therapistName = therapistName;
+    return this;
+  }
+
+  /**
+   * Denormalized from the named therapist at read time. Unlike `Order.openedByEmail`, this names an appointment's *subject*, not an actor - THERAPIST is an ordinary staff tag (see `JobFunction`), so the named therapist may have no login at all, which is exactly why this is `therapistName` and not `therapistEmail`. 
+   * @return therapistName
+   */
+  @NotNull 
+  @JsonProperty("therapistName")
+  public String getTherapistName() {
+    return therapistName;
+  }
+
+  public void setTherapistName(String therapistName) {
+    this.therapistName = therapistName;
+  }
+
   public SpaAppointment therapistEmail(String therapistEmail) {
     this.therapistEmail = therapistEmail;
     return this;
   }
 
   /**
-   * Denormalized from the named therapist at read time - same convention as `Order.openedByEmail`.
+   * Absent for a no-login therapist (see `UserCreateInput`) - `therapistName` is the field to display, never absent. 
    * @return therapistEmail
    */
-  @NotNull 
+  
   @JsonProperty("therapistEmail")
   public String getTherapistEmail() {
     return therapistEmail;
@@ -491,6 +512,7 @@ public class SpaAppointment {
         Objects.equals(this.tableId, spaAppointment.tableId) &&
         Objects.equals(this.tableLabel, spaAppointment.tableLabel) &&
         Objects.equals(this.therapistUserId, spaAppointment.therapistUserId) &&
+        Objects.equals(this.therapistName, spaAppointment.therapistName) &&
         Objects.equals(this.therapistEmail, spaAppointment.therapistEmail) &&
         Objects.equals(this.treatments, spaAppointment.treatments) &&
         Objects.equals(this.date, spaAppointment.date) &&
@@ -508,7 +530,7 @@ public class SpaAppointment {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, bookingId, guestName, tableId, tableLabel, therapistUserId, therapistEmail, treatments, date, startTime, durationMinutes, status, orderId, missingTreatmentNames, createdByUserId, cancelledByUserId, cancelReason, createdAt, updatedAt);
+    return Objects.hash(id, bookingId, guestName, tableId, tableLabel, therapistUserId, therapistName, therapistEmail, treatments, date, startTime, durationMinutes, status, orderId, missingTreatmentNames, createdByUserId, cancelledByUserId, cancelReason, createdAt, updatedAt);
   }
 
   @Override
@@ -521,6 +543,7 @@ public class SpaAppointment {
     sb.append("    tableId: ").append(toIndentedString(tableId)).append("\n");
     sb.append("    tableLabel: ").append(toIndentedString(tableLabel)).append("\n");
     sb.append("    therapistUserId: ").append(toIndentedString(therapistUserId)).append("\n");
+    sb.append("    therapistName: ").append(toIndentedString(therapistName)).append("\n");
     sb.append("    therapistEmail: ").append(toIndentedString(therapistEmail)).append("\n");
     sb.append("    treatments: ").append(toIndentedString(treatments)).append("\n");
     sb.append("    date: ").append(toIndentedString(date)).append("\n");
