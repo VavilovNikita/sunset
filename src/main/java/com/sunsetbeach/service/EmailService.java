@@ -48,8 +48,13 @@ public class EmailService {
             // ADMIN/MANAGER only - now that WAITER/CASHIER exist (POS module), the full
             // userRepository.findAll() this used to send to would put room-booking
             // notifications in front of restaurant/bar staff who have nothing to do with them.
+            // filter(Objects::nonNull): ADMIN/MANAGER accounts can now be created without a login
+            // (see UserCreateInput) - an unlikely staffing shape for these two roles, but List.of
+            // would throw building `to` the moment one exists, taking this notification down with
+            // it. Email must never break the operation it accompanies (see CLAUDE.md).
             List<String> to = userRepository.findByRoleIn(List.of(Role.ADMIN, Role.MANAGER)).stream()
                     .map(u -> u.getEmail())
+                    .filter(java.util.Objects::nonNull)
                     .toList();
             if (to.isEmpty()) {
                 return;
@@ -93,8 +98,11 @@ public class EmailService {
             return;
         }
         try {
+            // See sendNewBookingEmail's own comment on the filter - same ADMIN/MANAGER audience,
+            // same no-login-account possibility.
             List<String> to = userRepository.findByRoleIn(List.of(Role.ADMIN, Role.MANAGER)).stream()
                     .map(u -> u.getEmail())
+                    .filter(java.util.Objects::nonNull)
                     .toList();
             if (to.isEmpty()) {
                 return;
