@@ -25,9 +25,12 @@ import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.repository.SpaAppointmentRepository;
 import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -91,6 +94,20 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
 
     @Autowired
     private SpaAppointmentRepository spaAppointmentRepository;
+
+    @Autowired
+    private EntityManager entityManager;
+
+    // A fixed, arbitrary weekday afternoon - see CLAUDE.md's "a test must not read the wall
+    // clock" rule. The two tests below that assert a link actually happens (not just "stays
+    // null either way") used to build their appointment times off real LocalDateTime.now(), and
+    // failed for a few hours after local midnight: an offset like "-150 minutes" rolls the
+    // appointment's date backward, but the order - created moments later, at the real wall-clock
+    // instant the suite happens to run at - still lands on the day after. FIXED_CLOCK replaces
+    // that real "now" everywhere it matters for those two tests, mid-day so no offset used below
+    // (-150 to +120 minutes) risks crossing a date boundary on its own.
+    private static final Clock FIXED_CLOCK =
+            Clock.fixed(LocalDateTime.of(2027, 11, 10, 14, 0).atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
 
     private Booking createBooking(LocalDate checkIn) {
         RoomEntity room = new RoomEntity();
@@ -195,6 +212,27 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
     }
 
     /**
+     * {@code Order.createdAt} is {@code @CreationTimestamp} - Hibernate assigns it from the real
+     * wall clock at insert time, same as everywhere else in this codebase (see
+     * {@code BookingExpiryServiceTests#persistBooking} for the same pattern). {@code
+     * resolveByTable} reads it as "openedAt" and compares it against the appointment times built
+     * above, so it has to land on the exact same {@link #FIXED_CLOCK} instant those were built
+     * from, not on whatever real instant the order actually happened to be created at. Bypasses
+     * the entity lifecycle with a native UPDATE - mutating the managed field directly isn't
+     * picked up by dirty checking for a generated property - then clears the persistence context
+     * so the next read (inside {@code addItems}) reloads the backdated row instead of the
+     * still-cached one.
+     */
+    private void backdateOrderCreatedAt(String orderId, LocalDateTime createdAt) {
+        entityManager
+                .createNativeQuery("UPDATE \"Order\" SET \"createdAt\" = ?1 WHERE id = ?2")
+                .setParameter(1, createdAt)
+                .setParameter(2, orderId)
+                .executeUpdate();
+        entityManager.clear();
+    }
+
+    /**
      * A fixed today+time, for tests on the booking axis (date-only, not time-of-day sensitive -
      * see {@link OrderService#resolveByBooking}) that must NOT be built as an offset from
      * {@code LocalDateTime.now()}: an offset of a couple of hours can cross midnight depending on
@@ -212,7 +250,7 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
      */
     @Test
     void addItems_busyTableDuringSecondAppointment_linksToTheSecond() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(FIXED_CLOCK);
         TableEntity table = createSpaTable();
         MenuItemEntity treatment = createTreatment();
         UserEntity therapist = createTherapist();
@@ -226,6 +264,7 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
         SpaAppointmentEntity third = persistAppointment(table, bookingC, treatment, therapist, receptionist, now.plusMinutes(120), 60);
 
         Order order = orderService.create(new OrderCreateInput().tableId(table.getId()), receptionist.getId());
+        backdateOrderCreatedAt(order.getId(), now);
         billTreatment(order.getId(), treatment);
 
         assertThat(orderIdOf(second)).isEqualTo(order.getId());
@@ -240,7 +279,7 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
      */
     @Test
     void addItems_shortlyAfterAppointmentEnded_stillLinksWithinGraceWindow() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(FIXED_CLOCK);
         TableEntity table = createSpaTable();
         MenuItemEntity treatment = createTreatment();
         UserEntity therapist = createTherapist();
@@ -251,6 +290,7 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
         SpaAppointmentEntity appointment = persistAppointment(table, booking, treatment, therapist, receptionist, now.minusMinutes(70), 60);
 
         Order order = orderService.create(new OrderCreateInput().tableId(table.getId()), receptionist.getId());
+        backdateOrderCreatedAt(order.getId(), now);
         billTreatment(order.getId(), treatment);
 
         assertThat(orderIdOf(appointment)).isEqualTo(order.getId());
