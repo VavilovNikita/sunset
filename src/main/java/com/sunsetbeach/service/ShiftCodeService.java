@@ -20,13 +20,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Shift codes are data, not an enum - each one carries its own department, its own interval(s),
- * and whether it counts as worked and/or is paid, matching exactly how the source spreadsheet's
- * legend behaves (the same code meaning different hours in a different area, and a code's own
- * hours drifting between one month's legend and the next). See V57__staff_area_and_shift_code.sql
- * for why a row here is never updated once any {@code RosterEntry} references it - "editing"
- * hours is always {@link #create} again, which retires the previous version for new use without
- * touching what already happened under it.
+ * Shift codes are data, not an enum - each one carries its own optional area, its own
+ * interval(s), and whether it counts as worked and/or is paid, matching how the source
+ * spreadsheet's legend behaves (a code's own hours drifting between one month's legend and the
+ * next, and - the "9" case - the same code letter occasionally covering two genuinely different
+ * shifts, told apart on paper by cell fill colour rather than by department; see
+ * {@code ShiftCode}'s own openapi.yaml description). See V57__staff_area_and_shift_code.sql for
+ * why a row here is never updated once any {@code RosterEntry} references it - "editing" hours is
+ * always {@link #create} again, which retires the previous version for new use without touching
+ * what already happened under it.
  */
 @Service
 public class ShiftCodeService {

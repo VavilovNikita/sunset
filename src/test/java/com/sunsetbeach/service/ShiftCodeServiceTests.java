@@ -102,7 +102,8 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
 
         assertThat(shiftCodeService.list(StaffArea.RESTAURANT)).extracting(ShiftCode::getId).contains(restaurantVersion.getId());
         assertThat(shiftCodeService.list(StaffArea.FRONT_OFFICE)).extracting(ShiftCode::getId).contains(frontOfficeVersion.getId());
-        // Same code string, genuinely different hours - the ambiguity the source spreadsheet has for "9".
+        // Same code string, genuinely different hours - area-scoping stays fully supported even
+        // though no code at this hotel actually relies on it today (see ShiftCode's own doc).
         assertThat(restaurantVersion.getStartTime2().get()).isEqualTo("16:00");
         assertThat(frontOfficeVersion.getStartTime2().isPresent()).isFalse();
     }

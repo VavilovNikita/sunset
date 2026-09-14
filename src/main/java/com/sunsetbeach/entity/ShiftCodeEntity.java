@@ -14,10 +14,15 @@ import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
 
 /**
- * One version of one shift code in one {@link StaffArea} - see V57__staff_area_and_shift_code.sql
- * for why this is never updated once a {@code RosterEntry} references it, and why the code is
- * scoped to an area at all (the source spreadsheet's own "9" means a split shift in Restaurant/
- * Kitchen and a single shift in Front Office).
+ * One version of one shift code, optionally scoped to one {@link StaffArea} - see
+ * V57__staff_area_and_shift_code.sql for why this is never updated once a {@code RosterEntry}
+ * references it. V57's and V69's own comments explain area-scoping by "9" meaning a split shift
+ * in Restaurant/Kitchen and a single shift in Front Office - the hotel's accountant has since
+ * confirmed that's wrong: every code applies the same everywhere, and what the source spreadsheet
+ * actually used to tell the two "9"s apart was cell fill colour, not department. See {@code
+ * ShiftCode}'s own openapi.yaml description for the two distinct codes ("9" and "9S") this hotel
+ * now uses instead of one ambiguous "9". Area-scoping itself stays exactly as built - correct,
+ * tested, and cheaper to keep than to remove - even though nothing currently relies on it.
  */
 @Entity
 @Table(name = "ShiftCode")
