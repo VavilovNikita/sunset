@@ -8,8 +8,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.TransactionSystemException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -19,6 +23,8 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ValidationError> handleBeanValidation(MethodArgumentNotValidException ex) {
@@ -82,6 +88,27 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ErrorMessage> handleConstraintViolation(ConstraintViolationException ex) {
         return ResponseEntity.badRequest().body(new ErrorMessage("Invalid request parameters"));
+    }
+
+    /**
+     * Last-resort backstop for a database failure nobody translated. Most writes that can
+     * genuinely conflict already recognise their own failure by SQLSTATE right where it happens
+     * ({@code BookingService#isSerializationFailure}, {@code SpaAppointmentService#translateOverlap}
+     * - see {@link SqlStates} and CLAUDE.md's Concurrency section) and throw a {@link
+     * ConflictException} well before it would ever reach here; this handler is deliberately not
+     * where a "try again" conflict is supposed to be recognised, only where one that nobody
+     * recognised ends up. Two things it must not do: claim a specific, known-safe-to-retry
+     * conflict it hasn't actually identified - a 500, not a 409, so this can never be mistaken for
+     * the same guarantee {@link #handleConflict} gives - and put the real database message, which
+     * can carry table/column/constraint names or query fragments, in front of whoever is standing
+     * at the desk. The real exception is logged here, in full, so a developer can still diagnose
+     * it later; the response carries neither the message nor the exception type.
+     */
+    @ExceptionHandler({DataAccessException.class, TransactionSystemException.class})
+    public ResponseEntity<ErrorMessage> handleUnrecognizedDatabaseFailure(Exception ex) {
+        log.error("Unrecognized database failure", ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorMessage("Something went wrong saving that. Please try again, or tell an administrator if it keeps happening."));
     }
 
     private static ValidationError toValidationError(List<String> formErrors, Map<String, List<String>> fieldErrors) {
