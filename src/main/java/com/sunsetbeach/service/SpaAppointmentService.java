@@ -443,18 +443,31 @@ public class SpaAppointmentService {
      * appointment serialize on Postgres's own row-level lock: whichever transaction's
      * {@code UPDATE} reaches that row first holds it until it commits or rolls back, and the
      * second one simply waits, then proceeds against the already-updated state - ordinary MVCC,
-     * nothing extra needed. A third, unrelated write (an ordinary {@code create}/
-     * {@code updateSchedule}) racing for one of the two tables this swap is moving appointments
-     * onto is handled by PostgreSQL's own exclusion-constraint machinery: an immediate-checked
-     * writer that finds a possibly-conflicting, not-yet-committed row from this (deferred)
-     * transaction waits for it to resolve rather than erroring out early, then re-checks against
-     * whatever actually got committed. Whichever side loses that race - this swap, if a
-     * concurrent write claimed a table out from under it before {@code restoreImmediateOverlapConstraints}
-     * runs, or the concurrent write itself, if this swap committed first - surfaces a
-     * {@link DataAccessException} carrying the same constraint name either way, so
-     * {@link #translateOverlap} turns it into the identical friendly message {@code create}/
-     * {@code updateSchedule} already give for this exact conflict; nothing here is a new failure
-     * mode.
+     * nothing extra needed *provided* both transactions try to lock the two rows in the same
+     * order. They don't, by default: this method updates whichever appointment the caller named
+     * first, then the other - so two swaps naming the same pair of appointments in opposite order
+     * (two receptionists, one clicking swap from A's card and the other from B's, at the same two
+     * appointments) would each lock one row and then wait for the other, a deadlock reachable on
+     * an ordinary Tuesday rather than adversarial bad luck. The two {@code saveAndFlush} calls
+     * below are therefore ordered by the appointments' own ids, not by which one the caller called
+     * {@code id} versus {@code otherAppointmentId} - the same two rows get locked in the same
+     * order no matter which side either caller's request names first, which removes this cycle
+     * outright rather than translating it after the fact.
+     *
+     * <p>A third, unrelated write (an ordinary {@code create}/{@code updateSchedule}) racing for
+     * one of the two tables this swap is moving appointments onto is handled by PostgreSQL's own
+     * exclusion-constraint machinery: an immediate-checked writer that finds a possibly-
+     * conflicting, not-yet-committed row from this (deferred) transaction waits for it to resolve
+     * rather than erroring out early, then re-checks against whatever actually got committed. This
+     * *can* still deadlock, unlike the same-pair-of-swaps case above - not because either side
+     * locked rows out of order, but because each side's own exclusion-constraint check can end up
+     * needing a lock the other side's uncommitted row is holding, in both directions at once. That
+     * shape isn't something a lock order fixes (the two sides aren't contending for the same two
+     * rows in the first place; one is an `UPDATE`'s check, the other an `INSERT`'s), so instead of
+     * preventing it, {@link #translateOverlap} recognises it by its own SQLSTATE and returns the
+     * same "try again" conflict {@code create}/{@code updateSchedule} would give for a genuine
+     * overlap - the transaction Postgres kills to break the deadlock is retried by a person, same
+     * as any other race in this system, not silently retried by this method itself.
      */
     @Transactional
     public SpaAppointment swapTables(String id, SwapSpaAppointmentTableInput input, String actorUserId) {
@@ -475,12 +488,21 @@ public class SpaAppointmentService {
         TableEntity entityOldTable = tableRepository.findById(entityOldTableId).orElseThrow(() -> new NotFoundException("Table not found"));
         TableEntity otherOldTable = tableRepository.findById(otherOldTableId).orElseThrow(() -> new NotFoundException("Table not found"));
 
+        // Lock the two rows in a deterministic (lowest id first) order, not in whichever order
+        // the caller happened to name entity/other - see this method's own Concurrency section.
+        // Decided from the ids alone, before either entity is touched: deferOverlapConstraints()
+        // is a native query, and Hibernate's default flush mode flushes any already-dirty entity
+        // before running one (it can't otherwise know a native statement doesn't depend on
+        // pending changes) - setting tableId here first would flush both UPDATEs immediately,
+        // before deferral even takes effect, silently defeating this whole method.
+        SpaAppointmentEntity first = entity.getId().compareTo(other.getId()) <= 0 ? entity : other;
+        SpaAppointmentEntity second = first == entity ? other : entity;
         try {
             spaAppointmentRepository.deferOverlapConstraints();
             entity.setTableId(otherOldTableId);
-            spaAppointmentRepository.saveAndFlush(entity);
             other.setTableId(entityOldTableId);
-            spaAppointmentRepository.saveAndFlush(other);
+            spaAppointmentRepository.saveAndFlush(first);
+            spaAppointmentRepository.saveAndFlush(second);
             spaAppointmentRepository.restoreImmediateOverlapConstraints();
         } catch (DataAccessException e) {
             throw translateOverlap(e);

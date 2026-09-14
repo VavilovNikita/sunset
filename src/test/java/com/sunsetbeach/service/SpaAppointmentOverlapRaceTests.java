@@ -290,11 +290,12 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
      *
      * <p>This exact race can resolve two different ways depending on timing, and both are
      * legitimate: either PostgreSQL rejects the losing write outright as a genuine exclusion
-     * violation, or - the case that used to escape as a raw, untranslated exception -
-     * it kills one side to break a deadlock between the two constraint checks (see {@code
-     * SpaAppointmentService#translateOverlap}'s own javadoc). Either way the loser must get one of
-     * the two known sentences, never something else - an untranslated failure passing a bare "was
-     * it thrown" assertion is exactly the regression this test guards against.
+     * violation (the deferred check or the immediate one finds a real overlap), or - the case that
+     * used to escape as a raw, untranslated exception - it kills one side to break a deadlock
+     * between the two constraint checks (see {@code SpaAppointmentService#translateOverlap}'s own
+     * javadoc). Either way the loser must get one of the two known sentences, never something
+     * else - an untranslated failure passing a bare "was it thrown" assertion is exactly the
+     * regression this test guards against.
      */
     @Test
     void concurrentSwapAndCreate_racingForTheSameTable_exactlyOneSucceeds() throws Exception {
@@ -364,5 +365,76 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
                                 && a.getStatus() == com.sunsetbeach.model.SpaAppointmentStatus.BOOKED)
                         .count())
                 .isEqualTo(1);
+    }
+
+    /**
+     * Regression test for the deadlock {@code swapTables} used to be exposed to whenever two
+     * swaps named the same pair of appointments in opposite order (two receptionists, each
+     * clicking "swap" from a different one of the two appointment cards) - see that method's own
+     * Concurrency section. Both calls describe the identical target state (A takes B's table, B
+     * takes A's), so a deterministic (lowest-id-first) lock order lets them serialize cleanly
+     * instead of each locking one row and waiting on the other. If the deadlock were still
+     * reachable, one side would surface a raw, uncaught exception here rather than either
+     * completing or a translated {@link ConflictException} - this test fails loudly either way,
+     * not silently.
+     */
+    @Test
+    void concurrentSwapSwap_sameTwoAppointmentsNamedInOpposingOrder_neitherDeadlocks() throws Exception {
+        Booking booking = createBooking();
+        TableEntity tableA = createSpaTable();
+        TableEntity tableB = createSpaTable();
+        MenuItemEntity treatment = createTreatment();
+        UserEntity therapistA = createTherapist();
+        UserEntity therapistB = createTherapist();
+        UserEntity receptionist = createReceptionist();
+
+        SpaAppointmentResult resultA = spaAppointmentService.create(
+                new SpaAppointmentCreateInput(booking.getId(), tableA.getId(), therapistA.getId(), treatment.getId(), booking.getCheckIn(), "10:00"),
+                receptionist.getId());
+        SpaAppointmentResult resultB = spaAppointmentService.create(
+                new SpaAppointmentCreateInput(booking.getId(), tableB.getId(), therapistB.getId(), treatment.getId(), booking.getCheckIn(), "10:00"),
+                receptionist.getId());
+        String appointmentAId = resultA.getAppointment().getId();
+        String appointmentBId = resultB.getAppointment().getId();
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        Callable<Object> swapNamedAThenB = () -> {
+            barrier.await();
+            return spaAppointmentService.swapTables(appointmentAId, new SwapSpaAppointmentTableInput(appointmentBId), receptionist.getId());
+        };
+        Callable<Object> swapNamedBThenA = () -> {
+            barrier.await();
+            return spaAppointmentService.swapTables(appointmentBId, new SwapSpaAppointmentTableInput(appointmentAId), receptionist.getId());
+        };
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        int completed = 0;
+        List<String> conflictMessages = new ArrayList<>();
+        try {
+            Future<Object> first = executor.submit(swapNamedAThenB);
+            Future<Object> second = executor.submit(swapNamedBThenA);
+            for (Future<Object> f : List.of(first, second)) {
+                try {
+                    f.get();
+                    completed++;
+                } catch (Exception e) {
+                    if (e.getCause() instanceof ConflictException conflict) {
+                        conflictMessages.add(conflict.getMessage());
+                    } else {
+                        throw e;
+                    }
+                }
+            }
+        } finally {
+            executor.shutdown();
+        }
+
+        assertThat(completed + conflictMessages.size()).isEqualTo(2);
+        assertThat(conflictMessages)
+                .allMatch(message -> message.equals("Someone else was changing one of these appointments at the same time — please try again."));
+        // Both calls describe the same swap - the end state must be that swap having happened
+        // exactly once, regardless of which call "won".
+        assertThat(spaAppointmentRepository.findById(appointmentAId).orElseThrow().getTableId()).isEqualTo(tableB.getId());
+        assertThat(spaAppointmentRepository.findById(appointmentBId).orElseThrow().getTableId()).isEqualTo(tableA.getId());
     }
 }
