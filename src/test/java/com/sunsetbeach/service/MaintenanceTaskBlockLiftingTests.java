@@ -77,6 +77,7 @@ class MaintenanceTaskBlockLiftingTests extends AbstractIntegrationTest {
 
         UserEntity reporter = new UserEntity();
         reporter.setEmail("reporter-" + UUID.randomUUID() + "@example.com");
+        reporter.setName(reporter.getEmail());
         reporter.setPasswordHash("irrelevant-for-this-test");
         reporter = userRepository.saveAndFlush(reporter);
         reporterId = reporter.getId();

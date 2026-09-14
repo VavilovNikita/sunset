@@ -191,6 +191,7 @@ class RoomUnitBlockOverlapWarningTests extends AbstractIntegrationTest {
         RoomUnitEntity unit = createUnit();
         com.sunsetbeach.entity.UserEntity user = new com.sunsetbeach.entity.UserEntity();
         user.setEmail("block-creator-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant-for-this-test");
         user = userRepository.saveAndFlush(user);
         LocalDate from = LocalDate.now().plusDays(200);
@@ -220,6 +221,7 @@ class RoomUnitBlockOverlapWarningTests extends AbstractIntegrationTest {
         RoomUnitEntity unit = createUnit();
         com.sunsetbeach.entity.UserEntity reporter = new com.sunsetbeach.entity.UserEntity();
         reporter.setEmail("block-reporter-" + UUID.randomUUID() + "@example.com");
+        reporter.setName(reporter.getEmail());
         reporter.setPasswordHash("irrelevant-for-this-test");
         reporter = userRepository.saveAndFlush(reporter);
         com.sunsetbeach.model.MaintenanceTask task = maintenanceTaskService.create(unit.getId(), "AC is leaking", java.util.List.of(), reporter.getId());

@@ -11,6 +11,7 @@ import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.User;
 import com.sunsetbeach.model.UserActiveUpdateInput;
 import com.sunsetbeach.model.UserCreateInput;
+import com.sunsetbeach.model.UserCredentialsInput;
 import com.sunsetbeach.model.UserFunctionsUpdateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
 import com.sunsetbeach.model.UserUpdateResult;
@@ -62,12 +63,75 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /users/{id}/credentials : Give a no-login staff account the ability to authenticate
+     * Requires an authenticated session with role &#x60;ADMIN&#x60;. For a &#x60;User&#x60; created without an &#x60;email&#x60;/&#x60;password&#x60; (see &#x60;UserCreateInput&#x60;) - a dishwasher who becomes a receptionist, say. Sets both at once; the account can log in immediately afterward. Rejected with 409 if the target already has an email - this endpoint&#39;s only job is the no-login-to-login transition, not changing an existing login email (there is no such operation today). 
+     *
+     * @param id  (required)
+     * @param userCredentialsInput  (required)
+     * @return Credentials granted. (status code 200)
+     *         or Body failed validation. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or User not found. (status code 404)
+     *         or The target already has login credentials, or the email is already in use by another account. (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/users/{id}/credentials",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<User> grantUserCredentials(
+         @PathVariable("id") String id,
+         @Valid @RequestBody UserCredentialsInput userCredentialsInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -113,7 +177,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ]";
+                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -160,7 +224,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -217,7 +281,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
+                    String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -274,7 +338,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
+                    String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -331,7 +395,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

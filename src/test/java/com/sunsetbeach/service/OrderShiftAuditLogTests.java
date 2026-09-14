@@ -104,6 +104,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
     void setUp() {
         UserEntity user = new UserEntity();
         user.setEmail("audit-order-shift-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant-for-this-test");
         user.setRole(Role.CASHIER);
         cashierId = userRepository.saveAndFlush(user).getId();

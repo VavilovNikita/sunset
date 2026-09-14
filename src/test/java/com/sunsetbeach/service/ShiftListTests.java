@@ -67,6 +67,7 @@ class ShiftListTests extends AbstractIntegrationTest {
     private UserEntity persistUser() {
         UserEntity user = new UserEntity();
         user.setEmail("shift-list-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant-for-this-test");
         user.setRole(Role.CASHIER);
         return userRepository.saveAndFlush(user);

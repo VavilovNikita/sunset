@@ -164,6 +164,7 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
     private UserEntity createTherapist() {
         UserEntity user = new UserEntity();
         user.setEmail("spa-therapist-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash(passwordEncoder.encode("irrelevant1"));
         user.setRole(Role.WAITER);
         user.setActive(true);
@@ -176,6 +177,7 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
     private UserEntity createReceptionist() {
         UserEntity user = new UserEntity();
         user.setEmail("spa-reception-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash(passwordEncoder.encode("irrelevant1"));
         user.setRole(Role.CASHIER);
         user.setActive(true);

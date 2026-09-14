@@ -164,6 +164,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
     void setUp() {
         UserEntity staffUser = new UserEntity();
         staffUser.setEmail("manager-" + UUID.randomUUID() + "@example.com");
+        staffUser.setName(staffUser.getEmail());
         staffUser.setPasswordHash("irrelevant-for-this-test");
         staffUser.setRole(Role.MANAGER);
         staffUser = userRepository.saveAndFlush(staffUser);
@@ -216,6 +217,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
     private UserEntity createTherapist() {
         UserEntity user = new UserEntity();
         user.setEmail("spa-map-therapist-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant");
         user.setRole(Role.WAITER);
         user.setActive(true);

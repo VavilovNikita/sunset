@@ -80,6 +80,7 @@ class AttendanceServiceTests extends AbstractIntegrationTest {
     private UserEntity createUser(Role role) {
         UserEntity user = new UserEntity();
         user.setEmail("attendance-test-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash(passwordEncoder.encode("irrelevant1"));
         user.setRole(role);
         user.setActive(true);

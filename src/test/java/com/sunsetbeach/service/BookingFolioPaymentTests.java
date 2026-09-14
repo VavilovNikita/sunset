@@ -100,6 +100,7 @@ class BookingFolioPaymentTests extends AbstractIntegrationTest {
 
         UserEntity newUser = new UserEntity();
         newUser.setEmail("cashier-" + UUID.randomUUID() + "@example.com");
+        newUser.setName(newUser.getEmail());
         newUser.setPasswordHash("irrelevant-for-this-test");
         newUser.setRole(Role.CASHIER);
         staffUser = userRepository.saveAndFlush(newUser);

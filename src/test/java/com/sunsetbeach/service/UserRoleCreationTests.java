@@ -27,7 +27,7 @@ class UserRoleCreationTests extends AbstractIntegrationTest {
 
     @Test
     void create_withWaiterRole_succeeds() {
-        UserCreateInput input = new UserCreateInput(uniqueEmail(), "password1234");
+        UserCreateInput input = new UserCreateInput("Waiter Person").email(uniqueEmail()).password("password1234");
         input.setRole(Role.WAITER);
 
         User created = userService.create(input);
@@ -37,7 +37,7 @@ class UserRoleCreationTests extends AbstractIntegrationTest {
 
     @Test
     void create_withCashierRole_succeeds() {
-        UserCreateInput input = new UserCreateInput(uniqueEmail(), "password1234");
+        UserCreateInput input = new UserCreateInput("Cashier Person").email(uniqueEmail()).password("password1234");
         input.setRole(Role.CASHIER);
 
         User created = userService.create(input);

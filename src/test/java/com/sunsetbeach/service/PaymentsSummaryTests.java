@@ -72,6 +72,7 @@ class PaymentsSummaryTests extends AbstractIntegrationTest {
     void setUp() {
         UserEntity newUser = new UserEntity();
         newUser.setEmail("payments-summary-" + UUID.randomUUID() + "@example.com");
+        newUser.setName(newUser.getEmail());
         newUser.setPasswordHash("irrelevant-for-this-test");
         newUser.setRole(Role.CASHIER);
         user = userRepository.saveAndFlush(newUser);

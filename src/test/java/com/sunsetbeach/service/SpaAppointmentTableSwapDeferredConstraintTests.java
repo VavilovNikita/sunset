@@ -129,6 +129,7 @@ class SpaAppointmentTableSwapDeferredConstraintTests extends AbstractIntegration
     private UserEntity createTherapist(String email) {
         UserEntity user = new UserEntity();
         user.setEmail(email);
+        user.setName(user.getEmail());
         user.setPasswordHash(passwordEncoder.encode("irrelevant1"));
         user.setRole(Role.WAITER);
         user.setActive(true);
@@ -139,6 +140,7 @@ class SpaAppointmentTableSwapDeferredConstraintTests extends AbstractIntegration
     private UserEntity createReceptionist() {
         UserEntity user = new UserEntity();
         user.setEmail("deferred-swap-reception@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash(passwordEncoder.encode("irrelevant1"));
         user.setRole(Role.CASHIER);
         user.setActive(true);

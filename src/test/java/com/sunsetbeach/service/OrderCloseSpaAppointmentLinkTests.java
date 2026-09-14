@@ -129,6 +129,7 @@ class OrderCloseSpaAppointmentLinkTests extends AbstractIntegrationTest {
     void setUp() {
         UserEntity cashier = new UserEntity();
         cashier.setEmail("order-close-link-cashier-" + UUID.randomUUID() + "@example.com");
+        cashier.setName(cashier.getEmail());
         cashier.setPasswordHash("irrelevant-for-this-test");
         cashier.setRole(Role.CASHIER);
         cashierId = userRepository.saveAndFlush(cashier).getId();
@@ -255,6 +256,7 @@ class OrderCloseSpaAppointmentLinkTests extends AbstractIntegrationTest {
     private UserEntity createTherapist() {
         UserEntity user = new UserEntity();
         user.setEmail("order-close-link-therapist-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant");
         user.setRole(Role.WAITER);
         user.setActive(true);

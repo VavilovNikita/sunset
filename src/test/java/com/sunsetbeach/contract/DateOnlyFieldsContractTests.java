@@ -145,6 +145,7 @@ class DateOnlyFieldsContractTests extends AbstractIntegrationTest {
         // rest are CASHIER+, and ROLE_MANAGER > ROLE_CASHIER in the configured hierarchy).
         UserEntity user = new UserEntity();
         user.setEmail("contract-test-" + UUID.randomUUID() + "@test.local");
+        user.setName(user.getEmail());
         user.setPasswordHash("unused");
         user.setRole(Role.MANAGER);
         user.setActive(true);

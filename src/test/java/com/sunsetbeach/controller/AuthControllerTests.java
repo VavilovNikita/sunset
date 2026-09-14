@@ -91,6 +91,7 @@ class AuthControllerTests {
         UserEntity entity = new UserEntity();
         entity.setId("user-1");
         entity.setEmail("manager@example.com");
+        entity.setName(entity.getEmail());
         entity.setPasswordHash(passwordEncoder.encode("correct-password"));
         entity.setRole(Role.MANAGER);
         ReflectionTestUtils.setField(entity, "createdAt", LocalDateTime.now());
@@ -196,13 +197,13 @@ class AuthControllerTests {
     @Test
     void register_withAdminToken_delegatesToUserService() throws Exception {
         String adminToken = "Bearer " + jwtService.issue(new StaffPrincipal("admin-1", "admin@example.com", Role.ADMIN));
-        User created = new User("user-2", "new@example.com", Role.MANAGER, true, List.of(), OffsetDateTime.now());
+        User created = new User("user-2", "New Person", Role.MANAGER, true, List.of(), OffsetDateTime.now()).email("new@example.com");
         when(userService.create(any(UserCreateInput.class))).thenReturn(created);
 
         mockMvc.perform(post("/auth/register")
                         .header("Authorization", adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"new@example.com\",\"password\":\"password1\"}"))
+                        .content("{\"name\":\"New Person\",\"email\":\"new@example.com\",\"password\":\"password1\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.email").value("new@example.com"));
 

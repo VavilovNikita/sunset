@@ -85,6 +85,7 @@ class ShiftExportTests extends AbstractIntegrationTest {
     void setUp() {
         UserEntity user = new UserEntity();
         user.setEmail("cashier-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant-for-this-test");
         user.setRole(Role.CASHIER);
         cashier = userRepository.saveAndFlush(user);

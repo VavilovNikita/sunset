@@ -19,13 +19,15 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * &#x60;GET /roster/employees&#x60; - deliberately narrower than &#x60;User&#x60;/&#x60;GET /users&#x60;, see that endpoint&#39;s own description. 
+ * &#x60;GET /roster/employees&#x60; - deliberately narrower than &#x60;User&#x60;/&#x60;GET /users&#x60;, see that endpoint&#39;s own description. &#x60;name&#x60; is the field the roster grid displays and sorts by - unlike &#x60;email&#x60;, it&#39;s never absent, including for a no-login account (see &#x60;UserCreateInput&#x60;). 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RosterEmployee {
 
   private String id;
+
+  private String name;
 
   private String email;
 
@@ -40,9 +42,9 @@ public class RosterEmployee {
   /**
    * Constructor with only required parameters
    */
-  public RosterEmployee(String id, String email, Boolean active) {
+  public RosterEmployee(String id, String name, Boolean active) {
     this.id = id;
-    this.email = email;
+    this.name = name;
     this.active = active;
   }
 
@@ -65,6 +67,25 @@ public class RosterEmployee {
     this.id = id;
   }
 
+  public RosterEmployee name(String name) {
+    this.name = name;
+    return this;
+  }
+
+  /**
+   * Get name
+   * @return name
+   */
+  @NotNull 
+  @JsonProperty("name")
+  public String getName() {
+    return name;
+  }
+
+  public void setName(String name) {
+    this.name = name;
+  }
+
   public RosterEmployee email(String email) {
     this.email = email;
     return this;
@@ -74,7 +95,7 @@ public class RosterEmployee {
    * Get email
    * @return email
    */
-  @NotNull 
+  
   @JsonProperty("email")
   public String getEmail() {
     return email;
@@ -132,6 +153,7 @@ public class RosterEmployee {
     }
     RosterEmployee rosterEmployee = (RosterEmployee) o;
     return Objects.equals(this.id, rosterEmployee.id) &&
+        Objects.equals(this.name, rosterEmployee.name) &&
         Objects.equals(this.email, rosterEmployee.email) &&
         Objects.equals(this.active, rosterEmployee.active) &&
         equalsNullable(this.staffArea, rosterEmployee.staffArea);
@@ -143,7 +165,7 @@ public class RosterEmployee {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, email, active, hashCodeNullable(staffArea));
+    return Objects.hash(id, name, email, active, hashCodeNullable(staffArea));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -158,6 +180,7 @@ public class RosterEmployee {
     StringBuilder sb = new StringBuilder();
     sb.append("class RosterEmployee {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
+    sb.append("    name: ").append(toIndentedString(name)).append("\n");
     sb.append("    email: ").append(toIndentedString(email)).append("\n");
     sb.append("    active: ").append(toIndentedString(active)).append("\n");
     sb.append("    staffArea: ").append(toIndentedString(staffArea)).append("\n");

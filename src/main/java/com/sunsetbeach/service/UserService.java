@@ -55,11 +55,28 @@ public class UserService {
         return userRepository.findAll().stream().map(userMapper::toDto).toList();
     }
 
+    /**
+     * {@code email}/{@code password} travel together or not at all - a staff member who never
+     * signs in (most of the roster: cooks, housekeepers, anyone who exists so the roster/
+     * attendance/pay-rate records have someone to point at) gets neither, rather than a
+     * fabricated mailbox and a password nobody knows. Can't be expressed as openapi.yaml
+     * `required` (there's no "exactly one of A and B, or neither" in JSON Schema without an
+     * awkward `oneOf`/`not` combination that would produce a worse error message than this one
+     * check), so it's validated here instead. See {@link #grantCredentials} for turning a
+     * no-login account into a login-capable one later, without recreating it.
+     */
     @Transactional
     public User create(UserCreateInput input) {
+        if ((input.getEmail() == null) != (input.getPassword() == null)) {
+            throw new BadRequestException("email and password must both be present or both be absent");
+        }
+
         UserEntity entity = new UserEntity();
-        entity.setEmail(input.getEmail().trim());
-        entity.setPasswordHash(passwordEncoder.encode(input.getPassword()));
+        entity.setName(input.getName().trim());
+        if (input.getEmail() != null) {
+            entity.setEmail(input.getEmail().trim());
+            entity.setPasswordHash(passwordEncoder.encode(input.getPassword()));
+        }
         entity.setRole(input.getRole() != null ? input.getRole() : Role.MANAGER);
 
         UserEntity saved;
@@ -69,7 +86,40 @@ public class UserService {
             throw new ConflictException("A user with that email already exists");
         }
         auditLogService.record(
-                AuditAction.USER_CREATED, AuditEntityType.USER, saved.getId(), "User " + saved.getEmail() + " created with role " + saved.getRole().getValue());
+                AuditAction.USER_CREATED, AuditEntityType.USER, saved.getId(),
+                "User " + saved.getName() + " created with role " + saved.getRole().getValue()
+                        + (saved.getEmail() != null ? " (" + saved.getEmail() + ")" : " (no login credentials)"));
+        return userMapper.toDto(saved);
+    }
+
+    /**
+     * {@code PATCH /users/{id}/credentials} - the no-login-to-login transition named in
+     * {@link #create}'s own comment (a dishwasher who becomes a receptionist). Only valid while
+     * the target has no email yet; changing an *existing* login email is deliberately not this
+     * method's job (see the operation's own openapi.yaml description for why) - reaching for this
+     * to fix a typo'd email would silently skip whatever a dedicated change-email operation ought
+     * to do (e.g. notifying the affected person), which doesn't exist today because nothing has
+     * needed it yet.
+     */
+    @Transactional
+    public User grantCredentials(String id, String email, String password) {
+        UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        if (entity.getEmail() != null) {
+            throw new ConflictException("This user already has login credentials");
+        }
+
+        entity.setEmail(email.trim());
+        entity.setPasswordHash(passwordEncoder.encode(password));
+
+        UserEntity saved;
+        try {
+            saved = userRepository.saveAndFlush(entity);
+        } catch (DataIntegrityViolationException e) {
+            throw new ConflictException("A user with that email already exists");
+        }
+        auditLogService.record(
+                AuditAction.USER_CREDENTIALS_GRANTED, AuditEntityType.USER, saved.getId(),
+                "Login credentials granted to " + saved.getName() + " (" + saved.getEmail() + ")");
         return userMapper.toDto(saved);
     }
 

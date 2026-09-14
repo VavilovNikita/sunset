@@ -115,6 +115,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
 
         UserEntity staffUser = new UserEntity();
         staffUser.setEmail("manager-" + UUID.randomUUID() + "@example.com");
+        staffUser.setName(staffUser.getEmail());
         staffUser.setPasswordHash("irrelevant-for-this-test");
         staffUser.setRole(Role.MANAGER);
         staffUser = userRepository.saveAndFlush(staffUser);

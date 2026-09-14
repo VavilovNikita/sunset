@@ -75,6 +75,7 @@ class UserFunctionsTests extends AbstractIntegrationTest {
     private UserEntity persistUser() {
         UserEntity entity = new UserEntity();
         entity.setEmail("job-functions-" + UUID.randomUUID() + "@example.com");
+        entity.setName(entity.getEmail());
         entity.setPasswordHash(passwordEncoder.encode("irrelevant1"));
         entity.setRole(Role.CASHIER);
         return userRepository.saveAndFlush(entity);

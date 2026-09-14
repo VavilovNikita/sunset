@@ -171,6 +171,7 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
     private UserEntity createTherapist() {
         UserEntity user = new UserEntity();
         user.setEmail("order-link-therapist-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant");
         user.setRole(Role.WAITER);
         user.setActive(true);
@@ -181,6 +182,7 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
     private UserEntity createReceptionist() {
         UserEntity user = new UserEntity();
         user.setEmail("order-link-reception-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant");
         user.setRole(Role.CASHIER);
         user.setActive(true);

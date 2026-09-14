@@ -111,7 +111,7 @@ class UserRoomUnitAuditLogTests extends AbstractIntegrationTest {
     @Test
     void createUser_writesUserCreatedEntry() {
         String email = "audit-new-user-" + UUID.randomUUID() + "@example.com";
-        UserCreateInput input = new UserCreateInput(email, "password1234");
+        UserCreateInput input = new UserCreateInput("Audit New User").email(email).password("password1234");
         input.setRole(Role.CASHIER);
 
         User created = userService.create(input);
@@ -125,7 +125,7 @@ class UserRoomUnitAuditLogTests extends AbstractIntegrationTest {
 
     @Test
     void updateRole_writesUserRoleChangedEntry() {
-        UserCreateInput input = new UserCreateInput("audit-role-user-" + UUID.randomUUID() + "@example.com", "password1234");
+        UserCreateInput input = new UserCreateInput("Audit Role User").email("audit-role-user-" + UUID.randomUUID() + "@example.com").password("password1234");
         input.setRole(Role.WAITER);
         User created = userService.create(input);
         createdUserIds.add(created.getId());
@@ -141,7 +141,7 @@ class UserRoomUnitAuditLogTests extends AbstractIntegrationTest {
 
     @Test
     void setActive_writesUserActiveChangedEntry() {
-        UserCreateInput input = new UserCreateInput("audit-active-user-" + UUID.randomUUID() + "@example.com", "password1234");
+        UserCreateInput input = new UserCreateInput("Audit Active User").email("audit-active-user-" + UUID.randomUUID() + "@example.com").password("password1234");
         User created = userService.create(input);
         createdUserIds.add(created.getId());
 
@@ -156,7 +156,7 @@ class UserRoomUnitAuditLogTests extends AbstractIntegrationTest {
 
     @Test
     void resetPassword_writesUserPasswordResetEntry() {
-        UserCreateInput input = new UserCreateInput("audit-reset-user-" + UUID.randomUUID() + "@example.com", "password1234");
+        UserCreateInput input = new UserCreateInput("Audit Reset User").email("audit-reset-user-" + UUID.randomUUID() + "@example.com").password("password1234");
         User created = userService.create(input);
         createdUserIds.add(created.getId());
 

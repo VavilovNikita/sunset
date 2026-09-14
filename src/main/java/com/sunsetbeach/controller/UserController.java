@@ -5,6 +5,7 @@ import com.sunsetbeach.model.ResetPasswordInput;
 import com.sunsetbeach.model.User;
 import com.sunsetbeach.model.UserActiveUpdateInput;
 import com.sunsetbeach.model.UserCreateInput;
+import com.sunsetbeach.model.UserCredentialsInput;
 import com.sunsetbeach.model.UserFunctionsUpdateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
 import com.sunsetbeach.model.UserUpdateResult;
@@ -44,6 +45,11 @@ public class UserController implements UsersApi {
     @Override
     public ResponseEntity<User> resetUserPassword(String id, ResetPasswordInput resetPasswordInput) {
         return ResponseEntity.ok(userService.resetPassword(id, resetPasswordInput.getNewPassword()));
+    }
+
+    @Override
+    public ResponseEntity<User> grantUserCredentials(String id, UserCredentialsInput userCredentialsInput) {
+        return ResponseEntity.ok(userService.grantCredentials(id, userCredentialsInput.getEmail(), userCredentialsInput.getPassword()));
     }
 
     @Override

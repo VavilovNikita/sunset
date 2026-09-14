@@ -244,6 +244,7 @@ class PosRoleHierarchyTests {
         UserEntity entity = new UserEntity();
         entity.setId("user-1");
         entity.setEmail("user-1@example.com");
+        entity.setName(entity.getEmail());
         entity.setActive(true);
         when(userRepository.findById("user-1")).thenReturn(Optional.of(entity));
     }
@@ -257,6 +258,7 @@ class PosRoleHierarchyTests {
         UserEntity entity = new UserEntity();
         entity.setId("user-1");
         entity.setEmail("user-1@example.com");
+        entity.setName(entity.getEmail());
         entity.setActive(true);
         entity.setJobFunctions(functions);
         when(userRepository.findById("user-1")).thenReturn(Optional.of(entity));
@@ -1536,7 +1538,7 @@ class PosRoleHierarchyTests {
 
     private static com.sunsetbeach.model.RosterEntry sampleRosterEntry() {
         return new com.sunsetbeach.model.RosterEntry(
-                "entry-1", "user-1", "waiter@example.com", "2027-01-02", sampleShiftCode(), false, OffsetDateTime.now(), OffsetDateTime.now());
+                "entry-1", "user-1", "Waiter One", "2027-01-02", sampleShiftCode(), false, OffsetDateTime.now(), OffsetDateTime.now());
     }
 
     private static com.sunsetbeach.model.RosterMonth sampleRosterMonth() {
@@ -1555,7 +1557,7 @@ class PosRoleHierarchyTests {
 
     private static com.sunsetbeach.model.EmployeePayRate sampleEmployeePayRate() {
         return new com.sunsetbeach.model.EmployeePayRate(
-                "rate-1", "user-1", "waiter@example.com", "700.00", "2027-01-01", "manager@example.com", OffsetDateTime.now());
+                "rate-1", "user-1", "Waiter One", "700.00", "2027-01-01", "manager@example.com", OffsetDateTime.now());
     }
 
     private static MenuItemInput sampleMenuItemInput() {

@@ -20,6 +20,13 @@ public class UserEntity {
     @UuidGenerator
     private String id;
 
+    // Always present, unlike email - see UserCreateInput's own description. The only durable
+    // identifier for a no-login account (created without email/passwordHash), and what every
+    // staff-facing screen (roster, patterns, pay rates) displays and sorts by instead of email.
+    private String name;
+
+    // Null for a no-login account. Paired with passwordHash by a DB CHECK constraint (see V68) -
+    // never set independently of it, see UserService#create/#grantCredentials.
     private String email;
 
     private String passwordHash;
@@ -58,6 +65,14 @@ public class UserEntity {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
     }
 
     public String getEmail() {

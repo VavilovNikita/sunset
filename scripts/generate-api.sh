@@ -77,11 +77,16 @@ done
 # `@Email(message = "Invalid email")` (instead of the generated bare `@Email`) gets overwritten
 # by the copy above every time. Reapply it here rather than leaving it as a silent step someone
 # has to remember - the sed just failing loudly (via `grep -q` first) is the safety net if the
-# generated line's shape ever changes upstream.
+# generated line's shape ever changes upstream. UserCreateInput.email is `@NotNull` on
+# BookingCreateInput but not on UserCreateInput (email is optional there - see UserCreateInput's
+# own description for why: a no-login account has none), so both the "@NotNull @Email" and the
+# bare "@Email" shapes are handled.
 for model in BookingCreateInput UserCreateInput; do
   file="$DEST/model/$model.java"
   if grep -q '@NotNull @jakarta.validation.constraints.Email $' "$file"; then
     sed -i 's/@NotNull @jakarta.validation.constraints.Email $/@NotNull @jakarta.validation.constraints.Email(message = "Invalid email")/' "$file"
+  elif grep -q '^  @jakarta.validation.constraints.Email $' "$file"; then
+    sed -i 's/^  @jakarta.validation.constraints.Email $/  @jakarta.validation.constraints.Email(message = "Invalid email")/' "$file"
   elif ! grep -q 'Email(message = "Invalid email")' "$file"; then
     echo "WARNING: could not reapply the custom Email validation message to $model.java - the generated line's shape changed. Check it by hand." >&2
   fi

@@ -30,6 +30,8 @@ public class User {
 
   private String id;
 
+  private String name;
+
   private String email;
 
   private Role role;
@@ -49,9 +51,9 @@ public class User {
   /**
    * Constructor with only required parameters
    */
-  public User(String id, String email, Role role, Boolean active, List<JobFunction> functions, OffsetDateTime createdAt) {
+  public User(String id, String name, Role role, Boolean active, List<JobFunction> functions, OffsetDateTime createdAt) {
     this.id = id;
-    this.email = email;
+    this.name = name;
     this.role = role;
     this.active = active;
     this.functions = functions;
@@ -77,16 +79,35 @@ public class User {
     this.id = id;
   }
 
+  public User name(String name) {
+    this.name = name;
+    return this;
+  }
+
+  /**
+   * The person's name - always present, unlike `email`. This is the only durable identifier for a `POST /users` account created without login credentials (see `UserCreateInput`), so it exists independently of whether the account can authenticate. 
+   * @return name
+   */
+  @NotNull 
+  @JsonProperty("name")
+  public String getName() {
+    return name;
+  }
+
+  public void setName(String name) {
+    this.name = name;
+  }
+
   public User email(String email) {
     this.email = email;
     return this;
   }
 
   /**
-   * Get email
+   * Absent for an account created without login credentials - see `UserCreateInput`. Such an account can be given credentials later via `PATCH /users/{id}/credentials` without being recreated. 
    * @return email
    */
-  @NotNull 
+  
   @JsonProperty("email")
   public String getEmail() {
     return email;
@@ -190,6 +211,7 @@ public class User {
     }
     User user = (User) o;
     return Objects.equals(this.id, user.id) &&
+        Objects.equals(this.name, user.name) &&
         Objects.equals(this.email, user.email) &&
         Objects.equals(this.role, user.role) &&
         Objects.equals(this.active, user.active) &&
@@ -199,7 +221,7 @@ public class User {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, email, role, active, functions, createdAt);
+    return Objects.hash(id, name, email, role, active, functions, createdAt);
   }
 
   @Override
@@ -207,6 +229,7 @@ public class User {
     StringBuilder sb = new StringBuilder();
     sb.append("class User {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
+    sb.append("    name: ").append(toIndentedString(name)).append("\n");
     sb.append("    email: ").append(toIndentedString(email)).append("\n");
     sb.append("    role: ").append(toIndentedString(role)).append("\n");
     sb.append("    active: ").append(toIndentedString(active)).append("\n");

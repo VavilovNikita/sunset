@@ -92,6 +92,7 @@ class PublicAndStaffAccessTests {
         UserEntity entity = new UserEntity();
         entity.setId("user-1");
         entity.setEmail("manager@example.com");
+        entity.setName(entity.getEmail());
         entity.setActive(true);
         when(userRepository.findById("user-1")).thenReturn(Optional.of(entity));
     }

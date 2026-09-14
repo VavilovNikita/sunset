@@ -71,14 +71,18 @@ public class RosterService {
         return userRepository.findAll().stream()
                 .filter(UserEntity::isActive)
                 .map(u -> {
-                    RosterEmployee dto = new RosterEmployee(u.getId(), u.getEmail(), u.isActive());
+                    RosterEmployee dto = new RosterEmployee(u.getId(), u.getName(), u.isActive());
+                    dto.setEmail(u.getEmail());
                     EmployeePatternEntity pattern = patternsByEmployeeId.get(u.getId());
                     if (pattern != null) {
                         dto.staffArea(pattern.getStaffArea());
                     }
                     return dto;
                 })
-                .sorted((a, b) -> a.getEmail().compareTo(b.getEmail()))
+                // name, not email: the roster's whole reason for existing is a grid with
+                // someone to point at, and a no-login account (see UserCreateInput) has no
+                // email to sort by at all.
+                .sorted((a, b) -> a.getName().compareTo(b.getName()))
                 .toList();
     }
 
@@ -93,9 +97,9 @@ public class RosterService {
     public List<RosterEntry> getMyRoster(String employeeUserId, int year, int month) {
         YearMonth ym = YearMonth.of(year, month);
         List<RosterEntryEntity> entities = rosterEntryRepository.findByEmployeeUserIdAndDateBetween(employeeUserId, ym.atDay(1), ym.atEndOfMonth());
-        Map<String, String> emails = resolveEmails(entities.stream().map(RosterEntryEntity::getEmployeeUserId).distinct().toList());
+        Map<String, UserEntity> employees = resolveUsers(entities.stream().map(RosterEntryEntity::getEmployeeUserId).distinct().toList());
         Map<String, ShiftCodeEntity> shiftCodes = resolveShiftCodes(entities);
-        return entities.stream().map(e -> toDto(e, emails.get(e.getEmployeeUserId()), shiftCodes.get(e.getShiftCodeId()), null)).toList();
+        return entities.stream().map(e -> toDto(e, employees.get(e.getEmployeeUserId()), shiftCodes.get(e.getShiftCodeId()), null)).toList();
     }
 
     /**
@@ -163,9 +167,9 @@ public class RosterService {
 
         auditLogService.record(
                 AuditAction.ROSTER_ENTRY_CREATED, AuditEntityType.ROSTER_ENTRY, saved.getId(),
-                "Scheduled " + employee.getEmail() + " for " + shiftCode.getCode() + " on " + date);
+                "Scheduled " + employee.getName() + " for " + shiftCode.getCode() + " on " + date);
 
-        return toDto(saved, employee.getEmail(), shiftCode, null);
+        return toDto(saved, employee, shiftCode, null);
     }
 
     @Transactional
@@ -199,9 +203,9 @@ public class RosterService {
         ShiftCodeEntity shiftCode = shiftCodeRepository.findById(saved.getShiftCodeId()).orElseThrow(() -> new NotFoundException("Shift code not found"));
         auditLogService.record(
                 AuditAction.ROSTER_ENTRY_MOVED, AuditEntityType.ROSTER_ENTRY, saved.getId(),
-                "Moved " + employee.getEmail() + "'s " + shiftCode.getCode() + " shift from " + originalDate + " to " + targetDate);
+                "Moved " + employee.getName() + "'s " + shiftCode.getCode() + " shift from " + originalDate + " to " + targetDate);
 
-        return toDto(saved, employee.getEmail(), shiftCode, null);
+        return toDto(saved, employee, shiftCode, null);
     }
 
     /**
@@ -231,10 +235,10 @@ public class RosterService {
         ShiftCodeEntity shiftCode = shiftCodeRepository.findById(saved.getShiftCodeId()).orElseThrow(() -> new NotFoundException("Shift code not found"));
         auditLogService.record(
                 AuditAction.ROSTER_ENTRY_REASSIGNED, AuditEntityType.ROSTER_ENTRY, saved.getId(),
-                "Gave " + originalEmployee.getEmail() + "'s " + shiftCode.getCode() + " shift on " + saved.getDate() + " to "
-                        + targetEmployee.getEmail());
+                "Gave " + originalEmployee.getName() + "'s " + shiftCode.getCode() + " shift on " + saved.getDate() + " to "
+                        + targetEmployee.getName());
 
-        return toDto(saved, targetEmployee.getEmail(), shiftCode, null);
+        return toDto(saved, targetEmployee, shiftCode, null);
     }
 
     /**
@@ -284,13 +288,13 @@ public class RosterService {
         UserEntity otherEmployee = userRepository.findById(other.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found"));
         auditLogService.record(
                 AuditAction.ROSTER_ENTRIES_SWAPPED, AuditEntityType.ROSTER_ENTRY, entity.getId(),
-                "Swapped days with " + otherEmployee.getEmail() + ": now " + entity.getDate());
+                "Swapped days with " + otherEmployee.getName() + ": now " + entity.getDate());
         auditLogService.record(
                 AuditAction.ROSTER_ENTRIES_SWAPPED, AuditEntityType.ROSTER_ENTRY, other.getId(),
-                "Swapped days with " + entityEmployee.getEmail() + ": now " + other.getDate());
+                "Swapped days with " + entityEmployee.getName() + ": now " + other.getDate());
 
         ShiftCodeEntity shiftCode = shiftCodeRepository.findById(entity.getShiftCodeId()).orElseThrow(() -> new NotFoundException("Shift code not found"));
-        return toDto(entity, entityEmployee.getEmail(), shiftCode, null);
+        return toDto(entity, entityEmployee, shiftCode, null);
     }
 
     @Transactional
@@ -303,23 +307,27 @@ public class RosterService {
         ShiftCodeEntity shiftCode = shiftCodeRepository.findById(saved.getShiftCodeId()).orElseThrow(() -> new NotFoundException("Shift code not found"));
         auditLogService.record(
                 AuditAction.ROSTER_ENTRY_LOCKED_CHANGED, AuditEntityType.ROSTER_ENTRY, saved.getId(),
-                (locked ? "Locked" : "Unlocked") + " " + employee.getEmail() + "'s " + shiftCode.getCode() + " shift on " + saved.getDate());
+                (locked ? "Locked" : "Unlocked") + " " + employee.getName() + "'s " + shiftCode.getCode() + " shift on " + saved.getDate());
 
-        return toDto(saved, employee.getEmail(), shiftCode, null);
+        return toDto(saved, employee, shiftCode, null);
     }
 
     private RosterMonth buildMonth(int year, int month, List<RosterEntryEntity> entities) {
-        Map<String, String> emails = resolveEmails(entities.stream().map(RosterEntryEntity::getEmployeeUserId).distinct().toList());
+        Map<String, UserEntity> employees = resolveUsers(entities.stream().map(RosterEntryEntity::getEmployeeUserId).distinct().toList());
         Map<String, ShiftCodeEntity> shiftCodes = resolveShiftCodes(entities);
 
-        List<RosterEntry> entryDtos = entities.stream().map(e -> toDto(e, emails.get(e.getEmployeeUserId()), shiftCodes.get(e.getShiftCodeId()), null)).toList();
+        List<RosterEntry> entryDtos = entities.stream().map(e -> toDto(e, employees.get(e.getEmployeeUserId()), shiftCodes.get(e.getShiftCodeId()), null)).toList();
         List<RosterEmployee> employeeDtos = listEmployees();
 
-        // Coverage: only countsAsWorked entries count toward a day's working total for that area.
+        // Coverage: only countsAsWorked entries count toward a day's working total for that
+        // area - and only when the code itself names one. A shared code (see ShiftCode's own
+        // description) carries no area information at all, so an entry using one can't be
+        // attributed to any area's minimum without guessing; it's excluded from every area's
+        // count rather than assigned to one arbitrarily.
         Map<String, Integer> workingCountByAreaDate = new HashMap<>();
         for (RosterEntryEntity e : entities) {
             ShiftCodeEntity shiftCode = shiftCodes.get(e.getShiftCodeId());
-            if (shiftCode != null && shiftCode.isCountsAsWorked()) {
+            if (shiftCode != null && shiftCode.isCountsAsWorked() && shiftCode.getStaffArea() != null) {
                 String key = shiftCode.getStaffArea().name() + "|" + e.getDate();
                 workingCountByAreaDate.merge(key, 1, Integer::sum);
             }
@@ -366,7 +374,7 @@ public class RosterService {
                 .collect(Collectors.groupingBy(RosterEntryEntity::getEmployeeUserId));
 
         List<String> employeeIds = entriesByEmployee.keySet().stream().sorted().toList();
-        Map<String, String> emails = resolveEmails(employeeIds);
+        Map<String, UserEntity> employees = resolveUsers(employeeIds);
         Map<String, List<com.sunsetbeach.entity.EmployeePayRateEntity>> rateHistoryByEmployee =
                 employeePayRateService.historyFor(employeeIds).stream()
                         .collect(Collectors.groupingBy(com.sunsetbeach.entity.EmployeePayRateEntity::getEmployeeUserId));
@@ -380,7 +388,7 @@ public class RosterService {
             for (RosterEntryEntity entry : employeeEntries) {
                 gross = gross.add(EmployeePayRateService.rateAsOf(history, entry.getDate()));
             }
-            csv.row(emails.get(employeeId), String.valueOf(employeeEntries.size()), com.sunsetbeach.mapper.PriceFormat.asDecimalString(gross));
+            csv.row(employees.get(employeeId).getName(), String.valueOf(employeeEntries.size()), com.sunsetbeach.mapper.PriceFormat.asDecimalString(gross));
         }
 
         auditLogService.record(
@@ -390,8 +398,8 @@ public class RosterService {
         return csv.toString();
     }
 
-    private Map<String, String> resolveEmails(List<String> userIds) {
-        return userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
+    private Map<String, UserEntity> resolveUsers(List<String> userIds) {
+        return userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, u -> u));
     }
 
     private Map<String, ShiftCodeEntity> resolveShiftCodes(List<RosterEntryEntity> entities) {
@@ -399,10 +407,11 @@ public class RosterService {
         return shiftCodeRepository.findAllById(ids).stream().collect(Collectors.toMap(ShiftCodeEntity::getId, s -> s));
     }
 
-    private RosterEntry toDto(RosterEntryEntity e, String employeeEmail, ShiftCodeEntity shiftCode, String shiftCodeCreatedByEmail) {
+    private RosterEntry toDto(RosterEntryEntity e, UserEntity employee, ShiftCodeEntity shiftCode, String shiftCodeCreatedByEmail) {
         RosterEntry dto = new RosterEntry(
-                e.getId(), e.getEmployeeUserId(), employeeEmail, e.getDate().toString(), ShiftCodeService.toDto(shiftCode, shiftCodeCreatedByEmail),
+                e.getId(), e.getEmployeeUserId(), employee.getName(), e.getDate().toString(), ShiftCodeService.toDto(shiftCode, shiftCodeCreatedByEmail),
                 e.isLocked(), com.sunsetbeach.mapper.TimestampFormat.toUtc(e.getCreatedAt()), com.sunsetbeach.mapper.TimestampFormat.toUtc(e.getUpdatedAt()));
+        dto.setEmployeeEmail(employee.getEmail());
         if (e.getNote() != null) {
             dto.note(e.getNote());
         }

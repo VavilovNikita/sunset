@@ -30,6 +30,8 @@ public class EmployeePattern {
 
   private String employeeUserId;
 
+  private String employeeName;
+
   private String employeeEmail;
 
   private StaffArea staffArea;
@@ -52,9 +54,9 @@ public class EmployeePattern {
   /**
    * Constructor with only required parameters
    */
-  public EmployeePattern(String employeeUserId, String employeeEmail, StaffArea staffArea, Integer workDaysPerWeek, Weekday weeklyDayOff, String updatedByEmail, OffsetDateTime updatedAt) {
+  public EmployeePattern(String employeeUserId, String employeeName, StaffArea staffArea, Integer workDaysPerWeek, Weekday weeklyDayOff, String updatedByEmail, OffsetDateTime updatedAt) {
     this.employeeUserId = employeeUserId;
-    this.employeeEmail = employeeEmail;
+    this.employeeName = employeeName;
     this.staffArea = staffArea;
     this.workDaysPerWeek = workDaysPerWeek;
     this.weeklyDayOff = weeklyDayOff;
@@ -81,6 +83,25 @@ public class EmployeePattern {
     this.employeeUserId = employeeUserId;
   }
 
+  public EmployeePattern employeeName(String employeeName) {
+    this.employeeName = employeeName;
+    return this;
+  }
+
+  /**
+   * Get employeeName
+   * @return employeeName
+   */
+  @NotNull 
+  @JsonProperty("employeeName")
+  public String getEmployeeName() {
+    return employeeName;
+  }
+
+  public void setEmployeeName(String employeeName) {
+    this.employeeName = employeeName;
+  }
+
   public EmployeePattern employeeEmail(String employeeEmail) {
     this.employeeEmail = employeeEmail;
     return this;
@@ -90,7 +111,7 @@ public class EmployeePattern {
    * Get employeeEmail
    * @return employeeEmail
    */
-  @NotNull 
+  
   @JsonProperty("employeeEmail")
   public String getEmployeeEmail() {
     return employeeEmail;
@@ -226,6 +247,7 @@ public class EmployeePattern {
     }
     EmployeePattern employeePattern = (EmployeePattern) o;
     return Objects.equals(this.employeeUserId, employeePattern.employeeUserId) &&
+        Objects.equals(this.employeeName, employeePattern.employeeName) &&
         Objects.equals(this.employeeEmail, employeePattern.employeeEmail) &&
         Objects.equals(this.staffArea, employeePattern.staffArea) &&
         equalsNullable(this.defaultShiftCodeId, employeePattern.defaultShiftCodeId) &&
@@ -241,7 +263,7 @@ public class EmployeePattern {
 
   @Override
   public int hashCode() {
-    return Objects.hash(employeeUserId, employeeEmail, staffArea, hashCodeNullable(defaultShiftCodeId), workDaysPerWeek, weeklyDayOff, updatedByEmail, updatedAt);
+    return Objects.hash(employeeUserId, employeeName, employeeEmail, staffArea, hashCodeNullable(defaultShiftCodeId), workDaysPerWeek, weeklyDayOff, updatedByEmail, updatedAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -256,6 +278,7 @@ public class EmployeePattern {
     StringBuilder sb = new StringBuilder();
     sb.append("class EmployeePattern {\n");
     sb.append("    employeeUserId: ").append(toIndentedString(employeeUserId)).append("\n");
+    sb.append("    employeeName: ").append(toIndentedString(employeeName)).append("\n");
     sb.append("    employeeEmail: ").append(toIndentedString(employeeEmail)).append("\n");
     sb.append("    staffArea: ").append(toIndentedString(staffArea)).append("\n");
     sb.append("    defaultShiftCodeId: ").append(toIndentedString(defaultShiftCodeId)).append("\n");

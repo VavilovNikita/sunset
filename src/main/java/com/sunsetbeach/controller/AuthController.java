@@ -57,6 +57,10 @@ public class AuthController {
         String ip = ClientIpResolver.resolve(httpRequest);
         loginRateLimiter.checkAllowed(ip, email);
 
+        // A no-login account (see UserCreateInput's own description) has a null email, and
+        // `email` here is never null (LoginRequest.email is @NotNull) - so this lookup can never
+        // match one, the same way it can never match two different accounts sharing an email.
+        // Nothing else about this method needed to change for no-login accounts to exist.
         UserEntity entity = userRepository.findByEmail(email).orElse(null);
         // A disabled account fails login the same as a wrong password - no distinct error
         // message, so a caller can't use this endpoint to probe which accounts exist vs. which

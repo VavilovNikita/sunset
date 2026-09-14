@@ -100,6 +100,7 @@ class OrderDoubleCloseRaceTests extends AbstractIntegrationTest {
     void concurrentClose_exactlyOneSucceeds_andExactlyOnePaymentIsPersisted() throws Exception {
         UserEntity cashier = new UserEntity();
         cashier.setEmail("double-close-" + UUID.randomUUID() + "@example.com");
+        cashier.setName(cashier.getEmail());
         cashier.setPasswordHash("irrelevant-for-this-test");
         cashier.setRole(Role.CASHIER);
         cashierId = userRepository.saveAndFlush(cashier).getId();

@@ -54,6 +54,7 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
     private UserEntity createManager() {
         UserEntity user = new UserEntity();
         user.setEmail("shift-code-manager-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash(passwordEncoder.encode("irrelevant1"));
         user.setRole(Role.MANAGER);
         user.setActive(true);

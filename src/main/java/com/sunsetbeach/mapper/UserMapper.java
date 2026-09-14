@@ -12,6 +12,8 @@ public class UserMapper {
 
     public User toDto(UserEntity entity) {
         List<JobFunction> functions = Arrays.stream(entity.getJobFunctions()).map(JobFunction::fromValue).toList();
-        return new User(entity.getId(), entity.getEmail(), entity.getRole(), entity.isActive(), functions, TimestampFormat.toUtc(entity.getCreatedAt()));
+        User dto = new User(entity.getId(), entity.getName(), entity.getRole(), entity.isActive(), functions, TimestampFormat.toUtc(entity.getCreatedAt()));
+        dto.setEmail(entity.getEmail());
+        return dto;
     }
 }

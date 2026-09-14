@@ -52,6 +52,7 @@ class ShiftOwnershipTests extends AbstractIntegrationTest {
     private UserEntity persistUser(Role role) {
         UserEntity user = new UserEntity();
         user.setEmail("shift-owner-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant-for-this-test");
         user.setRole(role);
         return userRepository.saveAndFlush(user);

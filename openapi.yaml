@@ -5032,6 +5032,66 @@ paths:
               example:
                 error: User not found
 
+  /users/{id}/credentials:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: grantUserCredentials
+      tags: [Users]
+      summary: Give a no-login staff account the ability to authenticate
+      description: >
+        Requires an authenticated session with role `ADMIN`. For a `User` created without an
+        `email`/`password` (see `UserCreateInput`) - a dishwasher who becomes a receptionist, say.
+        Sets both at once; the account can log in immediately afterward. Rejected with 409 if the
+        target already has an email - this endpoint's only job is the no-login-to-login
+        transition, not changing an existing login email (there is no such operation today).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCredentialsInput"
+      responses:
+        "200":
+          description: Credentials granted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: User not found
+        "409":
+          description: The target already has login credentials, or the email is already in use by another account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                alreadyHasCredentials:
+                  value: { error: "This user already has login credentials" }
+                emailInUse:
+                  value: { error: "A user with that email already exists" }
+
   /users/{id}/active:
     parameters:
       - name: id
@@ -8099,12 +8159,22 @@ components:
     User:
       type: object
       description: Safe projection returned by the API — `passwordHash` is never included.
-      required: [id, email, role, active, functions, createdAt]
+      required: [id, name, role, active, functions, createdAt]
       properties:
         id:
           type: string
+        name:
+          type: string
+          description: >
+            The person's name - always present, unlike `email`. This is the only durable
+            identifier for a `POST /users` account created without login credentials (see
+            `UserCreateInput`), so it exists independently of whether the account can authenticate.
         email:
           type: string
+          description: >
+            Absent for an account created without login credentials - see `UserCreateInput`. Such
+            an account can be given credentials later via `PATCH /users/{id}/credentials` without
+            being recreated.
         role:
           $ref: "#/components/schemas/Role"
         active:
@@ -8164,9 +8234,18 @@ components:
 
     UserCreateInput:
       type: object
-      description: Body of `userCreateSchema`.
-      required: [email, password]
+      description: >
+        Body of `userCreateSchema`. `email`/`password` are optional together - send both to
+        create a login-capable account, or neither to create one that cannot authenticate at all
+        (for staff who exist so the roster/attendance/pay-rate records have someone to point at,
+        but never sign in - a cook or a housekeeper, say). Sending exactly one of the two is a 400
+        (`UserService` validates the pairing manually - see its own comment for why this can't be
+        expressed as `required` in this schema). `name` is required either way.
+      required: [name]
       properties:
+        name:
+          type: string
+          minLength: 1
         email:
           type: string
           format: email
@@ -8230,6 +8309,26 @@ components:
       properties:
         active:
           type: boolean
+
+    UserCredentialsInput:
+      type: object
+      description: >
+        Body of `PATCH /users/{id}/credentials` - turns a no-login account (see `UserCreateInput`)
+        into one that can authenticate. Both fields are required: unlike `PATCH /users/{id}/password`,
+        there is no existing password to reset, and unlike a plain email change, this account has
+        no email to begin with. Only valid while the target account has no email yet - see that
+        operation's own description for why changing an *existing* login email is deliberately not
+        this endpoint's job.
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 200
+          description: Hashed with bcrypt (cost 10) before storage; never stored or returned in plaintext.
 
     PriceRangeInput:
       type: object
@@ -9117,6 +9216,7 @@ components:
         - USER_ACTIVE_CHANGED
         - USER_PASSWORD_RESET
         - USER_FUNCTIONS_CHANGED
+        - USER_CREDENTIALS_GRANTED
         - ROOM_UNIT_CREATED
         - ROOM_UNIT_UPDATED
         - ROOM_UNIT_DELETED
@@ -9356,10 +9456,14 @@ components:
       type: object
       description: >
         `GET /roster/employees` - deliberately narrower than `User`/`GET /users`, see that
-        endpoint's own description.
-      required: [id, email, active]
+        endpoint's own description. `name` is the field the roster grid displays and sorts by -
+        unlike `email`, it's never absent, including for a no-login account (see
+        `UserCreateInput`).
+      required: [id, name, active]
       properties:
         id:
+          type: string
+        name:
           type: string
         email:
           type: string
@@ -9377,9 +9481,11 @@ components:
         is nullable: some employees genuinely have no single "usual" code (several rows in the
         source spreadsheet had none), so generation simply leaves their dates blank for the
         manager to fill by hand in that case.
-      required: [employeeUserId, employeeEmail, staffArea, workDaysPerWeek, weeklyDayOff, updatedByEmail, updatedAt]
+      required: [employeeUserId, employeeName, staffArea, workDaysPerWeek, weeklyDayOff, updatedByEmail, updatedAt]
       properties:
         employeeUserId:
+          type: string
+        employeeName:
           type: string
         employeeEmail:
           type: string
@@ -9422,11 +9528,13 @@ components:
       description: >
         One employee's shift on one date. A day off is the *absence* of a row here, never a row
         of its own - see this schema's own module description for why that's deliberate.
-      required: [id, employeeUserId, employeeEmail, date, shiftCode, locked, createdAt, updatedAt]
+      required: [id, employeeUserId, employeeName, date, shiftCode, locked, createdAt, updatedAt]
       properties:
         id:
           type: string
         employeeUserId:
+          type: string
+        employeeName:
           type: string
         employeeEmail:
           type: string
@@ -9654,11 +9762,13 @@ components:
         "agreed terms are frozen" shape as `ShiftCode` and `BookingSegmentNightlyRate`, so a
         rate change partway through a month prices each day correctly against whichever rate
         was actually in effect that day.
-      required: [id, employeeUserId, employeeEmail, dailyRate, effectiveFrom, createdByEmail, createdAt]
+      required: [id, employeeUserId, employeeName, dailyRate, effectiveFrom, createdByEmail, createdAt]
       properties:
         id:
           type: string
         employeeUserId:
+          type: string
+        employeeName:
           type: string
         employeeEmail:
           type: string

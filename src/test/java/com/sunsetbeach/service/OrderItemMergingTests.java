@@ -49,6 +49,7 @@ class OrderItemMergingTests extends AbstractIntegrationTest {
     void setUp() {
         UserEntity user = new UserEntity();
         user.setEmail("waiter-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant-for-this-test");
         user.setRole(Role.WAITER);
         waiter = userRepository.saveAndFlush(user);

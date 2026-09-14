@@ -42,7 +42,7 @@ public class EmployeePayRateService {
         UserEntity employee = userRepository.findById(employeeUserId).orElseThrow(() -> new NotFoundException("Employee not found"));
         List<EmployeePayRateEntity> entities = employeePayRateRepository.findByEmployeeUserIdOrderByEffectiveFrom(employeeUserId);
         Map<String, String> emails = resolveEmails(entities.stream().map(EmployeePayRateEntity::getCreatedByUserId).distinct().toList());
-        return entities.stream().map(e -> toDto(e, employee.getEmail(), emails.get(e.getCreatedByUserId()))).toList();
+        return entities.stream().map(e -> toDto(e, employee, emails.get(e.getCreatedByUserId()))).toList();
     }
 
     @Transactional
@@ -61,9 +61,9 @@ public class EmployeePayRateService {
                 AuditAction.EMPLOYEE_PAY_RATE_CHANGED,
                 AuditEntityType.EMPLOYEE_PAY_RATE,
                 saved.getId(),
-                "Daily rate for " + employee.getEmail() + " set to " + saved.getDailyRate() + ", effective " + saved.getEffectiveFrom());
+                "Daily rate for " + employee.getName() + " set to " + saved.getDailyRate() + ", effective " + saved.getEffectiveFrom());
 
-        return toDto(saved, employee.getEmail(), actor.getEmail());
+        return toDto(saved, employee, actor.getEmail());
     }
 
     /**
@@ -96,9 +96,11 @@ public class EmployeePayRateService {
         return userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
     }
 
-    private static EmployeePayRate toDto(EmployeePayRateEntity e, String employeeEmail, String createdByEmail) {
-        return new EmployeePayRate(
-                e.getId(), e.getEmployeeUserId(), employeeEmail, e.getDailyRate().toString(), e.getEffectiveFrom().toString(), createdByEmail,
+    private static EmployeePayRate toDto(EmployeePayRateEntity e, UserEntity employee, String createdByEmail) {
+        EmployeePayRate dto = new EmployeePayRate(
+                e.getId(), e.getEmployeeUserId(), employee.getName(), e.getDailyRate().toString(), e.getEffectiveFrom().toString(), createdByEmail,
                 TimestampFormat.toUtc(e.getCreatedAt()));
+        dto.setEmployeeEmail(employee.getEmail());
+        return dto;
     }
 }

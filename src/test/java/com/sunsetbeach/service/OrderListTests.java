@@ -67,6 +67,7 @@ class OrderListTests extends AbstractIntegrationTest {
     private UserEntity persistUser() {
         UserEntity user = new UserEntity();
         user.setEmail("order-list-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash("irrelevant-for-this-test");
         user.setRole(Role.CASHIER);
         return userRepository.saveAndFlush(user);

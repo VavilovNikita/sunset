@@ -75,6 +75,7 @@ class UserAccountSecurityTests extends AbstractIntegrationTest {
     private UserEntity persistUser(String password) {
         UserEntity entity = new UserEntity();
         entity.setEmail("account-sec-" + UUID.randomUUID() + "@example.com");
+        entity.setName(entity.getEmail());
         entity.setPasswordHash(passwordEncoder.encode(password));
         entity.setRole(Role.CASHIER);
         return userRepository.saveAndFlush(entity);

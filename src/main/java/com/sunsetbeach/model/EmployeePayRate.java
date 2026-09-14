@@ -26,6 +26,8 @@ public class EmployeePayRate {
 
   private String employeeUserId;
 
+  private String employeeName;
+
   private String employeeEmail;
 
   private String dailyRate;
@@ -44,10 +46,10 @@ public class EmployeePayRate {
   /**
    * Constructor with only required parameters
    */
-  public EmployeePayRate(String id, String employeeUserId, String employeeEmail, String dailyRate, String effectiveFrom, String createdByEmail, OffsetDateTime createdAt) {
+  public EmployeePayRate(String id, String employeeUserId, String employeeName, String dailyRate, String effectiveFrom, String createdByEmail, OffsetDateTime createdAt) {
     this.id = id;
     this.employeeUserId = employeeUserId;
-    this.employeeEmail = employeeEmail;
+    this.employeeName = employeeName;
     this.dailyRate = dailyRate;
     this.effectiveFrom = effectiveFrom;
     this.createdByEmail = createdByEmail;
@@ -92,6 +94,25 @@ public class EmployeePayRate {
     this.employeeUserId = employeeUserId;
   }
 
+  public EmployeePayRate employeeName(String employeeName) {
+    this.employeeName = employeeName;
+    return this;
+  }
+
+  /**
+   * Get employeeName
+   * @return employeeName
+   */
+  @NotNull 
+  @JsonProperty("employeeName")
+  public String getEmployeeName() {
+    return employeeName;
+  }
+
+  public void setEmployeeName(String employeeName) {
+    this.employeeName = employeeName;
+  }
+
   public EmployeePayRate employeeEmail(String employeeEmail) {
     this.employeeEmail = employeeEmail;
     return this;
@@ -101,7 +122,7 @@ public class EmployeePayRate {
    * Get employeeEmail
    * @return employeeEmail
    */
-  @NotNull 
+  
   @JsonProperty("employeeEmail")
   public String getEmployeeEmail() {
     return employeeEmail;
@@ -198,6 +219,7 @@ public class EmployeePayRate {
     EmployeePayRate employeePayRate = (EmployeePayRate) o;
     return Objects.equals(this.id, employeePayRate.id) &&
         Objects.equals(this.employeeUserId, employeePayRate.employeeUserId) &&
+        Objects.equals(this.employeeName, employeePayRate.employeeName) &&
         Objects.equals(this.employeeEmail, employeePayRate.employeeEmail) &&
         Objects.equals(this.dailyRate, employeePayRate.dailyRate) &&
         Objects.equals(this.effectiveFrom, employeePayRate.effectiveFrom) &&
@@ -207,7 +229,7 @@ public class EmployeePayRate {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, employeeUserId, employeeEmail, dailyRate, effectiveFrom, createdByEmail, createdAt);
+    return Objects.hash(id, employeeUserId, employeeName, employeeEmail, dailyRate, effectiveFrom, createdByEmail, createdAt);
   }
 
   @Override
@@ -216,6 +238,7 @@ public class EmployeePayRate {
     sb.append("class EmployeePayRate {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    employeeUserId: ").append(toIndentedString(employeeUserId)).append("\n");
+    sb.append("    employeeName: ").append(toIndentedString(employeeName)).append("\n");
     sb.append("    employeeEmail: ").append(toIndentedString(employeeEmail)).append("\n");
     sb.append("    dailyRate: ").append(toIndentedString(dailyRate)).append("\n");
     sb.append("    effectiveFrom: ").append(toIndentedString(effectiveFrom)).append("\n");

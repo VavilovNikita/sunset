@@ -30,6 +30,8 @@ public class RosterEntry {
 
   private String employeeUserId;
 
+  private String employeeName;
+
   private String employeeEmail;
 
   private String date;
@@ -53,10 +55,10 @@ public class RosterEntry {
   /**
    * Constructor with only required parameters
    */
-  public RosterEntry(String id, String employeeUserId, String employeeEmail, String date, ShiftCode shiftCode, Boolean locked, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public RosterEntry(String id, String employeeUserId, String employeeName, String date, ShiftCode shiftCode, Boolean locked, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.employeeUserId = employeeUserId;
-    this.employeeEmail = employeeEmail;
+    this.employeeName = employeeName;
     this.date = date;
     this.shiftCode = shiftCode;
     this.locked = locked;
@@ -102,6 +104,25 @@ public class RosterEntry {
     this.employeeUserId = employeeUserId;
   }
 
+  public RosterEntry employeeName(String employeeName) {
+    this.employeeName = employeeName;
+    return this;
+  }
+
+  /**
+   * Get employeeName
+   * @return employeeName
+   */
+  @NotNull 
+  @JsonProperty("employeeName")
+  public String getEmployeeName() {
+    return employeeName;
+  }
+
+  public void setEmployeeName(String employeeName) {
+    this.employeeName = employeeName;
+  }
+
   public RosterEntry employeeEmail(String employeeEmail) {
     this.employeeEmail = employeeEmail;
     return this;
@@ -111,7 +132,7 @@ public class RosterEntry {
    * Get employeeEmail
    * @return employeeEmail
    */
-  @NotNull 
+  
   @JsonProperty("employeeEmail")
   public String getEmployeeEmail() {
     return employeeEmail;
@@ -246,6 +267,7 @@ public class RosterEntry {
     RosterEntry rosterEntry = (RosterEntry) o;
     return Objects.equals(this.id, rosterEntry.id) &&
         Objects.equals(this.employeeUserId, rosterEntry.employeeUserId) &&
+        Objects.equals(this.employeeName, rosterEntry.employeeName) &&
         Objects.equals(this.employeeEmail, rosterEntry.employeeEmail) &&
         Objects.equals(this.date, rosterEntry.date) &&
         Objects.equals(this.shiftCode, rosterEntry.shiftCode) &&
@@ -261,7 +283,7 @@ public class RosterEntry {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, employeeUserId, employeeEmail, date, shiftCode, hashCodeNullable(note), locked, createdAt, updatedAt);
+    return Objects.hash(id, employeeUserId, employeeName, employeeEmail, date, shiftCode, hashCodeNullable(note), locked, createdAt, updatedAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -277,6 +299,7 @@ public class RosterEntry {
     sb.append("class RosterEntry {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    employeeUserId: ").append(toIndentedString(employeeUserId)).append("\n");
+    sb.append("    employeeName: ").append(toIndentedString(employeeName)).append("\n");
     sb.append("    employeeEmail: ").append(toIndentedString(employeeEmail)).append("\n");
     sb.append("    date: ").append(toIndentedString(date)).append("\n");
     sb.append("    shiftCode: ").append(toIndentedString(shiftCode)).append("\n");

@@ -44,8 +44,8 @@ public class EmployeePatternService {
         List<EmployeePatternEntity> entities = employeePatternRepository.findAll();
         List<String> userIds =
                 entities.stream().flatMap(e -> Stream.of(e.getEmployeeUserId(), e.getUpdatedByUserId())).distinct().toList();
-        Map<String, String> emailsById = userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
-        return entities.stream().map(e -> toDto(e, emailsById.get(e.getEmployeeUserId()), emailsById.get(e.getUpdatedByUserId()))).toList();
+        Map<String, UserEntity> usersById = userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, u -> u));
+        return entities.stream().map(e -> toDto(e, usersById.get(e.getEmployeeUserId()), usersById.get(e.getUpdatedByUserId()).getEmail())).toList();
     }
 
     @Transactional
@@ -77,16 +77,17 @@ public class EmployeePatternService {
                 AuditAction.EMPLOYEE_PATTERN_CHANGED,
                 AuditEntityType.USER,
                 employeeUserId,
-                "Roster pattern set for " + employee.getEmail() + ": " + saved.getStaffArea().getValue() + ", "
+                "Roster pattern set for " + employee.getName() + ": " + saved.getStaffArea().getValue() + ", "
                         + saved.getWorkDaysPerWeek() + " days/week, " + saved.getWeeklyDayOff().getValue() + " off");
 
-        return toDto(saved, employee.getEmail(), actor.getEmail());
+        return toDto(saved, employee, actor.getEmail());
     }
 
-    private static EmployeePattern toDto(EmployeePatternEntity e, String employeeEmail, String updatedByEmail) {
+    private static EmployeePattern toDto(EmployeePatternEntity e, UserEntity employee, String updatedByEmail) {
         EmployeePattern dto = new EmployeePattern(
-                e.getEmployeeUserId(), employeeEmail, e.getStaffArea(), e.getWorkDaysPerWeek(), e.getWeeklyDayOff(),
+                e.getEmployeeUserId(), employee.getName(), e.getStaffArea(), e.getWorkDaysPerWeek(), e.getWeeklyDayOff(),
                 updatedByEmail, com.sunsetbeach.mapper.TimestampFormat.toUtc(e.getUpdatedAt()));
+        dto.setEmployeeEmail(employee.getEmail());
         if (e.getDefaultShiftCodeId() != null) {
             dto.defaultShiftCodeId(e.getDefaultShiftCodeId());
         }

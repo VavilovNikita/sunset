@@ -46,6 +46,7 @@ class StaffAreaCoverageRuleServiceTests extends AbstractIntegrationTest {
     private UserEntity createManager() {
         UserEntity user = new UserEntity();
         user.setEmail("coverage-rule-test-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash(passwordEncoder.encode("irrelevant1"));
         user.setRole(Role.MANAGER);
         user.setActive(true);

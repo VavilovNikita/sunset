@@ -168,6 +168,7 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
     private UserEntity createTherapist() {
         UserEntity user = new UserEntity();
         user.setEmail("race-therapist-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash(passwordEncoder.encode("irrelevant1"));
         user.setRole(Role.WAITER);
         user.setActive(true);
@@ -180,6 +181,7 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
     private UserEntity createReceptionist() {
         UserEntity user = new UserEntity();
         user.setEmail("race-reception-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
         user.setPasswordHash(passwordEncoder.encode("irrelevant1"));
         user.setRole(Role.CASHIER);
         user.setActive(true);
