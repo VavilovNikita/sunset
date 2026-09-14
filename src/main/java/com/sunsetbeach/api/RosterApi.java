@@ -258,8 +258,8 @@ public interface RosterApi {
 
 
     /**
-     * GET /roster/actuals-export : Export a month&#39;s actual worked days and gross pay, as CSV
-     * Requires MANAGER or above - same floor as viewing pay at all. Each row is days actually worked that month (from &#x60;RosterEntry&#x60;s whose &#x60;shiftCode.countsAsWorked&#x60; is true - &#x60;OP&#x60; counts, &#x60;PH&#x60; does not) times the rate in effect on each of those days, summed. The column is headed \&quot;Gross pay (before advances and deductions)\&quot;, deliberately, not \&quot;Pay\&quot; or \&quot;Amount owed\&quot; - this number is not what anyone is actually owed once an advance against salary is accounted for (real practice at this hotel, evidenced by the source spreadsheet this module replaces), and a total that reads as final when it isn&#39;t is the exact debt &#x60;Booking.status&#x3D;PAID&#x60; already represents elsewhere in this system. Advances themselves are out of scope for this export; it only has to stop implying it already includes them. 
+     * GET /roster/actuals-export : Export a month&#39;s actual worked days and hours, as CSV
+     * Requires MANAGER or above, the same floor as the rest of the roster module&#39;s write/export surface. Each row is days actually worked that month (from &#x60;RosterEntry&#x60;s whose &#x60;shiftCode.countsAsWorked&#x60; is true - &#x60;OP&#x60; counts, &#x60;PH&#x60; does not) and total hours worked, summed from each day&#39;s shift-code interval(s) - &#x60;OP&#x60; has no fixed interval, so it adds a day without adding hours. No money: the hotel&#39;s accountant keeps pay calculation off-system (everyone is currently on a monthly salary held in a sheet this system has never seen, and there are no part-timers), so this export reports only the underlying facts and leaves the arithmetic where it already lives. 
      *
      * @param year  (required)
      * @param month  (required)

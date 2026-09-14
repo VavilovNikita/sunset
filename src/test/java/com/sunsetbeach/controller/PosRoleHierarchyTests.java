@@ -1527,7 +1527,7 @@ class PosRoleHierarchyTests {
 
     @Test
     void exportRosterActuals_withManagerToken_isOk() throws Exception {
-        when(rosterService.exportActualsCsv(anyInt(), anyInt(), anyString())).thenReturn("Employee,Days worked,Gross pay (before advances and deductions)\r\n");
+        when(rosterService.exportActualsCsv(anyInt(), anyInt(), anyString())).thenReturn("Employee,Days worked,Hours worked\r\n");
         mockMvc.perform(get("/roster/actuals-export?year=2027&month=1").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
     }
 

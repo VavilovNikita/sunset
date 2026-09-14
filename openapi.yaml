@@ -6082,18 +6082,16 @@ paths:
     get:
       operationId: exportRosterActuals
       tags: [Roster]
-      summary: Export a month's actual worked days and gross pay, as CSV
+      summary: Export a month's actual worked days and hours, as CSV
       description: >
-        Requires MANAGER or above - same floor as viewing pay at all. Each row is days actually
-        worked that month (from `RosterEntry`s whose `shiftCode.countsAsWorked` is true - `OP`
-        counts, `PH` does not) times the rate in effect on each of those days, summed. The
-        column is headed "Gross pay (before advances and deductions)", deliberately, not "Pay"
-        or "Amount owed" - this number is not what anyone is actually owed once an advance
-        against salary is accounted for (real practice at this hotel, evidenced by the source
-        spreadsheet this module replaces), and a total that reads as final when it isn't is the
-        exact debt `Booking.status=PAID` already represents elsewhere in this system. Advances
-        themselves are out of scope for this export; it only has to stop implying it already
-        includes them.
+        Requires MANAGER or above, the same floor as the rest of the roster module's write/export
+        surface. Each row is days actually worked that month (from `RosterEntry`s whose
+        `shiftCode.countsAsWorked` is true - `OP` counts, `PH` does not) and total hours worked,
+        summed from each day's shift-code interval(s) - `OP` has no fixed interval, so it adds a
+        day without adding hours. No money: the hotel's accountant keeps pay calculation
+        off-system (everyone is currently on a monthly salary held in a sheet this system has
+        never seen, and there are no part-timers), so this export reports only the underlying
+        facts and leaves the arithmetic where it already lives.
       parameters:
         - name: year
           in: query

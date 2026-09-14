@@ -318,4 +318,36 @@ class RosterServiceTests extends AbstractIntegrationTest {
         // A day with nobody in Kitchen at all still warns (0 < 2).
         assertThat(month.getCoverageWarnings()).anyMatch(w -> w.getStaffArea() == StaffArea.KITCHEN && w.getDate().equals("2027-05-03") && w.getWorkingCount() == 0);
     }
+
+    @Test
+    void exportActualsCsv_reportsDaysAndHours_noMoney() {
+        UserEntity mgr = createUser(Role.MANAGER);
+        UserEntity employee = createUser(Role.WAITER);
+        // 8 hours, one interval.
+        ShiftCode ordinary = createCode(StaffArea.RESTAURANT, "09:00", "17:00");
+        // A split shift - both intervals must be summed, not just the first.
+        ShiftCode split = shiftCodeService.create(
+                new ShiftCodeCreateInput("SPLIT" + UUID.randomUUID().toString().substring(0, 6), true, true, "2020-01-01")
+                        .staffArea(StaffArea.RESTAURANT)
+                        .startTime1("09:00").endTime1("13:00")
+                        .startTime2("16:00").endTime2("21:00"),
+                mgr.getId());
+        createdShiftCodeIds.add(split.getId());
+        // OP - no fixed interval, counts as a day worked but adds no hours.
+        ShiftCode op = shiftCodeService.create(
+                new ShiftCodeCreateInput("OP" + UUID.randomUUID().toString().substring(0, 4), true, true, "2020-01-01").staffArea(StaffArea.RESTAURANT),
+                mgr.getId());
+        createdShiftCodeIds.add(op.getId());
+
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), "2027-06-01", ordinary.getId()), mgr.getId());
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), "2027-06-02", split.getId()), mgr.getId());
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), "2027-06-03", op.getId()), mgr.getId());
+
+        String csv = rosterService.exportActualsCsv(2027, 6, mgr.getId());
+
+        assertThat(csv).contains("Employee,Days worked,Hours worked");
+        assertThat(csv).doesNotContain("Gross pay").doesNotContain("pay").doesNotContainIgnoringCase("advance");
+        // 3 days worked (ordinary + split + OP); hours = 8.00 (ordinary) + 9.00 (4h + 5h split) + 0.00 (OP) = 17.00.
+        assertThat(csv).contains(employee.getName() + ",3,17.00");
+    }
 }

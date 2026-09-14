@@ -23,6 +23,16 @@ import org.springframework.transaction.annotation.Transactional;
  * Never edited, only superseded - the same "agreed terms are frozen" shape as {@code ShiftCode}
  * and {@code BookingSegmentNightlyRate}, so a raise partway through a month prices each day
  * against whichever rate was actually in effect that day, not whatever the field says today.
+ *
+ * <p><b>Deliberately unused by the roster actuals export today.</b> The hotel's accountant keeps
+ * pay calculation off-system - everyone is currently on a monthly salary held in a sheet this
+ * system has never seen, and there are no part-timers - so {@link RosterService#exportActualsCsv}
+ * reports only days and hours now, not money (see that method's own javadoc). This service,
+ * {@link #rateAsOf}, and {@code EmployeePayRateEntity} are kept exactly as built anyway: the same
+ * versioned-rate machinery becomes load-bearing again the day a part-timer is hired, and rebuilding
+ * it then would cost more than carrying it unused now. Do not delete this as dead code, and do not
+ * wire {@link #rateAsOf} back into the export without checking first - it was pulled out
+ * deliberately, not left behind by accident.
  */
 @Service
 public class EmployeePayRateService {
