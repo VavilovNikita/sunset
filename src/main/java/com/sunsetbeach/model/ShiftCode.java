@@ -21,7 +21,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * One version of one shift code in one &#x60;StaffArea&#x60; - never edited once any &#x60;RosterEntry&#x60; references it. &#x60;startTime1&#x60;/&#x60;endTime1&#x60; is the first (or only) interval; &#x60;startTime2&#x60;/ &#x60;endTime2&#x60; is present only for a split shift (both null together, never one without the other). Zero intervals (all four null) means &#x60;OP&#x60; - worked, with no fixed hours. &#x60;countsAsWorked&#x60; and &#x60;isPaid&#x60; are independent: an ordinary shift is both true; &#x60;OP&#x60; is &#x60;countsAsWorked&#x60; true with no intervals; &#x60;PH&#x60; is &#x60;isPaid&#x60; true, &#x60;countsAsWorked&#x60; false - this is what removes the ambiguity of \&quot;holiday, annual leave, or a kept day off\&quot; being one label on the grid without splitting them on screen. The same &#x60;code&#x60; string can mean different hours in a different &#x60;StaffArea&#x60; (the source file&#39;s own \&quot;9\&quot; is a 09:00-13:00/ 16:00-21:00 split in Restaurant/Kitchen, a single 09:00-18:00 shift in Front Office) - every code is scoped to exactly one area for this reason, even the ones that happen to mean the same thing everywhere today. &#x60;active&#x3D;false&#x60; means retired: no longer offered for a *new* entry, but every entry already pointing at this row is untouched. 
+ * One version of one shift code, optionally scoped to one &#x60;StaffArea&#x60; - never edited once any &#x60;RosterEntry&#x60; references it. &#x60;startTime1&#x60;/&#x60;endTime1&#x60; is the first (or only) interval; &#x60;startTime2&#x60;/&#x60;endTime2&#x60; is present only for a split shift (both null together, never one without the other). Zero intervals (all four null) means &#x60;OP&#x60; - worked, with no fixed hours. &#x60;countsAsWorked&#x60; and &#x60;isPaid&#x60; are independent: an ordinary shift is both true; &#x60;OP&#x60; is &#x60;countsAsWorked&#x60; true with no intervals; &#x60;PH&#x60; is &#x60;isPaid&#x60; true, &#x60;countsAsWorked&#x60; false - this is what removes the ambiguity of \&quot;holiday, annual leave, or a kept day off\&quot; being one label on the grid without splitting them on screen. A null &#x60;staffArea&#x60; means this code is shared: available to every area, one row instead of one per area. A non-null &#x60;staffArea&#x60; means this code means something different there than it does anywhere else (the source file&#39;s own \&quot;9\&quot; is a 09:00-13:00/16:00-21:00 split in Restaurant/Kitchen, a single 09:00-18:00 shift in Front Office) - a shared and an area-scoped row may share the same &#x60;code&#x60; string at once, and where they do, the area-scoped one wins for that area (see &#x60;GET /shift-codes&#x60;&#39;s own description). &#x60;active&#x3D;false&#x60; means retired: no longer offered for a *new* entry, but every entry already pointing at this row is untouched. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -29,7 +29,7 @@ public class ShiftCode {
 
   private String id;
 
-  private StaffArea staffArea;
+  private JsonNullable<StaffArea> staffArea = JsonNullable.<StaffArea>undefined();
 
   private String code;
 
@@ -61,9 +61,8 @@ public class ShiftCode {
   /**
    * Constructor with only required parameters
    */
-  public ShiftCode(String id, StaffArea staffArea, String code, Boolean countsAsWorked, Boolean isPaid, String effectiveFrom, Boolean active, String createdByEmail, OffsetDateTime createdAt) {
+  public ShiftCode(String id, String code, Boolean countsAsWorked, Boolean isPaid, String effectiveFrom, Boolean active, String createdByEmail, OffsetDateTime createdAt) {
     this.id = id;
-    this.staffArea = staffArea;
     this.code = code;
     this.countsAsWorked = countsAsWorked;
     this.isPaid = isPaid;
@@ -93,21 +92,21 @@ public class ShiftCode {
   }
 
   public ShiftCode staffArea(StaffArea staffArea) {
-    this.staffArea = staffArea;
+    this.staffArea = JsonNullable.of(staffArea);
     return this;
   }
 
   /**
-   * Get staffArea
+   * Null means shared - available to every area. See this schema's own description.
    * @return staffArea
    */
-  @NotNull @Valid 
+  @Valid 
   @JsonProperty("staffArea")
-  public StaffArea getStaffArea() {
+  public JsonNullable<StaffArea> getStaffArea() {
     return staffArea;
   }
 
-  public void setStaffArea(StaffArea staffArea) {
+  public void setStaffArea(JsonNullable<StaffArea> staffArea) {
     this.staffArea = staffArea;
   }
 
@@ -330,7 +329,7 @@ public class ShiftCode {
     }
     ShiftCode shiftCode = (ShiftCode) o;
     return Objects.equals(this.id, shiftCode.id) &&
-        Objects.equals(this.staffArea, shiftCode.staffArea) &&
+        equalsNullable(this.staffArea, shiftCode.staffArea) &&
         Objects.equals(this.code, shiftCode.code) &&
         equalsNullable(this.startTime1, shiftCode.startTime1) &&
         equalsNullable(this.endTime1, shiftCode.endTime1) &&
@@ -350,7 +349,7 @@ public class ShiftCode {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, staffArea, code, hashCodeNullable(startTime1), hashCodeNullable(endTime1), hashCodeNullable(startTime2), hashCodeNullable(endTime2), countsAsWorked, isPaid, effectiveFrom, active, createdByEmail, createdAt);
+    return Objects.hash(id, hashCodeNullable(staffArea), code, hashCodeNullable(startTime1), hashCodeNullable(endTime1), hashCodeNullable(startTime2), hashCodeNullable(endTime2), countsAsWorked, isPaid, effectiveFrom, active, createdByEmail, createdAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {

@@ -19,7 +19,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Body of &#x60;POST /shift-codes&#x60;.
+ * Body of &#x60;POST /shift-codes&#x60;. &#x60;staffArea&#x60; is optional - omit it (or send it explicitly &#x60;null&#x60;) to define a code shared across every area; a code scoped to a real &#x60;StaffArea&#x60; takes precedence over a shared one of the same &#x60;code&#x60; string for that area only, without retiring the shared row (see &#x60;ShiftCode&#x60;&#39;s own description). 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -50,8 +50,7 @@ public class ShiftCodeCreateInput {
   /**
    * Constructor with only required parameters
    */
-  public ShiftCodeCreateInput(StaffArea staffArea, String code, Boolean countsAsWorked, Boolean isPaid, String effectiveFrom) {
-    this.staffArea = staffArea;
+  public ShiftCodeCreateInput(String code, Boolean countsAsWorked, Boolean isPaid, String effectiveFrom) {
     this.code = code;
     this.countsAsWorked = countsAsWorked;
     this.isPaid = isPaid;
@@ -67,7 +66,7 @@ public class ShiftCodeCreateInput {
    * Get staffArea
    * @return staffArea
    */
-  @NotNull @Valid 
+  @Valid 
   @JsonProperty("staffArea")
   public StaffArea getStaffArea() {
     return staffArea;

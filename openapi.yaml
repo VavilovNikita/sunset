@@ -5324,7 +5324,13 @@ paths:
         what "9" or "PH" actually means as much as a manager building the grid does. Returns
         only `active` rows (the current version of each `(staffArea, code)` pair); a historical
         `RosterEntry` may reference a retired version not returned here, and still resolves
-        correctly by id - see `ShiftCode`'s own description.
+        correctly by id - see `ShiftCode`'s own description. With `staffArea` given, this is a
+        *resolved* view for that one area, not a raw filter: every area-scoped code for it, plus
+        every shared (`staffArea: null`) code whose `code` string isn't also defined for this area
+        - the area-scoped version wins and the shared one is left out, never both. Without
+        `staffArea`, every active row is returned exactly as stored, area-scoped and shared alike,
+        for the shift-code management screen itself, where seeing both rows of a collision is the
+        point.
       parameters:
         - name: staffArea
           in: query
@@ -5332,7 +5338,7 @@ paths:
             $ref: "#/components/schemas/StaffArea"
       responses:
         "200":
-          description: Active shift codes, optionally filtered to one area.
+          description: Active shift codes, optionally resolved to one area.
           content:
             application/json:
               schema:
@@ -5347,12 +5353,15 @@ paths:
       summary: Define a new shift code, or a new version of an existing one
       description: >
         Requires MANAGER or above. `ShiftCode` rows are never edited - creating one with the
-        same `staffArea`+`code` as an existing active row retires that row (`active` becomes
-        `false`) and this one takes its place for new entries, while every `RosterEntry` already
-        pointing at the retired row keeps meaning exactly what it meant. This is the same
-        "agreed terms are frozen" precedent `BookingSegmentNightlyRate` already applies to room
-        rates - a code's hours changing today must never reinterpret what an entry from last
-        month meant.
+        same `staffArea`+`code` (including both null - two shared rows for the same `code`) as an
+        existing active row retires that row (`active` becomes `false`) and this one takes its
+        place for new entries, while every `RosterEntry` already pointing at the retired row keeps
+        meaning exactly what it meant. This is the same "agreed terms are frozen" precedent
+        `BookingSegmentNightlyRate` already applies to room rates - a code's hours changing today
+        must never reinterpret what an entry from last month meant. Defining an area-scoped code
+        never retires a shared code of the same `code` string, or vice versa - `staffArea` is part
+        of what identifies "the same code", so a shared and an area-scoped row coexist and the
+        area-scoped one takes precedence for its own area (see `GET /shift-codes`).
       requestBody:
         required: true
         content:
@@ -9366,25 +9375,29 @@ components:
     ShiftCode:
       type: object
       description: >
-        One version of one shift code in one `StaffArea` - never edited once any `RosterEntry`
-        references it. `startTime1`/`endTime1` is the first (or only) interval; `startTime2`/
-        `endTime2` is present only for a split shift (both null together, never one without the
-        other). Zero intervals (all four null) means `OP` - worked, with no fixed hours.
-        `countsAsWorked` and `isPaid` are independent: an ordinary shift is both true; `OP` is
-        `countsAsWorked` true with no intervals; `PH` is `isPaid` true, `countsAsWorked` false -
+        One version of one shift code, optionally scoped to one `StaffArea` - never edited once
+        any `RosterEntry` references it. `startTime1`/`endTime1` is the first (or only) interval;
+        `startTime2`/`endTime2` is present only for a split shift (both null together, never one
+        without the other). Zero intervals (all four null) means `OP` - worked, with no fixed
+        hours. `countsAsWorked` and `isPaid` are independent: an ordinary shift is both true; `OP`
+        is `countsAsWorked` true with no intervals; `PH` is `isPaid` true, `countsAsWorked` false -
         this is what removes the ambiguity of "holiday, annual leave, or a kept day off" being
-        one label on the grid without splitting them on screen. The same `code` string can mean
-        different hours in a different `StaffArea` (the source file's own "9" is a 09:00-13:00/
-        16:00-21:00 split in Restaurant/Kitchen, a single 09:00-18:00 shift in Front Office) -
-        every code is scoped to exactly one area for this reason, even the ones that happen to
-        mean the same thing everywhere today. `active=false` means retired: no longer offered
-        for a *new* entry, but every entry already pointing at this row is untouched.
-      required: [id, staffArea, code, countsAsWorked, isPaid, effectiveFrom, active, createdByEmail, createdAt]
+        one label on the grid without splitting them on screen. A null `staffArea` means this code
+        is shared: available to every area, one row instead of one per area. A non-null
+        `staffArea` means this code means something different there than it does anywhere else
+        (the source file's own "9" is a 09:00-13:00/16:00-21:00 split in Restaurant/Kitchen, a
+        single 09:00-18:00 shift in Front Office) - a shared and an area-scoped row may share the
+        same `code` string at once, and where they do, the area-scoped one wins for that area (see
+        `GET /shift-codes`'s own description). `active=false` means retired: no longer offered for
+        a *new* entry, but every entry already pointing at this row is untouched.
+      required: [id, code, countsAsWorked, isPaid, effectiveFrom, active, createdByEmail, createdAt]
       properties:
         id:
           type: string
         staffArea:
-          $ref: "#/components/schemas/StaffArea"
+          allOf: [{ $ref: "#/components/schemas/StaffArea" }]
+          nullable: true
+          description: Null means shared - available to every area. See this schema's own description.
         code:
           type: string
           description: The short label as staff already know it - "9", "8.3", "OP", "PH".
@@ -9421,8 +9434,12 @@ components:
 
     ShiftCodeCreateInput:
       type: object
-      description: Body of `POST /shift-codes`.
-      required: [staffArea, code, countsAsWorked, isPaid, effectiveFrom]
+      description: >
+        Body of `POST /shift-codes`. `staffArea` is optional - omit it (or send it explicitly
+        `null`) to define a code shared across every area; a code scoped to a real `StaffArea`
+        takes precedence over a shared one of the same `code` string for that area only, without
+        retiring the shared row (see `ShiftCode`'s own description).
+      required: [code, countsAsWorked, isPaid, effectiveFrom]
       properties:
         staffArea:
           $ref: "#/components/schemas/StaffArea"

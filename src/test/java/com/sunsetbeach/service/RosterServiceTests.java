@@ -104,7 +104,8 @@ class RosterServiceTests extends AbstractIntegrationTest {
         UserEntity actor = manager != null ? manager : createUser(Role.MANAGER);
         manager = actor;
         ShiftCode code = shiftCodeService.create(
-                new ShiftCodeCreateInput(area, "C" + UUID.randomUUID().toString().substring(0, 6), true, true, "2020-01-01")
+                new ShiftCodeCreateInput("C" + UUID.randomUUID().toString().substring(0, 6), true, true, "2020-01-01")
+                        .staffArea(area)
                         .startTime1(start)
                         .endTime1(end),
                 actor.getId());
@@ -204,7 +205,7 @@ class RosterServiceTests extends AbstractIntegrationTest {
 
         RosterEntry reassigned = rosterService.reassignEntry(entry.getId(), new RosterReassignInput(housekeepingEmployee.getId()), mgr.getId());
         assertThat(reassigned.getEmployeeUserId()).isEqualTo(housekeepingEmployee.getId());
-        assertThat(reassigned.getShiftCode().getStaffArea()).isEqualTo(StaffArea.HOUSEKEEPING);
+        assertThat(reassigned.getShiftCode().getStaffArea().get()).isEqualTo(StaffArea.HOUSEKEEPING);
     }
 
     @Test

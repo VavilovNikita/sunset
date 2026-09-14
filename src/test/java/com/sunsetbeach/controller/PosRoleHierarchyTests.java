@@ -1410,7 +1410,7 @@ class PosRoleHierarchyTests {
                         .header("Authorization", token(Role.WAITER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new com.sunsetbeach.model.ShiftCodeCreateInput(com.sunsetbeach.model.StaffArea.RESTAURANT, "9", true, true, "2027-01-01"))))
+                                new com.sunsetbeach.model.ShiftCodeCreateInput("9", true, true, "2027-01-01").staffArea(com.sunsetbeach.model.StaffArea.RESTAURANT))))
                 .andExpect(status().isForbidden());
     }
 
@@ -1421,7 +1421,7 @@ class PosRoleHierarchyTests {
                         .header("Authorization", token(Role.MANAGER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new com.sunsetbeach.model.ShiftCodeCreateInput(com.sunsetbeach.model.StaffArea.RESTAURANT, "9", true, true, "2027-01-01"))))
+                                new com.sunsetbeach.model.ShiftCodeCreateInput("9", true, true, "2027-01-01").staffArea(com.sunsetbeach.model.StaffArea.RESTAURANT))))
                 .andExpect(status().isCreated());
     }
 
@@ -1532,8 +1532,10 @@ class PosRoleHierarchyTests {
     }
 
     private static com.sunsetbeach.model.ShiftCode sampleShiftCode() {
-        return new com.sunsetbeach.model.ShiftCode(
-                "code-1", com.sunsetbeach.model.StaffArea.RESTAURANT, "9", true, true, "2027-01-01", true, "manager@example.com", OffsetDateTime.now());
+        com.sunsetbeach.model.ShiftCode dto = new com.sunsetbeach.model.ShiftCode(
+                "code-1", "9", true, true, "2027-01-01", true, "manager@example.com", OffsetDateTime.now());
+        dto.staffArea(com.sunsetbeach.model.StaffArea.RESTAURANT);
+        return dto;
     }
 
     private static com.sunsetbeach.model.RosterEntry sampleRosterEntry() {

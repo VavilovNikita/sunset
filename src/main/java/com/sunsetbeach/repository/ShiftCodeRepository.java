@@ -12,6 +12,15 @@ public interface ShiftCodeRepository extends JpaRepository<ShiftCodeEntity, Stri
 
     List<ShiftCodeEntity> findByStaffAreaAndActiveTrue(StaffArea staffArea);
 
-    /** The row a new version of the same code retires - see V57's own comment. */
+    /** The shared (not area-scoped) half of the resolved view {@link com.sunsetbeach.service.ShiftCodeService#list} builds for one area. */
+    List<ShiftCodeEntity> findByStaffAreaIsNullAndActiveTrue();
+
+    /**
+     * The row a new version of the same code retires - see V57's own comment. {@code staffArea}
+     * may be null (a shared code); Spring Data JPA compiles a null-valued equality parameter to
+     * {@code IS NULL} rather than {@code = NULL} (which would never match), so this correctly
+     * retires only the previous version of the *same* scope - a shared and an area-scoped row
+     * sharing a {@code code} string never retire each other.
+     */
     Optional<ShiftCodeEntity> findByStaffAreaAndCodeAndActiveTrue(StaffArea staffArea, String code);
 }

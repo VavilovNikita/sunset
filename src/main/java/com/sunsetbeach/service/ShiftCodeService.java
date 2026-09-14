@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,12 +41,26 @@ public class ShiftCodeService {
         this.auditLogService = auditLogService;
     }
 
+    /**
+     * With {@code staffArea} given, this is a *resolved* view for that one area - every
+     * area-scoped code for it, plus every shared code whose {@code code} string isn't also
+     * defined for this area (the area-scoped version wins and the shared one is left out, never
+     * both - see {@code ShiftCode}'s own openapi.yaml description). Without {@code staffArea},
+     * every active row is returned exactly as stored, area-scoped and shared alike, for the
+     * shift-code management screen itself, where seeing both rows of a collision is the point.
+     */
     @Transactional(readOnly = true)
     public List<ShiftCode> list(StaffArea staffArea) {
-        List<ShiftCodeEntity> entities =
-                staffArea != null ? shiftCodeRepository.findByStaffAreaAndActiveTrue(staffArea) : shiftCodeRepository.findByActiveTrue();
+        List<ShiftCodeEntity> entities = staffArea != null ? resolveForArea(staffArea) : shiftCodeRepository.findByActiveTrue();
         Map<String, String> emailsById = resolveCreatorEmails(entities);
         return entities.stream().map(e -> toDto(e, emailsById.get(e.getCreatedByUserId()))).toList();
+    }
+
+    private List<ShiftCodeEntity> resolveForArea(StaffArea staffArea) {
+        List<ShiftCodeEntity> areaScoped = shiftCodeRepository.findByStaffAreaAndActiveTrue(staffArea);
+        List<ShiftCodeEntity> shared = shiftCodeRepository.findByStaffAreaIsNullAndActiveTrue();
+        Set<String> areaScopedCodes = areaScoped.stream().map(ShiftCodeEntity::getCode).collect(Collectors.toSet());
+        return java.util.stream.Stream.concat(areaScoped.stream(), shared.stream().filter(s -> !areaScopedCodes.contains(s.getCode()))).toList();
     }
 
     @Transactional
@@ -79,11 +94,12 @@ public class ShiftCodeService {
         ShiftCodeEntity saved = shiftCodeRepository.saveAndFlush(entity);
 
         String creatorEmail = userRepository.findById(actorUserId).map(UserEntity::getEmail).orElse(null);
+        String areaDescription = saved.getStaffArea() != null ? saved.getStaffArea().getValue() : "shared (every area)";
         auditLogService.record(
                 AuditAction.SHIFT_CODE_CREATED,
                 AuditEntityType.SHIFT_CODE,
                 saved.getId(),
-                "Defined " + saved.getStaffArea().getValue() + " code \"" + saved.getCode() + "\", effective " + saved.getEffectiveFrom());
+                "Defined " + areaDescription + " code \"" + saved.getCode() + "\", effective " + saved.getEffectiveFrom());
 
         return toDto(saved, creatorEmail);
     }
@@ -118,8 +134,12 @@ public class ShiftCodeService {
     /** Package-private so RosterService/EmployeePatternService can render a ShiftCode already loaded, without a second query. */
     static ShiftCode toDto(ShiftCodeEntity e, String createdByEmail) {
         ShiftCode dto = new ShiftCode(
-                e.getId(), e.getStaffArea(), e.getCode(), e.isCountsAsWorked(), e.isPaid(), e.getEffectiveFrom().toString(), e.isActive(),
+                e.getId(), e.getCode(), e.isCountsAsWorked(), e.isPaid(), e.getEffectiveFrom().toString(), e.isActive(),
                 createdByEmail, com.sunsetbeach.mapper.TimestampFormat.toUtc(e.getCreatedAt()));
+        // Left undefined (not "present but null") when shared - same convention as the interval
+        // fields below: JsonNullable.of(null) would mean "explicitly null" (isPresent() true),
+        // which is a different JSON shape than omitting the key entirely.
+        if (e.getStaffArea() != null) dto.staffArea(e.getStaffArea());
         if (e.getStartTime1() != null) dto.setStartTime1(org.openapitools.jackson.nullable.JsonNullable.of(e.getStartTime1().toString().substring(0, 5)));
         if (e.getEndTime1() != null) dto.setEndTime1(org.openapitools.jackson.nullable.JsonNullable.of(e.getEndTime1().toString().substring(0, 5)));
         if (e.getStartTime2() != null) dto.setStartTime2(org.openapitools.jackson.nullable.JsonNullable.of(e.getStartTime2().toString().substring(0, 5)));

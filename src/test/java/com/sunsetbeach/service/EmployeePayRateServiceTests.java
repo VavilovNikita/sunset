@@ -99,7 +99,7 @@ class EmployeePayRateServiceTests extends AbstractIntegrationTest {
         UserEntity mgr = createUser(Role.MANAGER);
         UserEntity employee = createUser(Role.WAITER);
         ShiftCode code = shiftCodeService.create(
-                new ShiftCodeCreateInput(StaffArea.RESTAURANT, "C" + UUID.randomUUID().toString().substring(0, 6), true, true, "2020-01-01")
+                new ShiftCodeCreateInput("C" + UUID.randomUUID().toString().substring(0, 6), true, true, "2020-01-01").staffArea(StaffArea.RESTAURANT)
                         .startTime1("09:00")
                         .endTime1("17:00"),
                 mgr.getId());
