@@ -78,6 +78,7 @@ public class UserService {
             entity.setPasswordHash(passwordEncoder.encode(input.getPassword()));
         }
         entity.setRole(input.getRole() != null ? input.getRole() : Role.MANAGER);
+        entity.setOvertimeEligible(input.getOvertimeEligible() != null ? input.getOvertimeEligible() : true);
 
         UserEntity saved;
         try {
@@ -240,6 +241,27 @@ public class UserService {
 
         String warning = !active ? futureBookedAppointmentWarning(saved.getId()) : null;
         return new UserUpdateResult(userMapper.toDto(saved), warning);
+    }
+
+    /**
+     * {@code PATCH /users/{id}/overtime-eligibility} - see {@code User.overtimeEligible}'s own
+     * openapi.yaml description for why this is a flag on the person rather than something
+     * derived from a shift code. Like {@link #updateFunctions} and unlike
+     * {@link #updateRole}/{@link #setActive}, this doesn't touch authentication at all: no
+     * {@code tokenVersion} bump, no self-change restriction - there is nothing here a caller
+     * could use to lock themselves out of anything.
+     */
+    @Transactional
+    public User updateOvertimeEligible(String id, boolean overtimeEligible) {
+        UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        entity.setOvertimeEligible(overtimeEligible);
+        UserEntity saved = userRepository.save(entity);
+        auditLogService.record(
+                AuditAction.USER_OVERTIME_ELIGIBILITY_CHANGED,
+                AuditEntityType.USER,
+                saved.getId(),
+                "Overtime eligibility for " + saved.getName() + " set to " + saved.isOvertimeEligible());
+        return userMapper.toDto(saved);
     }
 
     /**

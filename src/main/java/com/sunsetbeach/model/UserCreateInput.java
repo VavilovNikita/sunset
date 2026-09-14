@@ -30,6 +30,8 @@ public class UserCreateInput {
 
   private Role role;
 
+  private Boolean overtimeEligible = true;
+
   public UserCreateInput() {
     super();
   }
@@ -117,6 +119,25 @@ public class UserCreateInput {
     this.role = role;
   }
 
+  public UserCreateInput overtimeEligible(Boolean overtimeEligible) {
+    this.overtimeEligible = overtimeEligible;
+    return this;
+  }
+
+  /**
+   * See `User`'s own description. Defaults to `true` - the known exceptions are set individually, at creation or later via `PATCH /users/{id}/overtime-eligibility`.
+   * @return overtimeEligible
+   */
+  
+  @JsonProperty("overtimeEligible")
+  public Boolean getOvertimeEligible() {
+    return overtimeEligible;
+  }
+
+  public void setOvertimeEligible(Boolean overtimeEligible) {
+    this.overtimeEligible = overtimeEligible;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -129,12 +150,13 @@ public class UserCreateInput {
     return Objects.equals(this.name, userCreateInput.name) &&
         Objects.equals(this.email, userCreateInput.email) &&
         Objects.equals(this.password, userCreateInput.password) &&
-        Objects.equals(this.role, userCreateInput.role);
+        Objects.equals(this.role, userCreateInput.role) &&
+        Objects.equals(this.overtimeEligible, userCreateInput.overtimeEligible);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, email, password, role);
+    return Objects.hash(name, email, password, role, overtimeEligible);
   }
 
   @Override
@@ -145,6 +167,7 @@ public class UserCreateInput {
     sb.append("    email: ").append(toIndentedString(email)).append("\n");
     sb.append("    password: ").append(toIndentedString(password)).append("\n");
     sb.append("    role: ").append(toIndentedString(role)).append("\n");
+    sb.append("    overtimeEligible: ").append(toIndentedString(overtimeEligible)).append("\n");
     sb.append("}");
     return sb.toString();
   }

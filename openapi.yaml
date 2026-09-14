@@ -5148,6 +5148,55 @@ paths:
               example:
                 error: User not found
 
+  /users/{id}/overtime-eligibility:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateUserOvertimeEligibility
+      tags: [Users]
+      summary: Set whether a staff user is eligible for overtime
+      description: >
+        Requires an authenticated session with role `ADMIN`. See `User.overtimeEligible`'s own
+        description for why this is a per-person flag rather than something derived from a shift
+        code. No self-change restriction, and no `tokenVersion` bump - unlike role/active, this
+        can't lock the caller out of anything and doesn't affect authentication. Nothing in this
+        API computes or accrues overtime pay from this flag; it only records the fact.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserOvertimeEligibilityUpdateInput"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: User not found
+
   /public/rooms:
     get:
       operationId: listPublicRooms
@@ -8180,7 +8229,7 @@ components:
     User:
       type: object
       description: Safe projection returned by the API — `passwordHash` is never included.
-      required: [id, name, role, active, functions, createdAt]
+      required: [id, name, role, active, functions, overtimeEligible, createdAt]
       properties:
         id:
           type: string
@@ -8213,6 +8262,17 @@ components:
             Set via `PATCH /users/{id}/functions`. Does not affect authentication - unlike a role
             change, changing this does not invalidate existing tokens (see that operation's own
             description for why).
+        overtimeEligible:
+          type: boolean
+          description: >
+            Whether this person is eligible for overtime - a fact about the person, not something
+            derived from their current shift code: the hotel's own rule ("everyone is eligible
+            except staff on the `OP` code, plus one individual exception on an ordinary code") has
+            an exception that doesn't correlate with any code group, so it can't be computed on
+            the fly. Defaults to `true` at creation (see `UserCreateInput`) and is set per person
+            via `PATCH /users/{id}/overtime-eligibility` - nothing in this API computes or accrues
+            overtime pay from this flag today; it only records the fact so it doesn't have to be
+            reconstructed later.
         createdAt:
           type: string
           format: date-time
@@ -8278,6 +8338,10 @@ components:
         role:
           $ref: "#/components/schemas/Role"
           default: MANAGER
+        overtimeEligible:
+          type: boolean
+          default: true
+          description: See `User`'s own description. Defaults to `true` - the known exceptions are set individually, at creation or later via `PATCH /users/{id}/overtime-eligibility`.
 
     UserRoleUpdateInput:
       type: object
@@ -8329,6 +8393,14 @@ components:
       required: [active]
       properties:
         active:
+          type: boolean
+
+    UserOvertimeEligibilityUpdateInput:
+      type: object
+      description: Body of `PATCH /users/{id}/overtime-eligibility`. See `User.overtimeEligible`'s own description.
+      required: [overtimeEligible]
+      properties:
+        overtimeEligible:
           type: boolean
 
     UserCredentialsInput:
@@ -9238,6 +9310,7 @@ components:
         - USER_PASSWORD_RESET
         - USER_FUNCTIONS_CHANGED
         - USER_CREDENTIALS_GRANTED
+        - USER_OVERTIME_ELIGIBILITY_CHANGED
         - ROOM_UNIT_CREATED
         - ROOM_UNIT_UPDATED
         - ROOM_UNIT_DELETED

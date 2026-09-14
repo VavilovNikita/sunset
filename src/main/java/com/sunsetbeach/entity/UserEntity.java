@@ -56,6 +56,11 @@ public class UserEntity {
     @JdbcTypeCode(SqlTypes.ARRAY)
     private String[] jobFunctions = new String[0];
 
+    // A fact about the person, not derived from their shift code - see User's own openapi.yaml
+    // description for why. Defaults to eligible; set per person via
+    // PATCH /users/{id}/overtime-eligibility. Nothing computes or accrues overtime from this yet.
+    private boolean overtimeEligible = true;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -125,5 +130,13 @@ public class UserEntity {
 
     public void setJobFunctions(String[] jobFunctions) {
         this.jobFunctions = jobFunctions;
+    }
+
+    public boolean isOvertimeEligible() {
+        return overtimeEligible;
+    }
+
+    public void setOvertimeEligible(boolean overtimeEligible) {
+        this.overtimeEligible = overtimeEligible;
     }
 }

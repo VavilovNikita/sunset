@@ -343,6 +343,25 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void updateUserOvertimeEligibility_withManagerToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/users/user-2/overtime-eligibility")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"overtimeEligible\":false}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateUserOvertimeEligibility_withAdminToken_isOk() throws Exception {
+        when(userService.updateOvertimeEligible(eq("user-2"), eq(false))).thenReturn(sampleUser());
+        mockMvc.perform(patch("/users/user-2/overtime-eligibility")
+                        .header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"overtimeEligible\":false}"))
+                .andExpect(status().isOk());
+    }
+
     // --- POST /menu requires MANAGER or above ---
 
     @Test
@@ -1336,7 +1355,7 @@ class PosRoleHierarchyTests {
     }
 
     private static com.sunsetbeach.model.User sampleUser() {
-        return new com.sunsetbeach.model.User("user-2", "user-2@example.com", Role.CASHIER, true, List.of(), OffsetDateTime.now());
+        return new com.sunsetbeach.model.User("user-2", "user-2@example.com", Role.CASHIER, true, List.of(), true, OffsetDateTime.now());
     }
 
     private static com.sunsetbeach.model.UserUpdateResult sampleUserUpdateResult() {

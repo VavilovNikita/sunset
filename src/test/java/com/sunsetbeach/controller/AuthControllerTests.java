@@ -197,7 +197,7 @@ class AuthControllerTests {
     @Test
     void register_withAdminToken_delegatesToUserService() throws Exception {
         String adminToken = "Bearer " + jwtService.issue(new StaffPrincipal("admin-1", "admin@example.com", Role.ADMIN));
-        User created = new User("user-2", "New Person", Role.MANAGER, true, List.of(), OffsetDateTime.now()).email("new@example.com");
+        User created = new User("user-2", "New Person", Role.MANAGER, true, List.of(), true, OffsetDateTime.now()).email("new@example.com");
         when(userService.create(any(UserCreateInput.class))).thenReturn(created);
 
         mockMvc.perform(post("/auth/register")

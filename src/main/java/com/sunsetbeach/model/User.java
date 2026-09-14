@@ -41,6 +41,8 @@ public class User {
   @Valid
   private List<JobFunction> functions = new ArrayList<>();
 
+  private Boolean overtimeEligible;
+
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
@@ -51,12 +53,13 @@ public class User {
   /**
    * Constructor with only required parameters
    */
-  public User(String id, String name, Role role, Boolean active, List<JobFunction> functions, OffsetDateTime createdAt) {
+  public User(String id, String name, Role role, Boolean active, List<JobFunction> functions, Boolean overtimeEligible, OffsetDateTime createdAt) {
     this.id = id;
     this.name = name;
     this.role = role;
     this.active = active;
     this.functions = functions;
+    this.overtimeEligible = overtimeEligible;
     this.createdAt = createdAt;
   }
 
@@ -182,6 +185,25 @@ public class User {
     this.functions = functions;
   }
 
+  public User overtimeEligible(Boolean overtimeEligible) {
+    this.overtimeEligible = overtimeEligible;
+    return this;
+  }
+
+  /**
+   * Whether this person is eligible for overtime - a fact about the person, not something derived from their current shift code: the hotel's own rule (\"everyone is eligible except staff on the `OP` code, plus one individual exception on an ordinary code\") has an exception that doesn't correlate with any code group, so it can't be computed on the fly. Defaults to `true` at creation (see `UserCreateInput`) and is set per person via `PATCH /users/{id}/overtime-eligibility` - nothing in this API computes or accrues overtime pay from this flag today; it only records the fact so it doesn't have to be reconstructed later. 
+   * @return overtimeEligible
+   */
+  @NotNull 
+  @JsonProperty("overtimeEligible")
+  public Boolean getOvertimeEligible() {
+    return overtimeEligible;
+  }
+
+  public void setOvertimeEligible(Boolean overtimeEligible) {
+    this.overtimeEligible = overtimeEligible;
+  }
+
   public User createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -216,12 +238,13 @@ public class User {
         Objects.equals(this.role, user.role) &&
         Objects.equals(this.active, user.active) &&
         Objects.equals(this.functions, user.functions) &&
+        Objects.equals(this.overtimeEligible, user.overtimeEligible) &&
         Objects.equals(this.createdAt, user.createdAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, email, role, active, functions, createdAt);
+    return Objects.hash(id, name, email, role, active, functions, overtimeEligible, createdAt);
   }
 
   @Override
@@ -234,6 +257,7 @@ public class User {
     sb.append("    role: ").append(toIndentedString(role)).append("\n");
     sb.append("    active: ").append(toIndentedString(active)).append("\n");
     sb.append("    functions: ").append(toIndentedString(functions)).append("\n");
+    sb.append("    overtimeEligible: ").append(toIndentedString(overtimeEligible)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();
