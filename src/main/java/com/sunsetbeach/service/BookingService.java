@@ -11,6 +11,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.error.SqlStates;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.BookingMapper;
 import com.sunsetbeach.mapper.PriceFormat;
@@ -50,7 +51,6 @@ import com.sunsetbeach.security.StaffPrincipal;
 import jakarta.persistence.criteria.Predicate;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.math.BigDecimal;
-import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -889,12 +889,6 @@ public class BookingService {
     }
 
     private static boolean isSerializationFailure(Throwable ex) {
-        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
-            if (cause instanceof SQLException sqlException
-                    && SERIALIZATION_FAILURE_SQLSTATE.equals(sqlException.getSQLState())) {
-                return true;
-            }
-        }
-        return false;
+        return SqlStates.is(ex, SERIALIZATION_FAILURE_SQLSTATE);
     }
 }

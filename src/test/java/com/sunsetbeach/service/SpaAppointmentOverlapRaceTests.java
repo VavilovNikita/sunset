@@ -287,6 +287,14 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
      * winner: PostgreSQL's exclusion-constraint machinery makes an immediate-checked writer wait
      * on a possibly-conflicting row from a still-open, deferred transaction rather than skip past
      * it, so this isn't a gap deferring the swap's own checks could open up.
+     *
+     * <p>This exact race can resolve two different ways depending on timing, and both are
+     * legitimate: either PostgreSQL rejects the losing write outright as a genuine exclusion
+     * violation, or - the case that used to escape as a raw, untranslated exception -
+     * it kills one side to break a deadlock between the two constraint checks (see {@code
+     * SpaAppointmentService#translateOverlap}'s own javadoc). Either way the loser must get one of
+     * the two known sentences, never something else - an untranslated failure passing a bare "was
+     * it thrown" assertion is exactly the regression this test guards against.
      */
     @Test
     void concurrentSwapAndCreate_racingForTheSameTable_exactlyOneSucceeds() throws Exception {
@@ -323,7 +331,7 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         int succeeded = 0;
-        int conflicted = 0;
+        List<String> conflictMessages = new ArrayList<>();
         try {
             Future<Object> swapFuture = executor.submit(swap);
             Future<Object> createFuture = executor.submit(thirdPartyCreate);
@@ -332,8 +340,8 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
                     f.get();
                     succeeded++;
                 } catch (Exception e) {
-                    if (e.getCause() instanceof ConflictException) {
-                        conflicted++;
+                    if (e.getCause() instanceof ConflictException conflict) {
+                        conflictMessages.add(conflict.getMessage());
                     } else {
                         throw e;
                     }
@@ -344,7 +352,11 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
         }
 
         assertThat(succeeded).isEqualTo(1);
-        assertThat(conflicted).isEqualTo(1);
+        assertThat(conflictMessages).hasSize(1);
+        assertThat(conflictMessages.get(0))
+                .isIn(
+                        "This table already has an appointment overlapping this time.",
+                        "Someone else was changing one of these appointments at the same time — please try again.");
         // Whichever won, tableB has exactly one BOOKED occupant at this time - not zero (both
         // somehow failed) and not two (both somehow "succeeded" against the same slot).
         assertThat(spaAppointmentRepository.findByDate(java.time.LocalDate.parse(booking.getCheckIn())).stream()

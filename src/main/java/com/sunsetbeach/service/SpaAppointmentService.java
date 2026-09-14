@@ -11,6 +11,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.error.SqlStates;
 import com.sunsetbeach.mapper.TableMapper;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
@@ -39,6 +40,7 @@ import com.sunsetbeach.repository.SpaAppointmentRepository;
 import com.sunsetbeach.repository.SpaAppointmentTreatmentRepository;
 import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -49,6 +51,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataAccessException;
@@ -72,6 +75,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class SpaAppointmentService {
 
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final String EXCLUSION_VIOLATION_SQLSTATE = "23P01";
+    private static final String DEADLOCK_DETECTED_SQLSTATE = "40P01";
 
     private final SpaAppointmentRepository spaAppointmentRepository;
     private final SpaAppointmentTreatmentRepository spaAppointmentTreatmentRepository;
@@ -534,27 +539,43 @@ public class SpaAppointmentService {
     }
 
     /**
-     * Distinguishes which axis lost the race by the exclusion constraint's own name - see
-     * V41__spa_appointment.sql. Rethrows unrecognized failures untranslated rather than masking
-     * them as a generic conflict.
+     * Recognises the failure by its own SQLSTATE (see {@link SqlStates} and CLAUDE.md's
+     * Concurrency section), never by matching prose in the error message - message wording isn't
+     * an API, and a Postgres deadlock's own message doesn't name a constraint at all (it names the
+     * relation it was checking one against), which is exactly why the string-matching this method
+     * used to do was blind to it: a genuine two-writer deadlock reaching this method (racing an
+     * ordinary {@code create}/{@code updateSchedule} against this service's own deferred-then-
+     * forced-immediate check in {@link #swapTables}, or two swaps against each other before the
+     * fix described there) surfaced as a raw, untranslated {@link DataAccessException} instead of
+     * the same "try again" conflict every other race in this system already gives.
+     *
+     * <p>{@code 23P01} (exclusion_violation) is a genuine double-booking: the constraint name -
+     * read from the driver's own {@code SQLException}, not re-derived from the outer message -
+     * says which axis lost the race (see V41__spa_appointment.sql). {@code 40P01} (deadlock
+     * detected) is not a booking conflict at all, just two transactions that got in each other's
+     * way; nothing here is actually wrong with either write, so it gets the same generic
+     * "someone else, try again" shape {@link BookingService#isSerializationFailure} already gives
+     * for {@code 40001}, deliberately not one of the two overlap-specific sentences (this method
+     * doesn't know, and shouldn't guess, which side of a deadlock supposedly "lost"). Rethrows
+     * unrecognized failures untranslated rather than masking them as a generic conflict -
+     * {@link com.sunsetbeach.error.GlobalExceptionHandler}'s own database-failure backstop is
+     * where those end up, not a manufactured overlap message here.
      */
-    private static ConflictException translateOverlap(DataAccessException e) {
-        String message = rootCauseMessage(e);
-        if (message != null && message.contains("spa_appointment_no_table_overlap")) {
-            return new ConflictException("This table already has an appointment overlapping this time.");
+    static ConflictException translateOverlap(DataAccessException e) {
+        if (SqlStates.is(e, DEADLOCK_DETECTED_SQLSTATE)) {
+            return new ConflictException("Someone else was changing one of these appointments at the same time — please try again.");
         }
-        if (message != null && message.contains("spa_appointment_no_therapist_overlap")) {
-            return new ConflictException("This therapist already has an appointment overlapping this time.");
+        Optional<SQLException> exclusionViolation = SqlStates.find(e, EXCLUSION_VIOLATION_SQLSTATE);
+        if (exclusionViolation.isPresent()) {
+            String message = exclusionViolation.get().getMessage();
+            if (message != null && message.contains("spa_appointment_no_table_overlap")) {
+                return new ConflictException("This table already has an appointment overlapping this time.");
+            }
+            if (message != null && message.contains("spa_appointment_no_therapist_overlap")) {
+                return new ConflictException("This therapist already has an appointment overlapping this time.");
+            }
         }
         throw e;
-    }
-
-    private static String rootCauseMessage(Throwable e) {
-        Throwable cause = e;
-        while (cause.getCause() != null) {
-            cause = cause.getCause();
-        }
-        return cause.getMessage();
     }
 
     private SpaAppointment toDto(SpaAppointmentEntity e) {
