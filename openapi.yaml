@@ -6411,6 +6411,195 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /roster/import/preview:
+    post:
+      operationId: previewRosterImport
+      tags: [Roster]
+      summary: Dry-run an Excel schedule import
+      description: >
+        Requires ADMIN. Reads one month's sheet (named like `Sep26`, matching `year`/`month`) from
+        the uploaded workbook and reports what importing it would do - nothing is written by this
+        call, not even a remembered name or colour mapping. Only the grid of codes is read: the
+        trailing columns after it, the legend, the totals rows, and the notes block are never
+        parsed - their position and shape vary between months in ways that make reading them
+        unsafe to assume. See `RosterImportPreview` for the full shape of what comes back; resolve
+        every unmapped name (`POST /roster/import/name-mappings`) and every unresolved "9" colour
+        (`POST /roster/import/color-mappings`) until `canCommit` is true, then `POST
+        /roster/import/commit` with the returned `importId`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, year, month]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                year:
+                  type: integer
+                month:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
+      responses:
+        "200":
+          description: The dry-run report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterImportPreview"
+        "400":
+          description: Not a readable schedule workbook, or no sheet named for this year/month.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Token is valid but lacks the required role (`ADMIN`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /roster/import/name-mappings:
+    post:
+      operationId: createRosterImportNameMapping
+      tags: [Roster]
+      summary: Resolve one name found in a schedule import
+      description: >
+        Requires ADMIN. Map `rawName` to an existing account (`employeeUserId`), or create a new
+        no-login one on the spot (`newEmployeeName`) - never both. Remembered against the account
+        from then on: the same spelling in a later import resolves automatically, without asking
+        again. Names are never matched automatically by this API in any other way.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterImportNameMappingInput"
+      responses:
+        "200":
+          description: The resulting mapping.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterImportNameMappingResult"
+        "400":
+          description: Body failed validation, or named neither/both of employeeUserId and newEmployeeName.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Token is valid but lacks the required role (`ADMIN`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: employeeUserId does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /roster/import/color-mappings:
+    post:
+      operationId: createRosterImportColorMapping
+      tags: [Roster]
+      summary: Resolve one ambiguous "9" found in a schedule import
+      description: >
+        Requires ADMIN. Records which `ShiftCode` a given `(staffArea, rawCode, fillColor)`
+        actually means, by the `ShiftCode`'s own `code` string - remembered from then on, and
+        re-resolved fresh against whatever's active for that area/code on every later import, so a
+        later edit to that `ShiftCode`'s hours (a new version - see `ShiftCode`'s own description)
+        is picked up automatically rather than silently invalidating this mapping.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterImportColorMappingInput"
+      responses:
+        "200":
+          description: The resulting mapping.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterImportColorMappingResult"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Token is valid but lacks the required role (`ADMIN`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: shiftCodeId does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /roster/import/commit:
+    post:
+      operationId: commitRosterImport
+      tags: [Roster]
+      summary: Write a previously-previewed Excel schedule import
+      description: >
+        Requires ADMIN. Re-reads the same file `importId` refers to and re-resolves it fresh
+        against whatever is mapped by now - never trusts that a client-side "canCommit" from an
+        earlier preview still holds. Refuses (400) if anything is still unresolved. An entry whose
+        date already has one for that employee is skipped, never overwritten - see
+        `RosterImportCollision`'s own description. Exactly one audit entry is written for the
+        whole import, naming the month and the counts in `RosterImportResult`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterImportCommitInput"
+      responses:
+        "200":
+          description: What was actually written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterImportResult"
+        "400":
+          description: Unresolved names, unresolved "9" colours, or unreadable cells remain - see `RosterImportPreview` (call preview again to see what's left).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Token is valid but lacks the required role (`ADMIN`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: This importId is unknown or has expired - upload the file again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -9625,6 +9814,7 @@ components:
         - ATTENDANCE_PUNCH_CORRECTED
         - EMPLOYEE_PAY_RATE_CHANGED
         - ROSTER_ACTUALS_EXPORTED
+        - ROSTER_MONTH_IMPORTED
 
     AuditEntityType:
       type: string
@@ -9721,6 +9911,16 @@ components:
       type: string
       description: Whether an `AttendancePunch` is a clock-in or a clock-out.
       enum: [IN, OUT]
+
+    FillColor:
+      type: string
+      description: >
+        The one place a cell's own fill colour is read in the Excel schedule import, rather than
+        just its text - the source spreadsheet writes two different shifts both as the bare text
+        "9", told apart only by whether the cell is filled yellow (a single 09:00-18:00 shift) or
+        light blue (a split one). See `RosterImportShiftColorMapping`'s own description for how a
+        colour actually resolves to a `ShiftCode`.
+      enum: [YELLOW, BLUE]
 
     PunchSource:
       type: string
@@ -10055,6 +10255,204 @@ components:
         minimumWorking:
           type: integer
           minimum: 0
+
+    RosterImportNameEntry:
+      type: object
+      description: >
+        One distinct name found in the sheet (trimmed, internal whitespace collapsed - nothing
+        more) and how it currently resolves. Names are never matched automatically - `mapped:
+        false` means a person must map this one, via `POST /roster/import/name-mappings`, before
+        `POST /roster/import/commit` can succeed.
+      required: [rawName, occurrences, mapped]
+      properties:
+        rawName:
+          type: string
+        occurrences:
+          type: integer
+          description: How many day-cells in the sheet belong to this name - context for how much a wrong mapping would affect.
+        mapped:
+          type: boolean
+        employeeUserId:
+          type: string
+          nullable: true
+          description: Set when `mapped` is true - either a previously-remembered mapping, or one already given in this session.
+        employeeName:
+          type: string
+          nullable: true
+        suggestedStaffArea:
+          allOf:
+            - $ref: "#/components/schemas/StaffArea"
+          nullable: true
+          description: >
+            The department this name's row sits under, for context only (e.g. pre-filling which
+            area a newly-created account is shown as belonging to) - never persisted anywhere by
+            the import itself. Null only if the department header above this row couldn't itself
+            be recognised, in which case this row also carries an entry in `issues`.
+
+    RosterImportCodeEntry:
+      type: object
+      description: One distinct code (or code+colour pair) found in the sheet, and how it currently resolves to a `ShiftCode`.
+      required: [rawCode, occurrences, resolved]
+      properties:
+        rawCode:
+          type: string
+        fillColor:
+          allOf:
+            - $ref: "#/components/schemas/FillColor"
+          nullable: true
+          description: Set only for the ambiguous "9" - see `FillColor`'s own description. Every other code is read by text alone.
+        occurrences:
+          type: integer
+        resolved:
+          type: boolean
+        shiftCodeDescription:
+          type: string
+          nullable: true
+          description: The resolved `ShiftCode`'s own hours (e.g. "07:00-16:00", "Open Schedule") - set only when `resolved` is true.
+
+    RosterImportIssue:
+      type: object
+      description: A cell (or, with `cellRef` absent, the sheet as a whole) that could not be read, and why. Blocks commit while any exist.
+      required: [message]
+      properties:
+        cellRef:
+          type: string
+          nullable: true
+        message:
+          type: string
+
+    RosterImportCollision:
+      type: object
+      description: >
+        A cell whose date already has a `RosterEntry` for that employee. Never overwritten - the
+        import always skips these and reports them here, the same way `POST /roster/entries`
+        itself refuses a second entry on an occupied date rather than replacing it. Resolving a
+        collision, if the new value should actually win, means clearing or editing the existing
+        entry by hand (in the ordinary roster grid) and re-running the import.
+      required: [employeeName, date, existingShiftCodeDescription, newShiftCodeDescription]
+      properties:
+        employeeName:
+          type: string
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        existingShiftCodeDescription:
+          type: string
+        newShiftCodeDescription:
+          type: string
+
+    RosterImportPreview:
+      type: object
+      description: >
+        Response of `POST /roster/import/preview` - a dry run. Nothing is written by this call,
+        not even a remembered mapping; it only reports what parsing the file, as it stands right
+        now, would do. `canCommit` is true only once every name is mapped, every ambiguous "9" is
+        resolved, and `issues` is empty.
+      required: [importId, year, month, names, codes, issues, collisions, entriesToCreate, canCommit]
+      properties:
+        importId:
+          type: string
+          description: Opaque reference to this file, held server-side - pass back to `POST /roster/import/commit` once `canCommit` is true.
+        year:
+          type: integer
+        month:
+          type: integer
+        names:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterImportNameEntry"
+        codes:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterImportCodeEntry"
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterImportIssue"
+        collisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterImportCollision"
+        entriesToCreate:
+          type: integer
+          description: How many `RosterEntry` rows committing right now would actually create - excludes collisions and anything still unresolved.
+        canCommit:
+          type: boolean
+
+    RosterImportNameMappingInput:
+      type: object
+      description: >
+        Body of `POST /roster/import/name-mappings`. Exactly one of `employeeUserId` (map to an
+        existing account) or `newEmployeeName` (create a no-login account on the spot) must be
+        given - never both, never neither.
+      required: [rawName]
+      properties:
+        rawName:
+          type: string
+        employeeUserId:
+          type: string
+        newEmployeeName:
+          type: string
+
+    RosterImportNameMappingResult:
+      type: object
+      required: [rawName, employeeUserId, employeeName]
+      properties:
+        rawName:
+          type: string
+        employeeUserId:
+          type: string
+        employeeName:
+          type: string
+
+    RosterImportColorMappingInput:
+      type: object
+      description: Body of `POST /roster/import/color-mappings`. `shiftCodeId` must be an already-existing, active `ShiftCode` for `staffArea`.
+      required: [staffArea, rawCode, fillColor, shiftCodeId]
+      properties:
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+        rawCode:
+          type: string
+        fillColor:
+          $ref: "#/components/schemas/FillColor"
+        shiftCodeId:
+          type: string
+
+    RosterImportColorMappingResult:
+      type: object
+      required: [staffArea, rawCode, fillColor, resolvedCode]
+      properties:
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+        rawCode:
+          type: string
+        fillColor:
+          $ref: "#/components/schemas/FillColor"
+        resolvedCode:
+          type: string
+
+    RosterImportCommitInput:
+      type: object
+      description: Body of `POST /roster/import/commit`.
+      required: [importId]
+      properties:
+        importId:
+          type: string
+
+    RosterImportResult:
+      type: object
+      description: Response of `POST /roster/import/commit`.
+      required: [year, month, created, skippedCollisions]
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+        created:
+          type: integer
+        skippedCollisions:
+          type: integer
 
     AttendancePunch:
       type: object

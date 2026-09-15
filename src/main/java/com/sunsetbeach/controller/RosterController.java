@@ -11,6 +11,13 @@ import com.sunsetbeach.model.EmployeePayRateCreateInput;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.RosterEntry;
 import com.sunsetbeach.model.RosterEntryCreateInput;
+import com.sunsetbeach.model.RosterImportColorMappingInput;
+import com.sunsetbeach.model.RosterImportColorMappingResult;
+import com.sunsetbeach.model.RosterImportCommitInput;
+import com.sunsetbeach.model.RosterImportNameMappingInput;
+import com.sunsetbeach.model.RosterImportNameMappingResult;
+import com.sunsetbeach.model.RosterImportPreview;
+import com.sunsetbeach.model.RosterImportResult;
 import com.sunsetbeach.model.RosterMonth;
 import com.sunsetbeach.model.RosterMoveInput;
 import com.sunsetbeach.model.RosterReassignInput;
@@ -26,6 +33,7 @@ import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.AttendanceService;
 import com.sunsetbeach.service.EmployeePatternService;
 import com.sunsetbeach.service.EmployeePayRateService;
+import com.sunsetbeach.service.RosterImportService;
 import com.sunsetbeach.service.RosterService;
 import com.sunsetbeach.service.ShiftCodeService;
 import com.sunsetbeach.service.StaffAreaCoverageRuleService;
@@ -35,6 +43,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 public class RosterController implements RosterApi {
@@ -45,6 +54,7 @@ public class RosterController implements RosterApi {
     private final StaffAreaCoverageRuleService staffAreaCoverageRuleService;
     private final AttendanceService attendanceService;
     private final EmployeePayRateService employeePayRateService;
+    private final RosterImportService rosterImportService;
 
     public RosterController(
             ShiftCodeService shiftCodeService,
@@ -52,13 +62,15 @@ public class RosterController implements RosterApi {
             RosterService rosterService,
             StaffAreaCoverageRuleService staffAreaCoverageRuleService,
             AttendanceService attendanceService,
-            EmployeePayRateService employeePayRateService) {
+            EmployeePayRateService employeePayRateService,
+            RosterImportService rosterImportService) {
         this.shiftCodeService = shiftCodeService;
         this.employeePatternService = employeePatternService;
         this.rosterService = rosterService;
         this.staffAreaCoverageRuleService = staffAreaCoverageRuleService;
         this.attendanceService = attendanceService;
         this.employeePayRateService = employeePayRateService;
+        this.rosterImportService = rosterImportService;
     }
 
     @Override
@@ -172,6 +184,26 @@ public class RosterController implements RosterApi {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
                 .body(rosterService.exportActualsCsv(year, month, callerId()));
+    }
+
+    @Override
+    public ResponseEntity<RosterImportPreview> previewRosterImport(MultipartFile file, Integer year, Integer month) {
+        return ResponseEntity.ok(rosterImportService.preview(file, year, month));
+    }
+
+    @Override
+    public ResponseEntity<RosterImportNameMappingResult> createRosterImportNameMapping(RosterImportNameMappingInput rosterImportNameMappingInput) {
+        return ResponseEntity.ok(rosterImportService.createNameMapping(rosterImportNameMappingInput, callerId()));
+    }
+
+    @Override
+    public ResponseEntity<RosterImportColorMappingResult> createRosterImportColorMapping(RosterImportColorMappingInput rosterImportColorMappingInput) {
+        return ResponseEntity.ok(rosterImportService.createColorMapping(rosterImportColorMappingInput, callerId()));
+    }
+
+    @Override
+    public ResponseEntity<RosterImportResult> commitRosterImport(RosterImportCommitInput rosterImportCommitInput) {
+        return ResponseEntity.ok(rosterImportService.commit(rosterImportCommitInput.getImportId(), callerId()));
     }
 
     private static String callerId() {

@@ -282,6 +282,12 @@ public class SecurityConfig {
                         // before nothing else, since neither is a prefix of a MANAGER-only path
                         // below - "/roster" (exact) and "/roster/me" (exact) never collide.
                         .requestMatchers(HttpMethod.GET, "/shift-codes", "/roster/me").authenticated()
+                        // The Excel schedule import is ADMIN only, stricter than the rest of this
+                        // module's MANAGER floor - it can create User accounts (see
+                        // RosterImportService#createNameMapping), the one action /users/** itself
+                        // is also hard-restricted to ADMIN for, regardless of the role hierarchy.
+                        .requestMatchers("/roster/import/preview", "/roster/import/name-mappings", "/roster/import/color-mappings", "/roster/import/commit")
+                        .hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
                         // Everything else roster-shaped is MANAGER or above - the whole grid,
                         // editing it (move/reassign/swap/lock/generate), employee patterns,
                         // coverage minimums, pay rates, attendance, and the actuals export all

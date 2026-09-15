@@ -65,6 +65,16 @@ public class ShiftCodeService {
         return java.util.stream.Stream.concat(areaScoped.stream(), shared.stream().filter(s -> !areaScopedCodes.contains(s.getCode()))).toList();
     }
 
+    /**
+     * The single-code version of {@link #resolveForArea}'s own precedence (area-scoped wins over
+     * shared) - what {@code RosterImportService} resolves every code (including a "9" already
+     * substituted via its own colour mapping) against, the same way any other write path would.
+     */
+    java.util.Optional<ShiftCodeEntity> resolveActive(StaffArea staffArea, String code) {
+        return shiftCodeRepository.findByStaffAreaAndCodeAndActiveTrue(staffArea, code)
+                .or(() -> shiftCodeRepository.findByStaffAreaAndCodeAndActiveTrue(null, code));
+    }
+
     @Transactional
     public ShiftCode create(ShiftCodeCreateInput input, String actorUserId) {
         LocalTime start1 = parseTime(input.getStartTime1().orElse(null));

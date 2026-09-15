@@ -69,6 +69,15 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Roster schedule import: reads the .xlsx grid (RosterImportService/ScheduleWorkbookParser)
+             - cell fill colour and comments (see ScheduleWorkbookParser's own javadoc) need the real
+             OOXML model, not just SAX event parsing, so poi-ooxml rather than plain poi. -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.5.1</version>
+        </dependency>
+
         <!-- OpenAPI-generated model support -->
         <dependency>
             <groupId>org.openapitools</groupId>

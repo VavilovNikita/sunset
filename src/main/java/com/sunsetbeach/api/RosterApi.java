@@ -17,6 +17,13 @@ import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.RosterEmployee;
 import com.sunsetbeach.model.RosterEntry;
 import com.sunsetbeach.model.RosterEntryCreateInput;
+import com.sunsetbeach.model.RosterImportColorMappingInput;
+import com.sunsetbeach.model.RosterImportColorMappingResult;
+import com.sunsetbeach.model.RosterImportCommitInput;
+import com.sunsetbeach.model.RosterImportNameMappingInput;
+import com.sunsetbeach.model.RosterImportNameMappingResult;
+import com.sunsetbeach.model.RosterImportPreview;
+import com.sunsetbeach.model.RosterImportResult;
 import com.sunsetbeach.model.RosterLockInput;
 import com.sunsetbeach.model.RosterMonth;
 import com.sunsetbeach.model.RosterMoveInput;
@@ -27,6 +34,7 @@ import com.sunsetbeach.model.ShiftCodeCreateInput;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.StaffAreaCoverageRule;
 import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
+import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -49,6 +57,61 @@ public interface RosterApi {
     default Optional<NativeWebRequest> getRequest() {
         return Optional.empty();
     }
+
+    /**
+     * POST /roster/import/commit : Write a previously-previewed Excel schedule import
+     * Requires ADMIN. Re-reads the same file &#x60;importId&#x60; refers to and re-resolves it fresh against whatever is mapped by now - never trusts that a client-side \&quot;canCommit\&quot; from an earlier preview still holds. Refuses (400) if anything is still unresolved. An entry whose date already has one for that employee is skipped, never overwritten - see &#x60;RosterImportCollision&#x60;&#39;s own description. Exactly one audit entry is written for the whole import, naming the month and the counts in &#x60;RosterImportResult&#x60;. 
+     *
+     * @param rosterImportCommitInput  (required)
+     * @return What was actually written. (status code 200)
+     *         or Unresolved names, unresolved \&quot;9\&quot; colours, or unreadable cells remain - see &#x60;RosterImportPreview&#x60; (call preview again to see what&#39;s left). (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or This importId is unknown or has expired - upload the file again. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/roster/import/commit",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<RosterImportResult> commitRosterImport(
+         @Valid @RequestBody RosterImportCommitInput rosterImportCommitInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"skippedCollisions\" : 5, \"month\" : 6, \"year\" : 0, \"created\" : 1 }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
 
     /**
      * POST /employee-pay-rates : Set a new daily rate, effective from a given date
@@ -129,6 +192,116 @@ public interface RosterApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /roster/import/color-mappings : Resolve one ambiguous \&quot;9\&quot; found in a schedule import
+     * Requires ADMIN. Records which &#x60;ShiftCode&#x60; a given &#x60;(staffArea, rawCode, fillColor)&#x60; actually means, by the &#x60;ShiftCode&#x60;&#39;s own &#x60;code&#x60; string - remembered from then on, and re-resolved fresh against whatever&#39;s active for that area/code on every later import, so a later edit to that &#x60;ShiftCode&#x60;&#39;s hours (a new version - see &#x60;ShiftCode&#x60;&#39;s own description) is picked up automatically rather than silently invalidating this mapping. 
+     *
+     * @param rosterImportColorMappingInput  (required)
+     * @return The resulting mapping. (status code 200)
+     *         or Body failed validation. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or shiftCodeId does not exist. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/roster/import/color-mappings",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<RosterImportColorMappingResult> createRosterImportColorMapping(
+         @Valid @RequestBody RosterImportColorMappingInput rosterImportColorMappingInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"staffArea\" : \"ADMIN\", \"fillColor\" : \"YELLOW\", \"rawCode\" : \"rawCode\", \"resolvedCode\" : \"resolvedCode\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /roster/import/name-mappings : Resolve one name found in a schedule import
+     * Requires ADMIN. Map &#x60;rawName&#x60; to an existing account (&#x60;employeeUserId&#x60;), or create a new no-login one on the spot (&#x60;newEmployeeName&#x60;) - never both. Remembered against the account from then on: the same spelling in a later import resolves automatically, without asking again. Names are never matched automatically by this API in any other way. 
+     *
+     * @param rosterImportNameMappingInput  (required)
+     * @return The resulting mapping. (status code 200)
+     *         or Body failed validation, or named neither/both of employeeUserId and newEmployeeName. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or employeeUserId does not exist. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/roster/import/name-mappings",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<RosterImportNameMappingResult> createRosterImportNameMapping(
+         @Valid @RequestBody RosterImportNameMappingInput rosterImportNameMappingInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"employeeName\" : \"employeeName\", \"rawName\" : \"rawName\", \"employeeUserId\" : \"employeeUserId\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -747,6 +920,59 @@ public interface RosterApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /roster/import/preview : Dry-run an Excel schedule import
+     * Requires ADMIN. Reads one month&#39;s sheet (named like &#x60;Sep26&#x60;, matching &#x60;year&#x60;/&#x60;month&#x60;) from the uploaded workbook and reports what importing it would do - nothing is written by this call, not even a remembered name or colour mapping. Only the grid of codes is read: the trailing columns after it, the legend, the totals rows, and the notes block are never parsed - their position and shape vary between months in ways that make reading them unsafe to assume. See &#x60;RosterImportPreview&#x60; for the full shape of what comes back; resolve every unmapped name (&#x60;POST /roster/import/name-mappings&#x60;) and every unresolved \&quot;9\&quot; colour (&#x60;POST /roster/import/color-mappings&#x60;) until &#x60;canCommit&#x60; is true, then &#x60;POST /roster/import/commit&#x60; with the returned &#x60;importId&#x60;. 
+     *
+     * @param file  (required)
+     * @param year  (required)
+     * @param month  (required)
+     * @return The dry-run report. (status code 200)
+     *         or Not a readable schedule workbook, or no sheet named for this year/month. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/roster/import/preview",
+        produces = { "application/json" },
+        consumes = { "multipart/form-data" }
+    )
+    
+    default ResponseEntity<RosterImportPreview> previewRosterImport(
+         @RequestPart(value = "file", required = true) MultipartFile file,
+         @Valid @RequestParam(value = "year", required = true) Integer year,
+         @Valid @RequestParam(value = "month", required = true) Integer month
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"codes\" : [ { \"fillColor\" : \"\", \"occurrences\" : 5, \"rawCode\" : \"rawCode\", \"resolved\" : true, \"shiftCodeDescription\" : \"shiftCodeDescription\" }, { \"fillColor\" : \"\", \"occurrences\" : 5, \"rawCode\" : \"rawCode\", \"resolved\" : true, \"shiftCodeDescription\" : \"shiftCodeDescription\" } ], \"importId\" : \"importId\", \"names\" : [ { \"occurrences\" : 1, \"employeeName\" : \"employeeName\", \"suggestedStaffArea\" : \"\", \"mapped\" : true, \"rawName\" : \"rawName\", \"employeeUserId\" : \"employeeUserId\" }, { \"occurrences\" : 1, \"employeeName\" : \"employeeName\", \"suggestedStaffArea\" : \"\", \"mapped\" : true, \"rawName\" : \"rawName\", \"employeeUserId\" : \"employeeUserId\" } ], \"month\" : 6, \"collisions\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"newShiftCodeDescription\" : \"newShiftCodeDescription\", \"existingShiftCodeDescription\" : \"existingShiftCodeDescription\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"newShiftCodeDescription\" : \"newShiftCodeDescription\", \"existingShiftCodeDescription\" : \"existingShiftCodeDescription\" } ], \"year\" : 0, \"entriesToCreate\" : 5, \"issues\" : [ { \"cellRef\" : \"cellRef\", \"message\" : \"message\" }, { \"cellRef\" : \"cellRef\", \"message\" : \"message\" } ], \"canCommit\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

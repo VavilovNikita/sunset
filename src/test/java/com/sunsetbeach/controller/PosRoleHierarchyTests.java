@@ -231,6 +231,9 @@ class PosRoleHierarchyTests {
     @MockitoBean
     private com.sunsetbeach.service.EmployeePayRateService employeePayRateService;
 
+    @MockitoBean
+    private com.sunsetbeach.service.RosterImportService rosterImportService;
+
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
     // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
     // "user-1" regardless of role, so one stub covers every test.
@@ -1632,6 +1635,64 @@ class PosRoleHierarchyTests {
     void exportRosterActuals_withManagerToken_isOk() throws Exception {
         when(rosterService.exportActualsCsv(anyInt(), anyInt(), anyString())).thenReturn("Employee,Days worked,Hours worked\r\n");
         mockMvc.perform(get("/roster/actuals-export?year=2027&month=1").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    // --- The Excel schedule importer is ADMIN only - a floor stricter than the rest of Roster's MANAGER+ ---
+
+    @Test
+    void previewRosterImport_withManagerToken_isForbidden() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "schedule.xlsx", "application/vnd.openxmlformats", new byte[] {1, 2, 3});
+        mockMvc.perform(multipart("/roster/import/preview").file(file).param("year", "2026").param("month", "9")
+                        .header("Authorization", token(Role.MANAGER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void previewRosterImport_withAdminToken_isOk() throws Exception {
+        when(rosterImportService.preview(any(), eq(2026), eq(9))).thenReturn(
+                new com.sunsetbeach.model.RosterImportPreview(
+                        "import-1", 2026, 9, java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), 0, false));
+        MockMultipartFile file = new MockMultipartFile("file", "schedule.xlsx", "application/vnd.openxmlformats", new byte[] {1, 2, 3});
+        mockMvc.perform(multipart("/roster/import/preview").file(file).param("year", "2026").param("month", "9")
+                        .header("Authorization", token(Role.ADMIN)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void createRosterImportNameMapping_withManagerToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/roster/import/name-mappings")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rawName\":\"Alice\",\"employeeUserId\":\"user-1\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createRosterImportColorMapping_withManagerToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/roster/import/color-mappings")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"staffArea\":\"KITCHEN\",\"rawCode\":\"9\",\"fillColor\":\"BLUE\",\"shiftCodeId\":\"code-1\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void commitRosterImport_withManagerToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/roster/import/commit")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"importId\":\"import-1\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void commitRosterImport_withAdminToken_isOk() throws Exception {
+        when(rosterImportService.commit(eq("import-1"), anyString())).thenReturn(new com.sunsetbeach.model.RosterImportResult(2026, 9, 3, 0));
+        mockMvc.perform(post("/roster/import/commit")
+                        .header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"importId\":\"import-1\"}"))
+                .andExpect(status().isOk());
     }
 
     private static com.sunsetbeach.model.ShiftCode sampleShiftCode() {
