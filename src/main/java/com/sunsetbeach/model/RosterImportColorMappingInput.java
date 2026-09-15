@@ -6,7 +6,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.FillColor;
-import com.sunsetbeach.model.StaffArea;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -17,13 +16,11 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Body of &#x60;POST /roster/import/color-mappings&#x60;. &#x60;shiftCodeId&#x60; must be an already-existing, active &#x60;ShiftCode&#x60; for &#x60;staffArea&#x60;.
+ * Body of &#x60;POST /roster/import/color-mappings&#x60;. Not scoped to an area - which code text a colour means is the same fact everywhere in the file (see &#x60;RosterImportShiftColorMapping&#x60;&#39;s own description on the backend); &#x60;shiftCodeId&#x60; just needs to be an already-existing, active &#x60;ShiftCode&#x60; whose own shape (single interval or two) actually matches &#x60;fillColor&#x60;. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RosterImportColorMappingInput {
-
-  private StaffArea staffArea;
 
   private String rawCode;
 
@@ -38,30 +35,10 @@ public class RosterImportColorMappingInput {
   /**
    * Constructor with only required parameters
    */
-  public RosterImportColorMappingInput(StaffArea staffArea, String rawCode, FillColor fillColor, String shiftCodeId) {
-    this.staffArea = staffArea;
+  public RosterImportColorMappingInput(String rawCode, FillColor fillColor, String shiftCodeId) {
     this.rawCode = rawCode;
     this.fillColor = fillColor;
     this.shiftCodeId = shiftCodeId;
-  }
-
-  public RosterImportColorMappingInput staffArea(StaffArea staffArea) {
-    this.staffArea = staffArea;
-    return this;
-  }
-
-  /**
-   * Get staffArea
-   * @return staffArea
-   */
-  @NotNull @Valid 
-  @JsonProperty("staffArea")
-  public StaffArea getStaffArea() {
-    return staffArea;
-  }
-
-  public void setStaffArea(StaffArea staffArea) {
-    this.staffArea = staffArea;
   }
 
   public RosterImportColorMappingInput rawCode(String rawCode) {
@@ -130,22 +107,20 @@ public class RosterImportColorMappingInput {
       return false;
     }
     RosterImportColorMappingInput rosterImportColorMappingInput = (RosterImportColorMappingInput) o;
-    return Objects.equals(this.staffArea, rosterImportColorMappingInput.staffArea) &&
-        Objects.equals(this.rawCode, rosterImportColorMappingInput.rawCode) &&
+    return Objects.equals(this.rawCode, rosterImportColorMappingInput.rawCode) &&
         Objects.equals(this.fillColor, rosterImportColorMappingInput.fillColor) &&
         Objects.equals(this.shiftCodeId, rosterImportColorMappingInput.shiftCodeId);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(staffArea, rawCode, fillColor, shiftCodeId);
+    return Objects.hash(rawCode, fillColor, shiftCodeId);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class RosterImportColorMappingInput {\n");
-    sb.append("    staffArea: ").append(toIndentedString(staffArea)).append("\n");
     sb.append("    rawCode: ").append(toIndentedString(rawCode)).append("\n");
     sb.append("    fillColor: ").append(toIndentedString(fillColor)).append("\n");
     sb.append("    shiftCodeId: ").append(toIndentedString(shiftCodeId)).append("\n");

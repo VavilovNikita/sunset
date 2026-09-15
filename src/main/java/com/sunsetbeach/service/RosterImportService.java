@@ -67,16 +67,19 @@ import org.springframework.web.multipart.MultipartFile;
  * surfaces in {@code RosterImportPreview#names} with {@code mapped: false} until a person resolves
  * it.
  *
- * <p><b>The "9" ambiguity resolves through the same kind of remembered mapping, not a hardcoded
- * substitution.</b> {@code ShiftCode} has no colour concept, and two rows can never share {@code
- * (staffArea, code)} at once (V57's own unique index) - so whichever {@code ShiftCode} the
- * "other" colour of "9" actually means, in a given area, necessarily has a different {@code code}
- * string that this importer has no way to know ahead of time. {@link #createColorMapping} records
- * that string (not a {@code ShiftCode} id - see {@code RosterImportShiftColorMappingEntity}'s own
- * javadoc) once per {@code (staffArea, fillColor)}, and validates at that moment - not later, on
- * every future resolution - that the chosen {@code ShiftCode}'s own shape (a single interval or
- * two) actually matches what the colour means, so a wrong pick is refused immediately rather than
- * silently importing the wrong hours.
+ * <p><b>The "9" ambiguity resolves through a remembered mapping, not a hardcoded substitution -
+ * and not one scoped by area.</b> Which code text a colour means is the same fact everywhere in
+ * this file (confirmed against the hotel's own legend, which lists exactly two "9" entries, not
+ * one pair per department, and against how the codes were actually set up) - {@link
+ * #createColorMapping} records it once per {@code (rawCode, fillColor)}, full stop. What *is*
+ * resolved per area, separately, at read time, is which actual {@code ShiftCode} row that code
+ * text points to for a given cell ({@link ShiftCodeService#resolveActive}) - conflating that
+ * area-scoped lookup with the colour-to-text mapping itself was an earlier mistake here (see
+ * V81__roster_import_color_mapping_global.sql's own comment), not a fact about the file.
+ * {@link #createColorMapping} validates, at mapping time - not later, on every future resolution -
+ * that the chosen {@code ShiftCode}'s own shape (a single interval or two) actually matches what
+ * the colour means, so a wrong pick is refused immediately rather than silently importing the
+ * wrong hours.
  *
  * <p><b>Existing entries are never overwritten.</b> A cell whose {@code (employee, date)} already
  * has a {@code RosterEntry} is skipped and reported as a {@link RosterImportCollision}, exactly
@@ -182,9 +185,6 @@ public class RosterImportService {
     public RosterImportColorMappingResult createColorMapping(RosterImportColorMappingInput input, String actorUserId) {
         ShiftCodeEntity shiftCode =
                 shiftCodeRepository.findById(input.getShiftCodeId()).orElseThrow(() -> new NotFoundException("Shift code not found"));
-        if (shiftCode.getStaffArea() != null && shiftCode.getStaffArea() != input.getStaffArea()) {
-            throw new BadRequestException("This shift code belongs to a different area (" + shiftCode.getStaffArea().getValue() + ")");
-        }
         boolean isSplit = shiftCode.getStartTime2() != null;
         boolean expectSplit = input.getFillColor() == FillColor.BLUE;
         if (isSplit != expectSplit) {
@@ -195,16 +195,15 @@ public class RosterImportService {
         }
 
         RosterImportShiftColorMappingEntity mapping = colorMappingRepository
-                .findByStaffAreaAndRawCodeAndFillColor(input.getStaffArea(), input.getRawCode(), input.getFillColor())
+                .findByRawCodeAndFillColor(input.getRawCode(), input.getFillColor())
                 .orElseGet(RosterImportShiftColorMappingEntity::new);
-        mapping.setStaffArea(input.getStaffArea());
         mapping.setRawCode(input.getRawCode());
         mapping.setFillColor(input.getFillColor());
         mapping.setResolvedCode(shiftCode.getCode());
         mapping.setCreatedByUserId(actorUserId);
         colorMappingRepository.saveAndFlush(mapping);
 
-        return new RosterImportColorMappingResult(input.getStaffArea(), input.getRawCode(), input.getFillColor(), shiftCode.getCode());
+        return new RosterImportColorMappingResult(input.getRawCode(), input.getFillColor(), shiftCode.getCode());
     }
 
     @Transactional
@@ -302,7 +301,6 @@ public class RosterImportService {
     private static final class CodeStatus {
         String rawCode;
         FillColor fillColor;
-        StaffArea staffArea;
         long occurrences;
         boolean resolved;
         String shiftCodeDescription;
@@ -334,28 +332,23 @@ public class RosterImportService {
                 }
             }
 
-            // A "9" is grouped per staffArea too, not just text+colour - which ShiftCode it means
-            // is resolved per area (see RosterImportShiftColorMapping's own uniqueness), and real
-            // data shows one area can genuinely need both colours (Kitchen does) - see this
-            // class's own javadoc. Every other code stays grouped by text alone.
-            String codeKey = cell.rawCode() + "|" + cell.fillColor() + (cell.fillColor() != null ? "|" + cell.staffArea() : "");
+            // Grouped by text alone (plus colour for "9") - never by area. Which code text a
+            // colour means is the same fact everywhere in the file; see this class's own javadoc
+            // for why area belongs to the separate ShiftCode lookup below, not to this key.
+            String codeKey = cell.rawCode() + "|" + cell.fillColor();
             CodeStatus codeStatus = resolution.codesByKey.computeIfAbsent(codeKey, k -> {
                 CodeStatus s = new CodeStatus();
                 s.rawCode = cell.rawCode();
                 s.fillColor = cell.fillColor();
-                if (cell.fillColor() != null) {
-                    s.staffArea = cell.staffArea();
-                }
                 return s;
             });
             codeStatus.occurrences++;
 
             String effectiveCode;
             if (cell.fillColor() != null) {
-                String colorCacheKey = cell.staffArea() + "|" + cell.rawCode() + "|" + cell.fillColor();
+                String colorCacheKey = cell.rawCode() + "|" + cell.fillColor();
                 RosterImportShiftColorMappingEntity mapping = colorLookupCache
-                        .computeIfAbsent(colorCacheKey, k -> colorMappingRepository.findByStaffAreaAndRawCodeAndFillColor(
-                                cell.staffArea(), cell.rawCode(), cell.fillColor()))
+                        .computeIfAbsent(colorCacheKey, k -> colorMappingRepository.findByRawCodeAndFillColor(cell.rawCode(), cell.fillColor()))
                         .orElse(null);
                 if (mapping == null) {
                     continue; // awaiting POST /roster/import/color-mappings - not an issue, see this class's own javadoc
@@ -439,9 +432,6 @@ public class RosterImportService {
                     RosterImportCodeEntry dto = new RosterImportCodeEntry(s.rawCode, (int) s.occurrences, s.resolved);
                     if (s.fillColor != null) {
                         dto.setFillColor(org.openapitools.jackson.nullable.JsonNullable.of(s.fillColor));
-                    }
-                    if (s.staffArea != null) {
-                        dto.setStaffArea(org.openapitools.jackson.nullable.JsonNullable.of(s.staffArea));
                     }
                     if (s.shiftCodeDescription != null) {
                         dto.setShiftCodeDescription(org.openapitools.jackson.nullable.JsonNullable.of(s.shiftCodeDescription));

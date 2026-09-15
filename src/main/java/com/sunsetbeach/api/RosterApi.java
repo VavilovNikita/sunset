@@ -219,7 +219,7 @@ public interface RosterApi {
 
     /**
      * POST /roster/import/color-mappings : Resolve one ambiguous \&quot;9\&quot; found in a schedule import
-     * Requires ADMIN. Records which &#x60;ShiftCode&#x60; a given &#x60;(staffArea, rawCode, fillColor)&#x60; actually means, by the &#x60;ShiftCode&#x60;&#39;s own &#x60;code&#x60; string - remembered from then on, and re-resolved fresh against whatever&#39;s active for that area/code on every later import, so a later edit to that &#x60;ShiftCode&#x60;&#39;s hours (a new version - see &#x60;ShiftCode&#x60;&#39;s own description) is picked up automatically rather than silently invalidating this mapping. 
+     * Requires ADMIN. Records which &#x60;ShiftCode&#x60; a given &#x60;(rawCode, fillColor)&#x60; means, by the &#x60;ShiftCode&#x60;&#39;s own &#x60;code&#x60; string - not scoped to an area, since which code text a colour means is the same fact everywhere in the file. Remembered from then on, and re-resolved fresh (per the area each individual cell actually belongs to) against whatever&#39;s active for that code on every later import, so a later edit to that &#x60;ShiftCode&#x60;&#39;s hours (a new version - see &#x60;ShiftCode&#x60;&#39;s own description) is picked up automatically rather than silently invalidating this mapping. 
      *
      * @param rosterImportColorMappingInput  (required)
      * @return The resulting mapping. (status code 200)
@@ -241,7 +241,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"staffArea\" : \"ADMIN\", \"fillColor\" : \"YELLOW\", \"rawCode\" : \"rawCode\", \"resolvedCode\" : \"resolvedCode\" }";
+                    String exampleString = "{ \"fillColor\" : \"YELLOW\", \"rawCode\" : \"rawCode\", \"resolvedCode\" : \"resolvedCode\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -972,7 +972,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"codes\" : [ { \"fillColor\" : \"\", \"staffArea\" : \"\", \"occurrences\" : 5, \"rawCode\" : \"rawCode\", \"resolved\" : true, \"shiftCodeDescription\" : \"shiftCodeDescription\" }, { \"fillColor\" : \"\", \"staffArea\" : \"\", \"occurrences\" : 5, \"rawCode\" : \"rawCode\", \"resolved\" : true, \"shiftCodeDescription\" : \"shiftCodeDescription\" } ], \"importId\" : \"importId\", \"names\" : [ { \"occurrences\" : 1, \"employeeName\" : \"employeeName\", \"suggestedStaffArea\" : \"\", \"mapped\" : true, \"rawName\" : \"rawName\", \"employeeUserId\" : \"employeeUserId\" }, { \"occurrences\" : 1, \"employeeName\" : \"employeeName\", \"suggestedStaffArea\" : \"\", \"mapped\" : true, \"rawName\" : \"rawName\", \"employeeUserId\" : \"employeeUserId\" } ], \"month\" : 6, \"collisions\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"newShiftCodeDescription\" : \"newShiftCodeDescription\", \"existingShiftCodeDescription\" : \"existingShiftCodeDescription\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"newShiftCodeDescription\" : \"newShiftCodeDescription\", \"existingShiftCodeDescription\" : \"existingShiftCodeDescription\" } ], \"year\" : 0, \"entriesToCreate\" : 5, \"issues\" : [ { \"cellRef\" : \"cellRef\", \"message\" : \"message\" }, { \"cellRef\" : \"cellRef\", \"message\" : \"message\" } ], \"canCommit\" : true }";
+                    String exampleString = "{ \"codes\" : [ { \"fillColor\" : \"\", \"occurrences\" : 5, \"rawCode\" : \"rawCode\", \"resolved\" : true, \"shiftCodeDescription\" : \"shiftCodeDescription\" }, { \"fillColor\" : \"\", \"occurrences\" : 5, \"rawCode\" : \"rawCode\", \"resolved\" : true, \"shiftCodeDescription\" : \"shiftCodeDescription\" } ], \"importId\" : \"importId\", \"names\" : [ { \"occurrences\" : 1, \"employeeName\" : \"employeeName\", \"suggestedStaffArea\" : \"\", \"mapped\" : true, \"rawName\" : \"rawName\", \"employeeUserId\" : \"employeeUserId\" }, { \"occurrences\" : 1, \"employeeName\" : \"employeeName\", \"suggestedStaffArea\" : \"\", \"mapped\" : true, \"rawName\" : \"rawName\", \"employeeUserId\" : \"employeeUserId\" } ], \"month\" : 6, \"collisions\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"newShiftCodeDescription\" : \"newShiftCodeDescription\", \"existingShiftCodeDescription\" : \"existingShiftCodeDescription\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"newShiftCodeDescription\" : \"newShiftCodeDescription\", \"existingShiftCodeDescription\" : \"existingShiftCodeDescription\" } ], \"year\" : 0, \"entriesToCreate\" : 5, \"issues\" : [ { \"cellRef\" : \"cellRef\", \"message\" : \"message\" }, { \"cellRef\" : \"cellRef\", \"message\" : \"message\" } ], \"canCommit\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

@@ -6515,11 +6515,13 @@ paths:
       tags: [Roster]
       summary: Resolve one ambiguous "9" found in a schedule import
       description: >
-        Requires ADMIN. Records which `ShiftCode` a given `(staffArea, rawCode, fillColor)`
-        actually means, by the `ShiftCode`'s own `code` string - remembered from then on, and
-        re-resolved fresh against whatever's active for that area/code on every later import, so a
-        later edit to that `ShiftCode`'s hours (a new version - see `ShiftCode`'s own description)
-        is picked up automatically rather than silently invalidating this mapping.
+        Requires ADMIN. Records which `ShiftCode` a given `(rawCode, fillColor)` means, by the
+        `ShiftCode`'s own `code` string - not scoped to an area, since which code text a colour
+        means is the same fact everywhere in the file. Remembered from then on, and re-resolved
+        fresh (per the area each individual cell actually belongs to) against whatever's active
+        for that code on every later import, so a later edit to that `ShiftCode`'s hours (a new
+        version - see `ShiftCode`'s own description) is picked up automatically rather than
+        silently invalidating this mapping.
       requestBody:
         required: true
         content:
@@ -10292,14 +10294,12 @@ components:
     RosterImportCodeEntry:
       type: object
       description: >
-        One distinct code found in the sheet, and how it currently resolves to a `ShiftCode`. The
-        ambiguous "9" is grouped by `(staffArea, fillColor)`, not just text, because which
-        `ShiftCode` it means is resolved per area - real data confirms this matters: the same
-        area can use both colours of "9" (Kitchen does, in different rows or even the same
-        person's different days), so a single global "9" entry would hide that more than one
-        `(area, colour)` mapping is actually needed. Every other code is grouped by text alone,
-        since a person only ever needs to *see* a per-area difference in hours here, never to act
-        on one through this endpoint.
+        One distinct code found in the sheet, and how it currently resolves to a `ShiftCode`.
+        Grouped by text alone (plus `fillColor` for the ambiguous "9") - never by area. Which
+        `ShiftCode` a code text actually means for a given cell is resolved separately, per area,
+        at commit time (`ShiftCodeService#resolveActive`); what this entry reports is the one fact
+        that's the same everywhere in the file - "9" means exactly two things, told apart by
+        colour, not one pair per department.
       required: [rawCode, occurrences, resolved]
       properties:
         rawCode:
@@ -10309,11 +10309,6 @@ components:
             - $ref: "#/components/schemas/FillColor"
           nullable: true
           description: Set only for the ambiguous "9" - see `FillColor`'s own description. Every other code is read by text alone.
-        staffArea:
-          allOf:
-            - $ref: "#/components/schemas/StaffArea"
-          nullable: true
-          description: Set only alongside `fillColor` - the area this specific "9"/colour combination was found in, needed to call `POST /roster/import/color-mappings`.
         occurrences:
           type: integer
         resolved:
@@ -10420,11 +10415,13 @@ components:
 
     RosterImportColorMappingInput:
       type: object
-      description: Body of `POST /roster/import/color-mappings`. `shiftCodeId` must be an already-existing, active `ShiftCode` for `staffArea`.
-      required: [staffArea, rawCode, fillColor, shiftCodeId]
+      description: >
+        Body of `POST /roster/import/color-mappings`. Not scoped to an area - which code text a
+        colour means is the same fact everywhere in the file (see `RosterImportShiftColorMapping`'s
+        own description on the backend); `shiftCodeId` just needs to be an already-existing,
+        active `ShiftCode` whose own shape (single interval or two) actually matches `fillColor`.
+      required: [rawCode, fillColor, shiftCodeId]
       properties:
-        staffArea:
-          $ref: "#/components/schemas/StaffArea"
         rawCode:
           type: string
         fillColor:
@@ -10434,10 +10431,8 @@ components:
 
     RosterImportColorMappingResult:
       type: object
-      required: [staffArea, rawCode, fillColor, resolvedCode]
+      required: [rawCode, fillColor, resolvedCode]
       properties:
-        staffArea:
-          $ref: "#/components/schemas/StaffArea"
         rawCode:
           type: string
         fillColor:

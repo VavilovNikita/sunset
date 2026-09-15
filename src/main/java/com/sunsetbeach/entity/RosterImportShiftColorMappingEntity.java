@@ -1,7 +1,6 @@
 package com.sunsetbeach.entity;
 
 import com.sunsetbeach.model.FillColor;
-import com.sunsetbeach.model.StaffArea;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -14,9 +13,14 @@ import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Which actual {@code ShiftCode} a given {@code (staffArea, rawCode, fillColor)} means - see
- * V78__roster_import_mappings.sql's own comment for why a code string, not a specific {@code
- * ShiftCode} id, is what gets remembered.
+ * Which actual {@code ShiftCode} code string a given {@code (rawCode, fillColor)} means - not
+ * scoped by area. See V81__roster_import_color_mapping_global.sql's own comment for why: the
+ * {@code ShiftCode} a code text resolves to is already area-scoped separately, at read time, by
+ * {@code ShiftCodeService#resolveActive(staffArea, code)} - what this table remembers is only
+ * which code text a colour means, and that's the same fact everywhere in this file, not one fact
+ * per department. {@code resolvedCode} (not a {@code ShiftCode} id) is what's remembered, so a
+ * later edit that retires and replaces that {@code ShiftCode} row (see V57's own versioning)
+ * doesn't silently invalidate the mapping.
  */
 @Entity
 @Table(name = "RosterImportShiftColorMapping")
@@ -25,10 +29,6 @@ public class RosterImportShiftColorMappingEntity {
     @Id
     @UuidGenerator
     private String id;
-
-    @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    private StaffArea staffArea;
 
     private String rawCode;
 
@@ -45,14 +45,6 @@ public class RosterImportShiftColorMappingEntity {
 
     public String getId() {
         return id;
-    }
-
-    public StaffArea getStaffArea() {
-        return staffArea;
-    }
-
-    public void setStaffArea(StaffArea staffArea) {
-        this.staffArea = staffArea;
     }
 
     public String getRawCode() {

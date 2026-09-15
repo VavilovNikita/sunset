@@ -6,7 +6,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.FillColor;
-import com.sunsetbeach.model.StaffArea;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -23,8 +22,6 @@ import jakarta.annotation.Generated;
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class RosterImportColorMappingResult {
 
-  private StaffArea staffArea;
-
   private String rawCode;
 
   private FillColor fillColor;
@@ -38,30 +35,10 @@ public class RosterImportColorMappingResult {
   /**
    * Constructor with only required parameters
    */
-  public RosterImportColorMappingResult(StaffArea staffArea, String rawCode, FillColor fillColor, String resolvedCode) {
-    this.staffArea = staffArea;
+  public RosterImportColorMappingResult(String rawCode, FillColor fillColor, String resolvedCode) {
     this.rawCode = rawCode;
     this.fillColor = fillColor;
     this.resolvedCode = resolvedCode;
-  }
-
-  public RosterImportColorMappingResult staffArea(StaffArea staffArea) {
-    this.staffArea = staffArea;
-    return this;
-  }
-
-  /**
-   * Get staffArea
-   * @return staffArea
-   */
-  @NotNull @Valid 
-  @JsonProperty("staffArea")
-  public StaffArea getStaffArea() {
-    return staffArea;
-  }
-
-  public void setStaffArea(StaffArea staffArea) {
-    this.staffArea = staffArea;
   }
 
   public RosterImportColorMappingResult rawCode(String rawCode) {
@@ -130,22 +107,20 @@ public class RosterImportColorMappingResult {
       return false;
     }
     RosterImportColorMappingResult rosterImportColorMappingResult = (RosterImportColorMappingResult) o;
-    return Objects.equals(this.staffArea, rosterImportColorMappingResult.staffArea) &&
-        Objects.equals(this.rawCode, rosterImportColorMappingResult.rawCode) &&
+    return Objects.equals(this.rawCode, rosterImportColorMappingResult.rawCode) &&
         Objects.equals(this.fillColor, rosterImportColorMappingResult.fillColor) &&
         Objects.equals(this.resolvedCode, rosterImportColorMappingResult.resolvedCode);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(staffArea, rawCode, fillColor, resolvedCode);
+    return Objects.hash(rawCode, fillColor, resolvedCode);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class RosterImportColorMappingResult {\n");
-    sb.append("    staffArea: ").append(toIndentedString(staffArea)).append("\n");
     sb.append("    rawCode: ").append(toIndentedString(rawCode)).append("\n");
     sb.append("    fillColor: ").append(toIndentedString(fillColor)).append("\n");
     sb.append("    resolvedCode: ").append(toIndentedString(resolvedCode)).append("\n");

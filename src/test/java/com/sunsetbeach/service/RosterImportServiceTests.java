@@ -157,17 +157,16 @@ class RosterImportServiceTests extends AbstractIntegrationTest {
         assertThat(preview.getCodes()).anySatisfy(c -> {
             assertThat(c.getRawCode()).isEqualTo("9");
             assertThat(c.getFillColor().get()).isEqualTo(FillColor.YELLOW);
-            assertThat(c.getStaffArea().get()).isEqualTo(StaffArea.FRONT_OFFICE);
             assertThat(c.getResolved()).isFalse();
         });
         assertThat(preview.getCodes()).anySatisfy(c -> {
             assertThat(c.getRawCode()).isEqualTo("9");
             assertThat(c.getFillColor().get()).isEqualTo(FillColor.BLUE);
-            assertThat(c.getStaffArea().get()).isEqualTo(StaffArea.KITCHEN);
             assertThat(c.getResolved()).isFalse();
         });
-        // Two separate "9" entries above, not merged into one - a single global "9" summary would
-        // hide that Front Office's yellow and Kitchen's blue are two different mappings to make.
+        // Two entries here because the two cells are different *colours* (Alice's yellow, Bob's
+        // blue) - not because they're in different departments. Grouping is by (rawCode,
+        // fillColor) only; see fullFlow_... below for the case that actually tests area-independence.
         assertThat(preview.getCodes().stream().filter(c -> c.getRawCode().equals("9")).count()).isEqualTo(2);
         assertThat(preview.getEntriesToCreate()).isEqualTo(0);
         assertThat(preview.getCanCommit()).isFalse();
@@ -177,14 +176,50 @@ class RosterImportServiceTests extends AbstractIntegrationTest {
     void colorMapping_shapeMismatch_isRejectedAtMappingTime() throws IOException {
         // A single-interval shift code offered for the YELLOW (single-shift) colour is fine...
         ShiftCode singleShift = createCode(StaffArea.FRONT_OFFICE, "9", true, "09:00", "18:00", null, null);
-        rosterImportService.createColorMapping(
-                new RosterImportColorMappingInput(StaffArea.FRONT_OFFICE, "9", FillColor.YELLOW, singleShift.getId()), admin.getId());
+        rosterImportService.createColorMapping(new RosterImportColorMappingInput("9", FillColor.YELLOW, singleShift.getId()), admin.getId());
 
         // ...but offering that same single-interval code for BLUE (which means split) must be refused, not silently accepted.
         assertThatThrownBy(() -> rosterImportService.createColorMapping(
-                new RosterImportColorMappingInput(StaffArea.FRONT_OFFICE, "9", FillColor.BLUE, singleShift.getId()), admin.getId()))
+                new RosterImportColorMappingInput("9", FillColor.BLUE, singleShift.getId()), admin.getId()))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("split");
+    }
+
+    /**
+     * The whole point of keying this mapping globally: a colour is resolved once and serves every
+     * department, not once per department. Two different areas both use the yellow "9" here - a
+     * single mapping (against a shared ShiftCode, so both areas' own resolveActive lookups find
+     * it) is enough for both to come back resolved, and neither name needs a second colour
+     * mapping created for it.
+     */
+    @Test
+    void colorMapping_resolvesAcrossDifferentAreasFromOneMapping() throws IOException {
+        ShiftCode sharedSingleNine = createCode(null, "9", true, "09:00", "18:00", null, null);
+        InputStream in = new ScheduleWorkbookBuilder("Jan26", 1)
+                .department("Front Office")
+                .person("Carol", "9")
+                .nineFill("Carol", 0, true)
+                .department("Admin")
+                .person("Dave", "9")
+                .nineFill("Dave", 0, true)
+                .stopMarker()
+                .build();
+        MockMultipartFile file = new MockMultipartFile("file", "schedule.xlsx", "application/vnd.openxmlformats", in.readAllBytes());
+        UserEntity carol = createUser(Role.WAITER);
+        UserEntity dave = createUser(Role.WAITER);
+        rosterImportService.createNameMapping(new RosterImportNameMappingInput("Carol").employeeUserId(carol.getId()), admin.getId());
+        rosterImportService.createNameMapping(new RosterImportNameMappingInput("Dave").employeeUserId(dave.getId()), admin.getId());
+
+        // One mapping call, made with Front Office's own shift code in mind...
+        rosterImportService.createColorMapping(new RosterImportColorMappingInput("9", FillColor.YELLOW, sharedSingleNine.getId()), admin.getId());
+
+        // ...and Admin's identically-coloured "9" is already resolved too, no second call needed.
+        RosterImportPreview preview = rosterImportService.preview(file, 2026, 1);
+        assertThat(preview.getCodes()).hasSize(1);
+        assertThat(preview.getCodes().get(0).getResolved()).isTrue();
+        assertThat(preview.getCodes().get(0).getOccurrences()).isEqualTo(2);
+        assertThat(preview.getCanCommit()).isTrue();
+        assertThat(preview.getEntriesToCreate()).isEqualTo(2);
     }
 
     @Test
@@ -200,10 +235,8 @@ class RosterImportServiceTests extends AbstractIntegrationTest {
         rosterImportService.createNameMapping(new RosterImportNameMappingInput("Alice").employeeUserId(existingAlice.getId()), admin.getId());
         var bobMapping = rosterImportService.createNameMapping(new RosterImportNameMappingInput("Bob").newEmployeeName("Bob Created On The Spot"), admin.getId());
         createdUserIds.add(bobMapping.getEmployeeUserId());
-        rosterImportService.createColorMapping(
-                new RosterImportColorMappingInput(StaffArea.FRONT_OFFICE, "9", FillColor.YELLOW, frontOfficeNine.getId()), admin.getId());
-        rosterImportService.createColorMapping(
-                new RosterImportColorMappingInput(StaffArea.KITCHEN, "9", FillColor.BLUE, kitchenSplitNine.getId()), admin.getId());
+        rosterImportService.createColorMapping(new RosterImportColorMappingInput("9", FillColor.YELLOW, frontOfficeNine.getId()), admin.getId());
+        rosterImportService.createColorMapping(new RosterImportColorMappingInput("9", FillColor.BLUE, kitchenSplitNine.getId()), admin.getId());
 
         RosterImportPreview resolvedPreview = rosterImportService.preview(syntheticFile(), 2026, 1);
         assertThat(resolvedPreview.getCanCommit()).isTrue();

@@ -6,7 +6,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.FillColor;
-import com.sunsetbeach.model.StaffArea;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.util.NoSuchElementException;
@@ -20,7 +19,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * One distinct code found in the sheet, and how it currently resolves to a &#x60;ShiftCode&#x60;. The ambiguous \&quot;9\&quot; is grouped by &#x60;(staffArea, fillColor)&#x60;, not just text, because which &#x60;ShiftCode&#x60; it means is resolved per area - real data confirms this matters: the same area can use both colours of \&quot;9\&quot; (Kitchen does, in different rows or even the same person&#39;s different days), so a single global \&quot;9\&quot; entry would hide that more than one &#x60;(area, colour)&#x60; mapping is actually needed. Every other code is grouped by text alone, since a person only ever needs to *see* a per-area difference in hours here, never to act on one through this endpoint. 
+ * One distinct code found in the sheet, and how it currently resolves to a &#x60;ShiftCode&#x60;. Grouped by text alone (plus &#x60;fillColor&#x60; for the ambiguous \&quot;9\&quot;) - never by area. Which &#x60;ShiftCode&#x60; a code text actually means for a given cell is resolved separately, per area, at commit time (&#x60;ShiftCodeService#resolveActive&#x60;); what this entry reports is the one fact that&#39;s the same everywhere in the file - \&quot;9\&quot; means exactly two things, told apart by colour, not one pair per department. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -29,8 +28,6 @@ public class RosterImportCodeEntry {
   private String rawCode;
 
   private JsonNullable<FillColor> fillColor = JsonNullable.<FillColor>undefined();
-
-  private JsonNullable<StaffArea> staffArea = JsonNullable.<StaffArea>undefined();
 
   private Integer occurrences;
 
@@ -87,25 +84,6 @@ public class RosterImportCodeEntry {
 
   public void setFillColor(JsonNullable<FillColor> fillColor) {
     this.fillColor = fillColor;
-  }
-
-  public RosterImportCodeEntry staffArea(StaffArea staffArea) {
-    this.staffArea = JsonNullable.of(staffArea);
-    return this;
-  }
-
-  /**
-   * Set only alongside `fillColor` - the area this specific \"9\"/colour combination was found in, needed to call `POST /roster/import/color-mappings`.
-   * @return staffArea
-   */
-  @Valid 
-  @JsonProperty("staffArea")
-  public JsonNullable<StaffArea> getStaffArea() {
-    return staffArea;
-  }
-
-  public void setStaffArea(JsonNullable<StaffArea> staffArea) {
-    this.staffArea = staffArea;
   }
 
   public RosterImportCodeEntry occurrences(Integer occurrences) {
@@ -176,7 +154,6 @@ public class RosterImportCodeEntry {
     RosterImportCodeEntry rosterImportCodeEntry = (RosterImportCodeEntry) o;
     return Objects.equals(this.rawCode, rosterImportCodeEntry.rawCode) &&
         equalsNullable(this.fillColor, rosterImportCodeEntry.fillColor) &&
-        equalsNullable(this.staffArea, rosterImportCodeEntry.staffArea) &&
         Objects.equals(this.occurrences, rosterImportCodeEntry.occurrences) &&
         Objects.equals(this.resolved, rosterImportCodeEntry.resolved) &&
         equalsNullable(this.shiftCodeDescription, rosterImportCodeEntry.shiftCodeDescription);
@@ -188,7 +165,7 @@ public class RosterImportCodeEntry {
 
   @Override
   public int hashCode() {
-    return Objects.hash(rawCode, hashCodeNullable(fillColor), hashCodeNullable(staffArea), occurrences, resolved, hashCodeNullable(shiftCodeDescription));
+    return Objects.hash(rawCode, hashCodeNullable(fillColor), occurrences, resolved, hashCodeNullable(shiftCodeDescription));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -204,7 +181,6 @@ public class RosterImportCodeEntry {
     sb.append("class RosterImportCodeEntry {\n");
     sb.append("    rawCode: ").append(toIndentedString(rawCode)).append("\n");
     sb.append("    fillColor: ").append(toIndentedString(fillColor)).append("\n");
-    sb.append("    staffArea: ").append(toIndentedString(staffArea)).append("\n");
     sb.append("    occurrences: ").append(toIndentedString(occurrences)).append("\n");
     sb.append("    resolved: ").append(toIndentedString(resolved)).append("\n");
     sb.append("    shiftCodeDescription: ").append(toIndentedString(shiftCodeDescription)).append("\n");
