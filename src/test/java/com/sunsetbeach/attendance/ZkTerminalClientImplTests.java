@@ -38,6 +38,10 @@ class ZkTerminalClientImplTests {
         return ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(encoded).array();
     }
 
+    private static int encodeTimeAsInt(LocalDateTime t) {
+        return ByteBuffer.wrap(encodeTime(t)).order(ByteOrder.LITTLE_ENDIAN).getInt();
+    }
+
     private static byte[] sixteenByteRecord(int enrollmentNumber, LocalDateTime timestamp, int punchCode) {
         ByteBuffer buf = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN);
         buf.putInt(enrollmentNumber);
@@ -69,12 +73,13 @@ class ZkTerminalClientImplTests {
         byte[] records = sixteenByteRecord(123, timestamp, 0);
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 1, false)) {
             server.start();
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()));
+            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
 
-            assertThat(punches).hasSize(1);
-            assertThat(punches.get(0).enrollmentNumber()).isEqualTo(123);
-            assertThat(punches.get(0).deviceTimestamp()).isEqualTo(timestamp);
-            assertThat(punches.get(0).direction()).isEqualTo(PunchDirection.IN);
+            assertThat(result.punches()).hasSize(1);
+            assertThat(result.punches().get(0).enrollmentNumber()).isEqualTo(123);
+            assertThat(result.punches().get(0).deviceTimestamp()).isEqualTo(timestamp);
+            assertThat(result.punches().get(0).direction()).isEqualTo(PunchDirection.IN);
+            assertThat(result.recordSize()).isEqualTo(16);
             assertThat(server.receivedCommands()).containsExactly(1000, 50, 1503, 202, 1001);
         }
     }
@@ -85,11 +90,12 @@ class ZkTerminalClientImplTests {
         byte[] records = fortyByteRecord("456", timestamp, 1);
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 1, false)) {
             server.start();
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()));
+            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
 
-            assertThat(punches).hasSize(1);
-            assertThat(punches.get(0).enrollmentNumber()).isEqualTo(456);
-            assertThat(punches.get(0).direction()).isEqualTo(PunchDirection.OUT);
+            assertThat(result.punches()).hasSize(1);
+            assertThat(result.punches().get(0).enrollmentNumber()).isEqualTo(456);
+            assertThat(result.punches().get(0).direction()).isEqualTo(PunchDirection.OUT);
+            assertThat(result.recordSize()).isEqualTo(40);
         }
     }
 
@@ -100,7 +106,7 @@ class ZkTerminalClientImplTests {
         byte[] records = concat(sixteenByteRecord(1, in, 0), sixteenByteRecord(1, out, 1));
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 2, false)) {
             server.start();
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()));
+            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null).punches();
 
             assertThat(punches).hasSize(2);
             assertThat(punches.get(0).direction()).isEqualTo(PunchDirection.IN);
@@ -115,7 +121,7 @@ class ZkTerminalClientImplTests {
         byte[] records = concat(sixteenByteRecord(1, timestamp, 4), sixteenByteRecord(2, timestamp, 0));
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 2, false)) {
             server.start();
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()));
+            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null).punches();
 
             assertThat(punches).hasSize(1);
             assertThat(punches.get(0).enrollmentNumber()).isEqualTo(2);
@@ -129,7 +135,7 @@ class ZkTerminalClientImplTests {
         byte[] records = fortyByteRecord("not-a-number", timestamp, 0);
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 1, false)) {
             server.start();
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()));
+            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null).punches();
 
             assertThat(punches).isEmpty();
         }
@@ -140,7 +146,7 @@ class ZkTerminalClientImplTests {
         byte[] garbage = new byte[24]; // matches none of the three known layouts (8/16/40)
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(garbage, 1, false)) {
             server.start();
-            assertThatThrownBy(() -> new ZkTerminalClientImpl().poll(deviceAt(server.port())))
+            assertThatThrownBy(() -> new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null))
                     .isInstanceOf(AttendanceDeviceException.class)
                     .hasMessageContaining("Unrecognised attendance record size");
         }
@@ -156,7 +162,7 @@ class ZkTerminalClientImplTests {
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 3, true)) {
             server.start();
             // A tiny max chunk forces several CMD_READ_BUFFER round trips for 3*16=48 bytes of records.
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl(10).poll(deviceAt(server.port()));
+            List<RawAttendancePunch> punches = new ZkTerminalClientImpl(10).poll(deviceAt(server.port()), null, null).punches();
 
             assertThat(punches).hasSize(3);
             assertThat(punches.get(2).deviceTimestamp()).isEqualTo(t3);
@@ -172,7 +178,7 @@ class ZkTerminalClientImplTests {
             server.start();
             LocalDateTime before = LocalDateTime.now().minusMinutes(1);
 
-            new ZkTerminalClientImpl().poll(deviceAt(server.port()));
+            new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
 
             assertThat(server.lastSetTimeData()).isNotNull();
             int encoded = ByteBuffer.wrap(server.lastSetTimeData()).order(ByteOrder.LITTLE_ENDIAN).getInt();
@@ -187,9 +193,9 @@ class ZkTerminalClientImplTests {
     void poll_noRecordsAtAll_returnsEmptyWithoutReadingTheLog() throws Exception {
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(new byte[0], 0, false)) {
             server.start();
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()));
+            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
 
-            assertThat(punches).isEmpty();
+            assertThat(result.punches()).isEmpty();
             // recordCount 0 - the client should skip straight past PREPARE_BUFFER/ATTLOG entirely.
             assertThat(server.receivedCommands()).containsExactly(1000, 50, 202, 1001);
         }
@@ -200,7 +206,74 @@ class ZkTerminalClientImplTests {
         AttendanceDeviceEntity device = deviceAt(1); // nothing listens on port 1
         device.setAddress("127.0.0.1");
 
-        assertThatThrownBy(() -> new ZkTerminalClientImpl().poll(device)).isInstanceOf(AttendanceDeviceException.class);
+        assertThatThrownBy(() -> new ZkTerminalClientImpl().poll(device, null, null)).isInstanceOf(AttendanceDeviceException.class);
+    }
+
+    /**
+     * The heart of the windowed-read feature: when a device honors CMD_ATTLOG_TIME_RRQ, the
+     * client sends the encoded since/until times in the PREPARE_BUFFER payload and parses the
+     * response using the *passed-in* record size, not one re-derived from CMD_GET_FREE_SIZES'
+     * total count (which would be wrong for a subset - see ZkTerminalClientImpl's own javadoc).
+     * The full-log record set is deliberately different from the ranged one, so a passing test
+     * proves the ranged path actually ran, not that it silently fell back to the full log.
+     */
+    @Test
+    void poll_windowedRead_sendsRangedCommandAndParsesWithKnownRecordSize() throws Exception {
+        LocalDateTime fullLogPunch = LocalDateTime.of(2027, 8, 1, 9, 0, 0);
+        LocalDateTime windowedPunch = LocalDateTime.of(2027, 8, 20, 14, 30, 0);
+        byte[] fullLogRecords = sixteenByteRecord(1, fullLogPunch, 0);
+        byte[] rangedRecords = sixteenByteRecord(2, windowedPunch, 1);
+        LocalDateTime since = LocalDateTime.of(2027, 8, 20, 8, 0, 0);
+
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(fullLogRecords, 1, false).withRangedRecords(rangedRecords)) {
+            server.start();
+            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), since, 16);
+
+            assertThat(result.punches()).hasSize(1);
+            assertThat(result.punches().get(0).enrollmentNumber()).isEqualTo(2);
+            assertThat(result.punches().get(0).deviceTimestamp()).isEqualTo(windowedPunch);
+            assertThat(result.punches().get(0).direction()).isEqualTo(PunchDirection.OUT);
+            assertThat(result.recordSize()).isEqualTo(16);
+            assertThat(server.lastRangeStartEncoded()).isEqualTo(encodeTimeAsInt(since));
+        }
+    }
+
+    /**
+     * A device that doesn't honor the ranged command (older/different firmware) rejects it with
+     * an error response rather than data - ZkTerminalClientImpl treats that as "unsupported", not
+     * a poll failure, and reads the full log instead within the same call.
+     */
+    @Test
+    void poll_windowedRead_deviceRejectsRangedCommand_fallsBackToFullRead() throws Exception {
+        LocalDateTime fullLogPunch = LocalDateTime.of(2027, 8, 1, 9, 0, 0);
+        byte[] fullLogRecords = sixteenByteRecord(9, fullLogPunch, 0);
+        LocalDateTime since = LocalDateTime.of(2027, 8, 20, 8, 0, 0);
+
+        // No .withRangedRecords(...) - the server rejects CMD_ATTLOG_TIME_RRQ with CMD_ACK_ERROR.
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(fullLogRecords, 1, false)) {
+            server.start();
+            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), since, 16);
+
+            assertThat(result.punches()).hasSize(1);
+            assertThat(result.punches().get(0).enrollmentNumber()).isEqualTo(9);
+            assertThat(result.punches().get(0).deviceTimestamp()).isEqualTo(fullLogPunch);
+            // Freshly re-detected from the full read, not just echoed back.
+            assertThat(result.recordSize()).isEqualTo(16);
+        }
+    }
+
+    @Test
+    void poll_windowedRead_noRecordsInWindow_returnsEmptyWithKnownRecordSizeEchoedBack() throws Exception {
+        byte[] fullLogRecords = sixteenByteRecord(1, LocalDateTime.of(2027, 8, 1, 9, 0, 0), 0);
+        LocalDateTime since = LocalDateTime.of(2027, 8, 20, 8, 0, 0);
+
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(fullLogRecords, 1, false).withRangedRecords(new byte[0])) {
+            server.start();
+            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), since, 40);
+
+            assertThat(result.punches()).isEmpty();
+            assertThat(result.recordSize()).isEqualTo(40);
+        }
     }
 
     private static LocalDateTime decodeTime(int encoded) {

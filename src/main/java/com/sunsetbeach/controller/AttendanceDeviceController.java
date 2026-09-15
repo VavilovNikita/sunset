@@ -39,4 +39,9 @@ public class AttendanceDeviceController implements AttendanceDevicesApi {
         attendanceDeviceService.delete(id);
         return ResponseEntity.ok(new OkTrue(true));
     }
+
+    @Override
+    public ResponseEntity<AttendanceDevice> resyncAttendanceDevice(String id) {
+        return ResponseEntity.ok(attendanceDeviceService.resync(id));
+    }
 }

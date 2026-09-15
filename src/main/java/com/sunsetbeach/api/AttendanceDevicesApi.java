@@ -184,6 +184,54 @@ public interface AttendanceDevicesApi {
 
 
     /**
+     * POST /attendance/devices/{id}/resync : Force a full re-read of one device&#39;s attendance log
+     * Requires MANAGER or above. Every poll after a device&#39;s first is windowed (see &#x60;AttendanceDevice.lastSeenAt&#x60;&#39;s own description) - this forces a full read instead, regardless of any existing watermark, for the one case a window can&#39;t recover from on its own: a device whose clock jumped far enough backward (most plausibly a factory reset) that new records now fall before the last watermark rather than after it. Attempts the read immediately (bounded by a short socket timeout) and returns the device either way - &#x60;lastSeenAt&#x60; moving to just now means it worked, an unchanged &#x60;lastSeenAt&#x60; means it didn&#39;t, the same \&quot;attempt now, report what actually happened\&quot; shape as &#x60;POST /printers/{id}/test&#x60;. 
+     *
+     * @param id  (required)
+     * @return Resync attempted - see &#x60;lastSeenAt&#x60; for whether it reached the device. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     *         or Device not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/attendance/devices/{id}/resync",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<AttendanceDevice> resyncAttendanceDevice(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * PATCH /attendance/devices/{id} : Update a fingerprint terminal
      * Requires MANAGER or above. Full replacement of all &#x60;AttendanceDeviceInput&#x60; fields - no partial update, same convention as &#x60;PrinterInput&#x60;.
      *

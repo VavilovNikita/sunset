@@ -6273,6 +6273,47 @@ paths:
               example:
                 error: This device has recorded punches and can't be deleted.
 
+  /attendance/devices/{id}/resync:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: resyncAttendanceDevice
+      tags: [AttendanceDevices]
+      summary: Force a full re-read of one device's attendance log
+      description: >
+        Requires MANAGER or above. Every poll after a device's first is windowed (see
+        `AttendanceDevice.lastSeenAt`'s own description) - this forces a full read instead,
+        regardless of any existing watermark, for the one case a window can't recover from on its
+        own: a device whose clock jumped far enough backward (most plausibly a factory reset) that
+        new records now fall before the last watermark rather than after it. Attempts the read
+        immediately (bounded by a short socket timeout) and returns the device either way -
+        `lastSeenAt` moving to just now means it worked, an unchanged `lastSeenAt` means it
+        didn't, the same "attempt now, report what actually happened" shape as
+        `POST /printers/{id}/test`.
+      responses:
+        "200":
+          description: Resync attempted - see `lastSeenAt` for whether it reached the device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceDevice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Device not found
+
   /employee-pay-rates:
     get:
       operationId: listEmployeePayRates

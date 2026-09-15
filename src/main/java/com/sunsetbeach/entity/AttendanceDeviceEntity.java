@@ -33,6 +33,15 @@ public class AttendanceDeviceEntity {
 
     private LocalDateTime lastSeenAt;
 
+    /**
+     * The ZK protocol's own per-record byte layout (16 or 40 - see {@code
+     * ZkTerminalClientImpl#parseAttendanceRecords}), detected on this device's most recent full
+     * log read and reused for every windowed read since - see that class's own javadoc for why a
+     * windowed response can't redetect it the way a full one can. Null until the first full read
+     * ever succeeds.
+     */
+    private Integer attendanceRecordSize;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -98,5 +107,13 @@ public class AttendanceDeviceEntity {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public Integer getAttendanceRecordSize() {
+        return attendanceRecordSize;
+    }
+
+    public void setAttendanceRecordSize(Integer attendanceRecordSize) {
+        this.attendanceRecordSize = attendanceRecordSize;
     }
 }

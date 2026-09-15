@@ -58,6 +58,19 @@ import org.springframework.stereotype.Component;
  *   #directionOf}) - <b>this needs confirming against the real K60 once it arrives</b>, most
  *   directly by punching it once in each direction and reading back what code each one produced.
  * </ul>
+ *
+ * <p><b>Windowed reads (a third thing unverified without hardware).</b> {@code
+ * CMD_ATTLOG_TIME_RRQ} (10004) is not in pyzk (which only ever reads the whole log) but is real
+ * enough to build on: it is the command a Java port of ZKTeco's own legacy {@code zkemkeeper}
+ * Windows SDK exposes as {@code ReadTimeGLogData(dwMachineNumber, sTime, eTime)}, a documented
+ * function name from ZKTeco's own official (if old) SDK, not something invented for that one
+ * repository. It rides the exact same {@code CMD_PREPARE_BUFFER} envelope a full read does - see
+ * {@link #readFullAttendanceLog} - with the command code and the two trailing int parameters
+ * reinterpreted as start/end encoded times instead of {@code fct}/{@code ext}. What's genuinely
+ * unverified is whether the K60's specific firmware honors it at all; {@link
+ * #readWindowedAttendanceLog} treats anything other than an immediate-data or prepare-data
+ * response to that command as "this firmware doesn't support it" and falls back to a full read in
+ * the same call, never surfacing that as a poll failure - see that method's own javadoc.
  */
 @Component
 public class ZkTerminalClientImpl implements ZkTerminalClient {
@@ -76,6 +89,8 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
     private static final int CMD_FREE_DATA = 1502;
     private static final int CMD_PREPARE_BUFFER = 1503;
     private static final int CMD_READ_BUFFER = 1504;
+    /** ZKTeco's legacy zkemkeeper SDK calls this ReadTimeGLogData - see this class's own javadoc. */
+    private static final int CMD_ATTLOG_TIME_RRQ = 10004;
     private static final int CMD_ACK_OK = 2000;
     private static final int CMD_ACK_UNAUTH = 2005;
 
@@ -101,16 +116,29 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
     }
 
     @Override
-    public List<RawAttendancePunch> poll(AttendanceDeviceEntity device) {
+    public TerminalPollResult poll(AttendanceDeviceEntity device, LocalDateTime since, Integer knownRecordSize) {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(device.getAddress(), device.getPort()), CONNECT_TIMEOUT_MS);
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
             Session session = connect(socket);
             try {
+                LocalDateTime now = LocalDateTime.now();
                 int recordCount = readRecordCount(socket, session);
-                List<RawAttendancePunch> punches = recordCount == 0 ? List.of() : readAttendanceLog(socket, session, recordCount);
-                setClock(socket, session, LocalDateTime.now());
-                return punches;
+                TerminalPollResult result;
+                if (recordCount == 0) {
+                    result = new TerminalPollResult(List.of(), knownRecordSize);
+                } else if (since == null) {
+                    result = readFullAttendanceLog(socket, session, recordCount);
+                } else {
+                    if (knownRecordSize == null) {
+                        throw new AttendanceDeviceException(
+                                "A windowed read was requested without a previously-detected record size - this is a caller bug, "
+                                        + "not something the terminal did");
+                    }
+                    result = readWindowedAttendanceLog(socket, session, since, now, knownRecordSize, recordCount, device.getName());
+                }
+                setClock(socket, session, now);
+                return result;
             } finally {
                 // Best-effort - a failed EXIT doesn't undo a successful read, and the socket close
                 // (try-with-resources) releases the connection either way.
@@ -177,35 +205,76 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
      * length actually arrives (see {@link #readFully}) rather than trusting one {@code recv()}
      * call to return everything at once - that part is an ordinary TCP-correctness fix, not a
      * protocol difference.
+     *
+     * <p>The record layout size is detected here, not assumed or carried in from a previous poll
+     * - this is the one read where {@code totalSize / recordCount} is guaranteed to land on a
+     * clean 16/40/8, because both numbers describe the *same, complete* log. A windowed read's
+     * returned {@code totalSize} describes only the filtered subset, so it can't be divided the
+     * same way - see {@link #readWindowedAttendanceLog} and {@code AttendanceDeviceEntity
+     * #attendanceRecordSize}'s own javadoc.
      */
-    private List<RawAttendancePunch> readAttendanceLog(Socket socket, Session session, int recordCount) throws IOException {
-        ByteBuffer prepare = ByteBuffer.allocate(11).order(ByteOrder.LITTLE_ENDIAN);
-        prepare.put((byte) 1);
-        prepare.putShort((short) CMD_ATTLOG_RRQ);
-        prepare.putInt(0); // fct
-        prepare.putInt(0); // ext
-        Response prepareResponse = sendCommand(socket, CMD_PREPARE_BUFFER, prepare.array(), session);
-
-        byte[] rawData;
-        if (prepareResponse.command() == CMD_DATA) {
-            rawData = prepareResponse.data();
-        } else if (prepareResponse.command() == CMD_PREPARE_DATA) {
-            if (prepareResponse.data().length < 4) {
-                throw new AttendanceDeviceException("Unexpected CMD_PREPARE_DATA response reading the attendance log");
-            }
-            int totalSize = ByteBuffer.wrap(prepareResponse.data()).order(ByteOrder.LITTLE_ENDIAN).getInt();
-            rawData = readBuffered(socket, session, totalSize);
-        } else {
+    private TerminalPollResult readFullAttendanceLog(Socket socket, Session session, int recordCount) throws IOException {
+        byte[] payload = buildPrepareBufferPayload(CMD_ATTLOG_RRQ, 0, 0);
+        Response prepareResponse = sendCommand(socket, CMD_PREPARE_BUFFER, payload, session);
+        if (prepareResponse.command() != CMD_DATA && prepareResponse.command() != CMD_PREPARE_DATA) {
             throw new AttendanceDeviceException("Terminal refused to read the attendance log (response code " + prepareResponse.command() + ")");
         }
-
+        byte[] rawData = fetchBlob(socket, session, prepareResponse);
         if (rawData.length < 4) {
-            return List.of();
+            return new TerminalPollResult(List.of(), null);
         }
         int totalSize = ByteBuffer.wrap(rawData, 0, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
         byte[] records = Arrays.copyOfRange(rawData, 4, rawData.length);
         int recordSize = recordCount == 0 ? 0 : totalSize / recordCount;
-        return parseAttendanceRecords(records, recordSize);
+        return new TerminalPollResult(parseAttendanceRecords(records, recordSize), recordSize);
+    }
+
+    /**
+     * CMD_PREPARE_BUFFER with {@code CMD_ATTLOG_TIME_RRQ} in place of {@code CMD_ATTLOG_RRQ} and
+     * the encoded {@code since}/{@code until} times where a full read sends {@code fct}/{@code
+     * ext} - see this class's own javadoc for where that command comes from. Anything other than
+     * an immediate-data or prepare-data response is treated as "this firmware doesn't support the
+     * ranged command" - not a poll failure, and not thrown - and this method falls back to {@link
+     * #readFullAttendanceLog} in the same call instead, which also re-detects the record size
+     * fresh in case it had ever gone stale.
+     */
+    private TerminalPollResult readWindowedAttendanceLog(
+            Socket socket, Session session, LocalDateTime since, LocalDateTime until, int knownRecordSize, int recordCount, String deviceName)
+            throws IOException {
+        byte[] payload = buildPrepareBufferPayload(CMD_ATTLOG_TIME_RRQ, encodeTime(since), encodeTime(until));
+        Response prepareResponse = sendCommand(socket, CMD_PREPARE_BUFFER, payload, session);
+        if (prepareResponse.command() != CMD_DATA && prepareResponse.command() != CMD_PREPARE_DATA) {
+            log.info(
+                    "{} did not accept a ranged attendance-log read (response code {}) - reading the full log this poll instead", deviceName,
+                    prepareResponse.command());
+            return readFullAttendanceLog(socket, session, recordCount);
+        }
+        byte[] rawData = fetchBlob(socket, session, prepareResponse);
+        if (rawData.length < 4) {
+            return new TerminalPollResult(List.of(), knownRecordSize);
+        }
+        byte[] records = Arrays.copyOfRange(rawData, 4, rawData.length);
+        return new TerminalPollResult(parseAttendanceRecords(records, knownRecordSize), knownRecordSize);
+    }
+
+    private byte[] fetchBlob(Socket socket, Session session, Response prepareResponse) throws IOException {
+        if (prepareResponse.command() == CMD_DATA) {
+            return prepareResponse.data();
+        }
+        if (prepareResponse.data().length < 4) {
+            throw new AttendanceDeviceException("Unexpected CMD_PREPARE_DATA response reading the attendance log");
+        }
+        int totalSize = ByteBuffer.wrap(prepareResponse.data()).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        return readBuffered(socket, session, totalSize);
+    }
+
+    private static byte[] buildPrepareBufferPayload(int command, int param1, int param2) {
+        ByteBuffer buf = ByteBuffer.allocate(11).order(ByteOrder.LITTLE_ENDIAN);
+        buf.put((byte) 1);
+        buf.putShort((short) command);
+        buf.putInt(param1);
+        buf.putInt(param2);
+        return buf.array();
     }
 
     private byte[] readBuffered(Socket socket, Session session, int totalSize) throws IOException {

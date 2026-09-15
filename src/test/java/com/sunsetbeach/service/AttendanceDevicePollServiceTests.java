@@ -2,6 +2,7 @@ package com.sunsetbeach.service;
 import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sunsetbeach.attendance.AttendanceDeviceException;
 import com.sunsetbeach.attendance.FakeZkTerminalClient;
@@ -9,12 +10,14 @@ import com.sunsetbeach.attendance.RawAttendancePunch;
 import com.sunsetbeach.attendance.ZkTerminalClient;
 import com.sunsetbeach.entity.AttendanceDeviceEntity;
 import com.sunsetbeach.entity.UserEntity;
+import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.PunchDirection;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.AttendanceDeviceRepository;
 import com.sunsetbeach.repository.AttendancePunchRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -204,5 +207,65 @@ class AttendanceDevicePollServiceTests extends AbstractIntegrationTest {
         assertThat(attendancePunchRepository
                         .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), date.atStartOfDay(), date.plusDays(1).atStartOfDay()))
                 .hasSize(1);
+    }
+
+    /** No watermark yet (never read before) - since=null is a full read, not a windowed one starting from nothing. */
+    @Test
+    void pollDevices_firstEverPoll_requestsFullReadNotWindowed() {
+        AttendanceDeviceEntity device = createDevice();
+        fake().queue(device.getId(), List.of());
+
+        attendanceDevicePollService.pollDevices();
+
+        assertThat(fake().lastSinceRequested(device.getId())).isNull();
+    }
+
+    /** Once a watermark exists, the next poll windows from it minus the overlap - not from scratch, and not exactly at it. */
+    @Test
+    void pollDevices_afterFirstPunchIngested_nextPollWindowsFromWatermarkMinusOverlap() {
+        AttendanceDeviceEntity device = createDevice();
+        int enrollmentNumber = uniqueEnrollmentNumber();
+        createEnrolledUser(enrollmentNumber);
+        LocalDateTime firstPunchAt = LocalDate.of(2027, 9, 5).atTime(9, 0);
+        fake().queue(device.getId(), List.of(new RawAttendancePunch(enrollmentNumber, firstPunchAt, PunchDirection.IN)));
+        fake().queue(device.getId(), List.of());
+
+        attendanceDevicePollService.pollDevices();
+        attendanceDevicePollService.pollDevices();
+
+        assertThat(fake().lastSinceRequested(device.getId())).isEqualTo(firstPunchAt.minus(AttendanceDevicePollService.WATERMARK_OVERLAP));
+    }
+
+    /** A full read (the first poll, here) detects and persists the record layout size a later windowed read will rely on. */
+    @Test
+    void pollDevices_firstFullRead_persistsDetectedRecordSize() {
+        AttendanceDeviceEntity device = createDevice();
+        int enrollmentNumber = uniqueEnrollmentNumber();
+        createEnrolledUser(enrollmentNumber);
+        fake().queue(device.getId(), List.of(new RawAttendancePunch(enrollmentNumber, LocalDate.of(2027, 9, 6).atTime(9, 0), PunchDirection.IN)));
+
+        attendanceDevicePollService.pollDevices();
+
+        assertThat(attendanceDeviceRepository.findById(device.getId()).orElseThrow().getAttendanceRecordSize()).isNotNull();
+    }
+
+    /** The manual re-sync this feature keeps available: forces a full read even though a watermark already exists. */
+    @Test
+    void resyncNow_forcesFullReadEvenWithExistingWatermark() {
+        AttendanceDeviceEntity device = createDevice();
+        int enrollmentNumber = uniqueEnrollmentNumber();
+        createEnrolledUser(enrollmentNumber);
+        fake().queue(device.getId(), List.of(new RawAttendancePunch(enrollmentNumber, LocalDate.of(2027, 9, 7).atTime(9, 0), PunchDirection.IN)));
+        fake().queue(device.getId(), List.of());
+
+        attendanceDevicePollService.pollDevices();
+        attendanceDevicePollService.resyncNow(device.getId());
+
+        assertThat(fake().lastSinceRequested(device.getId())).isNull();
+    }
+
+    @Test
+    void resyncNow_unknownDevice_throwsNotFound() {
+        assertThatThrownBy(() -> attendanceDevicePollService.resyncNow("no-such-device-id")).isInstanceOf(NotFoundException.class);
     }
 }

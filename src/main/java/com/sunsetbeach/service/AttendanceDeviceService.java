@@ -25,14 +25,17 @@ public class AttendanceDeviceService {
     private final AttendanceDeviceRepository attendanceDeviceRepository;
     private final AttendancePunchRepository attendancePunchRepository;
     private final AttendanceDeviceMapper attendanceDeviceMapper;
+    private final AttendanceDevicePollService attendanceDevicePollService;
 
     public AttendanceDeviceService(
             AttendanceDeviceRepository attendanceDeviceRepository,
             AttendancePunchRepository attendancePunchRepository,
-            AttendanceDeviceMapper attendanceDeviceMapper) {
+            AttendanceDeviceMapper attendanceDeviceMapper,
+            AttendanceDevicePollService attendanceDevicePollService) {
         this.attendanceDeviceRepository = attendanceDeviceRepository;
         this.attendancePunchRepository = attendancePunchRepository;
         this.attendanceDeviceMapper = attendanceDeviceMapper;
+        this.attendanceDevicePollService = attendanceDevicePollService;
     }
 
     @Transactional(readOnly = true)
@@ -60,6 +63,17 @@ public class AttendanceDeviceService {
         } catch (DataIntegrityViolationException e) {
             throw new ConflictException("A device with this serial is already registered");
         }
+    }
+
+    /**
+     * The "manual re-sync" this feature's own design keeps available for a device a windowed poll
+     * can no longer catch up on its own - see {@code AttendanceDevicePollService}'s own javadoc.
+     * Deliberately not {@code @Transactional}: the actual work is a real TCP round trip to the
+     * device, done by {@code AttendanceDevicePollService#resyncNow} in its own short transactions,
+     * the same non-transactional-sweep-method shape {@code pollDevices} itself uses.
+     */
+    public AttendanceDevice resync(String id) {
+        return attendanceDeviceMapper.toDto(attendanceDevicePollService.resyncNow(id));
     }
 
     @Transactional

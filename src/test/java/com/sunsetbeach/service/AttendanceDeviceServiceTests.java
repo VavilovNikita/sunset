@@ -93,6 +93,17 @@ class AttendanceDeviceServiceTests extends AbstractIntegrationTest {
                 .isInstanceOf(NotFoundException.class);
     }
 
+    /**
+     * Only the not-found wiring is exercised here, not a real resync (that would mean an actual
+     * TCP attempt against this device's fake address) - the resync behaviour itself (forcing a
+     * full read, updating lastSeenAt) is covered against a fake terminal in {@code
+     * AttendanceDevicePollServiceTests}, which this service method delegates straight through to.
+     */
+    @Test
+    void resync_unknownId_isNotFound() {
+        assertThatThrownBy(() -> attendanceDeviceService.resync("does-not-exist")).isInstanceOf(NotFoundException.class);
+    }
+
     @Test
     void delete_withNoPunches_succeeds() {
         AttendanceDevice created = attendanceDeviceService.create(sampleInput("SN-" + UUID.randomUUID()));

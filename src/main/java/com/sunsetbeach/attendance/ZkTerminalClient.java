@@ -1,7 +1,7 @@
 package com.sunsetbeach.attendance;
 
 import com.sunsetbeach.entity.AttendanceDeviceEntity;
-import java.util.List;
+import java.time.LocalDateTime;
 
 /**
  * The seam between {@code AttendanceDevicePollService} and an actual terminal on the network -
@@ -20,6 +20,18 @@ public interface ZkTerminalClient {
      * an unexpected response) rather than returning a partial or empty result - a caller can't
      * tell "genuinely nothing new" from "couldn't read it" otherwise, and those need different
      * handling (see {@code AttendanceDevicePollService}).
+     *
+     * @param since null reads the device's entire stored log - used for a device that has never
+     *     been read before (no watermark to window from yet) and for a manual re-sync. Non-null
+     *     attempts a ranged read from this point onward via the device's own CMD_ATTLOG_TIME_RRQ
+     *     command, falling back automatically (within this same call, no exception thrown for it)
+     *     to a full read if the device doesn't honor that command - see the implementation's own
+     *     javadoc for why that fallback exists rather than being treated as an error.
+     * @param knownRecordSize the record layout size previously detected on this device's last full
+     *     read, required to parse a windowed response's records (a windowed read's own returned
+     *     byte count can't be divided back into a record size the way a full read's can - see
+     *     {@code AttendanceDeviceEntity#attendanceRecordSize}'s own javadoc). Ignored, and freshly
+     *     redetected, when {@code since} is null. Only ever null together with {@code since}.
      */
-    List<RawAttendancePunch> poll(AttendanceDeviceEntity device);
+    TerminalPollResult poll(AttendanceDeviceEntity device, LocalDateTime since, Integer knownRecordSize);
 }

@@ -29,6 +29,15 @@ import java.util.concurrent.Executors;
  * followed by as many READ_BUFFER chunks as the script's chunk size demands, then FREE_DATA),
  * SET_TIME, EXIT. Records every command it receives and the raw bytes of the SET_TIME request, so
  * a test can assert on the exact sequence a poll sent.
+ *
+ * <p>A PREPARE_BUFFER request's own {@code fct} field (see {@code
+ * ZkTerminalClientImpl#buildPrepareBufferPayload}) selects which log this server serves: {@code
+ * CMD_ATTLOG_RRQ} always returns {@code attendanceRecords} (the constructor argument); {@code
+ * CMD_ATTLOG_TIME_RRQ} (a windowed read) returns {@code rangedAttendanceRecords} if {@link
+ * #withRangedRecords} configured one, or a bare {@code CMD_ACK_ERROR} otherwise - simulating
+ * firmware that doesn't support the ranged command, to drive {@code
+ * ZkTerminalClientImpl#readWindowedAttendanceLog}'s own fallback path. Either way, the encoded
+ * start/end times sent are captured for a test to assert on.
  */
 class FakeZkTerminalServer implements AutoCloseable {
 
@@ -40,12 +49,14 @@ class FakeZkTerminalServer implements AutoCloseable {
     private static final int CMD_SET_TIME = 202;
     private static final int CMD_CONNECT = 1000;
     private static final int CMD_EXIT = 1001;
+    private static final int CMD_ATTLOG_TIME_RRQ = 10004;
     private static final int CMD_PREPARE_DATA = 1500;
     private static final int CMD_DATA = 1501;
     private static final int CMD_FREE_DATA = 1502;
     private static final int CMD_PREPARE_BUFFER = 1503;
     private static final int CMD_READ_BUFFER = 1504;
     private static final int CMD_ACK_OK = 2000;
+    private static final int CMD_ACK_ERROR = 2001;
 
     private final ServerSocket serverSocket;
     private final byte[] attendanceRecords;
@@ -53,6 +64,10 @@ class FakeZkTerminalServer implements AutoCloseable {
     private final boolean forceChunkedPath;
     private final List<Integer> receivedCommands = new ArrayList<>();
     private byte[] lastSetTimeData;
+    private byte[] rangedAttendanceRecords;
+    private Integer lastRangeStartEncoded;
+    private Integer lastRangeEndEncoded;
+    private byte[] pendingBlobRecords;
     private CompletableFuture<Void> serverTask;
 
     /**
@@ -68,6 +83,12 @@ class FakeZkTerminalServer implements AutoCloseable {
         this.forceChunkedPath = forceChunkedPath;
     }
 
+    /** Makes this server accept a windowed (CMD_ATTLOG_TIME_RRQ) read and serve these records for it, instead of rejecting it. */
+    FakeZkTerminalServer withRangedRecords(byte[] rangedRecords) {
+        this.rangedAttendanceRecords = rangedRecords;
+        return this;
+    }
+
     int port() {
         return serverSocket.getLocalPort();
     }
@@ -78,6 +99,14 @@ class FakeZkTerminalServer implements AutoCloseable {
 
     byte[] lastSetTimeData() {
         return lastSetTimeData;
+    }
+
+    Integer lastRangeStartEncoded() {
+        return lastRangeStartEncoded;
+    }
+
+    Integer lastRangeEndEncoded() {
+        return lastRangeEndEncoded;
     }
 
     void start() {
@@ -100,7 +129,7 @@ class FakeZkTerminalServer implements AutoCloseable {
                 switch (request.command()) {
                     case CMD_CONNECT -> writeResponse(out, CMD_ACK_OK, sessionId, request.replyId(), new byte[0]);
                     case CMD_GET_FREE_SIZES -> writeResponse(out, CMD_ACK_OK, sessionId, request.replyId(), freeSizesPayload());
-                    case CMD_PREPARE_BUFFER -> handlePrepareBuffer(out, sessionId, request.replyId());
+                    case CMD_PREPARE_BUFFER -> handlePrepareBuffer(out, sessionId, request.replyId(), request.data());
                     case CMD_READ_BUFFER -> handleReadBuffer(out, sessionId, request.replyId(), request.data());
                     case CMD_FREE_DATA -> writeResponse(out, CMD_ACK_OK, sessionId, request.replyId(), new byte[0]);
                     case CMD_SET_TIME -> {
@@ -139,14 +168,35 @@ class FakeZkTerminalServer implements AutoCloseable {
      * did, the first time it was written - see the record-size assertions in
      * ZkTerminalClientImplTests, which is what caught it).
      */
-    private void handlePrepareBuffer(OutputStream out, int sessionId, int replyId) throws IOException {
-        int transferLength = 4 + attendanceRecords.length;
+    private void handlePrepareBuffer(OutputStream out, int sessionId, int replyId, byte[] requestData) throws IOException {
+        ByteBuffer req = ByteBuffer.wrap(requestData).order(ByteOrder.LITTLE_ENDIAN);
+        req.get(); // leading byte, always 1
+        int fct = req.getShort() & 0xFFFF;
+        int param1 = req.getInt();
+        int param2 = req.getInt();
+
+        if (fct == CMD_ATTLOG_TIME_RRQ) {
+            lastRangeStartEncoded = param1;
+            lastRangeEndEncoded = param2;
+            if (rangedAttendanceRecords == null) {
+                writeResponse(out, CMD_ACK_ERROR, sessionId, replyId, new byte[0]);
+                return;
+            }
+            writeBufferedRecords(out, sessionId, replyId, rangedAttendanceRecords);
+            return;
+        }
+        writeBufferedRecords(out, sessionId, replyId, attendanceRecords);
+    }
+
+    private void writeBufferedRecords(OutputStream out, int sessionId, int replyId, byte[] records) throws IOException {
+        int transferLength = 4 + records.length;
         if (!forceChunkedPath) {
             ByteBuffer body = ByteBuffer.allocate(transferLength).order(ByteOrder.LITTLE_ENDIAN);
-            body.putInt(attendanceRecords.length);
-            body.put(attendanceRecords);
+            body.putInt(records.length);
+            body.put(records);
             writeResponse(out, CMD_DATA, sessionId, replyId, body.array());
         } else {
+            pendingBlobRecords = records;
             ByteBuffer sizeOnly = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
             sizeOnly.putInt(transferLength);
             writeResponse(out, CMD_PREPARE_DATA, sessionId, replyId, sizeOnly.array());
@@ -154,12 +204,13 @@ class FakeZkTerminalServer implements AutoCloseable {
     }
 
     private void handleReadBuffer(OutputStream out, int sessionId, int replyId, byte[] requestData) throws IOException {
+        byte[] records = pendingBlobRecords != null ? pendingBlobRecords : attendanceRecords;
         ByteBuffer req = ByteBuffer.wrap(requestData).order(ByteOrder.LITTLE_ENDIAN);
         int start = req.getInt();
         int size = req.getInt();
-        ByteBuffer full = ByteBuffer.allocate(4 + attendanceRecords.length).order(ByteOrder.LITTLE_ENDIAN);
-        full.putInt(attendanceRecords.length);
-        full.put(attendanceRecords);
+        ByteBuffer full = ByteBuffer.allocate(4 + records.length).order(ByteOrder.LITTLE_ENDIAN);
+        full.putInt(records.length);
+        full.put(records);
         byte[] fullBytes = full.array();
         byte[] chunk = new byte[Math.min(size, fullBytes.length - start)];
         System.arraycopy(fullBytes, start, chunk, 0, chunk.length);

@@ -1594,6 +1594,17 @@ class PosRoleHierarchyTests {
     }
 
     @Test
+    void resyncAttendanceDevice_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/attendance/devices/device-1/resync").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void resyncAttendanceDevice_withManagerToken_isOk() throws Exception {
+        when(attendanceDeviceService.resync("device-1")).thenReturn(sampleAttendanceDevice());
+        mockMvc.perform(post("/attendance/devices/device-1/resync").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    @Test
     void createEmployeePayRate_withWaiterToken_isForbidden() throws Exception {
         mockMvc.perform(post("/employee-pay-rates")
                         .header("Authorization", token(Role.WAITER))

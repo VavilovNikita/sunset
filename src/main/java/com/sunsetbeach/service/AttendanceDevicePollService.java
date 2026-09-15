@@ -2,12 +2,14 @@ package com.sunsetbeach.service;
 
 import com.sunsetbeach.attendance.AttendanceDeviceException;
 import com.sunsetbeach.attendance.RawAttendancePunch;
+import com.sunsetbeach.attendance.TerminalPollResult;
 import com.sunsetbeach.attendance.ZkTerminalClient;
 import com.sunsetbeach.entity.AttendanceDeviceEntity;
+import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.repository.AttendanceDeviceRepository;
+import com.sunsetbeach.repository.AttendancePunchRepository;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,42 +43,65 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code PrintService}'s 60 seconds (a guest is plausibly waiting on that one) and {@code
  * BookingExpiryService}'s 15 minutes (a background administrative sweep with no one watching).
  *
- * <p><b>Full read every time, not a watermark.</b> The ZK protocol's own attendance-log read has
- * no "since a timestamp" parameter - a poll always gets the device's *entire* stored log, and
- * with the log never cleared (see {@code ZkTerminalClientImpl}'s own javadoc), that log only
- * grows. A client-side watermark (skip anything at or before the newest punch this device has
- * already given us) would cut the number of {@link AttendanceService#ingestDevicePunch} calls
- * each poll makes, but it would have to get the *ordering* question right to be safe - and this is
- * exactly where a watermark breaks: a device that gets factory-reset (or physically swapped for a
- * replacement re-registered under the same row) can restart its own clock or record numbering
- * from a point *behind* the watermark, and a record that arrives out of chronological order (this
- * protocol doesn't guarantee delivery order) can sit *before* the watermark's own cutoff despite
- * being genuinely new. Either would make a watermark silently skip real punches - precisely the
- * "looks exactly like nobody worked" failure this whole feature exists to prevent. Reading
- * everything and leaning on Phase 1's own idempotent ingestion (the {@code (deviceId,
- * enrollmentNumber, punchAt)} unique triple) has none of those failure modes: every record is
- * checked on its own terms, every time, so a reset device or a late-arriving record is simply
- * ingested (or recognised as already-ingested) correctly, with no special-case recovery logic
- * anywhere. The cost - re-checking the device's full history on every poll - is small at this
- * hotel's actual volume (low thousands of rows even after the ~2-year retention this hardware
- * holds), and buying correctness with it is the right trade for payroll data.
+ * <p><b>A windowed read, not a full read, every five minutes.</b> A full read was the original,
+ * simpler design - safe, but wasteful at scale: at this hotel's ~2,000 punches/month, a device
+ * polled every five minutes (288 times a day) would be dragging the *entire* growing history off
+ * a small embedded box on every single poll, worse every month the log never gets cleared (see
+ * {@code ZkTerminalClientImpl}'s own javadoc for why it never is). {@link #sinceWatermark} instead
+ * reads from just past the newest punch already ingested from that device
+ * ({@link AttendancePunchRepository#findMaxPunchAtByDeviceId}), overlapping backward by {@link
+ * #WATERMARK_OVERLAP} rather than starting exactly at it - see that field's own javadoc for why an
+ * exact cutoff isn't safe. Phase 1's idempotent ingestion ({@code (deviceId, enrollmentNumber,
+ * punchAt)}) is what makes the overlap free: anything the window re-reads that's already been
+ * ingested lands as a no-op {@code DUPLICATE}, not a second row.
+ *
+ * <p><b>The first poll of a device that's never been read is a full read</b> - there is no
+ * watermark to window from yet ({@link #sinceWatermark} returns {@code null} until at least one
+ * punch has been ingested from that device), so {@link ZkTerminalClient#poll} is called with
+ * {@code since=null}, which also detects and persists {@code AttendanceDeviceEntity
+ * #attendanceRecordSize} for every windowed read after. The same full read is available on demand
+ * afterward too - {@link #resyncNow} forces one regardless of any existing watermark, for a
+ * device an operator suspects has drifted out of what its normal window would ever see again (a
+ * factory reset, or a clock that jumped backward hard enough that new records now fall before the
+ * watermark rather than after it - the overlap absorbs ordinary jitter, not that). Automatic
+ * detection of that specific failure mode isn't attempted here: {@code lastSeenAt} keeps updating
+ * normally even when a device's clock is wrong, since it records when *we* successfully polled,
+ * not what the device's own clock said - so this is a case for an operator who notices something
+ * looks off to resolve with a manual resync, not something the sweep silently self-heals.
  */
 @Service
 public class AttendanceDevicePollService {
 
     private static final Logger log = LoggerFactory.getLogger(AttendanceDevicePollService.class);
 
+    /**
+     * How far past the newest already-ingested punch a windowed read starts from, instead of
+     * starting exactly at the watermark. Generous relative to the jitter it exists to absorb -
+     * the device's clock is corrected on every successful poll (see {@link ZkTerminalClient#poll}),
+     * so between two successful polls drift is bounded to whatever a cheap RTC accumulates in five
+     * minutes (negligible); a record written slightly out of chronological order near a poll
+     * boundary is the realistic case this covers, not a long outage - an outage of any length is
+     * already safe on its own, because every punch recorded during it still gets a timestamp after
+     * the last watermark and before "now", both inside the window regardless of how long the gap
+     * was. An hour is a few punches out of roughly two thousand a month - re-checking that many
+     * for a duplicate is free next to what a full read every five minutes would cost.
+     */
+    static final Duration WATERMARK_OVERLAP = Duration.ofHours(1);
+
     private final AttendanceDeviceRepository attendanceDeviceRepository;
+    private final AttendancePunchRepository attendancePunchRepository;
     private final AttendanceService attendanceService;
     private final ZkTerminalClient zkTerminalClient;
     private final Duration silenceWarningThreshold;
 
     public AttendanceDevicePollService(
             AttendanceDeviceRepository attendanceDeviceRepository,
+            AttendancePunchRepository attendancePunchRepository,
             AttendanceService attendanceService,
             ZkTerminalClient zkTerminalClient,
             @Value("${app.attendance.device-silence-warning-hours:24}") long silenceWarningHours) {
         this.attendanceDeviceRepository = attendanceDeviceRepository;
+        this.attendancePunchRepository = attendancePunchRepository;
         this.attendanceService = attendanceService;
         this.zkTerminalClient = zkTerminalClient;
         this.silenceWarningThreshold = Duration.ofHours(silenceWarningHours);
@@ -94,30 +119,46 @@ public class AttendanceDevicePollService {
     @Scheduled(fixedDelayString = "${app.attendance.device-poll-interval-ms:300000}")
     public void pollDevices() {
         for (AttendanceDeviceEntity device : attendanceDeviceRepository.findByActiveTrue()) {
-            pollOneDevice(device);
+            pollOneDevice(device, false);
         }
     }
 
-    private void pollOneDevice(AttendanceDeviceEntity device) {
-        List<RawAttendancePunch> punches;
+    /**
+     * Forces a full read of one device regardless of any existing watermark - the "manual
+     * re-sync" this class's own javadoc describes, for an operator who suspects a device has
+     * drifted somewhere its normal windowed poll can no longer see (see {@code
+     * AttendanceDeviceController}). Runs synchronously and returns the (possibly unchanged, if the
+     * poll failed) device - a failed resync is reported the same "didn't work this time" way a
+     * failed scheduled poll is, not as a request error, matching {@code PrinterService#testPrint}'s
+     * own "attempt now, report what actually happened" convention.
+     */
+    public AttendanceDeviceEntity resyncNow(String deviceId) {
+        AttendanceDeviceEntity device = attendanceDeviceRepository.findById(deviceId).orElseThrow(() -> new NotFoundException("Device not found"));
+        pollOneDevice(device, true);
+        return device;
+    }
+
+    private void pollOneDevice(AttendanceDeviceEntity device, boolean forceFullRead) {
+        LocalDateTime since = forceFullRead ? null : sinceWatermark(device);
+        TerminalPollResult result;
         try {
-            punches = zkTerminalClient.poll(device);
+            result = zkTerminalClient.poll(device, since, device.getAttendanceRecordSize());
         } catch (AttendanceDeviceException e) {
             log.warn("Poll failed for device {} ({}): {}", device.getName(), device.getId(), e.getMessage());
             warnIfLongSilence(device);
             return;
         }
 
-        markSeen(device);
+        markSeen(device, result.recordSize());
 
         int ingested = 0;
         int duplicate = 0;
         int unknown = 0;
-        for (RawAttendancePunch punch : punches) {
+        for (RawAttendancePunch punch : result.punches()) {
             try {
-                DeviceIngestResult result =
+                DeviceIngestResult ingestResult =
                         attendanceService.ingestDevicePunch(device, punch.enrollmentNumber(), punch.deviceTimestamp(), punch.direction());
-                switch (result) {
+                switch (ingestResult) {
                     case INGESTED -> ingested++;
                     case DUPLICATE -> duplicate++;
                     case UNKNOWN_ENROLLMENT_NUMBER -> unknown++;
@@ -133,12 +174,26 @@ public class AttendanceDevicePollService {
         if (unknown > 0) {
             log.warn("Device {} reported {} punch(es) whose enrollment number matches no employee", device.getName(), unknown);
         }
-        log.info("Polled device {}: {} new punch(es), {} already seen, {} unattributable", device.getName(), ingested, duplicate, unknown);
+        log.info(
+                "Polled device {} ({}): {} new punch(es), {} already seen, {} unattributable", device.getName(),
+                since == null ? "full read" : "windowed from " + since, ingested, duplicate, unknown);
+    }
+
+    /**
+     * Null (full read) until this device has ingested at least one punch - see this class's own
+     * javadoc. Deliberately re-derived from what's actually stored every poll, rather than a
+     * separately maintained field, so it can never drift from the data it describes.
+     */
+    private LocalDateTime sinceWatermark(AttendanceDeviceEntity device) {
+        return attendancePunchRepository.findMaxPunchAtByDeviceId(device.getId()).map(watermark -> watermark.minus(WATERMARK_OVERLAP)).orElse(null);
     }
 
     @Transactional
-    void markSeen(AttendanceDeviceEntity device) {
+    void markSeen(AttendanceDeviceEntity device, Integer recordSize) {
         device.setLastSeenAt(LocalDateTime.now());
+        if (recordSize != null) {
+            device.setAttendanceRecordSize(recordSize);
+        }
         attendanceDeviceRepository.save(device);
     }
 
