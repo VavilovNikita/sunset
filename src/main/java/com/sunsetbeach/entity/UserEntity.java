@@ -61,6 +61,10 @@ public class UserEntity {
     // PATCH /users/{id}/overtime-eligibility. Nothing computes or accrues overtime from this yet.
     private boolean overtimeEligible = true;
 
+    // The fingerprint terminal's own numeric PIN for this person, not our id - see User's own
+    // openapi.yaml description. Null for staff who never punch; unique when set (see V73).
+    private Integer enrollmentNumber;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -138,5 +142,13 @@ public class UserEntity {
 
     public void setOvertimeEligible(boolean overtimeEligible) {
         this.overtimeEligible = overtimeEligible;
+    }
+
+    public Integer getEnrollmentNumber() {
+        return enrollmentNumber;
+    }
+
+    public void setEnrollmentNumber(Integer enrollmentNumber) {
+        this.enrollmentNumber = enrollmentNumber;
     }
 }

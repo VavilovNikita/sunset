@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -79,18 +80,34 @@ public class UserService {
         }
         entity.setRole(input.getRole() != null ? input.getRole() : Role.MANAGER);
         entity.setOvertimeEligible(input.getOvertimeEligible() != null ? input.getOvertimeEligible() : true);
+        entity.setEnrollmentNumber(input.getEnrollmentNumber());
 
         UserEntity saved;
         try {
             saved = userRepository.saveAndFlush(entity);
         } catch (DataIntegrityViolationException e) {
-            throw new ConflictException("A user with that email already exists");
+            throw conflictForUniqueViolation(e);
         }
         auditLogService.record(
                 AuditAction.USER_CREATED, AuditEntityType.USER, saved.getId(),
                 "User " + saved.getName() + " created with role " + saved.getRole().getValue()
                         + (saved.getEmail() != null ? " (" + saved.getEmail() + ")" : " (no login credentials)"));
         return userMapper.toDto(saved);
+    }
+
+    /**
+     * {@code User} has two independent unique columns (email, enrollmentNumber) that can each
+     * reject a {@code saveAndFlush} - distinguishes which one actually fired by the violated
+     * constraint's own name, read from the driver's own root-cause message via Spring's {@code
+     * getMostSpecificCause()} (the same "recognise by the structured fact, not by guessing"
+     * instinct as {@code SqlStates}, just at the constraint-name granularity that SQLSTATE alone
+     * can't give here - both violations share the same SQLSTATE, 23505).
+     */
+    private static ConflictException conflictForUniqueViolation(DataIntegrityViolationException e) {
+        String message = e.getMostSpecificCause().getMessage();
+        return message != null && message.contains("User_enrollmentNumber_key")
+                ? new ConflictException("This enrollment number is already assigned to another employee")
+                : new ConflictException("A user with that email already exists");
     }
 
     /**
@@ -261,6 +278,37 @@ public class UserService {
                 AuditEntityType.USER,
                 saved.getId(),
                 "Overtime eligibility for " + saved.getName() + " set to " + saved.isOvertimeEligible());
+        return userMapper.toDto(saved);
+    }
+
+    /**
+     * {@code PATCH /users/{id}/enrollment-number} - see {@code User.enrollmentNumber}'s own
+     * openapi.yaml description for what a fingerprint terminal needs this for. {@code
+     * enrollmentNumber} must actually be present in the body (a number to assign, or explicit
+     * {@code null} to clear) - a {@code JsonNullable} left undefined means the caller omitted the
+     * field entirely, which this endpoint has no sensible no-op interpretation for. No {@code
+     * tokenVersion} bump, no self-change restriction - like functions/overtimeEligible, this
+     * doesn't touch authentication.
+     */
+    @Transactional
+    public User updateEnrollmentNumber(String id, JsonNullable<Integer> enrollmentNumber) {
+        if (!enrollmentNumber.isPresent()) {
+            throw new BadRequestException("enrollmentNumber is required (send null to clear it)");
+        }
+        UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        entity.setEnrollmentNumber(enrollmentNumber.get());
+        UserEntity saved;
+        try {
+            saved = userRepository.saveAndFlush(entity);
+        } catch (DataIntegrityViolationException e) {
+            throw new ConflictException("This enrollment number is already assigned to another employee");
+        }
+        auditLogService.record(
+                AuditAction.USER_ENROLLMENT_NUMBER_CHANGED,
+                AuditEntityType.USER,
+                saved.getId(),
+                "Enrollment number for " + saved.getName() + " set to "
+                        + (saved.getEnrollmentNumber() != null ? saved.getEnrollmentNumber() : "none"));
         return userMapper.toDto(saved);
     }
 

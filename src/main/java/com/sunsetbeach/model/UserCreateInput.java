@@ -32,6 +32,8 @@ public class UserCreateInput {
 
   private Boolean overtimeEligible = true;
 
+  private Integer enrollmentNumber;
+
   public UserCreateInput() {
     super();
   }
@@ -138,6 +140,25 @@ public class UserCreateInput {
     this.overtimeEligible = overtimeEligible;
   }
 
+  public UserCreateInput enrollmentNumber(Integer enrollmentNumber) {
+    this.enrollmentNumber = enrollmentNumber;
+    return this;
+  }
+
+  /**
+   * See `User`'s own description. Omit for staff who don't punch a terminal; set later via `PATCH /users/{id}/enrollment-number` once known.
+   * @return enrollmentNumber
+   */
+  
+  @JsonProperty("enrollmentNumber")
+  public Integer getEnrollmentNumber() {
+    return enrollmentNumber;
+  }
+
+  public void setEnrollmentNumber(Integer enrollmentNumber) {
+    this.enrollmentNumber = enrollmentNumber;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -151,12 +172,13 @@ public class UserCreateInput {
         Objects.equals(this.email, userCreateInput.email) &&
         Objects.equals(this.password, userCreateInput.password) &&
         Objects.equals(this.role, userCreateInput.role) &&
-        Objects.equals(this.overtimeEligible, userCreateInput.overtimeEligible);
+        Objects.equals(this.overtimeEligible, userCreateInput.overtimeEligible) &&
+        Objects.equals(this.enrollmentNumber, userCreateInput.enrollmentNumber);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, email, password, role, overtimeEligible);
+    return Objects.hash(name, email, password, role, overtimeEligible, enrollmentNumber);
   }
 
   @Override
@@ -168,6 +190,7 @@ public class UserCreateInput {
     sb.append("    password: ").append(toIndentedString(password)).append("\n");
     sb.append("    role: ").append(toIndentedString(role)).append("\n");
     sb.append("    overtimeEligible: ").append(toIndentedString(overtimeEligible)).append("\n");
+    sb.append("    enrollmentNumber: ").append(toIndentedString(enrollmentNumber)).append("\n");
     sb.append("}");
     return sb.toString();
   }

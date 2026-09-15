@@ -362,6 +362,25 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void updateUserEnrollmentNumber_withManagerToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/users/user-2/enrollment-number")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enrollmentNumber\":123}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateUserEnrollmentNumber_withAdminToken_isOk() throws Exception {
+        when(userService.updateEnrollmentNumber(eq("user-2"), any())).thenReturn(sampleUser());
+        mockMvc.perform(patch("/users/user-2/enrollment-number")
+                        .header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"enrollmentNumber\":123}"))
+                .andExpect(status().isOk());
+    }
+
     // --- POST /menu requires MANAGER or above ---
 
     @Test

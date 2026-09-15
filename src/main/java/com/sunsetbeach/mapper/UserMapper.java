@@ -14,6 +14,7 @@ public class UserMapper {
         List<JobFunction> functions = Arrays.stream(entity.getJobFunctions()).map(JobFunction::fromValue).toList();
         User dto = new User(entity.getId(), entity.getName(), entity.getRole(), entity.isActive(), functions, entity.isOvertimeEligible(), TimestampFormat.toUtc(entity.getCreatedAt()));
         dto.setEmail(entity.getEmail());
+        dto.setEnrollmentNumber(entity.getEnrollmentNumber());
         return dto;
     }
 }

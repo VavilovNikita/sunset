@@ -12,6 +12,7 @@ import com.sunsetbeach.model.User;
 import com.sunsetbeach.model.UserActiveUpdateInput;
 import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.model.UserCredentialsInput;
+import com.sunsetbeach.model.UserEnrollmentNumberUpdateInput;
 import com.sunsetbeach.model.UserFunctionsUpdateInput;
 import com.sunsetbeach.model.UserOvertimeEligibilityUpdateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
@@ -64,7 +65,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -122,7 +123,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -178,7 +179,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ]";
+                    String exampleString = "[ { \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -225,7 +226,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -282,12 +283,75 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
+                    String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /users/{id}/enrollment-number : Set or clear a staff user&#39;s fingerprint-terminal enrollment number
+     * Requires an authenticated session with role &#x60;ADMIN&#x60;. See &#x60;User.enrollmentNumber&#x60;&#39;s own description. &#x60;enrollmentNumber&#x60; must be sent - a number to assign it, or &#x60;null&#x60; to clear it - omitting it entirely is a 400, not a no-op. No self-change restriction, and no &#x60;tokenVersion&#x60; bump - this doesn&#39;t affect authentication. 
+     *
+     * @param id  (required)
+     * @param userEnrollmentNumberUpdateInput  (required)
+     * @return Updated user. (status code 200)
+     *         or Body failed validation, or &#x60;enrollmentNumber&#x60; was omitted entirely. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or User not found. (status code 404)
+     *         or That enrollment number is already assigned to another employee. (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/users/{id}/enrollment-number",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<User> updateUserEnrollmentNumber(
+         @PathVariable("id") String id,
+         @Valid @RequestBody UserEnrollmentNumberUpdateInput userEnrollmentNumberUpdateInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -339,7 +403,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
+                    String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -396,7 +460,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -453,7 +517,7 @@ public interface UsersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
+                    String exampleString = "{ \"overtimeEligible\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

@@ -5197,6 +5197,67 @@ paths:
               example:
                 error: User not found
 
+  /users/{id}/enrollment-number:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateUserEnrollmentNumber
+      tags: [Users]
+      summary: Set or clear a staff user's fingerprint-terminal enrollment number
+      description: >
+        Requires an authenticated session with role `ADMIN`. See `User.enrollmentNumber`'s own
+        description. `enrollmentNumber` must be sent - a number to assign it, or `null` to clear
+        it - omitting it entirely is a 400, not a no-op. No self-change restriction, and no
+        `tokenVersion` bump - this doesn't affect authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserEnrollmentNumberUpdateInput"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Body failed validation, or `enrollmentNumber` was omitted entirely.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                omitted:
+                  value: { error: "enrollmentNumber is required (send null to clear it)" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: User not found
+        "409":
+          description: That enrollment number is already assigned to another employee.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: This enrollment number is already assigned to another employee
+
   /public/rooms:
     get:
       operationId: listPublicRooms
@@ -8273,6 +8334,15 @@ components:
             via `PATCH /users/{id}/overtime-eligibility` - nothing in this API computes or accrues
             overtime pay from this flag today; it only records the fact so it doesn't have to be
             reconstructed later.
+        enrollmentNumber:
+          type: integer
+          description: >
+            The fingerprint terminal's own numeric PIN for this person, not this system's id - a
+            device attendance punch is attributed by this number alone (see `AttendanceDevice`),
+            so without one, nothing that terminal reports can ever be linked to this person.
+            Absent for staff who never punch a terminal. Unique when set - two people can't share
+            one number - and settable at creation (see `UserCreateInput`) or later via
+            `PATCH /users/{id}/enrollment-number`.
         createdAt:
           type: string
           format: date-time
@@ -8342,6 +8412,9 @@ components:
           type: boolean
           default: true
           description: See `User`'s own description. Defaults to `true` - the known exceptions are set individually, at creation or later via `PATCH /users/{id}/overtime-eligibility`.
+        enrollmentNumber:
+          type: integer
+          description: See `User`'s own description. Omit for staff who don't punch a terminal; set later via `PATCH /users/{id}/enrollment-number` once known.
 
     UserRoleUpdateInput:
       type: object
@@ -8402,6 +8475,21 @@ components:
       properties:
         overtimeEligible:
           type: boolean
+
+    UserEnrollmentNumberUpdateInput:
+      type: object
+      description: >
+        Body of `PATCH /users/{id}/enrollment-number`. See `User.enrollmentNumber`'s own
+        description. `enrollmentNumber` itself is deliberately not in `required` here even though
+        the field is always expected - marking a nullable field both `required` and `nullable`
+        generates a `@NotNull` that would reject the very null this endpoint exists to send (see
+        CLAUDE.md's Code generation section); the service validates its presence manually instead,
+        the same way `PUT /bookings/{id}/guest` does for its own nullable `guestId`.
+      properties:
+        enrollmentNumber:
+          type: integer
+          nullable: true
+          description: Send a number to assign it, or explicit `null` to clear it - omitting the field entirely is rejected.
 
     UserCredentialsInput:
       type: object
@@ -9311,6 +9399,7 @@ components:
         - USER_FUNCTIONS_CHANGED
         - USER_CREDENTIALS_GRANTED
         - USER_OVERTIME_ELIGIBILITY_CHANGED
+        - USER_ENROLLMENT_NUMBER_CHANGED
         - ROOM_UNIT_CREATED
         - ROOM_UNIT_UPDATED
         - ROOM_UNIT_DELETED

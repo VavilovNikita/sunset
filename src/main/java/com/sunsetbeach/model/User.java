@@ -43,6 +43,8 @@ public class User {
 
   private Boolean overtimeEligible;
 
+  private Integer enrollmentNumber;
+
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
@@ -204,6 +206,25 @@ public class User {
     this.overtimeEligible = overtimeEligible;
   }
 
+  public User enrollmentNumber(Integer enrollmentNumber) {
+    this.enrollmentNumber = enrollmentNumber;
+    return this;
+  }
+
+  /**
+   * The fingerprint terminal's own numeric PIN for this person, not this system's id - a device attendance punch is attributed by this number alone (see `AttendanceDevice`), so without one, nothing that terminal reports can ever be linked to this person. Absent for staff who never punch a terminal. Unique when set - two people can't share one number - and settable at creation (see `UserCreateInput`) or later via `PATCH /users/{id}/enrollment-number`. 
+   * @return enrollmentNumber
+   */
+  
+  @JsonProperty("enrollmentNumber")
+  public Integer getEnrollmentNumber() {
+    return enrollmentNumber;
+  }
+
+  public void setEnrollmentNumber(Integer enrollmentNumber) {
+    this.enrollmentNumber = enrollmentNumber;
+  }
+
   public User createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -239,12 +260,13 @@ public class User {
         Objects.equals(this.active, user.active) &&
         Objects.equals(this.functions, user.functions) &&
         Objects.equals(this.overtimeEligible, user.overtimeEligible) &&
+        Objects.equals(this.enrollmentNumber, user.enrollmentNumber) &&
         Objects.equals(this.createdAt, user.createdAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, email, role, active, functions, overtimeEligible, createdAt);
+    return Objects.hash(id, name, email, role, active, functions, overtimeEligible, enrollmentNumber, createdAt);
   }
 
   @Override
@@ -258,6 +280,7 @@ public class User {
     sb.append("    active: ").append(toIndentedString(active)).append("\n");
     sb.append("    functions: ").append(toIndentedString(functions)).append("\n");
     sb.append("    overtimeEligible: ").append(toIndentedString(overtimeEligible)).append("\n");
+    sb.append("    enrollmentNumber: ").append(toIndentedString(enrollmentNumber)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();
