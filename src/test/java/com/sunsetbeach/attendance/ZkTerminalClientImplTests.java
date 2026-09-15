@@ -235,6 +235,8 @@ class ZkTerminalClientImplTests {
             assertThat(result.punches().get(0).direction()).isEqualTo(PunchDirection.OUT);
             assertThat(result.recordSize()).isEqualTo(16);
             assertThat(server.lastRangeStartEncoded()).isEqualTo(encodeTimeAsInt(since));
+            // The device honored the ranged command - this poll actually found out it's supported.
+            assertThat(result.windowedReadUnsupported()).isFalse();
         }
     }
 
@@ -259,6 +261,10 @@ class ZkTerminalClientImplTests {
             assertThat(result.punches().get(0).deviceTimestamp()).isEqualTo(fullLogPunch);
             // Freshly re-detected from the full read, not just echoed back.
             assertThat(result.recordSize()).isEqualTo(16);
+            // The whole point of this test: the rejection must be visible on the result, not just
+            // silently absorbed by the fallback - this is what AttendanceDevicePollService
+            // persists onto the device row so the degradation shows up on the devices screen.
+            assertThat(result.windowedReadUnsupported()).isTrue();
         }
     }
 
@@ -273,6 +279,24 @@ class ZkTerminalClientImplTests {
 
             assertThat(result.punches()).isEmpty();
             assertThat(result.recordSize()).isEqualTo(40);
+            assertThat(result.windowedReadUnsupported()).isFalse();
+        }
+    }
+
+    /**
+     * A full read taken because there's no watermark yet (since=null) never attempted the
+     * windowed command at all, so it must leave windowedReadUnsupported null ("didn't test it") -
+     * never false, which would wrongly claim the device is known to support windowed reads.
+     */
+    @Test
+    void poll_fullReadWithNoSince_leavesWindowedReadUnsupportedNull() throws Exception {
+        byte[] records = sixteenByteRecord(1, LocalDateTime.of(2027, 8, 1, 9, 0, 0), 0);
+
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 1, false)) {
+            server.start();
+            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
+
+            assertThat(result.windowedReadUnsupported()).isNull();
         }
     }
 

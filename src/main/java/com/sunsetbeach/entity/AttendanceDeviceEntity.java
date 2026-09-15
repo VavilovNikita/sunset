@@ -42,6 +42,17 @@ public class AttendanceDeviceEntity {
      */
     private Integer attendanceRecordSize;
 
+    /**
+     * Set from what the device actually answered on the most recent poll that attempted a
+     * windowed read - never from a configuration guess - and cleared the moment a later poll
+     * succeeds with one (firmware can be updated, or a replacement unit swapped in under the same
+     * row). A poll that read the full log for an unrelated reason (no watermark yet, an empty
+     * log) never touches this field either way - see {@code TerminalPollResult
+     * #windowedReadUnsupported}'s own javadoc for why "didn't test it" has to stay distinct from
+     * "tested it and it failed".
+     */
+    private boolean windowedReadUnsupported = false;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -115,5 +126,13 @@ public class AttendanceDeviceEntity {
 
     public void setAttendanceRecordSize(Integer attendanceRecordSize) {
         this.attendanceRecordSize = attendanceRecordSize;
+    }
+
+    public boolean isWindowedReadUnsupported() {
+        return windowedReadUnsupported;
+    }
+
+    public void setWindowedReadUnsupported(boolean windowedReadUnsupported) {
+        this.windowedReadUnsupported = windowedReadUnsupported;
     }
 }

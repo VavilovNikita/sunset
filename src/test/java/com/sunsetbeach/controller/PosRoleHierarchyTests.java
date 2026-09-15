@@ -1722,7 +1722,8 @@ class PosRoleHierarchyTests {
     }
 
     private static com.sunsetbeach.model.AttendanceDevice sampleAttendanceDevice() {
-        return new com.sunsetbeach.model.AttendanceDevice("device-1", "Front Desk Clock", "SN-1", "192.168.1.50", 4370, "Asia/Bangkok", true, OffsetDateTime.now());
+        return new com.sunsetbeach.model.AttendanceDevice(
+                "device-1", "Front Desk Clock", "SN-1", "192.168.1.50", 4370, "Asia/Bangkok", true, false, OffsetDateTime.now());
     }
 
     private static com.sunsetbeach.model.AttendanceDeviceInput sampleAttendanceDeviceInput() {

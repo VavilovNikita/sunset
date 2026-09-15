@@ -57,7 +57,7 @@ public interface AttendanceDevicesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\" }";
+                    String exampleString = "{ \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"windowedReadUnsupported\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -162,7 +162,7 @@ public interface AttendanceDevicesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\" }, { \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\" } ]";
+                    String exampleString = "[ { \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"windowedReadUnsupported\" : true }, { \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"windowedReadUnsupported\" : true } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -205,7 +205,7 @@ public interface AttendanceDevicesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\" }";
+                    String exampleString = "{ \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"windowedReadUnsupported\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -258,7 +258,7 @@ public interface AttendanceDevicesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\" }";
+                    String exampleString = "{ \"lastSeenAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"address\" : \"address\", \"serial\" : \"serial\", \"port\" : 0, \"timezone\" : \"timezone\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"windowedReadUnsupported\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

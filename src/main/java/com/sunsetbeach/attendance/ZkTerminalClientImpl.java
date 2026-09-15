@@ -70,7 +70,11 @@ import org.springframework.stereotype.Component;
  * unverified is whether the K60's specific firmware honors it at all; {@link
  * #readWindowedAttendanceLog} treats anything other than an immediate-data or prepare-data
  * response to that command as "this firmware doesn't support it" and falls back to a full read in
- * the same call, never surfacing that as a poll failure - see that method's own javadoc.
+ * the same call, never surfacing that as a poll failure - see that method's own javadoc. That
+ * fallback is not silent past this class, though: {@link TerminalPollResult#windowedReadUnsupported}
+ * carries the fact back to {@code AttendanceDevicePollService}, which persists it on the device row
+ * - a K60 that turns out not to support the ranged command becomes a fact visible on the devices
+ * screen, not a permanent, unremarked full-log read every five minutes.
  */
 @Component
 public class ZkTerminalClientImpl implements ZkTerminalClient {
@@ -126,7 +130,7 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
                 int recordCount = readRecordCount(socket, session);
                 TerminalPollResult result;
                 if (recordCount == 0) {
-                    result = new TerminalPollResult(List.of(), knownRecordSize);
+                    result = new TerminalPollResult(List.of(), knownRecordSize, null);
                 } else if (since == null) {
                     result = readFullAttendanceLog(socket, session, recordCount);
                 } else {
@@ -221,12 +225,12 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
         }
         byte[] rawData = fetchBlob(socket, session, prepareResponse);
         if (rawData.length < 4) {
-            return new TerminalPollResult(List.of(), null);
+            return new TerminalPollResult(List.of(), null, null);
         }
         int totalSize = ByteBuffer.wrap(rawData, 0, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
         byte[] records = Arrays.copyOfRange(rawData, 4, rawData.length);
         int recordSize = recordCount == 0 ? 0 : totalSize / recordCount;
-        return new TerminalPollResult(parseAttendanceRecords(records, recordSize), recordSize);
+        return new TerminalPollResult(parseAttendanceRecords(records, recordSize), recordSize, null);
     }
 
     /**
@@ -247,14 +251,15 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
             log.info(
                     "{} did not accept a ranged attendance-log read (response code {}) - reading the full log this poll instead", deviceName,
                     prepareResponse.command());
-            return readFullAttendanceLog(socket, session, recordCount);
+            TerminalPollResult fallback = readFullAttendanceLog(socket, session, recordCount);
+            return new TerminalPollResult(fallback.punches(), fallback.recordSize(), true);
         }
         byte[] rawData = fetchBlob(socket, session, prepareResponse);
         if (rawData.length < 4) {
-            return new TerminalPollResult(List.of(), knownRecordSize);
+            return new TerminalPollResult(List.of(), knownRecordSize, false);
         }
         byte[] records = Arrays.copyOfRange(rawData, 4, rawData.length);
-        return new TerminalPollResult(parseAttendanceRecords(records, knownRecordSize), knownRecordSize);
+        return new TerminalPollResult(parseAttendanceRecords(records, knownRecordSize), knownRecordSize, false);
     }
 
     private byte[] fetchBlob(Socket socket, Session session, Response prepareResponse) throws IOException {

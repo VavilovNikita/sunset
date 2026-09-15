@@ -268,4 +268,49 @@ class AttendanceDevicePollServiceTests extends AbstractIntegrationTest {
     void resyncNow_unknownDevice_throwsNotFound() {
         assertThatThrownBy(() -> attendanceDevicePollService.resyncNow("no-such-device-id")).isInstanceOf(NotFoundException.class);
     }
+
+    /**
+     * The whole point of this change: a device whose firmware rejects the windowed command must
+     * not fail silently into "reads the full log forever, nobody notices" - the poll service has
+     * to persist that fact where a person can see it (see AttendanceDeviceEntity#
+     * windowedReadUnsupported's own javadoc), set from what the fake terminal actually answered
+     * on the poll that tested it, not a default.
+     */
+    @Test
+    void pollDevices_windowedReadRejected_marksDeviceUnsupported() {
+        AttendanceDeviceEntity device = createDevice();
+        assertThat(device.isWindowedReadUnsupported()).isFalse();
+        int enrollmentNumber = uniqueEnrollmentNumber();
+        createEnrolledUser(enrollmentNumber);
+        LocalDateTime firstPunchAt = LocalDate.of(2027, 9, 8).atTime(9, 0);
+        // Poll 1: no watermark yet, a plain full read - establishes the watermark the next poll windows from.
+        fake().queue(device.getId(), List.of(new RawAttendancePunch(enrollmentNumber, firstPunchAt, PunchDirection.IN)));
+        // Poll 2: a watermark now exists, so this is windowed - and this fake terminal rejects it.
+        fake().queue(device.getId(), new FakeZkTerminalClient.FakeOutcome(List.of(), true));
+
+        attendanceDevicePollService.pollDevices();
+        attendanceDevicePollService.pollDevices();
+
+        assertThat(attendanceDeviceRepository.findById(device.getId()).orElseThrow().isWindowedReadUnsupported()).isTrue();
+    }
+
+    /** Firmware can be updated, or a replacement unit swapped in under the same row - a later poll succeeding with a window clears the flag. */
+    @Test
+    void pollDevices_windowedReadLaterSucceeds_clearsPreviouslySetFlag() {
+        AttendanceDeviceEntity device = createDevice();
+        int enrollmentNumber = uniqueEnrollmentNumber();
+        createEnrolledUser(enrollmentNumber);
+        LocalDateTime firstPunchAt = LocalDate.of(2027, 9, 9).atTime(9, 0);
+        fake().queue(device.getId(), List.of(new RawAttendancePunch(enrollmentNumber, firstPunchAt, PunchDirection.IN)));
+        fake().queue(device.getId(), new FakeZkTerminalClient.FakeOutcome(List.of(), true));
+        fake().queue(device.getId(), new FakeZkTerminalClient.FakeOutcome(List.of(), false));
+
+        attendanceDevicePollService.pollDevices();
+        attendanceDevicePollService.pollDevices();
+        assertThat(attendanceDeviceRepository.findById(device.getId()).orElseThrow().isWindowedReadUnsupported()).isTrue();
+
+        attendanceDevicePollService.pollDevices();
+
+        assertThat(attendanceDeviceRepository.findById(device.getId()).orElseThrow().isWindowedReadUnsupported()).isFalse();
+    }
 }

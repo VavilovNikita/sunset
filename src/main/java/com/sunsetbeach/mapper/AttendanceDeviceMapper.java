@@ -11,7 +11,7 @@ public class AttendanceDeviceMapper {
     public AttendanceDevice toDto(AttendanceDeviceEntity entity) {
         AttendanceDevice dto = new AttendanceDevice(
                 entity.getId(), entity.getName(), entity.getSerial(), entity.getAddress(), entity.getPort(), entity.getTimezone(), entity.isActive(),
-                TimestampFormat.toUtc(entity.getCreatedAt()));
+                entity.isWindowedReadUnsupported(), TimestampFormat.toUtc(entity.getCreatedAt()));
         if (entity.getLastSeenAt() != null) {
             dto.lastSeenAt(TimestampFormat.toUtc(entity.getLastSeenAt()));
         }

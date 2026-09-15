@@ -68,6 +68,16 @@ import org.springframework.transaction.annotation.Transactional;
  * normally even when a device's clock is wrong, since it records when *we* successfully polled,
  * not what the device's own clock said - so this is a case for an operator who notices something
  * looks off to resolve with a manual resync, not something the sweep silently self-heals.
+ *
+ * <p><b>A device that doesn't support windowed reads says so, visibly.</b> {@link #markSeen}
+ * persists {@code result.windowedReadUnsupported()} onto {@code AttendanceDeviceEntity
+ * #windowedReadUnsupported} whenever a poll actually tested the windowed command - {@code true} if
+ * the device rejected it and this poll fell back to a full read, {@code false} if the device
+ * honored it, left untouched (never guessed) when this poll never attempted a windowed read at
+ * all. Without this, a K60 that turns out not to support {@code CMD_ATTLOG_TIME_RRQ} would read
+ * its entire, ever-growing log every five minutes for as long as it's deployed, and nothing would
+ * ever say why - exactly the cost this whole windowing feature exists to remove, reintroduced
+ * silently. The devices screen shows it next to {@code lastSeenAt} for exactly that reason.
  */
 @Service
 public class AttendanceDevicePollService {
@@ -149,7 +159,7 @@ public class AttendanceDevicePollService {
             return;
         }
 
-        markSeen(device, result.recordSize());
+        markSeen(device, result.recordSize(), result.windowedReadUnsupported());
 
         int ingested = 0;
         int duplicate = 0;
@@ -189,10 +199,16 @@ public class AttendanceDevicePollService {
     }
 
     @Transactional
-    void markSeen(AttendanceDeviceEntity device, Integer recordSize) {
+    void markSeen(AttendanceDeviceEntity device, Integer recordSize, Boolean windowedReadUnsupported) {
         device.setLastSeenAt(LocalDateTime.now());
         if (recordSize != null) {
             device.setAttendanceRecordSize(recordSize);
+        }
+        // Null means this poll never actually tested the windowed command (no watermark yet, or
+        // an empty log) - leave whatever the last real test found alone rather than guess. See
+        // TerminalPollResult#windowedReadUnsupported's own javadoc.
+        if (windowedReadUnsupported != null) {
+            device.setWindowedReadUnsupported(windowedReadUnsupported);
         }
         attendanceDeviceRepository.save(device);
     }

@@ -10534,7 +10534,7 @@ components:
         merely informational - a terminal that quietly stopped reporting looks, in the punch data
         alone, exactly like a month in which nobody worked, so a long gap here is the one signal
         that tells the difference.
-      required: [id, name, serial, address, port, timezone, active, createdAt]
+      required: [id, name, serial, address, port, timezone, active, createdAt, windowedReadUnsupported]
       properties:
         id:
           type: string
@@ -10564,6 +10564,15 @@ components:
           format: date-time
           nullable: true
           description: When this device was last successfully polled. Null if it has never been reached.
+        windowedReadUnsupported:
+          type: boolean
+          description: >
+            True if the most recent poll that actually tried a windowed read found this device
+            rejecting it, so every poll since has been reading the entire log instead of a window
+            - set from what the device answered, never a configuration guess, and cleared the
+            moment a later poll succeeds with a window. False both when the device supports
+            windowed reads and when no poll has tested it yet (a brand new device's first poll is
+            always a full read regardless of support).
         createdAt:
           type: string
           format: date-time

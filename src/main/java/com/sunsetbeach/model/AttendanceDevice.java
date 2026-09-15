@@ -42,6 +42,8 @@ public class AttendanceDevice {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private JsonNullable<OffsetDateTime> lastSeenAt = JsonNullable.<OffsetDateTime>undefined();
 
+  private Boolean windowedReadUnsupported;
+
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
@@ -52,7 +54,7 @@ public class AttendanceDevice {
   /**
    * Constructor with only required parameters
    */
-  public AttendanceDevice(String id, String name, String serial, String address, Integer port, String timezone, Boolean active, OffsetDateTime createdAt) {
+  public AttendanceDevice(String id, String name, String serial, String address, Integer port, String timezone, Boolean active, Boolean windowedReadUnsupported, OffsetDateTime createdAt) {
     this.id = id;
     this.name = name;
     this.serial = serial;
@@ -60,6 +62,7 @@ public class AttendanceDevice {
     this.port = port;
     this.timezone = timezone;
     this.active = active;
+    this.windowedReadUnsupported = windowedReadUnsupported;
     this.createdAt = createdAt;
   }
 
@@ -215,6 +218,25 @@ public class AttendanceDevice {
     this.lastSeenAt = lastSeenAt;
   }
 
+  public AttendanceDevice windowedReadUnsupported(Boolean windowedReadUnsupported) {
+    this.windowedReadUnsupported = windowedReadUnsupported;
+    return this;
+  }
+
+  /**
+   * True if the most recent poll that actually tried a windowed read found this device rejecting it, so every poll since has been reading the entire log instead of a window - set from what the device answered, never a configuration guess, and cleared the moment a later poll succeeds with a window. False both when the device supports windowed reads and when no poll has tested it yet (a brand new device's first poll is always a full read regardless of support). 
+   * @return windowedReadUnsupported
+   */
+  @NotNull 
+  @JsonProperty("windowedReadUnsupported")
+  public Boolean getWindowedReadUnsupported() {
+    return windowedReadUnsupported;
+  }
+
+  public void setWindowedReadUnsupported(Boolean windowedReadUnsupported) {
+    this.windowedReadUnsupported = windowedReadUnsupported;
+  }
+
   public AttendanceDevice createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -251,6 +273,7 @@ public class AttendanceDevice {
         Objects.equals(this.timezone, attendanceDevice.timezone) &&
         Objects.equals(this.active, attendanceDevice.active) &&
         equalsNullable(this.lastSeenAt, attendanceDevice.lastSeenAt) &&
+        Objects.equals(this.windowedReadUnsupported, attendanceDevice.windowedReadUnsupported) &&
         Objects.equals(this.createdAt, attendanceDevice.createdAt);
   }
 
@@ -260,7 +283,7 @@ public class AttendanceDevice {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, serial, address, port, timezone, active, hashCodeNullable(lastSeenAt), createdAt);
+    return Objects.hash(id, name, serial, address, port, timezone, active, hashCodeNullable(lastSeenAt), windowedReadUnsupported, createdAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -282,6 +305,7 @@ public class AttendanceDevice {
     sb.append("    timezone: ").append(toIndentedString(timezone)).append("\n");
     sb.append("    active: ").append(toIndentedString(active)).append("\n");
     sb.append("    lastSeenAt: ").append(toIndentedString(lastSeenAt)).append("\n");
+    sb.append("    windowedReadUnsupported: ").append(toIndentedString(windowedReadUnsupported)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();
