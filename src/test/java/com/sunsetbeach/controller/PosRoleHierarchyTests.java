@@ -132,7 +132,8 @@ import tools.jackson.databind.json.JsonMapper;
             TableController.class,
             SpaController.class,
             GuestController.class,
-            com.sunsetbeach.controller.RosterController.class
+            com.sunsetbeach.controller.RosterController.class,
+            com.sunsetbeach.controller.AttendanceDeviceController.class
         })
 @Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
         com.sunsetbeach.security.BookingRateLimiter.class})
@@ -223,6 +224,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private com.sunsetbeach.service.AttendanceService attendanceService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.AttendanceDeviceService attendanceDeviceService;
 
     @MockitoBean
     private com.sunsetbeach.service.EmployeePayRateService employeePayRateService;
@@ -1540,6 +1544,56 @@ class PosRoleHierarchyTests {
     }
 
     @Test
+    void listAttendanceDevices_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/attendance/devices").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listAttendanceDevices_withManagerToken_isOk() throws Exception {
+        when(attendanceDeviceService.list()).thenReturn(List.of(sampleAttendanceDevice()));
+        mockMvc.perform(get("/attendance/devices").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void createAttendanceDevice_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/attendance/devices")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(sampleAttendanceDeviceInput())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createAttendanceDevice_withManagerToken_isCreated() throws Exception {
+        when(attendanceDeviceService.create(any())).thenReturn(sampleAttendanceDevice());
+        mockMvc.perform(post("/attendance/devices")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(sampleAttendanceDeviceInput())))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void updateAttendanceDevice_withManagerToken_isOk() throws Exception {
+        when(attendanceDeviceService.update(eq("device-1"), any())).thenReturn(sampleAttendanceDevice());
+        mockMvc.perform(patch("/attendance/devices/device-1")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(sampleAttendanceDeviceInput())))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void deleteAttendanceDevice_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(delete("/attendance/devices/device-1").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deleteAttendanceDevice_withManagerToken_isOk() throws Exception {
+        mockMvc.perform(delete("/attendance/devices/device-1").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+    }
+
+    @Test
     void createEmployeePayRate_withWaiterToken_isForbidden() throws Exception {
         mockMvc.perform(post("/employee-pay-rates")
                         .header("Authorization", token(Role.WAITER))
@@ -1593,6 +1647,14 @@ class PosRoleHierarchyTests {
         return new com.sunsetbeach.model.AttendancePunch(
                 "punch-1", "user-1", "Waiter One", OffsetDateTime.now(), com.sunsetbeach.model.PunchDirection.IN,
                 com.sunsetbeach.model.PunchSource.MANUAL, OffsetDateTime.now());
+    }
+
+    private static com.sunsetbeach.model.AttendanceDevice sampleAttendanceDevice() {
+        return new com.sunsetbeach.model.AttendanceDevice("device-1", "Front Desk Clock", "SN-1", "192.168.1.50", 4370, "Asia/Bangkok", true, OffsetDateTime.now());
+    }
+
+    private static com.sunsetbeach.model.AttendanceDeviceInput sampleAttendanceDeviceInput() {
+        return new com.sunsetbeach.model.AttendanceDeviceInput("Front Desk Clock", "SN-1", "192.168.1.50", "Asia/Bangkok");
     }
 
     private static com.sunsetbeach.model.EmployeePayRate sampleEmployeePayRate() {

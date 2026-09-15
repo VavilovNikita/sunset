@@ -1,5 +1,6 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.entity.AttendanceDeviceEntity;
 import com.sunsetbeach.entity.AttendancePunchEntity;
 import com.sunsetbeach.entity.RosterEntryEntity;
 import com.sunsetbeach.entity.ShiftCodeEntity;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -108,6 +110,53 @@ public class AttendanceService {
     }
 
     /**
+     * Writes one {@code SCANNER}-sourced punch - the write path a device poll (not yet built)
+     * calls once per raw record read off a terminal. Idempotent by construction, not by
+     * convention: {@code (deviceId, enrollmentNumber, punchAt)} is a unique triple (see V75), and
+     * this method checks for that triple before writing rather than writing and catching the
+     * violation - a caught {@code DataIntegrityViolationException} still leaves the surrounding
+     * Spring transaction marked rollback-only (JPA's own flush failure poisons it before a
+     * {@code catch} block ever runs, regardless of {@code REQUIRES_NEW}; the transaction, not just
+     * the Java exception, has to be dealt with), so for the *expected* case - a device resending a
+     * record after a network drop, a restart, or a re-read of the same window - checking first is
+     * what actually lets this method return normally instead of throwing
+     * {@code UnexpectedRollbackException} on every re-send. The unique index stays as a real,
+     * database-enforced backstop for whatever this check can't see (two overlapping polls, say);
+     * that genuinely-unexpected case is allowed to throw and fail the one record, same as any
+     * other DB hiccup.
+     *
+     * <p>{@code REQUIRES_NEW}, so one record's own transaction can never be the reason another
+     * record's write doesn't happen - a poll ingests many records in one pass, and every one of
+     * them has to stand alone for that to hold, the same isolation reason
+     * {@code AuditLogService.record} already documents for itself.
+     *
+     * <p>An enrollment number the device reports that matches no {@code User} is not ingested at
+     * all - see {@code User.enrollmentNumber}'s own description: without one, nothing here can
+     * say who this punch belongs to, and a punch attributed to nobody is worse than a punch not
+     * recorded yet, which can still be backfilled once the number is assigned.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public DeviceIngestResult ingestDevicePunch(AttendanceDeviceEntity device, int enrollmentNumber, LocalDateTime deviceTimestamp, PunchDirection direction) {
+        UserEntity employee = userRepository.findByEnrollmentNumber(enrollmentNumber).orElse(null);
+        if (employee == null) {
+            return DeviceIngestResult.UNKNOWN_ENROLLMENT_NUMBER;
+        }
+        if (attendancePunchRepository.existsByDeviceIdAndEnrollmentNumberAndPunchAt(device.getId(), enrollmentNumber, deviceTimestamp)) {
+            return DeviceIngestResult.DUPLICATE;
+        }
+
+        AttendancePunchEntity entity = new AttendancePunchEntity();
+        entity.setEmployeeUserId(employee.getId());
+        entity.setPunchAt(deviceTimestamp);
+        entity.setDirection(direction);
+        entity.setSource(PunchSource.SCANNER);
+        entity.setDeviceId(device.getId());
+        entity.setEnrollmentNumber(enrollmentNumber);
+        attendancePunchRepository.saveAndFlush(entity);
+        return DeviceIngestResult.INGESTED;
+    }
+
+    /**
      * Planned vs. actual, one day per row. {@code shiftCode} is null on a day off (no
      * {@code RosterEntry}) - distinct from {@code OP}, which has a shift code but an empty
      * {@code plannedIntervals}, so a genuinely open day never shows a fabricated zero planned.
@@ -184,7 +233,12 @@ public class AttendanceService {
 
     private Map<String, String> resolveEmails(List<String> userIds) {
         if (userIds.isEmpty()) {
-            return Map.of();
+            // Not Map.of(): every caller looks this map up by a SCANNER punch's own
+            // recordedByUserId, which is null by design (see AttendancePunch's own description) -
+            // Map.of()'s get(null) throws NPE (it validates its key argument like every other
+            // Map.of() method), where Collections.emptyMap() - like the populated HashMap the
+            // branch below already returns - just answers null for a key that isn't there.
+            return java.util.Collections.emptyMap();
         }
         return userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
     }

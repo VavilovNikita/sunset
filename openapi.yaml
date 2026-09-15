@@ -6130,6 +6130,149 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /attendance/devices:
+    get:
+      operationId: listAttendanceDevices
+      tags: [AttendanceDevices]
+      summary: List fingerprint terminals
+      description: Requires MANAGER or above. Every registered device, active or not.
+      responses:
+        "200":
+          description: All devices.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AttendanceDevice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+    post:
+      operationId: createAttendanceDevice
+      tags: [AttendanceDevices]
+      summary: Register a fingerprint terminal
+      description: Requires MANAGER or above. `serial` must be unique - registering the same physical device twice is rejected with 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttendanceDeviceInput"
+      responses:
+        "201":
+          description: Device registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceDevice"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "409":
+          description: A device with this serial is already registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: A device with this serial is already registered
+
+  /attendance/devices/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateAttendanceDevice
+      tags: [AttendanceDevices]
+      summary: Update a fingerprint terminal
+      description: Requires MANAGER or above. Full replacement of all `AttendanceDeviceInput` fields - no partial update, same convention as `PrinterInput`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttendanceDeviceInput"
+      responses:
+        "200":
+          description: Updated device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceDevice"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Device not found
+        "409":
+          description: Another device already has this serial.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: A device with this serial is already registered
+    delete:
+      operationId: deleteAttendanceDevice
+      tags: [AttendanceDevices]
+      summary: Delete a fingerprint terminal
+      description: >
+        Requires MANAGER or above. A device that has ever produced a punch (has
+        `AttendancePunch` rows) can't be deleted - deactivate it (`active=false`) instead, the
+        same convention as `DELETE /printers/{id}`.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Device not found
+        "409":
+          description: This device has recorded punches and can't be deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: This device has recorded punches and can't be deleted.
+
   /employee-pay-rates:
     get:
       operationId: listEmployeePayRates
@@ -9925,6 +10068,83 @@ components:
         note:
           type: string
           nullable: true
+
+    AttendanceDevice:
+      type: object
+      description: >
+        A fingerprint terminal (ZKTeco K60, TCP/IP port 4370) the server polls for its attendance
+        log - the device never calls us. That direction is deliberate: there is no inbound
+        endpoint this API exposes for a device to push to, so nothing on the internet, or even
+        elsewhere on the hotel's own network, can reach the terminal or masquerade as it. The
+        server needs only outbound reachability to `address:port` on the local network; deploying
+        this feature adds no new attack surface to defend, unlike a push design, which would need
+        an authenticated inbound listener. `lastSeenAt` is set on every successful poll and is not
+        merely informational - a terminal that quietly stopped reporting looks, in the punch data
+        alone, exactly like a month in which nobody worked, so a long gap here is the one signal
+        that tells the difference.
+      required: [id, name, serial, address, port, timezone, active, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        serial:
+          type: string
+          description: The device's own serial number - unique, so the same physical unit can't be registered twice.
+        address:
+          type: string
+          description: IP address or hostname on the hotel's local network.
+        port:
+          type: integer
+          description: Almost always 4370 on real hardware.
+        timezone:
+          type: string
+          description: >
+            IANA zone id (e.g. `Asia/Bangkok`) for the device's own clock - not necessarily this
+            server's. Set on every successful poll to match this server's clock, so drift never
+            accumulates, but read here in the device's own zone for any punch read before that
+            write lands.
+        active:
+          type: boolean
+          description: Whether this device is currently polled. A retired or replaced device is deactivated, not deleted, once it has ever produced a punch.
+        lastSeenAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When this device was last successfully polled. Null if it has never been reached.
+        createdAt:
+          type: string
+          format: date-time
+
+    AttendanceDeviceInput:
+      type: object
+      description: Full replacement on PATCH — no partial update (same convention as `PrinterInput`).
+      required: [name, serial, address, timezone]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        serial:
+          type: string
+          minLength: 1
+          maxLength: 120
+        address:
+          type: string
+          minLength: 1
+          maxLength: 255
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 4370
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 100
+        active:
+          type: boolean
+          default: true
 
     ShiftInterval:
       type: object

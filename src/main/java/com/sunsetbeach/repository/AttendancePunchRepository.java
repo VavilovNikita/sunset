@@ -9,4 +9,8 @@ public interface AttendancePunchRepository extends JpaRepository<AttendancePunch
 
     List<AttendancePunchEntity> findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(
             String employeeUserId, LocalDateTime from, LocalDateTime to);
+
+    boolean existsByDeviceId(String deviceId);
+
+    boolean existsByDeviceIdAndEnrollmentNumberAndPunchAt(String deviceId, int enrollmentNumber, LocalDateTime punchAt);
 }

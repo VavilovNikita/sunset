@@ -42,6 +42,14 @@ public class AttendancePunchEntity {
 
     private String note;
 
+    // Both null together for MANUAL, both set together for SCANNER (see V75's own CHECK
+    // constraint). enrollmentNumber is the device's own reported number, kept alongside the
+    // resolved employeeUserId above rather than only implied by it - see the ingestion
+    // idempotency key this pair (with deviceId and punchAt) forms.
+    private String deviceId;
+
+    private Integer enrollmentNumber;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -99,5 +107,21 @@ public class AttendancePunchEntity {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public String getDeviceId() {
+        return deviceId;
+    }
+
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
+    }
+
+    public Integer getEnrollmentNumber() {
+        return enrollmentNumber;
+    }
+
+    public void setEnrollmentNumber(Integer enrollmentNumber) {
+        this.enrollmentNumber = enrollmentNumber;
     }
 }
