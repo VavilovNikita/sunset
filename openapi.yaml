@@ -10291,7 +10291,15 @@ components:
 
     RosterImportCodeEntry:
       type: object
-      description: One distinct code (or code+colour pair) found in the sheet, and how it currently resolves to a `ShiftCode`.
+      description: >
+        One distinct code found in the sheet, and how it currently resolves to a `ShiftCode`. The
+        ambiguous "9" is grouped by `(staffArea, fillColor)`, not just text, because which
+        `ShiftCode` it means is resolved per area - real data confirms this matters: the same
+        area can use both colours of "9" (Kitchen does, in different rows or even the same
+        person's different days), so a single global "9" entry would hide that more than one
+        `(area, colour)` mapping is actually needed. Every other code is grouped by text alone,
+        since a person only ever needs to *see* a per-area difference in hours here, never to act
+        on one through this endpoint.
       required: [rawCode, occurrences, resolved]
       properties:
         rawCode:
@@ -10301,6 +10309,11 @@ components:
             - $ref: "#/components/schemas/FillColor"
           nullable: true
           description: Set only for the ambiguous "9" - see `FillColor`'s own description. Every other code is read by text alone.
+        staffArea:
+          allOf:
+            - $ref: "#/components/schemas/StaffArea"
+          nullable: true
+          description: Set only alongside `fillColor` - the area this specific "9"/colour combination was found in, needed to call `POST /roster/import/color-mappings`.
         occurrences:
           type: integer
         resolved:

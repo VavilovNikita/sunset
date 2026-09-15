@@ -302,6 +302,7 @@ public class RosterImportService {
     private static final class CodeStatus {
         String rawCode;
         FillColor fillColor;
+        StaffArea staffArea;
         long occurrences;
         boolean resolved;
         String shiftCodeDescription;
@@ -333,11 +334,18 @@ public class RosterImportService {
                 }
             }
 
-            String codeKey = cell.rawCode() + "|" + cell.fillColor();
+            // A "9" is grouped per staffArea too, not just text+colour - which ShiftCode it means
+            // is resolved per area (see RosterImportShiftColorMapping's own uniqueness), and real
+            // data shows one area can genuinely need both colours (Kitchen does) - see this
+            // class's own javadoc. Every other code stays grouped by text alone.
+            String codeKey = cell.rawCode() + "|" + cell.fillColor() + (cell.fillColor() != null ? "|" + cell.staffArea() : "");
             CodeStatus codeStatus = resolution.codesByKey.computeIfAbsent(codeKey, k -> {
                 CodeStatus s = new CodeStatus();
                 s.rawCode = cell.rawCode();
                 s.fillColor = cell.fillColor();
+                if (cell.fillColor() != null) {
+                    s.staffArea = cell.staffArea();
+                }
                 return s;
             });
             codeStatus.occurrences++;
@@ -431,6 +439,9 @@ public class RosterImportService {
                     RosterImportCodeEntry dto = new RosterImportCodeEntry(s.rawCode, (int) s.occurrences, s.resolved);
                     if (s.fillColor != null) {
                         dto.setFillColor(org.openapitools.jackson.nullable.JsonNullable.of(s.fillColor));
+                    }
+                    if (s.staffArea != null) {
+                        dto.setStaffArea(org.openapitools.jackson.nullable.JsonNullable.of(s.staffArea));
                     }
                     if (s.shiftCodeDescription != null) {
                         dto.setShiftCodeDescription(org.openapitools.jackson.nullable.JsonNullable.of(s.shiftCodeDescription));

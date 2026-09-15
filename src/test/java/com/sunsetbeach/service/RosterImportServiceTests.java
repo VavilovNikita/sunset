@@ -157,8 +157,18 @@ class RosterImportServiceTests extends AbstractIntegrationTest {
         assertThat(preview.getCodes()).anySatisfy(c -> {
             assertThat(c.getRawCode()).isEqualTo("9");
             assertThat(c.getFillColor().get()).isEqualTo(FillColor.YELLOW);
+            assertThat(c.getStaffArea().get()).isEqualTo(StaffArea.FRONT_OFFICE);
             assertThat(c.getResolved()).isFalse();
         });
+        assertThat(preview.getCodes()).anySatisfy(c -> {
+            assertThat(c.getRawCode()).isEqualTo("9");
+            assertThat(c.getFillColor().get()).isEqualTo(FillColor.BLUE);
+            assertThat(c.getStaffArea().get()).isEqualTo(StaffArea.KITCHEN);
+            assertThat(c.getResolved()).isFalse();
+        });
+        // Two separate "9" entries above, not merged into one - a single global "9" summary would
+        // hide that Front Office's yellow and Kitchen's blue are two different mappings to make.
+        assertThat(preview.getCodes().stream().filter(c -> c.getRawCode().equals("9")).count()).isEqualTo(2);
         assertThat(preview.getEntriesToCreate()).isEqualTo(0);
         assertThat(preview.getCanCommit()).isFalse();
     }
