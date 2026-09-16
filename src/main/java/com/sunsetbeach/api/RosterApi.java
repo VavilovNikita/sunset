@@ -31,6 +31,7 @@ import com.sunsetbeach.model.RosterReassignInput;
 import com.sunsetbeach.model.RosterSwapInput;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
+import com.sunsetbeach.model.ShiftCodeKindUpdateInput;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.StaffAreaCoverageRule;
 import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
@@ -186,7 +187,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -350,7 +351,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }";
+                    String exampleString = "{ \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -492,7 +493,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"entries\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ], \"month\" : 6, \"year\" : 0, \"employees\" : [ { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ], \"coverageWarnings\" : [ { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 }, { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 } ] }";
+                    String exampleString = "{ \"entries\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ], \"month\" : 6, \"year\" : 0, \"employees\" : [ { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ], \"coverageWarnings\" : [ { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 }, { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -581,7 +582,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
+                    String exampleString = "[ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -620,7 +621,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"entries\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ], \"month\" : 6, \"year\" : 0, \"employees\" : [ { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ], \"coverageWarnings\" : [ { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 }, { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 } ] }";
+                    String exampleString = "{ \"entries\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ], \"month\" : 6, \"year\" : 0, \"employees\" : [ { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ], \"coverageWarnings\" : [ { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 }, { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -831,7 +832,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" } ]";
+                    String exampleString = "[ { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -914,7 +915,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -1024,7 +1025,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -1186,7 +1187,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -1283,7 +1284,64 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"code\" : \"code\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /shift-codes/{id}/kind : Set or correct a shift code&#39;s kind, in place
+     * Requires MANAGER or above. The one deliberate exception to &#x60;ShiftCode&#x60; rows never being edited (see &#x60;POST /shift-codes&#x60;&#39;s own description): &#x60;kind&#x60; is a classification of what a code already is, not one of the agreed terms &#x60;RosterEntry&#x60;s depend on staying frozen - correcting it later doesn&#39;t reinterpret what anyone actually worked or was paid, so this mutates the existing row rather than retiring it and creating a new version. Refused (400) if &#x60;kind&#x60; doesn&#39;t match the row&#39;s own interval shape (&#x60;SPLIT&#x60; needs two intervals, &#x60;MORNING&#x60;/&#x60;EVENING&#x60; need exactly one, &#x60;OPEN_SCHEDULE&#x60;/&#x60;ABSENCE&#x60; need none) - see &#x60;ShiftCodeKind&#x60;&#39;s own description for what each one means. 
+     *
+     * @param id  (required)
+     * @param shiftCodeKindUpdateInput  (required)
+     * @return The updated shift code. (status code 200)
+     *         or kind doesn&#39;t match this code&#39;s own interval shape. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     *         or No such shift code. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/shift-codes/{id}/kind",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<ShiftCode> updateShiftCodeKind(
+         @PathVariable("id") String id,
+         @Valid @RequestBody ShiftCodeKindUpdateInput shiftCodeKindUpdateInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"effectiveFrom\" : \"effectiveFrom\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

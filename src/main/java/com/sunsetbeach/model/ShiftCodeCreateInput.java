@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -19,7 +20,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Body of &#x60;POST /shift-codes&#x60;. &#x60;staffArea&#x60; is optional - omit it (or send it explicitly &#x60;null&#x60;) to define a code shared across every area; a code scoped to a real &#x60;StaffArea&#x60; takes precedence over a shared one of the same &#x60;code&#x60; string for that area only, without retiring the shared row (see &#x60;ShiftCode&#x60;&#39;s own description). 
+ * Body of &#x60;POST /shift-codes&#x60;. &#x60;staffArea&#x60; is optional - omit it (or send it explicitly &#x60;null&#x60;) to define a code shared across every area; a code scoped to a real &#x60;StaffArea&#x60; takes precedence over a shared one of the same &#x60;code&#x60; string for that area only, without retiring the shared row (see &#x60;ShiftCode&#x60;&#39;s own description). Unlike every other field here, &#x60;kind&#x60; (required) is never versioned by creating a new row for it alone - see &#x60;PATCH /shift-codes/{id}/kind&#x60; for correcting one in place. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -28,6 +29,8 @@ public class ShiftCodeCreateInput {
   private StaffArea staffArea;
 
   private String code;
+
+  private ShiftCodeKind kind;
 
   private JsonNullable<@Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$") String> startTime1 = JsonNullable.<String>undefined();
 
@@ -50,8 +53,9 @@ public class ShiftCodeCreateInput {
   /**
    * Constructor with only required parameters
    */
-  public ShiftCodeCreateInput(String code, Boolean countsAsWorked, Boolean isPaid, String effectiveFrom) {
+  public ShiftCodeCreateInput(String code, ShiftCodeKind kind, Boolean countsAsWorked, Boolean isPaid, String effectiveFrom) {
     this.code = code;
+    this.kind = kind;
     this.countsAsWorked = countsAsWorked;
     this.isPaid = isPaid;
     this.effectiveFrom = effectiveFrom;
@@ -93,6 +97,25 @@ public class ShiftCodeCreateInput {
 
   public void setCode(String code) {
     this.code = code;
+  }
+
+  public ShiftCodeCreateInput kind(ShiftCodeKind kind) {
+    this.kind = kind;
+    return this;
+  }
+
+  /**
+   * Get kind
+   * @return kind
+   */
+  @NotNull @Valid 
+  @JsonProperty("kind")
+  public ShiftCodeKind getKind() {
+    return kind;
+  }
+
+  public void setKind(ShiftCodeKind kind) {
+    this.kind = kind;
   }
 
   public ShiftCodeCreateInput startTime1(String startTime1) {
@@ -239,6 +262,7 @@ public class ShiftCodeCreateInput {
     ShiftCodeCreateInput shiftCodeCreateInput = (ShiftCodeCreateInput) o;
     return Objects.equals(this.staffArea, shiftCodeCreateInput.staffArea) &&
         Objects.equals(this.code, shiftCodeCreateInput.code) &&
+        Objects.equals(this.kind, shiftCodeCreateInput.kind) &&
         equalsNullable(this.startTime1, shiftCodeCreateInput.startTime1) &&
         equalsNullable(this.endTime1, shiftCodeCreateInput.endTime1) &&
         equalsNullable(this.startTime2, shiftCodeCreateInput.startTime2) &&
@@ -254,7 +278,7 @@ public class ShiftCodeCreateInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(staffArea, code, hashCodeNullable(startTime1), hashCodeNullable(endTime1), hashCodeNullable(startTime2), hashCodeNullable(endTime2), countsAsWorked, isPaid, effectiveFrom);
+    return Objects.hash(staffArea, code, kind, hashCodeNullable(startTime1), hashCodeNullable(endTime1), hashCodeNullable(startTime2), hashCodeNullable(endTime2), countsAsWorked, isPaid, effectiveFrom);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -270,6 +294,7 @@ public class ShiftCodeCreateInput {
     sb.append("class ShiftCodeCreateInput {\n");
     sb.append("    staffArea: ").append(toIndentedString(staffArea)).append("\n");
     sb.append("    code: ").append(toIndentedString(code)).append("\n");
+    sb.append("    kind: ").append(toIndentedString(kind)).append("\n");
     sb.append("    startTime1: ").append(toIndentedString(startTime1)).append("\n");
     sb.append("    endTime1: ").append(toIndentedString(endTime1)).append("\n");
     sb.append("    startTime2: ").append(toIndentedString(startTime2)).append("\n");

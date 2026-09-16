@@ -299,6 +299,10 @@ public class SecurityConfig {
                         // EndpointCoverageTests wouldn't catch either (it confirms every path has
                         // *a* rule, not that the rule actually matches every method on it).
                         .requestMatchers(HttpMethod.POST, "/shift-codes").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Not a prefix of the bare "/shift-codes" GET/POST rules above, so order
+                        // relative to them doesn't matter - listed here anyway, next to the rest
+                        // of this resource's rules.
+                        .requestMatchers(HttpMethod.PATCH, "/shift-codes/*/kind").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/employee-patterns", "/employee-patterns/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/roster/employees", "/roster/generate", "/roster/actuals-export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/roster", "/roster/entries", "/roster/entries/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())

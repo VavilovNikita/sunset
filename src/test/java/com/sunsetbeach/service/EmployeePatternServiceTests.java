@@ -11,6 +11,7 @@ import com.sunsetbeach.model.EmployeePatternInput;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
+import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.Weekday;
 import com.sunsetbeach.repository.EmployeePatternRepository;
@@ -73,7 +74,7 @@ class EmployeePatternServiceTests extends AbstractIntegrationTest {
         UserEntity manager = createUser(Role.MANAGER);
         UserEntity employee = createUser(Role.WAITER);
         ShiftCode code = shiftCodeService.create(
-                new ShiftCodeCreateInput("P" + UUID.randomUUID().toString().substring(0, 4), true, true, "2026-01-01")
+                new ShiftCodeCreateInput("P" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.MORNING, true, true, "2026-01-01")
                         .staffArea(StaffArea.RESTAURANT)
                         .startTime1("09:00")
                         .endTime1("17:00"),
@@ -101,7 +102,7 @@ class EmployeePatternServiceTests extends AbstractIntegrationTest {
         UserEntity manager = createUser(Role.MANAGER);
         UserEntity employee = createUser(Role.WAITER);
         ShiftCode kitchenCode = shiftCodeService.create(
-                new ShiftCodeCreateInput("K" + UUID.randomUUID().toString().substring(0, 4), true, true, "2026-01-01")
+                new ShiftCodeCreateInput("K" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.EVENING, true, true, "2026-01-01")
                         .staffArea(StaffArea.KITCHEN)
                         .startTime1("12:00")
                         .endTime1("21:00"),

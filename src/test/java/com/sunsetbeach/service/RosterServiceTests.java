@@ -17,6 +17,7 @@ import com.sunsetbeach.model.RosterReassignInput;
 import com.sunsetbeach.model.RosterSwapInput;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
+import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
 import com.sunsetbeach.model.Weekday;
@@ -103,8 +104,9 @@ class RosterServiceTests extends AbstractIntegrationTest {
     private ShiftCode createCode(StaffArea area, String start, String end) {
         UserEntity actor = manager != null ? manager : createUser(Role.MANAGER);
         manager = actor;
+        ShiftCodeKind kind = start.compareTo("12:00") < 0 ? ShiftCodeKind.MORNING : ShiftCodeKind.EVENING;
         ShiftCode code = shiftCodeService.create(
-                new ShiftCodeCreateInput("C" + UUID.randomUUID().toString().substring(0, 6), true, true, "2020-01-01")
+                new ShiftCodeCreateInput("C" + UUID.randomUUID().toString().substring(0, 6), kind, true, true, "2020-01-01")
                         .staffArea(area)
                         .startTime1(start)
                         .endTime1(end),
@@ -327,7 +329,7 @@ class RosterServiceTests extends AbstractIntegrationTest {
         ShiftCode ordinary = createCode(StaffArea.RESTAURANT, "09:00", "17:00");
         // A split shift - both intervals must be summed, not just the first.
         ShiftCode split = shiftCodeService.create(
-                new ShiftCodeCreateInput("SPLIT" + UUID.randomUUID().toString().substring(0, 6), true, true, "2020-01-01")
+                new ShiftCodeCreateInput("SPLIT" + UUID.randomUUID().toString().substring(0, 6), ShiftCodeKind.SPLIT, true, true, "2020-01-01")
                         .staffArea(StaffArea.RESTAURANT)
                         .startTime1("09:00").endTime1("13:00")
                         .startTime2("16:00").endTime2("21:00"),
@@ -335,7 +337,7 @@ class RosterServiceTests extends AbstractIntegrationTest {
         createdShiftCodeIds.add(split.getId());
         // OP - no fixed interval, counts as a day worked but adds no hours.
         ShiftCode op = shiftCodeService.create(
-                new ShiftCodeCreateInput("OP" + UUID.randomUUID().toString().substring(0, 4), true, true, "2020-01-01").staffArea(StaffArea.RESTAURANT),
+                new ShiftCodeCreateInput("OP" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.OPEN_SCHEDULE, true, true, "2020-01-01").staffArea(StaffArea.RESTAURANT),
                 mgr.getId());
         createdShiftCodeIds.add(op.getId());
 

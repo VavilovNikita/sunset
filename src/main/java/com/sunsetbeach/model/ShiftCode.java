@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
@@ -53,6 +54,10 @@ public class ShiftCode {
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
+
+  private JsonNullable<ShiftCodeKind> kind = JsonNullable.<ShiftCodeKind>undefined();
+
+  private JsonNullable<ShiftCodeKind> suggestedKind = JsonNullable.<ShiftCodeKind>undefined();
 
   public ShiftCode() {
     super();
@@ -319,6 +324,44 @@ public class ShiftCode {
     this.createdAt = createdAt;
   }
 
+  public ShiftCode kind(ShiftCodeKind kind) {
+    this.kind = JsonNullable.of(kind);
+    return this;
+  }
+
+  /**
+   * Null only for a code created before this field existed and not yet confirmed - see `suggestedKind` and `PATCH /shift-codes/{id}/kind`. Every code created from here on has one (see `ShiftCodeCreateInput`). 
+   * @return kind
+   */
+  @Valid 
+  @JsonProperty("kind")
+  public JsonNullable<ShiftCodeKind> getKind() {
+    return kind;
+  }
+
+  public void setKind(JsonNullable<ShiftCodeKind> kind) {
+    this.kind = kind;
+  }
+
+  public ShiftCode suggestedKind(ShiftCodeKind suggestedKind) {
+    this.suggestedKind = JsonNullable.of(suggestedKind);
+    return this;
+  }
+
+  /**
+   * A default guessed from this code's own interval shape and `countsAsWorked` - set only when `kind` is null, for `PATCH /shift-codes/{id}/kind` to offer as a starting point, never applied on its own. Same \"suggest, don't silently apply\" shape as `RosterImportNameEntry.suggestedStaffArea`. 
+   * @return suggestedKind
+   */
+  @Valid 
+  @JsonProperty("suggestedKind")
+  public JsonNullable<ShiftCodeKind> getSuggestedKind() {
+    return suggestedKind;
+  }
+
+  public void setSuggestedKind(JsonNullable<ShiftCodeKind> suggestedKind) {
+    this.suggestedKind = suggestedKind;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -340,7 +383,9 @@ public class ShiftCode {
         Objects.equals(this.effectiveFrom, shiftCode.effectiveFrom) &&
         Objects.equals(this.active, shiftCode.active) &&
         Objects.equals(this.createdByEmail, shiftCode.createdByEmail) &&
-        Objects.equals(this.createdAt, shiftCode.createdAt);
+        Objects.equals(this.createdAt, shiftCode.createdAt) &&
+        equalsNullable(this.kind, shiftCode.kind) &&
+        equalsNullable(this.suggestedKind, shiftCode.suggestedKind);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -349,7 +394,7 @@ public class ShiftCode {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, hashCodeNullable(staffArea), code, hashCodeNullable(startTime1), hashCodeNullable(endTime1), hashCodeNullable(startTime2), hashCodeNullable(endTime2), countsAsWorked, isPaid, effectiveFrom, active, createdByEmail, createdAt);
+    return Objects.hash(id, hashCodeNullable(staffArea), code, hashCodeNullable(startTime1), hashCodeNullable(endTime1), hashCodeNullable(startTime2), hashCodeNullable(endTime2), countsAsWorked, isPaid, effectiveFrom, active, createdByEmail, createdAt, hashCodeNullable(kind), hashCodeNullable(suggestedKind));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -376,6 +421,8 @@ public class ShiftCode {
     sb.append("    active: ").append(toIndentedString(active)).append("\n");
     sb.append("    createdByEmail: ").append(toIndentedString(createdByEmail)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
+    sb.append("    kind: ").append(toIndentedString(kind)).append("\n");
+    sb.append("    suggestedKind: ").append(toIndentedString(suggestedKind)).append("\n");
     sb.append("}");
     return sb.toString();
   }

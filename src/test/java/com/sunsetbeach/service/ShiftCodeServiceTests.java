@@ -9,6 +9,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
+import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.UserRepository;
@@ -69,13 +70,13 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
         String code = "TEST" + UUID.randomUUID().toString().substring(0, 6);
 
         ShiftCode first = shiftCodeService.create(
-                new ShiftCodeCreateInput(code, true, true, "2026-01-01").staffArea(StaffArea.RESTAURANT).startTime1("09:00").endTime1("17:00"),
+                new ShiftCodeCreateInput(code, ShiftCodeKind.MORNING, true, true, "2026-01-01").staffArea(StaffArea.RESTAURANT).startTime1("09:00").endTime1("17:00"),
                 manager.getId());
         createdShiftCodeIds.add(first.getId());
         assertThat(first.getActive()).isTrue();
 
         ShiftCode second = shiftCodeService.create(
-                new ShiftCodeCreateInput(code, true, true, "2026-02-01").staffArea(StaffArea.RESTAURANT).startTime1("10:00").endTime1("18:00"),
+                new ShiftCodeCreateInput(code, ShiftCodeKind.MORNING, true, true, "2026-02-01").staffArea(StaffArea.RESTAURANT).startTime1("10:00").endTime1("18:00"),
                 manager.getId());
         createdShiftCodeIds.add(second.getId());
 
@@ -92,11 +93,11 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
         String code = "TEST" + UUID.randomUUID().toString().substring(0, 6);
 
         ShiftCode restaurantVersion = shiftCodeService.create(
-                new ShiftCodeCreateInput(code, true, true, "2026-01-01").staffArea(StaffArea.RESTAURANT).startTime1("09:00").endTime1("13:00").startTime2("16:00").endTime2("21:00"),
+                new ShiftCodeCreateInput(code, ShiftCodeKind.SPLIT, true, true, "2026-01-01").staffArea(StaffArea.RESTAURANT).startTime1("09:00").endTime1("13:00").startTime2("16:00").endTime2("21:00"),
                 manager.getId());
         createdShiftCodeIds.add(restaurantVersion.getId());
         ShiftCode frontOfficeVersion = shiftCodeService.create(
-                new ShiftCodeCreateInput(code, true, true, "2026-01-01").staffArea(StaffArea.FRONT_OFFICE).startTime1("09:00").endTime1("18:00"),
+                new ShiftCodeCreateInput(code, ShiftCodeKind.MORNING, true, true, "2026-01-01").staffArea(StaffArea.FRONT_OFFICE).startTime1("09:00").endTime1("18:00"),
                 manager.getId());
         createdShiftCodeIds.add(frontOfficeVersion.getId());
 
@@ -112,7 +113,7 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
     void create_secondIntervalWithoutFirst_isRejected() {
         UserEntity manager = createManager();
         assertThatThrownBy(() -> shiftCodeService.create(
-                        new ShiftCodeCreateInput("BAD" + UUID.randomUUID().toString().substring(0, 4), true, true, "2026-01-01")
+                        new ShiftCodeCreateInput("BAD" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.SPLIT, true, true, "2026-01-01")
                                 .staffArea(StaffArea.KITCHEN)
                                 .startTime2("18:00")
                                 .endTime2("21:00"),
@@ -124,7 +125,7 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
     void create_endBeforeStart_isRejected() {
         UserEntity manager = createManager();
         assertThatThrownBy(() -> shiftCodeService.create(
-                        new ShiftCodeCreateInput("BAD" + UUID.randomUUID().toString().substring(0, 4), true, true, "2026-01-01")
+                        new ShiftCodeCreateInput("BAD" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.EVENING, true, true, "2026-01-01")
                                 .staffArea(StaffArea.KITCHEN)
                                 .startTime1("18:00")
                                 .endTime1("09:00"),
@@ -136,7 +137,7 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
     void create_zeroIntervals_isOpAndCountsAsWorked() {
         UserEntity manager = createManager();
         ShiftCode op = shiftCodeService.create(
-                new ShiftCodeCreateInput("OP" + UUID.randomUUID().toString().substring(0, 4), true, true, "2026-01-01").staffArea(StaffArea.MAINTENANCE),
+                new ShiftCodeCreateInput("OP" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.OPEN_SCHEDULE, true, true, "2026-01-01").staffArea(StaffArea.MAINTENANCE),
                 manager.getId());
         createdShiftCodeIds.add(op.getId());
 
@@ -151,7 +152,7 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
         String code = "SHARED" + UUID.randomUUID().toString().substring(0, 6);
 
         ShiftCode shared = shiftCodeService.create(
-                new ShiftCodeCreateInput(code, true, true, "2026-01-01").startTime1("09:00").endTime1("17:00"),
+                new ShiftCodeCreateInput(code, ShiftCodeKind.MORNING, true, true, "2026-01-01").startTime1("09:00").endTime1("17:00"),
                 manager.getId());
         createdShiftCodeIds.add(shared.getId());
 
@@ -175,12 +176,12 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
         String code = "COLLIDE" + UUID.randomUUID().toString().substring(0, 6);
 
         ShiftCode shared = shiftCodeService.create(
-                new ShiftCodeCreateInput(code, true, true, "2026-01-01").startTime1("09:00").endTime1("17:00"),
+                new ShiftCodeCreateInput(code, ShiftCodeKind.MORNING, true, true, "2026-01-01").startTime1("09:00").endTime1("17:00"),
                 manager.getId());
         createdShiftCodeIds.add(shared.getId());
 
         ShiftCode restaurantOverride = shiftCodeService.create(
-                new ShiftCodeCreateInput(code, true, true, "2026-01-01").staffArea(StaffArea.RESTAURANT).startTime1("09:00").endTime1("13:00").startTime2("16:00").endTime2("21:00"),
+                new ShiftCodeCreateInput(code, ShiftCodeKind.SPLIT, true, true, "2026-01-01").staffArea(StaffArea.RESTAURANT).startTime1("09:00").endTime1("13:00").startTime2("16:00").endTime2("21:00"),
                 manager.getId());
         createdShiftCodeIds.add(restaurantOverride.getId());
 
@@ -201,5 +202,94 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
         List<ShiftCode> everything = shiftCodeService.list(null);
         assertThat(everything).filteredOn(c -> c.getCode().equals(code)).extracting(ShiftCode::getId)
                 .containsExactlyInAnyOrder(shared.getId(), restaurantOverride.getId());
+    }
+
+    @Test
+    void create_kindMismatchedWithShape_isRejected() {
+        UserEntity manager = createManager();
+        // SPLIT claimed for a code with only one interval - the shape says otherwise.
+        assertThatThrownBy(() -> shiftCodeService.create(
+                        new ShiftCodeCreateInput("BAD" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.SPLIT, true, true, "2026-01-01")
+                                .staffArea(StaffArea.KITCHEN)
+                                .startTime1("09:00")
+                                .endTime1("17:00"),
+                        manager.getId()))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void create_absenceThatCountsAsWorked_isRejected() {
+        UserEntity manager = createManager();
+        // ABSENCE must not count as worked - the whole point of the kind is "not working".
+        assertThatThrownBy(() -> shiftCodeService.create(
+                        new ShiftCodeCreateInput("BAD" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.ABSENCE, true, true, "2026-01-01")
+                                .staffArea(StaffArea.KITCHEN),
+                        manager.getId()))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void updateKind_correctsInPlace_sameRowSameVersion() {
+        UserEntity manager = createManager();
+        ShiftCode code = shiftCodeService.create(
+                new ShiftCodeCreateInput("K" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.MORNING, true, true, "2026-01-01")
+                        .staffArea(StaffArea.KITCHEN)
+                        .startTime1("09:00")
+                        .endTime1("17:00"),
+                manager.getId());
+        createdShiftCodeIds.add(code.getId());
+
+        ShiftCode corrected = shiftCodeService.updateKind(code.getId(), ShiftCodeKind.EVENING, manager.getId());
+
+        // Same row, same id, still active - a kind correction is not a new version (contrast
+        // create_newVersion_retiresThePreviousOneButKeepsItById, above).
+        assertThat(corrected.getId()).isEqualTo(code.getId());
+        assertThat(corrected.getKind().get()).isEqualTo(ShiftCodeKind.EVENING);
+        assertThat(shiftCodeRepository.findById(code.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(shiftCodeService.list(StaffArea.KITCHEN)).extracting(ShiftCode::getId).contains(code.getId());
+    }
+
+    @Test
+    void updateKind_mismatchedWithShape_isRejected() {
+        UserEntity manager = createManager();
+        ShiftCode code = shiftCodeService.create(
+                new ShiftCodeCreateInput("K" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.MORNING, true, true, "2026-01-01")
+                        .staffArea(StaffArea.KITCHEN)
+                        .startTime1("09:00")
+                        .endTime1("17:00"),
+                manager.getId());
+        createdShiftCodeIds.add(code.getId());
+
+        assertThatThrownBy(() -> shiftCodeService.updateKind(code.getId(), ShiftCodeKind.OPEN_SCHEDULE, manager.getId()))
+                .isInstanceOf(BadRequestException.class);
+        // Refused, not silently applied - the row still carries its original, valid kind.
+        assertThat(shiftCodeRepository.findById(code.getId()).orElseThrow().getKind()).isEqualTo(ShiftCodeKind.MORNING);
+    }
+
+    @Test
+    void list_legacyRowWithNoKind_suggestsFromItsOwnShape() {
+        // Simulates a row that predates the kind column - never possible through create() itself
+        // now that kind is required there, but exactly the shape a pre-existing production row
+        // has until confirmed via PATCH /shift-codes/{id}/kind.
+        UserEntity manager = createManager();
+        com.sunsetbeach.entity.ShiftCodeEntity entity = new com.sunsetbeach.entity.ShiftCodeEntity();
+        entity.setCode("LEGACY" + UUID.randomUUID().toString().substring(0, 6));
+        entity.setStaffArea(StaffArea.MAINTENANCE);
+        entity.setStartTime1(java.time.LocalTime.of(16, 0));
+        entity.setEndTime1(java.time.LocalTime.of(22, 0));
+        entity.setCountsAsWorked(true);
+        entity.setPaid(true);
+        entity.setEffectiveFrom(java.time.LocalDate.of(2026, 1, 1));
+        entity.setCreatedByUserId(manager.getId());
+        com.sunsetbeach.entity.ShiftCodeEntity saved = shiftCodeRepository.saveAndFlush(entity);
+        createdShiftCodeIds.add(saved.getId());
+
+        ShiftCode dto = shiftCodeService.list(StaffArea.MAINTENANCE).stream()
+                .filter(c -> c.getId().equals(saved.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(dto.getKind().isPresent()).isFalse();
+        // 16:00 is afternoon/evening, not before noon - the suggestion reads the real clock time.
+        assertThat(dto.getSuggestedKind().get()).isEqualTo(ShiftCodeKind.EVENING);
     }
 }

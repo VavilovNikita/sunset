@@ -5551,6 +5551,58 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /shift-codes/{id}/kind:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateShiftCodeKind
+      tags: [Roster]
+      summary: Set or correct a shift code's kind, in place
+      description: >
+        Requires MANAGER or above. The one deliberate exception to `ShiftCode` rows never being
+        edited (see `POST /shift-codes`'s own description): `kind` is a classification of what a
+        code already is, not one of the agreed terms `RosterEntry`s depend on staying frozen -
+        correcting it later doesn't reinterpret what anyone actually worked or was paid, so this
+        mutates the existing row rather than retiring it and creating a new version. Refused (400)
+        if `kind` doesn't match the row's own interval shape (`SPLIT` needs two intervals,
+        `MORNING`/`EVENING` need exactly one, `OPEN_SCHEDULE`/`ABSENCE` need none) - see
+        `ShiftCodeKind`'s own description for what each one means.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShiftCodeKindUpdateInput"
+      responses:
+        "200":
+          description: The updated shift code.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftCode"
+        "400":
+          description: kind doesn't match this code's own interval shape.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "SPLIT needs two intervals - this code only has one"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such shift code.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /employee-patterns:
     get:
       operationId: listEmployeePatterns
@@ -9888,6 +9940,7 @@ components:
         - SPA_APPOINTMENT_TREATMENT_REMOVED
         - SPA_APPOINTMENT_TABLES_SWAPPED
         - SHIFT_CODE_CREATED
+        - SHIFT_CODE_KIND_CHANGED
         - EMPLOYEE_PATTERN_CHANGED
         - ROSTER_ENTRY_CREATED
         - ROSTER_ENTRY_MOVED
@@ -10017,6 +10070,25 @@ components:
         only who's writing rows - see `AttendancePunch`'s own description.
       enum: [MANUAL, SCANNER]
 
+    ShiftCodeKind:
+      type: string
+      description: >
+        What a shift code actually is, named rather than inferred from `countsAsWorked`/`isPaid`/
+        interval shape every time something needs to know (the roster grid's own daily totals used
+        to match `code == "PH"` literally to count absences - fragile, since codes are versioned
+        and the text can be retyped, and a silently-zero count reads exactly like an ordinary day
+        rather than a broken counter). `MORNING`/`EVENING` both mean an ordinary single-interval
+        shift - the distinction is which half of the day it falls in, not a difference in how
+        either renders (the roster grid's own colour choice is a continuous scale by actual start
+        time, not this field - see the frontend's own design notes). `SPLIT` is a two-interval
+        shift (`startTime2`/`endTime2` set). `OPEN_SCHEDULE` is `OP` - `countsAsWorked` true, no
+        fixed interval. `ABSENCE` is `PH` and anything like it - `countsAsWorked` false, no fixed
+        interval; not further split into holiday/annual-leave/kept-day-off, matching how `PH`
+        itself has always stayed one code for exactly that reason. Chosen by a person at creation
+        (see `ShiftCodeCreateInput`) - not inferred, though `ShiftCode.suggestedKind` offers a
+        default guessed from the code's own shape for confirming one that predates this field.
+      enum: [MORNING, SPLIT, EVENING, OPEN_SCHEDULE, ABSENCE]
+
     ShiftCode:
       type: object
       description: >
@@ -10092,6 +10164,21 @@ components:
         createdAt:
           type: string
           format: date-time
+        kind:
+          allOf: [{ $ref: "#/components/schemas/ShiftCodeKind" }]
+          nullable: true
+          description: >
+            Null only for a code created before this field existed and not yet confirmed - see
+            `suggestedKind` and `PATCH /shift-codes/{id}/kind`. Every code created from here on
+            has one (see `ShiftCodeCreateInput`).
+        suggestedKind:
+          allOf: [{ $ref: "#/components/schemas/ShiftCodeKind" }]
+          nullable: true
+          description: >
+            A default guessed from this code's own interval shape and `countsAsWorked` - set only
+            when `kind` is null, for `PATCH /shift-codes/{id}/kind` to offer as a starting point,
+            never applied on its own. Same "suggest, don't silently apply" shape as
+            `RosterImportNameEntry.suggestedStaffArea`.
 
     ShiftCodeCreateInput:
       type: object
@@ -10099,13 +10186,17 @@ components:
         Body of `POST /shift-codes`. `staffArea` is optional - omit it (or send it explicitly
         `null`) to define a code shared across every area; a code scoped to a real `StaffArea`
         takes precedence over a shared one of the same `code` string for that area only, without
-        retiring the shared row (see `ShiftCode`'s own description).
-      required: [code, countsAsWorked, isPaid, effectiveFrom]
+        retiring the shared row (see `ShiftCode`'s own description). Unlike every other field
+        here, `kind` (required) is never versioned by creating a new row for it alone - see
+        `PATCH /shift-codes/{id}/kind` for correcting one in place.
+      required: [code, countsAsWorked, isPaid, effectiveFrom, kind]
       properties:
         staffArea:
           $ref: "#/components/schemas/StaffArea"
         code:
           type: string
+        kind:
+          $ref: "#/components/schemas/ShiftCodeKind"
         startTime1:
           type: string
           nullable: true
@@ -10129,6 +10220,14 @@ components:
         effectiveFrom:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
+
+    ShiftCodeKindUpdateInput:
+      type: object
+      description: Body of `PATCH /shift-codes/{id}/kind`.
+      required: [kind]
+      properties:
+        kind:
+          $ref: "#/components/schemas/ShiftCodeKind"
 
     RosterEmployee:
       type: object

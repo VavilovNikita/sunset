@@ -1455,7 +1455,7 @@ class PosRoleHierarchyTests {
                         .header("Authorization", token(Role.WAITER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new com.sunsetbeach.model.ShiftCodeCreateInput("9", true, true, "2027-01-01").staffArea(com.sunsetbeach.model.StaffArea.RESTAURANT))))
+                                new com.sunsetbeach.model.ShiftCodeCreateInput("9", com.sunsetbeach.model.ShiftCodeKind.OPEN_SCHEDULE, true, true, "2027-01-01").staffArea(com.sunsetbeach.model.StaffArea.RESTAURANT))))
                 .andExpect(status().isForbidden());
     }
 
@@ -1466,7 +1466,7 @@ class PosRoleHierarchyTests {
                         .header("Authorization", token(Role.MANAGER))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new com.sunsetbeach.model.ShiftCodeCreateInput("9", true, true, "2027-01-01").staffArea(com.sunsetbeach.model.StaffArea.RESTAURANT))))
+                                new com.sunsetbeach.model.ShiftCodeCreateInput("9", com.sunsetbeach.model.ShiftCodeKind.OPEN_SCHEDULE, true, true, "2027-01-01").staffArea(com.sunsetbeach.model.StaffArea.RESTAURANT))))
                 .andExpect(status().isCreated());
     }
 

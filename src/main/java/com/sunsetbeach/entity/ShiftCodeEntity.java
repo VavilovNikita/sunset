@@ -1,5 +1,6 @@
 package com.sunsetbeach.entity;
 
+import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -48,6 +49,14 @@ public class ShiftCodeEntity {
 
     private java.time.LocalDate effectiveFrom;
     private boolean active = true;
+
+    // Null only for a row that predates this column, not yet confirmed - see
+    // ShiftCodeService#updateKind. Unlike every other field here, this one IS mutated in place on
+    // an existing row: it classifies what the code already is, not an agreed term a RosterEntry
+    // depends on staying frozen (see this class's own javadoc on why the rest never changes).
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private ShiftCodeKind kind;
 
     private String createdByUserId;
 
@@ -136,6 +145,14 @@ public class ShiftCodeEntity {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public ShiftCodeKind getKind() {
+        return kind;
+    }
+
+    public void setKind(ShiftCodeKind kind) {
+        this.kind = kind;
     }
 
     public String getCreatedByUserId() {

@@ -26,6 +26,7 @@ import com.sunsetbeach.model.RosterEmployee;
 import com.sunsetbeach.model.RosterLockInput;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
+import com.sunsetbeach.model.ShiftCodeKindUpdateInput;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.StaffAreaCoverageRule;
 import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
@@ -81,6 +82,11 @@ public class RosterController implements RosterApi {
     @Override
     public ResponseEntity<ShiftCode> createShiftCode(ShiftCodeCreateInput shiftCodeCreateInput) {
         return ResponseEntity.status(HttpStatus.CREATED).body(shiftCodeService.create(shiftCodeCreateInput, callerId()));
+    }
+
+    @Override
+    public ResponseEntity<ShiftCode> updateShiftCodeKind(String id, ShiftCodeKindUpdateInput shiftCodeKindUpdateInput) {
+        return ResponseEntity.ok(shiftCodeService.updateKind(id, shiftCodeKindUpdateInput.getKind(), callerId()));
     }
 
     @Override

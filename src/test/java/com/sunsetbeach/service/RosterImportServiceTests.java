@@ -18,6 +18,7 @@ import com.sunsetbeach.model.RosterImportPreview;
 import com.sunsetbeach.model.RosterImportResult;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
+import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.repository.AuditLogRepository;
 import com.sunsetbeach.repository.RosterEntryRepository;
@@ -116,7 +117,15 @@ class RosterImportServiceTests extends AbstractIntegrationTest {
     }
 
     private ShiftCode createCode(StaffArea area, String code, boolean countsAsWorked, String start1, String end1, String start2, String end2) {
-        ShiftCodeCreateInput input = new ShiftCodeCreateInput(code, countsAsWorked, true, "2020-01-01").staffArea(area);
+        ShiftCodeKind kind;
+        if (start2 != null) {
+            kind = ShiftCodeKind.SPLIT;
+        } else if (start1 != null) {
+            kind = start1.compareTo("12:00") < 0 ? ShiftCodeKind.MORNING : ShiftCodeKind.EVENING;
+        } else {
+            kind = countsAsWorked ? ShiftCodeKind.OPEN_SCHEDULE : ShiftCodeKind.ABSENCE;
+        }
+        ShiftCodeCreateInput input = new ShiftCodeCreateInput(code, kind, countsAsWorked, true, "2020-01-01").staffArea(area);
         if (start1 != null) {
             input.startTime1(start1).endTime1(end1);
         }

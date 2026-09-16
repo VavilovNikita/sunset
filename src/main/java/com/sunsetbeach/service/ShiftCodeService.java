@@ -3,10 +3,12 @@ package com.sunsetbeach.service;
 import com.sunsetbeach.entity.ShiftCodeEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
+import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
+import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.UserRepository;
@@ -82,6 +84,7 @@ public class ShiftCodeService {
         LocalTime start2 = parseTime(input.getStartTime2().orElse(null));
         LocalTime end2 = parseTime(input.getEndTime2().orElse(null));
         validateIntervals(start1, end1, start2, end2);
+        validateKindShape(input.getKind(), start1, start2, input.getCountsAsWorked());
 
         // Retires the current version of this exact (staffArea, code) pair, if one exists - the
         // new row takes over for anything created from here on, every RosterEntry already
@@ -94,6 +97,7 @@ public class ShiftCodeService {
         ShiftCodeEntity entity = new ShiftCodeEntity();
         entity.setStaffArea(input.getStaffArea());
         entity.setCode(input.getCode());
+        entity.setKind(input.getKind());
         entity.setStartTime1(start1);
         entity.setEndTime1(end1);
         entity.setStartTime2(start2);
@@ -111,8 +115,33 @@ public class ShiftCodeService {
                 AuditAction.SHIFT_CODE_CREATED,
                 AuditEntityType.SHIFT_CODE,
                 saved.getId(),
-                "Defined " + areaDescription + " code \"" + saved.getCode() + "\", effective " + saved.getEffectiveFrom());
+                "Defined " + areaDescription + " code \"" + saved.getCode() + "\" as " + saved.getKind().getValue()
+                        + ", effective " + saved.getEffectiveFrom());
 
+        return toDto(saved, creatorEmail);
+    }
+
+    /**
+     * {@code PATCH /shift-codes/{id}/kind} - the one deliberate exception to a {@code ShiftCode}
+     * row never being edited (see this class's own javadoc): {@code kind} classifies what a code
+     * already is, not an agreed term a {@code RosterEntry} depends on staying frozen, so
+     * correcting it later doesn't reinterpret what anyone actually worked or was paid. Exists
+     * mainly to confirm {@link #computeSuggestedKind}'s guess for a code that predates this field.
+     */
+    @Transactional
+    public ShiftCode updateKind(String id, ShiftCodeKind kind, String actorUserId) {
+        ShiftCodeEntity entity = shiftCodeRepository.findById(id).orElseThrow(() -> new NotFoundException("Shift code not found"));
+        validateKindShape(kind, entity.getStartTime1(), entity.getStartTime2(), entity.isCountsAsWorked());
+        entity.setKind(kind);
+        ShiftCodeEntity saved = shiftCodeRepository.saveAndFlush(entity);
+
+        auditLogService.record(
+                AuditAction.SHIFT_CODE_KIND_CHANGED,
+                AuditEntityType.SHIFT_CODE,
+                saved.getId(),
+                "Kind for code \"" + saved.getCode() + "\" set to " + saved.getKind().getValue());
+
+        String creatorEmail = userRepository.findById(saved.getCreatedByUserId()).map(UserEntity::getEmail).orElse(null);
         return toDto(saved, creatorEmail);
     }
 
@@ -138,6 +167,48 @@ public class ShiftCodeService {
         }
     }
 
+    /**
+     * {@code kind} must match the code's own interval shape - it names what the shape already
+     * says, so a mismatch is a data-entry mistake, not a legitimate choice. {@code MORNING}/
+     * {@code EVENING} are otherwise interchangeable here (both mean "exactly one interval") - the
+     * distinction between the two is a human judgment this method doesn't referee.
+     */
+    private static void validateKindShape(ShiftCodeKind kind, LocalTime start1, LocalTime start2, boolean countsAsWorked) {
+        boolean isSplit = start2 != null;
+        boolean isSingleInterval = start1 != null && !isSplit;
+        boolean isZeroInterval = start1 == null;
+        switch (kind) {
+            case SPLIT -> {
+                if (!isSplit) throw new BadRequestException("SPLIT needs two intervals - this code doesn't have two");
+            }
+            case MORNING, EVENING -> {
+                if (!isSingleInterval) throw new BadRequestException(kind.getValue() + " needs exactly one interval");
+            }
+            case OPEN_SCHEDULE -> {
+                if (!isZeroInterval) throw new BadRequestException("OPEN_SCHEDULE needs no fixed interval");
+                if (!countsAsWorked) throw new BadRequestException("OPEN_SCHEDULE must count as worked");
+            }
+            case ABSENCE -> {
+                if (!isZeroInterval) throw new BadRequestException("ABSENCE needs no fixed interval");
+                if (countsAsWorked) throw new BadRequestException("ABSENCE must not count as worked");
+            }
+        }
+    }
+
+    /**
+     * A default guessed from the code's own shape, for {@code PATCH /shift-codes/{id}/kind} to
+     * offer - never applied on its own (see {@code ShiftCode.suggestedKind}'s own openapi.yaml
+     * description). Mirrors {@link #validateKindShape}'s own shape rules exactly, so a confirmed
+     * suggestion always passes that same validation. The MORNING/EVENING split for a single
+     * interval is a guess (before noon reads as morning) - the one part of this a person actually
+     * has to look at and confirm, not just accept.
+     */
+    private static ShiftCodeKind computeSuggestedKind(ShiftCodeEntity e) {
+        if (e.getStartTime2() != null) return ShiftCodeKind.SPLIT;
+        if (e.getStartTime1() != null) return e.getStartTime1().isBefore(LocalTime.NOON) ? ShiftCodeKind.MORNING : ShiftCodeKind.EVENING;
+        return e.isCountsAsWorked() ? ShiftCodeKind.OPEN_SCHEDULE : ShiftCodeKind.ABSENCE;
+    }
+
     private Map<String, String> resolveCreatorEmails(List<ShiftCodeEntity> entities) {
         List<String> ids = entities.stream().map(ShiftCodeEntity::getCreatedByUserId).distinct().toList();
         return userRepository.findAllById(ids).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
@@ -156,6 +227,11 @@ public class ShiftCodeService {
         if (e.getEndTime1() != null) dto.setEndTime1(org.openapitools.jackson.nullable.JsonNullable.of(e.getEndTime1().toString().substring(0, 5)));
         if (e.getStartTime2() != null) dto.setStartTime2(org.openapitools.jackson.nullable.JsonNullable.of(e.getStartTime2().toString().substring(0, 5)));
         if (e.getEndTime2() != null) dto.setEndTime2(org.openapitools.jackson.nullable.JsonNullable.of(e.getEndTime2().toString().substring(0, 5)));
+        if (e.getKind() != null) {
+            dto.kind(e.getKind());
+        } else {
+            dto.suggestedKind(computeSuggestedKind(e));
+        }
         return dto;
     }
 }
