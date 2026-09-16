@@ -66,16 +66,15 @@ public class RosterService {
 
     @Transactional(readOnly = true)
     public List<RosterEmployee> listEmployees() {
-        Map<String, EmployeePatternEntity> patternsByEmployeeId =
-                employeePatternRepository.findAll().stream().collect(Collectors.toMap(EmployeePatternEntity::getEmployeeUserId, p -> p));
+        // staffArea is read straight off User now - see that field's own openapi.yaml
+        // description - not joined from EmployeePattern, which no longer carries its own copy.
         return userRepository.findAll().stream()
                 .filter(UserEntity::isActive)
                 .map(u -> {
                     RosterEmployee dto = new RosterEmployee(u.getId(), u.getName(), u.isActive());
                     dto.setEmail(u.getEmail());
-                    EmployeePatternEntity pattern = patternsByEmployeeId.get(u.getId());
-                    if (pattern != null) {
-                        dto.staffArea(pattern.getStaffArea());
+                    if (u.getStaffArea() != null) {
+                        dto.staffArea(u.getStaffArea());
                     }
                     return dto;
                 })

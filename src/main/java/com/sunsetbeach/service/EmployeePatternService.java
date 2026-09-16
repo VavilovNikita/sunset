@@ -48,6 +48,12 @@ public class EmployeePatternService {
         return entities.stream().map(e -> toDto(e, usersById.get(e.getEmployeeUserId()), usersById.get(e.getUpdatedByUserId()).getEmail())).toList();
     }
 
+    /**
+     * {@code staffArea} is written to the {@code User} row, not stored on {@code EmployeePattern}
+     * itself (see that schema's own openapi.yaml description, and {@code User.staffArea}'s) - it's
+     * a fact about the person, one home only, even though setting a full pattern still means
+     * confirming it here.
+     */
     @Transactional
     public EmployeePattern set(String employeeUserId, EmployeePatternInput input, String actorUserId) {
         UserEntity employee = userRepository.findById(employeeUserId).orElseThrow(() -> new NotFoundException("Employee not found"));
@@ -63,9 +69,11 @@ public class EmployeePatternService {
             }
         }
 
+        employee.setStaffArea(input.getStaffArea());
+        userRepository.save(employee);
+
         EmployeePatternEntity entity = employeePatternRepository.findById(employeeUserId).orElseGet(EmployeePatternEntity::new);
         entity.setEmployeeUserId(employeeUserId);
-        entity.setStaffArea(input.getStaffArea());
         entity.setDefaultShiftCodeId(defaultShiftCodeId);
         entity.setWorkDaysPerWeek(input.getWorkDaysPerWeek());
         entity.setWeeklyDayOff(input.getWeeklyDayOff());
@@ -77,7 +85,7 @@ public class EmployeePatternService {
                 AuditAction.EMPLOYEE_PATTERN_CHANGED,
                 AuditEntityType.USER,
                 employeeUserId,
-                "Roster pattern set for " + employee.getName() + ": " + saved.getStaffArea().getValue() + ", "
+                "Roster pattern set for " + employee.getName() + ": " + input.getStaffArea().getValue() + ", "
                         + saved.getWorkDaysPerWeek() + " days/week, " + saved.getWeeklyDayOff().getValue() + " off");
 
         return toDto(saved, employee, actor.getEmail());
@@ -85,7 +93,7 @@ public class EmployeePatternService {
 
     private static EmployeePattern toDto(EmployeePatternEntity e, UserEntity employee, String updatedByEmail) {
         EmployeePattern dto = new EmployeePattern(
-                e.getEmployeeUserId(), employee.getName(), e.getStaffArea(), e.getWorkDaysPerWeek(), e.getWeeklyDayOff(),
+                e.getEmployeeUserId(), employee.getName(), employee.getStaffArea(), e.getWorkDaysPerWeek(), e.getWeeklyDayOff(),
                 updatedByEmail, com.sunsetbeach.mapper.TimestampFormat.toUtc(e.getUpdatedAt()));
         dto.setEmployeeEmail(employee.getEmail());
         if (e.getDefaultShiftCodeId() != null) {

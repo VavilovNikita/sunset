@@ -1,6 +1,5 @@
 package com.sunsetbeach.entity;
 
-import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.Weekday;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -19,10 +18,6 @@ public class EmployeePatternEntity {
 
     @Id
     private String employeeUserId;
-
-    @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    private StaffArea staffArea;
 
     private String defaultShiftCodeId;
 
@@ -43,14 +38,6 @@ public class EmployeePatternEntity {
 
     public void setEmployeeUserId(String employeeUserId) {
         this.employeeUserId = employeeUserId;
-    }
-
-    public StaffArea getStaffArea() {
-        return staffArea;
-    }
-
-    public void setStaffArea(StaffArea staffArea) {
-        this.staffArea = staffArea;
     }
 
     public String getDefaultShiftCodeId() {

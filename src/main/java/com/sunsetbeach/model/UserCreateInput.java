@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.Role;
+import com.sunsetbeach.model.StaffArea;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -33,6 +34,8 @@ public class UserCreateInput {
   private Boolean overtimeEligible = true;
 
   private Integer enrollmentNumber;
+
+  private StaffArea staffArea;
 
   public UserCreateInput() {
     super();
@@ -159,6 +162,25 @@ public class UserCreateInput {
     this.enrollmentNumber = enrollmentNumber;
   }
 
+  public UserCreateInput staffArea(StaffArea staffArea) {
+    this.staffArea = staffArea;
+    return this;
+  }
+
+  /**
+   * Get staffArea
+   * @return staffArea
+   */
+  @Valid 
+  @JsonProperty("staffArea")
+  public StaffArea getStaffArea() {
+    return staffArea;
+  }
+
+  public void setStaffArea(StaffArea staffArea) {
+    this.staffArea = staffArea;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -173,12 +195,13 @@ public class UserCreateInput {
         Objects.equals(this.password, userCreateInput.password) &&
         Objects.equals(this.role, userCreateInput.role) &&
         Objects.equals(this.overtimeEligible, userCreateInput.overtimeEligible) &&
-        Objects.equals(this.enrollmentNumber, userCreateInput.enrollmentNumber);
+        Objects.equals(this.enrollmentNumber, userCreateInput.enrollmentNumber) &&
+        Objects.equals(this.staffArea, userCreateInput.staffArea);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, email, password, role, overtimeEligible, enrollmentNumber);
+    return Objects.hash(name, email, password, role, overtimeEligible, enrollmentNumber, staffArea);
   }
 
   @Override
@@ -191,6 +214,7 @@ public class UserCreateInput {
     sb.append("    role: ").append(toIndentedString(role)).append("\n");
     sb.append("    overtimeEligible: ").append(toIndentedString(overtimeEligible)).append("\n");
     sb.append("    enrollmentNumber: ").append(toIndentedString(enrollmentNumber)).append("\n");
+    sb.append("    staffArea: ").append(toIndentedString(staffArea)).append("\n");
     sb.append("}");
     return sb.toString();
   }

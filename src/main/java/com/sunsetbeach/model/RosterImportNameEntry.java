@@ -151,7 +151,7 @@ public class RosterImportNameEntry {
   }
 
   /**
-   * The department this name's row sits under, for context only (e.g. pre-filling which area a newly-created account is shown as belonging to) - never persisted anywhere by the import itself. Null only if the department header above this row couldn't itself be recognised, in which case this row also carries an entry in `issues`. 
+   * The department this name's row sits under. Shown for context on every name, and - for a name resolved by creating a new account (`POST /roster/import/name-mappings` with `newEmployeeName`) - sent back as that same call's own `staffArea`, becoming `User.staffArea`. Still never fabricates an `EmployeePattern` (see that schema's own description): the area is a fact about the person, not part of a generation pattern, so it needs none of a pattern's other fields to be set. Null only if the department header above this row couldn't itself be recognised, in which case this row also carries an entry in `issues`. 
    * @return suggestedStaffArea
    */
   @Valid 

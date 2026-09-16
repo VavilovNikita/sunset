@@ -12,6 +12,7 @@ import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.SpaAppointmentStatus;
+import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.User;
 import com.sunsetbeach.model.UserCreateInput;
 import com.sunsetbeach.model.UserFunctionsUpdateInput;
@@ -81,6 +82,7 @@ public class UserService {
         entity.setRole(input.getRole() != null ? input.getRole() : Role.MANAGER);
         entity.setOvertimeEligible(input.getOvertimeEligible() != null ? input.getOvertimeEligible() : true);
         entity.setEnrollmentNumber(input.getEnrollmentNumber());
+        entity.setStaffArea(input.getStaffArea());
 
         UserEntity saved;
         try {
@@ -309,6 +311,31 @@ public class UserService {
                 saved.getId(),
                 "Enrollment number for " + saved.getName() + " set to "
                         + (saved.getEnrollmentNumber() != null ? saved.getEnrollmentNumber() : "none"));
+        return userMapper.toDto(saved);
+    }
+
+    /**
+     * {@code PATCH /users/{id}/staff-area} - see {@code User.staffArea}'s own openapi.yaml
+     * description for why this lives on the person rather than only on an {@code EmployeePattern}.
+     * {@code staffArea} must actually be present in the body (an area to assign, or explicit
+     * {@code null} to clear) - same "a JsonNullable left undefined has no sensible no-op
+     * interpretation" reasoning as {@link #updateEnrollmentNumber}. No {@code tokenVersion} bump,
+     * no self-change restriction - like functions/overtimeEligible, this doesn't touch
+     * authentication.
+     */
+    @Transactional
+    public User updateStaffArea(String id, JsonNullable<StaffArea> staffArea) {
+        if (!staffArea.isPresent()) {
+            throw new BadRequestException("staffArea is required (send null to clear it)");
+        }
+        UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        entity.setStaffArea(staffArea.get());
+        UserEntity saved = userRepository.save(entity);
+        auditLogService.record(
+                AuditAction.USER_STAFF_AREA_CHANGED,
+                AuditEntityType.USER,
+                saved.getId(),
+                "Staff area for " + saved.getName() + " set to " + (saved.getStaffArea() != null ? saved.getStaffArea().getValue() : "none"));
         return userMapper.toDto(saved);
     }
 

@@ -166,7 +166,14 @@ public class RosterImportService {
         if (hasExisting) {
             employee = userRepository.findById(input.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found"));
         } else {
+            // staffArea here is a fact about the person, set immediately - unlike the rest of an
+            // EmployeePattern (workDaysPerWeek/weeklyDayOff), which one month of attendance can't
+            // reliably establish and so is still never fabricated. See RosterImportNameEntry's own
+            // suggestedStaffArea description - this is that same value, sent back by the caller.
             UserCreateInput createInput = new UserCreateInput(input.getNewEmployeeName().trim()).role(Role.WAITER);
+            if (input.getStaffArea() != null) {
+                createInput.staffArea(input.getStaffArea());
+            }
             employee = userRepository.findById(userService.create(createInput).getId()).orElseThrow();
         }
 

@@ -15,6 +15,9 @@ public class UserMapper {
         User dto = new User(entity.getId(), entity.getName(), entity.getRole(), entity.isActive(), functions, entity.isOvertimeEligible(), TimestampFormat.toUtc(entity.getCreatedAt()));
         dto.setEmail(entity.getEmail());
         dto.setEnrollmentNumber(entity.getEnrollmentNumber());
+        if (entity.getStaffArea() != null) {
+            dto.staffArea(entity.getStaffArea());
+        }
         return dto;
     }
 }

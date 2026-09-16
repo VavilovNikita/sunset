@@ -5258,6 +5258,61 @@ paths:
               example:
                 error: This enrollment number is already assigned to another employee
 
+  /users/{id}/staff-area:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateUserStaffArea
+      tags: [Users]
+      summary: Set or clear a staff user's department
+      description: >
+        Requires an authenticated session with role `ADMIN`. See `User.staffArea`'s own
+        description. `staffArea` must be sent - an area to assign it, or `null` to clear it -
+        omitting it entirely is a 400, not a no-op. No self-change restriction, and no
+        `tokenVersion` bump - this doesn't affect authentication. Called once per employee for a
+        bulk fix (the roster grid's own "no area set" group offers exactly this, over several
+        employees at once) - there is no separate batch endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserStaffAreaUpdateInput"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Body failed validation, or `staffArea` was omitted entirely.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                omitted:
+                  value: { error: "staffArea is required (send null to clear it)" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: User not found
+
   /public/rooms:
     get:
       operationId: listPublicRooms
@@ -8718,6 +8773,17 @@ components:
             Absent for staff who never punch a terminal. Unique when set - two people can't share
             one number - and settable at creation (see `UserCreateInput`) or later via
             `PATCH /users/{id}/enrollment-number`.
+        staffArea:
+          allOf:
+            - $ref: "#/components/schemas/StaffArea"
+          nullable: true
+          description: >
+            What department this person belongs to - a fact about the person, independent of
+            whether they have a full `EmployeePattern` (which also needs `workDaysPerWeek`/
+            `weeklyDayOff`, neither of which one month of attendance reliably establishes). Absent
+            until set, either at creation (see `UserCreateInput`) or later via
+            `PATCH /users/{id}/staff-area`. `GET /roster` groups by this field, so an account
+            without one sits in "no area set" and can never be counted toward a coverage minimum.
         createdAt:
           type: string
           format: date-time
@@ -8790,6 +8856,9 @@ components:
         enrollmentNumber:
           type: integer
           description: See `User`'s own description. Omit for staff who don't punch a terminal; set later via `PATCH /users/{id}/enrollment-number` once known.
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+          description: See `User`'s own description. Omit to leave unset; set later via `PATCH /users/{id}/staff-area` once known.
 
     UserRoleUpdateInput:
       type: object
@@ -8865,6 +8934,21 @@ components:
           type: integer
           nullable: true
           description: Send a number to assign it, or explicit `null` to clear it - omitting the field entirely is rejected.
+
+    UserStaffAreaUpdateInput:
+      type: object
+      description: >
+        Body of `PATCH /users/{id}/staff-area`. Same nullable-but-required-presence shape as
+        `UserEnrollmentNumberUpdateInput`, for the same reason (see CLAUDE.md's Code generation
+        section) - `staffArea` is deliberately not in `required` even though it's always expected,
+        so the service validates its presence manually instead of generating a `@NotNull` that
+        would reject the very null this endpoint exists to send.
+      properties:
+        staffArea:
+          allOf:
+            - $ref: "#/components/schemas/StaffArea"
+          nullable: true
+          description: Send an area to assign it, or explicit `null` to clear it - omitting the field entirely is rejected.
 
     UserCredentialsInput:
       type: object
@@ -9775,6 +9859,7 @@ components:
         - USER_CREDENTIALS_GRANTED
         - USER_OVERTIME_ELIGIBILITY_CHANGED
         - USER_ENROLLMENT_NUMBER_CHANGED
+        - USER_STAFF_AREA_CHANGED
         - ROOM_UNIT_CREATED
         - ROOM_UNIT_UPDATED
         - ROOM_UNIT_DELETED
@@ -10073,7 +10158,10 @@ components:
         An employee's normal roster shape - what `POST /roster/generate` reads. `defaultShiftCodeId`
         is nullable: some employees genuinely have no single "usual" code (several rows in the
         source spreadsheet had none), so generation simply leaves their dates blank for the
-        manager to fill by hand in that case.
+        manager to fill by hand in that case. `staffArea` here is a read-through of `User.staffArea`
+        (see that field's own description) - the area is a fact about the person, stored once,
+        not duplicated onto every pattern; `PUT /employee-patterns/{employeeUserId}` writes it to
+        the `User` row, not to a column of its own here.
       required: [employeeUserId, employeeName, staffArea, workDaysPerWeek, weeklyDayOff, updatedByEmail, updatedAt]
       properties:
         employeeUserId:
@@ -10286,10 +10374,14 @@ components:
             - $ref: "#/components/schemas/StaffArea"
           nullable: true
           description: >
-            The department this name's row sits under, for context only (e.g. pre-filling which
-            area a newly-created account is shown as belonging to) - never persisted anywhere by
-            the import itself. Null only if the department header above this row couldn't itself
-            be recognised, in which case this row also carries an entry in `issues`.
+            The department this name's row sits under. Shown for context on every name, and - for
+            a name resolved by creating a new account (`POST /roster/import/name-mappings` with
+            `newEmployeeName`) - sent back as that same call's own `staffArea`, becoming
+            `User.staffArea`. Still never fabricates an `EmployeePattern` (see that schema's own
+            description): the area is a fact about the person, not part of a generation pattern,
+            so it needs none of a pattern's other fields to be set. Null only if the department
+            header above this row couldn't itself be recognised, in which case this row also
+            carries an entry in `issues`.
 
     RosterImportCodeEntry:
       type: object
@@ -10401,6 +10493,12 @@ components:
           type: string
         newEmployeeName:
           type: string
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+          description: >
+            Meaningful only with `newEmployeeName` - the new account's `User.staffArea` (see that
+            field's own description). Send `RosterImportNameEntry.suggestedStaffArea` back here;
+            ignored when mapping to an existing account, which already has (or lacks) its own.
 
     RosterImportNameMappingResult:
       type: object

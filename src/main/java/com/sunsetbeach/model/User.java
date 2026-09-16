@@ -7,11 +7,14 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.Role;
+import com.sunsetbeach.model.StaffArea;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.springframework.format.annotation.DateTimeFormat;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -44,6 +47,8 @@ public class User {
   private Boolean overtimeEligible;
 
   private Integer enrollmentNumber;
+
+  private JsonNullable<StaffArea> staffArea = JsonNullable.<StaffArea>undefined();
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
@@ -225,6 +230,25 @@ public class User {
     this.enrollmentNumber = enrollmentNumber;
   }
 
+  public User staffArea(StaffArea staffArea) {
+    this.staffArea = JsonNullable.of(staffArea);
+    return this;
+  }
+
+  /**
+   * What department this person belongs to - a fact about the person, independent of whether they have a full `EmployeePattern` (which also needs `workDaysPerWeek`/ `weeklyDayOff`, neither of which one month of attendance reliably establishes). Absent until set, either at creation (see `UserCreateInput`) or later via `PATCH /users/{id}/staff-area`. `GET /roster` groups by this field, so an account without one sits in \"no area set\" and can never be counted toward a coverage minimum. 
+   * @return staffArea
+   */
+  @Valid 
+  @JsonProperty("staffArea")
+  public JsonNullable<StaffArea> getStaffArea() {
+    return staffArea;
+  }
+
+  public void setStaffArea(JsonNullable<StaffArea> staffArea) {
+    this.staffArea = staffArea;
+  }
+
   public User createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -261,12 +285,24 @@ public class User {
         Objects.equals(this.functions, user.functions) &&
         Objects.equals(this.overtimeEligible, user.overtimeEligible) &&
         Objects.equals(this.enrollmentNumber, user.enrollmentNumber) &&
+        equalsNullable(this.staffArea, user.staffArea) &&
         Objects.equals(this.createdAt, user.createdAt);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, email, role, active, functions, overtimeEligible, enrollmentNumber, createdAt);
+    return Objects.hash(id, name, email, role, active, functions, overtimeEligible, enrollmentNumber, hashCodeNullable(staffArea), createdAt);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -281,6 +317,7 @@ public class User {
     sb.append("    functions: ").append(toIndentedString(functions)).append("\n");
     sb.append("    overtimeEligible: ").append(toIndentedString(overtimeEligible)).append("\n");
     sb.append("    enrollmentNumber: ").append(toIndentedString(enrollmentNumber)).append("\n");
+    sb.append("    staffArea: ").append(toIndentedString(staffArea)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();

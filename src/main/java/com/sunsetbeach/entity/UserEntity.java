@@ -11,6 +11,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
 import com.sunsetbeach.model.Role;
+import com.sunsetbeach.model.StaffArea;
 
 @Entity
 @Table(name = "User")
@@ -64,6 +65,13 @@ public class UserEntity {
     // The fingerprint terminal's own numeric PIN for this person, not our id - see User's own
     // openapi.yaml description. Null for staff who never punch; unique when set (see V73).
     private Integer enrollmentNumber;
+
+    // What department this person belongs to - a fact about the person, not part of an
+    // EmployeePattern (see V83's own comment for why it moved here from that table). Null until
+    // set, either at creation or via PATCH /users/{id}/staff-area.
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private StaffArea staffArea;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
@@ -150,5 +158,13 @@ public class UserEntity {
 
     public void setEnrollmentNumber(Integer enrollmentNumber) {
         this.enrollmentNumber = enrollmentNumber;
+    }
+
+    public StaffArea getStaffArea() {
+        return staffArea;
+    }
+
+    public void setStaffArea(StaffArea staffArea) {
+        this.staffArea = staffArea;
     }
 }

@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.StaffArea;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -25,6 +27,8 @@ public class RosterImportNameMappingInput {
   private String employeeUserId;
 
   private String newEmployeeName;
+
+  private StaffArea staffArea;
 
   public RosterImportNameMappingInput() {
     super();
@@ -94,6 +98,25 @@ public class RosterImportNameMappingInput {
     this.newEmployeeName = newEmployeeName;
   }
 
+  public RosterImportNameMappingInput staffArea(StaffArea staffArea) {
+    this.staffArea = staffArea;
+    return this;
+  }
+
+  /**
+   * Get staffArea
+   * @return staffArea
+   */
+  @Valid 
+  @JsonProperty("staffArea")
+  public StaffArea getStaffArea() {
+    return staffArea;
+  }
+
+  public void setStaffArea(StaffArea staffArea) {
+    this.staffArea = staffArea;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -105,12 +128,13 @@ public class RosterImportNameMappingInput {
     RosterImportNameMappingInput rosterImportNameMappingInput = (RosterImportNameMappingInput) o;
     return Objects.equals(this.rawName, rosterImportNameMappingInput.rawName) &&
         Objects.equals(this.employeeUserId, rosterImportNameMappingInput.employeeUserId) &&
-        Objects.equals(this.newEmployeeName, rosterImportNameMappingInput.newEmployeeName);
+        Objects.equals(this.newEmployeeName, rosterImportNameMappingInput.newEmployeeName) &&
+        Objects.equals(this.staffArea, rosterImportNameMappingInput.staffArea);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(rawName, employeeUserId, newEmployeeName);
+    return Objects.hash(rawName, employeeUserId, newEmployeeName, staffArea);
   }
 
   @Override
@@ -120,6 +144,7 @@ public class RosterImportNameMappingInput {
     sb.append("    rawName: ").append(toIndentedString(rawName)).append("\n");
     sb.append("    employeeUserId: ").append(toIndentedString(employeeUserId)).append("\n");
     sb.append("    newEmployeeName: ").append(toIndentedString(newEmployeeName)).append("\n");
+    sb.append("    staffArea: ").append(toIndentedString(staffArea)).append("\n");
     sb.append("}");
     return sb.toString();
   }

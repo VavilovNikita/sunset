@@ -22,7 +22,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * An employee&#39;s normal roster shape - what &#x60;POST /roster/generate&#x60; reads. &#x60;defaultShiftCodeId&#x60; is nullable: some employees genuinely have no single \&quot;usual\&quot; code (several rows in the source spreadsheet had none), so generation simply leaves their dates blank for the manager to fill by hand in that case. 
+ * An employee&#39;s normal roster shape - what &#x60;POST /roster/generate&#x60; reads. &#x60;defaultShiftCodeId&#x60; is nullable: some employees genuinely have no single \&quot;usual\&quot; code (several rows in the source spreadsheet had none), so generation simply leaves their dates blank for the manager to fill by hand in that case. &#x60;staffArea&#x60; here is a read-through of &#x60;User.staffArea&#x60; (see that field&#39;s own description) - the area is a fact about the person, stored once, not duplicated onto every pattern; &#x60;PUT /employee-patterns/{employeeUserId}&#x60; writes it to the &#x60;User&#x60; row, not to a column of its own here. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
