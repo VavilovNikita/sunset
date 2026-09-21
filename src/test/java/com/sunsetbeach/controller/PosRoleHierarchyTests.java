@@ -1792,6 +1792,7 @@ class PosRoleHierarchyTests {
                 List.of(),
                 OffsetDateTime.now(),
                 OffsetDateTime.now(),
+                null,
                 null);
     }
 

@@ -40,6 +40,8 @@ public class OrderEntity {
 
     private String note;
 
+    private String guestAccessToken;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -104,6 +106,14 @@ public class OrderEntity {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public String getGuestAccessToken() {
+        return guestAccessToken;
+    }
+
+    public void setGuestAccessToken(String guestAccessToken) {
+        this.guestAccessToken = guestAccessToken;
     }
 
     public LocalDateTime getCreatedAt() {

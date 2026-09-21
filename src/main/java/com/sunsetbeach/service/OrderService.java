@@ -12,11 +12,13 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.mapper.GuestOrderMapper;
 import com.sunsetbeach.mapper.OrderMapper;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CloseOrderInput;
+import com.sunsetbeach.model.GuestOrderView;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.Order;
 import com.sunsetbeach.model.OrderCreateInput;
@@ -39,9 +41,11 @@ import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
+import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -74,9 +78,11 @@ public class OrderService {
     private final UserRepository userRepository;
     private final SpaAppointmentRepository spaAppointmentRepository;
     private final OrderMapper orderMapper;
+    private final GuestOrderMapper guestOrderMapper;
     private final OrderPrintingService orderPrintingService;
     private final AuditLogService auditLogService;
     private final long spaOrderLinkGraceMinutes;
+    private final SecureRandom guestAccessTokenRandom = new SecureRandom();
 
     public OrderService(
             OrderRepository orderRepository,
@@ -89,6 +95,7 @@ public class OrderService {
             UserRepository userRepository,
             SpaAppointmentRepository spaAppointmentRepository,
             OrderMapper orderMapper,
+            GuestOrderMapper guestOrderMapper,
             OrderPrintingService orderPrintingService,
             AuditLogService auditLogService,
             @Value("${app.spa.order-link-grace-minutes}") long spaOrderLinkGraceMinutes) {
@@ -103,6 +110,7 @@ public class OrderService {
         this.spaAppointmentRepository = spaAppointmentRepository;
         this.spaOrderLinkGraceMinutes = spaOrderLinkGraceMinutes;
         this.orderMapper = orderMapper;
+        this.guestOrderMapper = guestOrderMapper;
         this.orderPrintingService = orderPrintingService;
         this.auditLogService = auditLogService;
     }
@@ -147,6 +155,7 @@ public class OrderService {
         entity.setBookingId(bookingId);
         entity.setGuestName(input.getGuestName().orElse(null));
         entity.setOpenedByUserId(openedByUserId);
+        entity.setGuestAccessToken(generateGuestAccessToken());
         OrderEntity saved = orderRepository.saveAndFlush(entity);
 
         // Explicit override only, here - auto-resolution can never fire at creation, since an
@@ -551,6 +560,54 @@ public class OrderService {
             item.setSentAt(now);
         }
         orderItemRepository.saveAll(unsent);
+    }
+
+    /**
+     * 24 random bytes, URL-safe Base64, no padding - short enough for a QR code and a URL query
+     * parameter, long enough that guessing one is not a practical attack. Generated once, here,
+     * for every order (not just table orders - see {@code Order.guestAccessToken}'s own
+     * openapi.yaml description for why); never regenerated afterward.
+     */
+    private String generateGuestAccessToken() {
+        byte[] bytes = new byte[24];
+        guestAccessTokenRandom.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    /**
+     * The one gate every {@code PublicOrderingApi} operation calls first - a plain 404 for all
+     * three failure reasons (order doesn't exist, token null/blank/mismatched,
+     * or {@link #ADDABLE_STATUSES} no longer contains the order's status), never distinguished
+     * from each other, so a guessing attempt learns nothing about which one applies. Note this
+     * uses {@code ADDABLE_STATUSES}, not {@code CLOSED_STATUSES} negated - the same set that
+     * gates {@link #addItems} itself, so a guest can never reach a state {@code addItems} would
+     * reject anyway.
+     */
+    @Transactional(readOnly = true)
+    public OrderEntity requireGuestAccess(String orderId, String token) {
+        OrderEntity order = orderRepository.findById(orderId).orElse(null);
+        if (order == null
+                || token == null
+                || token.isBlank()
+                || !token.equals(order.getGuestAccessToken())
+                || !ADDABLE_STATUSES.contains(order.getStatus())) {
+            throw new NotFoundException("Order not found");
+        }
+        return order;
+    }
+
+    @Transactional(readOnly = true)
+    public GuestOrderView getGuestOrderView(String orderId, String token) {
+        OrderEntity order = requireGuestAccess(orderId, token);
+        return guestOrderMapper.toDto(order, orderItemRepository.findByOrderId(orderId), orderPrintingService.describeLocation(order));
+    }
+
+    /** Delegates straight into {@link #addItems} - never a second implementation of its merge/print-dispatch logic. */
+    @Transactional
+    public GuestOrderView addGuestItems(String orderId, String token, List<OrderItemInput> inputs) {
+        requireGuestAccess(orderId, token);
+        addItems(orderId, inputs);
+        return getGuestOrderView(orderId, token);
     }
 
     /** Blank and {@code null} are the same "no note" for merge-matching purposes. */

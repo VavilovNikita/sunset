@@ -94,6 +94,17 @@ tags:
       Rooms/Pricing/Availability tags: no session required, and availability
       here never reveals whether a blocked day is a real booking or a manual
       staff block.
+  - name: PublicOrdering
+    description: >
+      Unauthenticated dine-in QR ordering: a guest scans a code printed for their table's
+      already-open `Order` and reads/adds to it from their own phone, no account required.
+      A separate tag (and generated `PublicOrderingApi`) from `Public`/`PublicApi` purely so
+      this stays its own controller (`GuestOrderingController`) rather than folding guest
+      ordering into `PublicController` - same one-controller-per-tag convention as everywhere
+      else in this spec. Gated entirely by a per-order `token` query parameter matched against
+      `Order.guestAccessToken` (see `OrderService#requireGuestAccess`) - there is no login, and
+      the same 404 is returned whether the token is wrong, the order doesn't exist, or the
+      order is no longer `OPEN`/`SENT`, so a guessing attempt learns nothing.
   - name: PropertyMap
     description: >
       The front desk's visual map of the property (CASHIER or above) - every physical room
@@ -5439,6 +5450,129 @@ paths:
               example:
                 error: Room not found
 
+  /public/menu:
+    get:
+      operationId: listPublicMenu
+      tags: [PublicOrdering]
+      summary: List dine-in-relevant menu items (public)
+      description: >
+        Unauthenticated. Powers the guest QR ordering menu. Only items a guest may actually
+        order: `isAvailable == true` and `department != SPA` (a spa treatment is never something
+        a guest picks off a menu screen - it's booked as a `SpaAppointment` and billed through
+        the ordinary staff order flow, same exclusion `OrderPrintingService#printTickets` already
+        applies when deciding what gets a kitchen/bar ticket at all). Distinct from `GET /menu`
+        (staff, unfiltered) - `MenuService#listPublic` is a separate method so the staff catalog
+        view is never affected by this filter.
+      security: []
+      responses:
+        "200":
+          description: Available, non-SPA menu items.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MenuItem"
+
+  /public/orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getPublicOrder
+      tags: [PublicOrdering]
+      summary: Get an order's guest-facing view (public)
+      description: >
+        Unauthenticated - gated entirely by `token` (see `OrderService#requireGuestAccess`).
+        Powers the guest ordering page, polled every few seconds so multiple phones sharing one
+        table's order stay in sync with each other and with anything staff ring in directly.
+        Returns the same 404 for a wrong/missing token, an unknown order id, or an order that
+        has left `OPEN`/`SENT` (paid or cancelled) - a guessing attempt learns nothing about
+        which reason applies.
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The order's guest-facing view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestOrderView"
+        "404":
+          description: Wrong/missing token, unknown order, or the order is no longer OPEN/SENT.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Order not found
+
+  /public/orders/{id}/items:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: addPublicOrderItems
+      tags: [PublicOrdering]
+      summary: Add items to an order as a guest (public)
+      description: >
+        Unauthenticated - gated entirely by `token`, same 404-for-everything contract as
+        `GET /public/orders/{id}` (see `OrderService#requireGuestAccess`). Delegates straight
+        into `OrderService#addItems` - the same merge-into-unsent-line and re-order-ticket-print
+        behavior `POST /orders/{id}/items` gives staff, not a second implementation of it. Rate
+        limited per `token` (`GuestOrderRateLimiter`, same shape as `BookingRateLimiter`) - this
+        is the app's second unauthenticated write endpoint after `POST /bookings`, and one QR
+        code being hammered shouldn't be able to flood the kitchen printer.
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/OrderItemInput"
+      responses:
+        "201":
+          description: Items added; the order's updated guest-facing view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestOrderView"
+        "404":
+          description: Wrong/missing token, unknown order, or the order is no longer OPEN/SENT.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Order not found
+        "429":
+          description: Too many requests for this token within the rate-limit window.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many requests. Please slow down and try again.
+
   /uploads/rooms/{roomId}/{filename}:
     parameters:
       - name: roomId
@@ -9503,6 +9637,7 @@ components:
           createdAt,
           updatedAt,
           paymentMethod,
+          guestAccessToken,
         ]
       properties:
         id:
@@ -9554,6 +9689,24 @@ components:
           allOf:
             - $ref: "#/components/schemas/PaymentMethod"
           nullable: true
+        guestAccessToken:
+          type: string
+          nullable: true
+          readOnly: true
+          x-sensitive: true
+          description: >
+            Generated once, automatically, by `OrderService#create` for every order (24 random
+            bytes, URL-safe Base64, no padding) - not just orders opened on a table, even though
+            only dine-in QR ordering (`PublicOrderingApi`) reads it today; cheap to generate
+            unconditionally and room-service ordering will likely want the same mechanism later.
+            Never regenerated or rotated - an order that leaves `OPEN`/`SENT` (paid or cancelled)
+            simply stops being an accepted token anywhere (see
+            `OrderService#requireGuestAccess`), and a new table sitting is a new `Order` with its
+            own fresh token, not a reused one. `null` only for orders created before this field
+            existed. This is a bearer credential, not guest PII, but the same "never let it leak
+            into a stray log line" reasoning applies - marked `x-sensitive` so it renders
+            `[REDACTED]` in this model's generated `toString()`, same mechanism as
+            `guestEmail`/`guestPhone`/`paymentNote` elsewhere in this spec.
 
     OrderCreateInput:
       type: object
@@ -9671,6 +9824,51 @@ components:
           $ref: "#/components/schemas/PaymentMethod"
         bookingId:
           type: string
+
+    GuestOrderItem:
+      type: object
+      description: >
+        One line of a `GuestOrderView` - the guest-facing projection of `OrderItem`. Carries the
+        menu item's name (a guest has no way to resolve `menuItemId` on their own) instead of the
+        id itself, and deliberately nothing about `sentAt` - whether a line has already gone to
+        the kitchen is staff information, not something a guest's phone needs to render.
+      required: [name, quantity, note, unitPrice]
+      properties:
+        name:
+          type: string
+        quantity:
+          type: integer
+        note:
+          type: string
+          nullable: true
+        unitPrice:
+          type: string
+          description: Decimal(10,2) rendered as a string - same snapshot-at-add-time value as `OrderItem.unitPrice`.
+
+    GuestOrderView:
+      type: object
+      description: >
+        The guest-facing projection of `Order`, returned by both `PublicOrderingApi` operations.
+        Deliberately not `Order` itself - never carries `openedByUserId`/`openedByEmail`,
+        `guestName`, `bookingId`, `paymentMethod`, or `guestAccessToken` (the token that gated
+        the request that produced this response is never echoed back in it). `locationLabel` is
+        the same "zone – table label" text `OrderPrintingService#describeLocation` puts on a
+        printed ticket, so a guest looking at their phone sees the same identifier staff do.
+      required: [id, status, locationLabel, items, total]
+      properties:
+        id:
+          type: string
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        locationLabel:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuestOrderItem"
+        total:
+          type: string
+          description: Decimal(10,2) rendered as a string, e.g. `"1250.00"` — same server-computed total as `Order.total`.
 
     Payment:
       type: object

@@ -58,6 +58,8 @@ public class Order {
 
   private JsonNullable<PaymentMethod> paymentMethod = JsonNullable.<PaymentMethod>undefined();
 
+  private JsonNullable<String> guestAccessToken = JsonNullable.<String>undefined();
+
   public Order() {
     super();
   }
@@ -65,7 +67,7 @@ public class Order {
   /**
    * Constructor with only required parameters
    */
-  public Order(String id, String tableId, String bookingId, String guestName, OrderStatus status, String openedByUserId, String openedByEmail, String total, String note, List<@Valid OrderItem> items, OffsetDateTime createdAt, OffsetDateTime updatedAt, PaymentMethod paymentMethod) {
+  public Order(String id, String tableId, String bookingId, String guestName, OrderStatus status, String openedByUserId, String openedByEmail, String total, String note, List<@Valid OrderItem> items, OffsetDateTime createdAt, OffsetDateTime updatedAt, PaymentMethod paymentMethod, String guestAccessToken) {
     this.id = id;
     this.tableId = JsonNullable.of(tableId);
     this.bookingId = JsonNullable.of(bookingId);
@@ -79,6 +81,7 @@ public class Order {
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
     this.paymentMethod = JsonNullable.of(paymentMethod);
+    this.guestAccessToken = JsonNullable.of(guestAccessToken);
   }
 
   public Order id(String id) {
@@ -336,6 +339,25 @@ public class Order {
     this.paymentMethod = paymentMethod;
   }
 
+  public Order guestAccessToken(String guestAccessToken) {
+    this.guestAccessToken = JsonNullable.of(guestAccessToken);
+    return this;
+  }
+
+  /**
+   * Generated once, automatically, by `OrderService#create` for every order (24 random bytes, URL-safe Base64, no padding) - not just orders opened on a table, even though only dine-in QR ordering (`PublicOrderingApi`) reads it today; cheap to generate unconditionally and room-service ordering will likely want the same mechanism later. Never regenerated or rotated - an order that leaves `OPEN`/`SENT` (paid or cancelled) simply stops being an accepted token anywhere (see `OrderService#requireGuestAccess`), and a new table sitting is a new `Order` with its own fresh token, not a reused one. `null` only for orders created before this field existed. This is a bearer credential, not guest PII, but the same \"never let it leak into a stray log line\" reasoning applies - marked `x-sensitive` so it renders `[REDACTED]` in this model's generated `toString()`, same mechanism as `guestEmail`/`guestPhone`/`paymentNote` elsewhere in this spec. 
+   * @return guestAccessToken
+   */
+  
+  @JsonProperty("guestAccessToken")
+  public JsonNullable<String> getGuestAccessToken() {
+    return guestAccessToken;
+  }
+
+  public void setGuestAccessToken(JsonNullable<String> guestAccessToken) {
+    this.guestAccessToken = guestAccessToken;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -357,12 +379,13 @@ public class Order {
         Objects.equals(this.items, order.items) &&
         Objects.equals(this.createdAt, order.createdAt) &&
         Objects.equals(this.updatedAt, order.updatedAt) &&
-        Objects.equals(this.paymentMethod, order.paymentMethod);
+        Objects.equals(this.paymentMethod, order.paymentMethod) &&
+        Objects.equals(this.guestAccessToken, order.guestAccessToken);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, tableId, bookingId, guestName, status, openedByUserId, openedByEmail, total, note, items, createdAt, updatedAt, paymentMethod);
+    return Objects.hash(id, tableId, bookingId, guestName, status, openedByUserId, openedByEmail, total, note, items, createdAt, updatedAt, paymentMethod, guestAccessToken);
   }
 
   @Override
@@ -382,6 +405,7 @@ public class Order {
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("    paymentMethod: ").append(toIndentedString(paymentMethod)).append("\n");
+    sb.append("    guestAccessToken: ").append("[REDACTED]").append("\n");
     sb.append("}");
     return sb.toString();
   }

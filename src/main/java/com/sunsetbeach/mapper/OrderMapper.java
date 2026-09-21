@@ -31,6 +31,7 @@ public class OrderMapper {
                 items.stream().map(orderItemMapper::toDto).toList(),
                 TimestampFormat.toUtc(entity.getCreatedAt()),
                 TimestampFormat.toUtc(entity.getUpdatedAt()),
-                paymentMethod);
+                paymentMethod,
+                entity.getGuestAccessToken());
     }
 }

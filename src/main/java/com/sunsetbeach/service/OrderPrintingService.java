@@ -229,7 +229,8 @@ public class OrderPrintingService {
         return b.cutAndBuild();
     }
 
-    private String describeLocation(OrderEntity order) {
+    /** Also the {@code locationLabel} on a guest's {@code GuestOrderView} - same identifier a printed ticket shows staff. */
+    public String describeLocation(OrderEntity order) {
         if (order.getTableId() != null) {
             return tableRepository
                     .findById(order.getTableId())
