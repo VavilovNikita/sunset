@@ -26,6 +26,7 @@ import com.sunsetbeach.model.RosterEmployee;
 import com.sunsetbeach.model.RosterLockInput;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
+import com.sunsetbeach.model.ShiftCodeDisplayColorUpdateInput;
 import com.sunsetbeach.model.ShiftCodeKindUpdateInput;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.StaffAreaCoverageRule;
@@ -34,11 +35,15 @@ import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.AttendanceService;
 import com.sunsetbeach.service.EmployeePatternService;
 import com.sunsetbeach.service.EmployeePayRateService;
+import com.sunsetbeach.service.RosterExportService;
 import com.sunsetbeach.service.RosterImportService;
 import com.sunsetbeach.service.RosterService;
 import com.sunsetbeach.service.ShiftCodeService;
 import com.sunsetbeach.service.StaffAreaCoverageRuleService;
 import java.util.List;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -52,6 +57,7 @@ public class RosterController implements RosterApi {
     private final ShiftCodeService shiftCodeService;
     private final EmployeePatternService employeePatternService;
     private final RosterService rosterService;
+    private final RosterExportService rosterExportService;
     private final StaffAreaCoverageRuleService staffAreaCoverageRuleService;
     private final AttendanceService attendanceService;
     private final EmployeePayRateService employeePayRateService;
@@ -61,6 +67,7 @@ public class RosterController implements RosterApi {
             ShiftCodeService shiftCodeService,
             EmployeePatternService employeePatternService,
             RosterService rosterService,
+            RosterExportService rosterExportService,
             StaffAreaCoverageRuleService staffAreaCoverageRuleService,
             AttendanceService attendanceService,
             EmployeePayRateService employeePayRateService,
@@ -68,6 +75,7 @@ public class RosterController implements RosterApi {
         this.shiftCodeService = shiftCodeService;
         this.employeePatternService = employeePatternService;
         this.rosterService = rosterService;
+        this.rosterExportService = rosterExportService;
         this.staffAreaCoverageRuleService = staffAreaCoverageRuleService;
         this.attendanceService = attendanceService;
         this.employeePayRateService = employeePayRateService;
@@ -87,6 +95,11 @@ public class RosterController implements RosterApi {
     @Override
     public ResponseEntity<ShiftCode> updateShiftCodeKind(String id, ShiftCodeKindUpdateInput shiftCodeKindUpdateInput) {
         return ResponseEntity.ok(shiftCodeService.updateKind(id, shiftCodeKindUpdateInput.getKind(), callerId()));
+    }
+
+    @Override
+    public ResponseEntity<ShiftCode> updateShiftCodeDisplayColor(String id, ShiftCodeDisplayColorUpdateInput shiftCodeDisplayColorUpdateInput) {
+        return ResponseEntity.ok(shiftCodeService.updateDisplayColor(id, shiftCodeDisplayColorUpdateInput.getDisplayColor().orElse(null), callerId()));
     }
 
     @Override
@@ -190,6 +203,18 @@ public class RosterController implements RosterApi {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
                 .body(rosterService.exportActualsCsv(year, month, callerId()));
+    }
+
+    @Override
+    public ResponseEntity<Resource> exportRosterGrid(Integer year, Integer month) {
+        byte[] workbook = rosterExportService.exportGrid(year, month, callerId());
+        Resource resource = new ByteArrayResource(workbook);
+        String filename = "roster-" + year + "-" + String.format("%02d", month) + ".xlsx";
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(filename).build().toString())
+                .body(resource);
     }
 
     @Override

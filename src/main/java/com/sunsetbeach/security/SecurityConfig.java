@@ -288,6 +288,11 @@ public class SecurityConfig {
                         // is also hard-restricted to ADMIN for, regardless of the role hierarchy.
                         .requestMatchers("/roster/import/preview", "/roster/import/name-mappings", "/roster/import/color-mappings", "/roster/import/commit")
                         .hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
+                        // The Excel grid export is ADMIN only too - same floor as the import, not
+                        // the CSV actuals export (which stays MANAGER+ below). Not a prefix of the
+                        // bare "/roster" MANAGER+ rule below, so order relative to it doesn't
+                        // matter, listed here next to the rest of this module's ADMIN-only rules.
+                        .requestMatchers("/roster/export").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
                         // Everything else roster-shaped is MANAGER or above - the whole grid,
                         // editing it (move/reassign/swap/lock/generate), employee patterns,
                         // coverage minimums, pay rates, attendance, and the actuals export all
@@ -303,6 +308,7 @@ public class SecurityConfig {
                         // relative to them doesn't matter - listed here anyway, next to the rest
                         // of this resource's rules.
                         .requestMatchers(HttpMethod.PATCH, "/shift-codes/*/kind").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers(HttpMethod.PATCH, "/shift-codes/*/display-color").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/employee-patterns", "/employee-patterns/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/roster/employees", "/roster/generate", "/roster/actuals-export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/roster", "/roster/entries", "/roster/entries/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())

@@ -234,6 +234,9 @@ class PosRoleHierarchyTests {
     @MockitoBean
     private com.sunsetbeach.service.RosterImportService rosterImportService;
 
+    @MockitoBean
+    private com.sunsetbeach.service.RosterExportService rosterExportService;
+
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
     // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
     // "user-1" regardless of role, so one stub covers every test.

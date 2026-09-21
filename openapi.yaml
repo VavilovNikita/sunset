@@ -5603,6 +5603,54 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
 
+  /shift-codes/{id}/display-color:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateShiftCodeDisplayColor
+      tags: [Roster]
+      summary: Set or clear a shift code's display colour, in place
+      description: >
+        Requires MANAGER or above. Same no-versioning pattern as `PATCH /shift-codes/{id}/kind`
+        (see that endpoint's own description) - `displayColor` is a presentation attribute, not an
+        agreed term any `RosterEntry` depends on staying frozen, so this mutates the existing row
+        rather than retiring it and creating a new version. Unlike `kind`, this may also be used to
+        clear a code back to unset (omit `displayColor`, or send it explicitly `null`) - see
+        `ShiftCodeDisplayColorUpdateInput`'s own description.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShiftCodeDisplayColorUpdateInput"
+      responses:
+        "200":
+          description: The updated shift code.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftCode"
+        "400":
+          description: displayColor was sent but isn't a 6-digit hex colour.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such shift code.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /employee-patterns:
     get:
       operationId: listEmployeePatterns
@@ -6517,6 +6565,58 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /roster/export:
+    get:
+      operationId: exportRosterGrid
+      tags: [Roster]
+      summary: Export a month's roster grid, as an Excel workbook
+      description: >
+        Requires ADMIN - stricter than the rest of this module's MANAGER floor, matching the
+        Excel import's own floor (`/roster/import/**`), not the actuals export's. One row per
+        employee, grouped and ordered exactly as the on-screen grid (`RosterGrid.tsx`) renders it -
+        by `StaffArea` in the fixed order Admin, Front Office, Maintenance, Housekeeping,
+        Restaurant, Kitchen, then employees with no area set, alphabetically by name within each
+        group; a group with nobody in it is left out entirely, same as on screen. One column per
+        day of the month; a populated cell shows its `ShiftCode.code` with the cell filled
+        `displayColor` where a code has one, the same neutral fallback the grid itself uses where
+        it doesn't (see `ShiftCode.displayColor`'s own description). Weekend columns and, if the
+        exported month is the current one, the "today" column are styled to match the grid's own
+        visual cues as closely as Excel formatting allows. Bottom rows are the same Working/Off/
+        Absent daily totals the grid's own `tfoot` computes (`Working`: entries whose `shiftCode.
+        countsAsWorked` is true; `Off`: active employees minus anyone with any entry that day;
+        `Absent`: entries whose `shiftCode.kind` is `ABSENCE`) - recomputed here rather than shared
+        code, since that computation exists only client-side today (`RosterGrid.tsx`'s own totals
+        block), not as a backend endpoint this could call into.
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        "200":
+          description: The .xlsx workbook.
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Token is valid but lacks the required role (`ADMIN`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /roster/import/preview:
     post:
@@ -9941,6 +10041,7 @@ components:
         - SPA_APPOINTMENT_TABLES_SWAPPED
         - SHIFT_CODE_CREATED
         - SHIFT_CODE_KIND_CHANGED
+        - SHIFT_CODE_DISPLAY_COLOR_CHANGED
         - EMPLOYEE_PATTERN_CHANGED
         - ROSTER_ENTRY_CREATED
         - ROSTER_ENTRY_MOVED
@@ -9955,6 +10056,7 @@ components:
         - EMPLOYEE_PAY_RATE_CHANGED
         - ROSTER_ACTUALS_EXPORTED
         - ROSTER_MONTH_IMPORTED
+        - ROSTER_GRID_EXPORTED
 
     AuditEntityType:
       type: string
@@ -10179,6 +10281,45 @@ components:
             when `kind` is null, for `PATCH /shift-codes/{id}/kind` to offer as a starting point,
             never applied on its own. Same "suggest, don't silently apply" shape as
             `RosterImportNameEntry.suggestedStaffArea`.
+        displayColor:
+          type: string
+          nullable: true
+          pattern: '^#[0-9a-fA-F]{6}$'
+          description: >
+            A hex colour an admin has explicitly chosen for this code's chip on the roster grid,
+            via `PATCH /shift-codes/{id}/display-color` - null (the default for every code,
+            including every one that existed before this field) means nothing has been chosen yet,
+            and the grid falls back to its own neutral lightness-by-start-time scheme. Like `kind`,
+            this is a presentation attribute, not an agreed term `RosterEntry`s depend on staying
+            frozen (see this schema's own description on why a `ShiftCode` row is otherwise never
+            edited), so it's the second deliberate exception to that rule, mutated in place rather
+            than versioned.
+        suggestedColor:
+          type: string
+          nullable: true
+          pattern: '^#[0-9a-fA-F]{6}$'
+          description: >
+            A default guessed for `"9"`/`"9S"` specifically, set only when `displayColor` is null -
+            same "suggest, don't silently apply" shape as `suggestedKind`. Computed from whichever
+            `RosterImportShiftColorMapping` row is already on file resolving that code (the
+            accountant's own yellow/light-blue distinction for the two "9" shifts - see this
+            schema's own description) if one exists yet; every other code gets no suggestion here,
+            since nothing else was ever told apart by cell colour in the source spreadsheet.
+
+    ShiftCodeDisplayColorUpdateInput:
+      type: object
+      description: >
+        Body of `PATCH /shift-codes/{id}/display-color`. `displayColor` may be omitted or sent
+        explicitly `null` to clear a code back to unset - the grid's neutral fallback applies again
+        - so, unlike `ShiftCodeKindUpdateInput.kind`, it is deliberately left out of `required`:
+        a `nullable: true` property that's also `required` generates a `@NotNull` that rejects the
+        very null this endpoint needs to accept (the codegen's `JsonNullable<T>` wrapper unwraps
+        before Bean Validation sees it - see CLAUDE.md's Code generation section).
+      properties:
+        displayColor:
+          type: string
+          nullable: true
+          pattern: '^#[0-9a-fA-F]{6}$'
 
     ShiftCodeCreateInput:
       type: object

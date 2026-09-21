@@ -1,19 +1,23 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.entity.RosterImportShiftColorMappingEntity;
 import com.sunsetbeach.entity.ShiftCodeEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
+import com.sunsetbeach.model.FillColor;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
 import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
+import com.sunsetbeach.repository.RosterImportShiftColorMappingRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,14 +39,28 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ShiftCodeService {
 
+    // Representative swatches, not the literal Excel value: YELLOW is exact (this workbook's own
+    // pure-ARGB "Yellow", FFFFFF00 - see ScheduleWorkbookParser's own YELLOW_ARGB constant), but
+    // BLUE is a theme colour ("Accent 4, Lighter 80%") whose actual RGB depends on the workbook's
+    // own theme1.xml, which is never persisted anywhere - only this coarse YELLOW/BLUE
+    // classification is (RosterImportShiftColorMapping.fillColor). Good enough for a suggestion
+    // the admin can freely override (see computeSuggestedColorHex) - not a claim of exactness.
+    private static final Map<FillColor, String> FILL_COLOR_HEX = Map.of(FillColor.YELLOW, "#FFFF00", FillColor.BLUE, "#ADD8E6");
+
     private final ShiftCodeRepository shiftCodeRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final RosterImportShiftColorMappingRepository colorMappingRepository;
 
-    public ShiftCodeService(ShiftCodeRepository shiftCodeRepository, UserRepository userRepository, AuditLogService auditLogService) {
+    public ShiftCodeService(
+            ShiftCodeRepository shiftCodeRepository,
+            UserRepository userRepository,
+            AuditLogService auditLogService,
+            RosterImportShiftColorMappingRepository colorMappingRepository) {
         this.shiftCodeRepository = shiftCodeRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
+        this.colorMappingRepository = colorMappingRepository;
     }
 
     /**
@@ -57,7 +75,7 @@ public class ShiftCodeService {
     public List<ShiftCode> list(StaffArea staffArea) {
         List<ShiftCodeEntity> entities = staffArea != null ? resolveForArea(staffArea) : shiftCodeRepository.findByActiveTrue();
         Map<String, String> emailsById = resolveCreatorEmails(entities);
-        return entities.stream().map(e -> toDto(e, emailsById.get(e.getCreatedByUserId()))).toList();
+        return entities.stream().map(e -> toDtoForApi(e, emailsById.get(e.getCreatedByUserId()))).toList();
     }
 
     private List<ShiftCodeEntity> resolveForArea(StaffArea staffArea) {
@@ -118,7 +136,7 @@ public class ShiftCodeService {
                 "Defined " + areaDescription + " code \"" + saved.getCode() + "\" as " + saved.getKind().getValue()
                         + ", effective " + saved.getEffectiveFrom());
 
-        return toDto(saved, creatorEmail);
+        return toDtoForApi(saved, creatorEmail);
     }
 
     /**
@@ -142,7 +160,30 @@ public class ShiftCodeService {
                 "Kind for code \"" + saved.getCode() + "\" set to " + saved.getKind().getValue());
 
         String creatorEmail = userRepository.findById(saved.getCreatedByUserId()).map(UserEntity::getEmail).orElse(null);
-        return toDto(saved, creatorEmail);
+        return toDtoForApi(saved, creatorEmail);
+    }
+
+    /**
+     * {@code PATCH /shift-codes/{id}/display-color} - the second deliberate exception to a {@code
+     * ShiftCode} row never being edited (see this class's own javadoc and {@link #updateKind}):
+     * {@code displayColor} is presentation only, not an agreed term. Unlike {@code kind}, this may
+     * also clear the row back to unset ({@code displayColor} null) - there is no "unconfirmed"
+     * state to protect against reverting, so the caller is free to change their mind.
+     */
+    @Transactional
+    public ShiftCode updateDisplayColor(String id, String displayColor, String actorUserId) {
+        ShiftCodeEntity entity = shiftCodeRepository.findById(id).orElseThrow(() -> new NotFoundException("Shift code not found"));
+        entity.setDisplayColor(displayColor);
+        ShiftCodeEntity saved = shiftCodeRepository.saveAndFlush(entity);
+
+        auditLogService.record(
+                AuditAction.SHIFT_CODE_DISPLAY_COLOR_CHANGED,
+                AuditEntityType.SHIFT_CODE,
+                saved.getId(),
+                "Display color for code \"" + saved.getCode() + "\" set to " + (displayColor != null ? displayColor : "unset"));
+
+        String creatorEmail = userRepository.findById(saved.getCreatedByUserId()).map(UserEntity::getEmail).orElse(null);
+        return toDtoForApi(saved, creatorEmail);
     }
 
     private static LocalTime parseTime(String value) {
@@ -209,6 +250,39 @@ public class ShiftCodeService {
         return e.isCountsAsWorked() ? ShiftCodeKind.OPEN_SCHEDULE : ShiftCodeKind.ABSENCE;
     }
 
+    /**
+     * A default guessed for `"9"`/`"9S"` specifically, for {@code PATCH
+     * /shift-codes/{id}/display-color} to offer - never applied on its own (see {@code
+     * ShiftCode.suggestedColor}'s own openapi.yaml description). Every other code has nothing to
+     * guess from: nothing else in the source spreadsheet was ever told apart by cell colour.
+     */
+    private String computeSuggestedColorHex(ShiftCodeEntity e) {
+        if (!("9".equals(e.getCode()) || "9S".equals(e.getCode()))) {
+            return null;
+        }
+        return colorMappingRepository.findByResolvedCode(e.getCode()).stream()
+                .max(Comparator.comparing(RosterImportShiftColorMappingEntity::getCreatedAt))
+                .map(m -> FILL_COLOR_HEX.get(m.getFillColor()))
+                .orElse(null);
+    }
+
+    /**
+     * {@link #toDto} plus {@code suggestedColor} - kept out of the shared static method since
+     * computing it needs a repository lookup, and every other caller of {@code toDto}
+     * (RosterService, AttendanceService) renders many {@code ShiftCode}s at once without wanting
+     * one extra query per row for a suggestion only this service's own endpoints surface.
+     */
+    private ShiftCode toDtoForApi(ShiftCodeEntity e, String createdByEmail) {
+        ShiftCode dto = toDto(e, createdByEmail);
+        if (e.getDisplayColor() == null) {
+            String suggested = computeSuggestedColorHex(e);
+            if (suggested != null) {
+                dto.suggestedColor(suggested);
+            }
+        }
+        return dto;
+    }
+
     private Map<String, String> resolveCreatorEmails(List<ShiftCodeEntity> entities) {
         List<String> ids = entities.stream().map(ShiftCodeEntity::getCreatedByUserId).distinct().toList();
         return userRepository.findAllById(ids).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
@@ -232,6 +306,7 @@ public class ShiftCodeService {
         } else {
             dto.suggestedKind(computeSuggestedKind(e));
         }
+        if (e.getDisplayColor() != null) dto.displayColor(e.getDisplayColor());
         return dto;
     }
 }

@@ -59,6 +59,10 @@ public class ShiftCode {
 
   private JsonNullable<ShiftCodeKind> suggestedKind = JsonNullable.<ShiftCodeKind>undefined();
 
+  private JsonNullable<@Pattern(regexp = "^#[0-9a-fA-F]{6}$") String> displayColor = JsonNullable.<String>undefined();
+
+  private JsonNullable<@Pattern(regexp = "^#[0-9a-fA-F]{6}$") String> suggestedColor = JsonNullable.<String>undefined();
+
   public ShiftCode() {
     super();
   }
@@ -362,6 +366,44 @@ public class ShiftCode {
     this.suggestedKind = suggestedKind;
   }
 
+  public ShiftCode displayColor(String displayColor) {
+    this.displayColor = JsonNullable.of(displayColor);
+    return this;
+  }
+
+  /**
+   * A hex colour an admin has explicitly chosen for this code's chip on the roster grid, via `PATCH /shift-codes/{id}/display-color` - null (the default for every code, including every one that existed before this field) means nothing has been chosen yet, and the grid falls back to its own neutral lightness-by-start-time scheme. Like `kind`, this is a presentation attribute, not an agreed term `RosterEntry`s depend on staying frozen (see this schema's own description on why a `ShiftCode` row is otherwise never edited), so it's the second deliberate exception to that rule, mutated in place rather than versioned. 
+   * @return displayColor
+   */
+  @Pattern(regexp = "^#[0-9a-fA-F]{6}$") 
+  @JsonProperty("displayColor")
+  public JsonNullable<@Pattern(regexp = "^#[0-9a-fA-F]{6}$") String> getDisplayColor() {
+    return displayColor;
+  }
+
+  public void setDisplayColor(JsonNullable<String> displayColor) {
+    this.displayColor = displayColor;
+  }
+
+  public ShiftCode suggestedColor(String suggestedColor) {
+    this.suggestedColor = JsonNullable.of(suggestedColor);
+    return this;
+  }
+
+  /**
+   * A default guessed for `\"9\"`/`\"9S\"` specifically, set only when `displayColor` is null - same \"suggest, don't silently apply\" shape as `suggestedKind`. Computed from whichever `RosterImportShiftColorMapping` row is already on file resolving that code (the accountant's own yellow/light-blue distinction for the two \"9\" shifts - see this schema's own description) if one exists yet; every other code gets no suggestion here, since nothing else was ever told apart by cell colour in the source spreadsheet. 
+   * @return suggestedColor
+   */
+  @Pattern(regexp = "^#[0-9a-fA-F]{6}$") 
+  @JsonProperty("suggestedColor")
+  public JsonNullable<@Pattern(regexp = "^#[0-9a-fA-F]{6}$") String> getSuggestedColor() {
+    return suggestedColor;
+  }
+
+  public void setSuggestedColor(JsonNullable<String> suggestedColor) {
+    this.suggestedColor = suggestedColor;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -385,7 +427,9 @@ public class ShiftCode {
         Objects.equals(this.createdByEmail, shiftCode.createdByEmail) &&
         Objects.equals(this.createdAt, shiftCode.createdAt) &&
         equalsNullable(this.kind, shiftCode.kind) &&
-        equalsNullable(this.suggestedKind, shiftCode.suggestedKind);
+        equalsNullable(this.suggestedKind, shiftCode.suggestedKind) &&
+        equalsNullable(this.displayColor, shiftCode.displayColor) &&
+        equalsNullable(this.suggestedColor, shiftCode.suggestedColor);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -394,7 +438,7 @@ public class ShiftCode {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, hashCodeNullable(staffArea), code, hashCodeNullable(startTime1), hashCodeNullable(endTime1), hashCodeNullable(startTime2), hashCodeNullable(endTime2), countsAsWorked, isPaid, effectiveFrom, active, createdByEmail, createdAt, hashCodeNullable(kind), hashCodeNullable(suggestedKind));
+    return Objects.hash(id, hashCodeNullable(staffArea), code, hashCodeNullable(startTime1), hashCodeNullable(endTime1), hashCodeNullable(startTime2), hashCodeNullable(endTime2), countsAsWorked, isPaid, effectiveFrom, active, createdByEmail, createdAt, hashCodeNullable(kind), hashCodeNullable(suggestedKind), hashCodeNullable(displayColor), hashCodeNullable(suggestedColor));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -423,6 +467,8 @@ public class ShiftCode {
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    kind: ").append(toIndentedString(kind)).append("\n");
     sb.append("    suggestedKind: ").append(toIndentedString(suggestedKind)).append("\n");
+    sb.append("    displayColor: ").append(toIndentedString(displayColor)).append("\n");
+    sb.append("    suggestedColor: ").append(toIndentedString(suggestedColor)).append("\n");
     sb.append("}");
     return sb.toString();
   }

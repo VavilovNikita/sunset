@@ -4,13 +4,16 @@ import com.sunsetbeach.AbstractIntegrationTest;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.sunsetbeach.entity.RosterImportShiftColorMappingEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
+import com.sunsetbeach.model.FillColor;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
 import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
+import com.sunsetbeach.repository.RosterImportShiftColorMappingRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.util.ArrayList;
@@ -43,11 +46,15 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private RosterImportShiftColorMappingRepository colorMappingRepository;
+
     private final List<String> createdUserIds = new ArrayList<>();
     private final List<String> createdShiftCodeIds = new ArrayList<>();
 
     @AfterEach
     void cleanUp() {
+        colorMappingRepository.deleteAll();
         shiftCodeRepository.deleteAllById(createdShiftCodeIds);
         createdUserIds.forEach(userRepository::deleteById);
     }
@@ -291,5 +298,65 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
         assertThat(dto.getKind().isPresent()).isFalse();
         // 16:00 is afternoon/evening, not before noon - the suggestion reads the real clock time.
         assertThat(dto.getSuggestedKind().get()).isEqualTo(ShiftCodeKind.EVENING);
+    }
+
+    @Test
+    void updateDisplayColor_setsThenClearsInPlace_sameRowSameVersion() {
+        UserEntity manager = createManager();
+        ShiftCode code = shiftCodeService.create(
+                new ShiftCodeCreateInput("C" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.MORNING, true, true, "2026-01-01")
+                        .staffArea(StaffArea.KITCHEN)
+                        .startTime1("09:00")
+                        .endTime1("17:00"),
+                manager.getId());
+        createdShiftCodeIds.add(code.getId());
+        assertThat(code.getDisplayColor().isPresent()).isFalse();
+
+        ShiftCode colored = shiftCodeService.updateDisplayColor(code.getId(), "#3B82F6", manager.getId());
+        assertThat(colored.getId()).isEqualTo(code.getId());
+        assertThat(colored.getDisplayColor().get()).isEqualTo("#3B82F6");
+        assertThat(shiftCodeRepository.findById(code.getId()).orElseThrow().isActive()).isTrue();
+
+        // Unlike kind, this may be cleared back to unset - there's no "unconfirmed" state to
+        // protect here.
+        ShiftCode cleared = shiftCodeService.updateDisplayColor(code.getId(), null, manager.getId());
+        assertThat(shiftCodeRepository.findById(code.getId()).orElseThrow().getDisplayColor()).isNull();
+        assertThat(cleared.getDisplayColor().isPresent()).isFalse();
+    }
+
+    @Test
+    void list_forNineOrNineS_suggestsColorFromTheColorMapping_everyOtherCodeGetsNone() {
+        UserEntity manager = createManager();
+        ShiftCode nine = shiftCodeService.create(
+                new ShiftCodeCreateInput("9", ShiftCodeKind.MORNING, true, true, "2026-01-01").startTime1("09:00").endTime1("18:00"), manager.getId());
+        createdShiftCodeIds.add(nine.getId());
+        ShiftCode ordinary = shiftCodeService.create(
+                new ShiftCodeCreateInput("OP" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.OPEN_SCHEDULE, true, true, "2026-01-01"),
+                manager.getId());
+        createdShiftCodeIds.add(ordinary.getId());
+
+        RosterImportShiftColorMappingEntity mapping = new RosterImportShiftColorMappingEntity();
+        mapping.setRawCode("9");
+        mapping.setFillColor(FillColor.YELLOW);
+        mapping.setResolvedCode("9");
+        mapping.setCreatedByUserId(manager.getId());
+        colorMappingRepository.saveAndFlush(mapping);
+
+        List<ShiftCode> all = shiftCodeService.list(null);
+        ShiftCode nineDto = all.stream().filter(c -> c.getId().equals(nine.getId())).findFirst().orElseThrow();
+        ShiftCode ordinaryDto = all.stream().filter(c -> c.getId().equals(ordinary.getId())).findFirst().orElseThrow();
+
+        // Yellow "9" is the single 09:00-18:00 shift - see ShiftCode's own openapi.yaml
+        // description for why this hex is exact, not an approximation, for YELLOW specifically.
+        assertThat(nineDto.getSuggestedColor().get()).isEqualTo("#FFFF00");
+        // Nothing else in the source spreadsheet was ever told apart by cell colour.
+        assertThat(ordinaryDto.getSuggestedColor().isPresent()).isFalse();
+
+        // Once an admin has actually picked a colour, the suggestion is no longer offered -
+        // same "suggest, don't silently apply" precedent as suggestedKind.
+        shiftCodeService.updateDisplayColor(nine.getId(), "#123456", manager.getId());
+        ShiftCode nineAfterColorChosen = shiftCodeService.list(null).stream()
+                .filter(c -> c.getId().equals(nine.getId())).findFirst().orElseThrow();
+        assertThat(nineAfterColorChosen.getSuggestedColor().isPresent()).isFalse();
     }
 }

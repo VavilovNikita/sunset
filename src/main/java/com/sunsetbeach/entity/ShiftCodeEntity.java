@@ -58,6 +58,12 @@ public class ShiftCodeEntity {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private ShiftCodeKind kind;
 
+    // Presentation only, not an agreed term - the second deliberate exception to this row never
+    // being edited (see this class's own javadoc), same footing as kind. Null (the default for
+    // every code) means unset; the roster grid falls back to its own neutral lightness-by-time
+    // scheme until an admin picks one via PATCH /shift-codes/{id}/display-color.
+    private String displayColor;
+
     private String createdByUserId;
 
     @CreationTimestamp
@@ -153,6 +159,14 @@ public class ShiftCodeEntity {
 
     public void setKind(ShiftCodeKind kind) {
         this.kind = kind;
+    }
+
+    public String getDisplayColor() {
+        return displayColor;
+    }
+
+    public void setDisplayColor(String displayColor) {
+        this.displayColor = displayColor;
     }
 
     public String getCreatedByUserId() {
