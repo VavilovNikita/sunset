@@ -34,10 +34,16 @@ import org.springframework.stereotype.Component;
  *   device is the only copy if {@link com.sunsetbeach.service.AttendanceService#ingestDevicePunch}
  *   ever has a bug, and it holds roughly two years of punches at this hotel's volume - there is no
  *   scenario where this system should be the reason that history disappears.</li>
- *   <li>Authenticate with a comm-key password ({@code CMD_AUTH}). If a device ever responds
- *   {@code CMD_ACK_UNAUTH}, {@link #poll} fails loudly with a clear message rather than attempting
- *   the password-scramble handshake pyzk implements - simpler to support once a real device
- *   actually needs it than to carry untested auth code for a case that may never come up.</li>
+ *   <li>Authenticate with a <b>non-zero</b> comm-key password. A device that answers {@code
+ *   CMD_CONNECT} with {@code CMD_ACK_UNAUTH} is now answered back with the zero-key {@code
+ *   CMD_AUTH} handshake ({@link #makeCommKey}) - proven against a real K60 on 2026-09-21, which
+ *   turned out to need exactly this. A device that then rejects that handshake (a real non-zero
+ *   comm-key actually configured on the terminal) still fails loudly, with a message that says so
+ *   specifically: there is no password field anywhere in this system yet ({@code
+ *   AttendanceDeviceEntity}/{@code AttendanceDeviceInput} only carry
+ *   name/serial/address/port/timezone/active), so a non-zero key genuinely can't be supplied -
+ *   simpler to support once a real device actually needs it, same as everywhere else in this
+ *   class.</li>
  * </ul>
  *
  * <p><b>Two things that could not be verified without the actual hardware</b> (there is no K60
@@ -88,6 +94,7 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
     private static final int CMD_SET_TIME = 202;
     private static final int CMD_CONNECT = 1000;
     private static final int CMD_EXIT = 1001;
+    private static final int CMD_AUTH = 1102;
     private static final int CMD_PREPARE_DATA = 1500;
     private static final int CMD_DATA = 1501;
     private static final int CMD_FREE_DATA = 1502;
@@ -97,6 +104,10 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
     private static final int CMD_ATTLOG_TIME_RRQ = 10004;
     private static final int CMD_ACK_OK = 2000;
     private static final int CMD_ACK_UNAUTH = 2005;
+    /** No real device has been seen with a non-zero comm-key - only the handshake itself, which every device performs regardless. See makeCommKey's own javadoc. */
+    private static final long ZERO_COMM_KEY = 0;
+    /** pyzk's own default tick count for the comm-key handshake - see makeCommKey. */
+    private static final int COMM_KEY_TICKS = 50;
 
     private static final int MACHINE_PREPARE_DATA_1 = 20560;
     private static final int MACHINE_PREPARE_DATA_2 = 32130;
@@ -162,13 +173,62 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
         Response response = sendCommand(socket, CMD_CONNECT, new byte[0], session);
         session.sessionId = response.sessionId();
         if (response.command() == CMD_ACK_UNAUTH) {
-            throw new AttendanceDeviceException(
-                    "This terminal requires a comm-key password - not supported (see ZkTerminalClientImpl's own javadoc)");
+            byte[] commKey = makeCommKey(ZERO_COMM_KEY, session.sessionId, COMM_KEY_TICKS);
+            response = sendCommand(socket, CMD_AUTH, commKey, session);
+            if (response.command() != CMD_ACK_OK) {
+                throw new AttendanceDeviceException(
+                        "Terminal rejected authentication (response code " + response.command()
+                                + ") - this device may have a non-zero comm-key password, which isn't supported yet");
+            }
+            return session;
         }
         if (response.command() != CMD_ACK_OK) {
             throw new AttendanceDeviceException("Terminal rejected the connection (response code " + response.command() + ")");
         }
         return session;
+    }
+
+    /**
+     * Port of pyzk's own {@code make_commkey} (zk/base.py, in turn copied from zkemsdk.c's own
+     * {@code MakeKey}) - the comm-key scramble a device expects in the {@code CMD_AUTH} payload
+     * once {@code CMD_CONNECT} answers {@code CMD_ACK_UNAUTH}. Verified byte-for-byte against
+     * pyzk's source, not reconstructed from a description of it - the real function XORs the
+     * *first two* scrambled bytes with the tick count and replaces the *third* outright with it
+     * (not XOR), which reads like a typo against the "increment/XOR every byte the same way"
+     * pattern the rest of the function suggests; it isn't one, and this port keeps it.
+     *
+     * <p>Always runs the full handshake, even for the zero key this class hardcodes - pyzk itself
+     * has no "skip when password is zero" shortcut, so this doesn't invent one either.
+     */
+    private static byte[] makeCommKey(long key, int sessionId, int ticks) {
+        long k = 0;
+        for (int i = 0; i < 32; i++) {
+            long bit = (key >> i) & 1;
+            k = (k << 1) | bit;
+        }
+        k = (k + sessionId) & 0xFFFFFFFFL;
+
+        int b0 = (int) (k & 0xFF);
+        int b1 = (int) ((k >> 8) & 0xFF);
+        int b2 = (int) ((k >> 16) & 0xFF);
+        int b3 = (int) ((k >> 24) & 0xFF);
+
+        b0 ^= 'Z';
+        b1 ^= 'K';
+        b2 ^= 'S';
+        b3 ^= 'O';
+
+        int h0 = (b1 << 8) | b0;
+        int h1 = (b3 << 8) | b2;
+        int c0 = h1 & 0xFF;
+        int c1 = (h1 >> 8) & 0xFF;
+        // c2 (h0 & 0xFF) is deliberately never read - pyzk's own final byte 3 is the tick count
+        // itself, not c2 XORed with it. Kept only so c0..c3 read as the same four values this
+        // method's own javadoc names.
+        int c3 = (h0 >> 8) & 0xFF;
+
+        int b = ticks & 0xFF;
+        return new byte[] {(byte) (c0 ^ b), (byte) (c1 ^ b), (byte) b, (byte) (c3 ^ b)};
     }
 
     private void disconnect(Socket socket, Session session) throws IOException {

@@ -38,6 +38,12 @@ import java.util.concurrent.Executors;
  * firmware that doesn't support the ranged command, to drive {@code
  * ZkTerminalClientImpl#readWindowedAttendanceLog}'s own fallback path. Either way, the encoded
  * start/end times sent are captured for a test to assert on.
+ *
+ * <p>{@link #withUnauthConnect} makes CMD_CONNECT answer CMD_ACK_UNAUTH instead of CMD_ACK_OK,
+ * driving {@code ZkTerminalClientImpl#connect}'s comm-key handshake path - the client's CMD_AUTH
+ * payload is captured via {@link #lastAuthData()} for a test to assert the exact scrambled bytes
+ * against a hand-computed expectation, and the server's own answer to it (accept or reject) is
+ * configurable via that same method's argument.
  */
 class FakeZkTerminalServer implements AutoCloseable {
 
@@ -49,6 +55,7 @@ class FakeZkTerminalServer implements AutoCloseable {
     private static final int CMD_SET_TIME = 202;
     private static final int CMD_CONNECT = 1000;
     private static final int CMD_EXIT = 1001;
+    private static final int CMD_AUTH = 1102;
     private static final int CMD_ATTLOG_TIME_RRQ = 10004;
     private static final int CMD_PREPARE_DATA = 1500;
     private static final int CMD_DATA = 1501;
@@ -57,6 +64,9 @@ class FakeZkTerminalServer implements AutoCloseable {
     private static final int CMD_READ_BUFFER = 1504;
     private static final int CMD_ACK_OK = 2000;
     private static final int CMD_ACK_ERROR = 2001;
+    private static final int CMD_ACK_UNAUTH = 2005;
+
+    private static final int SESSION_ID = 4242;
 
     private final ServerSocket serverSocket;
     private final byte[] attendanceRecords;
@@ -69,6 +79,9 @@ class FakeZkTerminalServer implements AutoCloseable {
     private Integer lastRangeEndEncoded;
     private byte[] pendingBlobRecords;
     private CompletableFuture<Void> serverTask;
+    private boolean requireAuthHandshake;
+    private boolean acceptAuthHandshake = true;
+    private byte[] lastAuthData;
 
     /**
      * @param attendanceRecords the raw record bytes (post the 4-byte total-size header) to serve.
@@ -89,8 +102,30 @@ class FakeZkTerminalServer implements AutoCloseable {
         return this;
     }
 
+    /**
+     * Makes CMD_CONNECT answer CMD_ACK_UNAUTH instead of CMD_ACK_OK, driving
+     * ZkTerminalClientImpl's comm-key handshake path. When {@code acceptHandshake} is true, the
+     * server then answers the client's CMD_AUTH with CMD_ACK_OK regardless of payload (the payload
+     * itself is captured for the test to assert on separately); when false, it answers CMD_AUTH
+     * with CMD_ACK_ERROR, simulating a real non-zero comm-key rejecting the client's zero-key
+     * attempt.
+     */
+    FakeZkTerminalServer withUnauthConnect(boolean acceptHandshake) {
+        this.requireAuthHandshake = true;
+        this.acceptAuthHandshake = acceptHandshake;
+        return this;
+    }
+
     int port() {
         return serverSocket.getLocalPort();
+    }
+
+    int sessionId() {
+        return SESSION_ID;
+    }
+
+    byte[] lastAuthData() {
+        return lastAuthData;
     }
 
     List<Integer> receivedCommands() {
@@ -117,7 +152,7 @@ class FakeZkTerminalServer implements AutoCloseable {
         try (Socket socket = serverSocket.accept()) {
             InputStream in = socket.getInputStream();
             OutputStream out = socket.getOutputStream();
-            int sessionId = 4242;
+            int sessionId = SESSION_ID;
 
             while (true) {
                 Request request = readRequest(in);
@@ -127,7 +162,12 @@ class FakeZkTerminalServer implements AutoCloseable {
                 receivedCommands.add(request.command());
 
                 switch (request.command()) {
-                    case CMD_CONNECT -> writeResponse(out, CMD_ACK_OK, sessionId, request.replyId(), new byte[0]);
+                    case CMD_CONNECT -> writeResponse(
+                            out, requireAuthHandshake ? CMD_ACK_UNAUTH : CMD_ACK_OK, sessionId, request.replyId(), new byte[0]);
+                    case CMD_AUTH -> {
+                        lastAuthData = request.data();
+                        writeResponse(out, acceptAuthHandshake ? CMD_ACK_OK : CMD_ACK_ERROR, sessionId, request.replyId(), new byte[0]);
+                    }
                     case CMD_GET_FREE_SIZES -> writeResponse(out, CMD_ACK_OK, sessionId, request.replyId(), freeSizesPayload());
                     case CMD_PREPARE_BUFFER -> handlePrepareBuffer(out, sessionId, request.replyId(), request.data());
                     case CMD_READ_BUFFER -> handleReadBuffer(out, sessionId, request.replyId(), request.data());

@@ -42,6 +42,32 @@ class ZkTerminalClientImplTests {
         return ByteBuffer.wrap(encodeTime(t)).order(ByteOrder.LITTLE_ENDIAN).getInt();
     }
 
+    /**
+     * Second, independent port of pyzk's own {@code make_commkey} - not shared with {@code
+     * ZkTerminalClientImpl#makeCommKey}, the production code this exists to check. Transcribed
+     * separately from the same pyzk source (zk/base.py) so a transcription mistake in the
+     * production port has an independent implementation to be caught against, the same reasoning
+     * behind this file's own independent {@link #encodeTime} copy.
+     */
+    private static byte[] expectedCommKey(long key, int sessionId, int ticks) {
+        long k = 0;
+        for (int i = 0; i < 32; i++) {
+            k = (k << 1) | ((key >> i) & 1);
+        }
+        k = (k + sessionId) & 0xFFFFFFFFL;
+
+        int b0 = (int) (k & 0xFF) ^ 'Z';
+        int b1 = (int) ((k >> 8) & 0xFF) ^ 'K';
+        int b2 = (int) ((k >> 16) & 0xFF) ^ 'S';
+        int b3 = (int) ((k >> 24) & 0xFF) ^ 'O';
+
+        int h0 = (b1 << 8) | b0;
+        int h1 = (b3 << 8) | b2;
+
+        int b = ticks & 0xFF;
+        return new byte[] {(byte) ((h1 & 0xFF) ^ b), (byte) (((h1 >> 8) & 0xFF) ^ b), (byte) b, (byte) (((h0 >> 8) & 0xFF) ^ b)};
+    }
+
     private static byte[] sixteenByteRecord(int enrollmentNumber, LocalDateTime timestamp, int punchCode) {
         ByteBuffer buf = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN);
         buf.putInt(enrollmentNumber);
@@ -207,6 +233,55 @@ class ZkTerminalClientImplTests {
         device.setAddress("127.0.0.1");
 
         assertThatThrownBy(() -> new ZkTerminalClientImpl().poll(device, null, null)).isInstanceOf(AttendanceDeviceException.class);
+    }
+
+    /** A device that never answers CMD_ACK_UNAUTH never sees a CMD_AUTH - the ordinary connect path is unaffected. */
+    @Test
+    void poll_deviceNeverRequiresAuth_neverSendsCommKeyHandshake() throws Exception {
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(new byte[0], 0, false)) {
+            server.start();
+            new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
+
+            assertThat(server.receivedCommands()).doesNotContain(1102);
+        }
+    }
+
+    /**
+     * The comm-key handshake path found live against a real K60: CMD_CONNECT answers
+     * CMD_ACK_UNAUTH, the client replies with CMD_AUTH carrying the zero-key comm-key scramble,
+     * and the device accepting it lets the poll proceed normally. Asserts the exact bytes sent,
+     * not just that some CMD_AUTH was sent - see {@link #expectedCommKey} for why a loose
+     * assertion wouldn't catch a subtly wrong byte-order or XOR-constant mistake.
+     */
+    @Test
+    void poll_deviceRequiresAuth_sendsCorrectCommKeyAndSucceeds() throws Exception {
+        LocalDateTime timestamp = LocalDateTime.of(2027, 8, 21, 9, 0, 0);
+        byte[] records = sixteenByteRecord(1, timestamp, 0);
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 1, false).withUnauthConnect(true)) {
+            server.start();
+            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
+
+            assertThat(result.punches()).hasSize(1);
+            assertThat(server.receivedCommands()).containsExactly(1000, 1102, 50, 1503, 202, 1001);
+            assertThat(server.lastAuthData()).isEqualTo(expectedCommKey(0, server.sessionId(), 50));
+        }
+    }
+
+    /**
+     * A device that rejects the zero-key CMD_AUTH (a real non-zero comm-key configured on the
+     * terminal) must fail with a message distinct from the old "not supported at all" wording -
+     * this is now a genuine auth rejection, not an unimplemented feature.
+     */
+    @Test
+    void poll_deviceRejectsAuth_throwsDistinctRejectionMessage() throws Exception {
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(new byte[0], 0, false).withUnauthConnect(false)) {
+            server.start();
+
+            assertThatThrownBy(() -> new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null))
+                    .isInstanceOf(AttendanceDeviceException.class)
+                    .hasMessageContaining("rejected authentication")
+                    .hasMessageContaining("non-zero comm-key");
+        }
     }
 
     /**
