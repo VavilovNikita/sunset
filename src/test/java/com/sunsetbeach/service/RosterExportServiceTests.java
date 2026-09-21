@@ -367,6 +367,13 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         assertThat(cellText(rows.get(0), 2)).isEqualTo("IN");
         assertThat(cellText(rows.get(1), 2)).isEqualTo("OUT");
         assertThat(cellText(rows.get(0), 4)).isEqualTo("MANUAL");
+
+        // Same fact ("punches with no counts-as-worked roster entry") surfaces as an anomaly row too.
+        XSSFSheet anomalies = workbook.getSheetAt(2);
+        List<Row> anomalyRows = punchRowsForEmployee(anomalies, employee.getName());
+        assertThat(anomalyRows).hasSize(1);
+        assertThat(cellText(anomalyRows.get(0), 1)).isEqualTo(date.toString());
+        assertThat(cellText(anomalyRows.get(0), 2)).isEqualTo("UNSCHEDULED");
     }
 
     /** An odd punch count - the day contributes nothing to worked minutes and the lone punch never pairs with a neighboring day's punch. */
@@ -396,5 +403,100 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         assertThat(rows).hasSize(3);
         assertThat(cellText(rows.get(0), 1)).isEqualTo(incompleteDay.toString());
         assertThat(cellText(rows.get(0), 2)).isEqualTo("IN");
+
+        // Neither day has a roster entry (none was created above), so both are UNSCHEDULED too -
+        // the incomplete day carries both an UNSCHEDULED row and its own INCOMPLETE row.
+        XSSFSheet anomalies = workbook.getSheetAt(2);
+        List<Row> anomalyRows = punchRowsForEmployee(anomalies, employee.getName());
+        assertThat(anomalyRows).hasSize(3);
+        assertThat(anomalyRows.stream().filter(r -> incompleteDay.toString().equals(cellText(r, 1))).map(r -> cellText(r, 2)))
+                .containsExactlyInAnyOrder("UNSCHEDULED", "INCOMPLETE");
+        assertThat(anomalyRows.stream().filter(r -> completeDay.toString().equals(cellText(r, 1))).map(r -> cellText(r, 2)))
+                .containsExactly("UNSCHEDULED");
+    }
+
+    @Test
+    void exportActuals_lateAndAnomalies_splitShiftOnlyLateHalfFlagged() {
+        UserEntity mgr = createEmployee(null, "Manager");
+        UserEntity employee = createEmployee(StaffArea.RESTAURANT, "SplitLate");
+        ShiftCode split = shiftCodeService.create(
+                new ShiftCodeCreateInput("SPLITLATE" + UUID.randomUUID().toString().substring(0, 6), ShiftCodeKind.SPLIT, true, true, "2020-01-01")
+                        .staffArea(StaffArea.RESTAURANT)
+                        .startTime1("09:00").endTime1("13:00")
+                        .startTime2("16:00").endTime2("21:00"),
+                mgr.getId());
+        createdShiftCodeIds.add(split.getId());
+        LocalDate date = LocalDate.of(2027, 11, 1);
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), date.toString(), split.getId()), mgr.getId());
+
+        // Morning half on time...
+        punch(employee, mgr, date, 9, 0, PunchDirection.IN);
+        punch(employee, mgr, date, 13, 0, PunchDirection.OUT);
+        // ...evening half 12 minutes late.
+        punch(employee, mgr, date, 16, 12, PunchDirection.IN);
+        punch(employee, mgr, date, 21, 0, PunchDirection.OUT);
+
+        XSSFSheet anomalies = exportActualsWorkbook(2027, 11).getSheetAt(2);
+        List<Row> rows = punchRowsForEmployee(anomalies, employee.getName());
+
+        assertThat(rows).hasSize(1);
+        assertThat(cellText(rows.get(0), 2)).isEqualTo("LATE");
+        assertThat(cellText(rows.get(0), 3)).contains("12 min late");
+    }
+
+    @Test
+    void exportActuals_lateAndAnomalies_extraPunchPairBeyondScheduledIntervalsNotFlagged() {
+        UserEntity mgr = createEmployee(null, "Manager");
+        UserEntity employee = createEmployee(StaffArea.RESTAURANT, "ExtraPair");
+        ShiftCode code = createCode(ShiftCodeKind.MORNING, true, "09:00", "17:00");
+        LocalDate date = LocalDate.of(2027, 11, 2);
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), date.toString(), code.getId()), mgr.getId());
+
+        // The scheduled interval, matched exactly...
+        punch(employee, mgr, date, 9, 0, PunchDirection.IN);
+        punch(employee, mgr, date, 17, 0, PunchDirection.OUT);
+        // ...plus an extra, unofficial in/out with nothing scheduled to compare it against.
+        punch(employee, mgr, date, 18, 0, PunchDirection.IN);
+        punch(employee, mgr, date, 19, 0, PunchDirection.OUT);
+
+        XSSFSheet anomalies = exportActualsWorkbook(2027, 11).getSheetAt(2);
+        List<Row> rows = punchRowsForEmployee(anomalies, employee.getName());
+
+        assertThat(rows).isEmpty();
+    }
+
+    @Test
+    void exportActuals_lateAndAnomalies_openScheduleDayWithNoPunches_missedNotLate() {
+        UserEntity mgr = createEmployee(null, "Manager");
+        UserEntity employee = createEmployee(StaffArea.RESTAURANT, "OpMissed");
+        ShiftCode op = shiftCodeService.create(
+                new ShiftCodeCreateInput("OPMISS" + UUID.randomUUID().toString().substring(0, 4), ShiftCodeKind.OPEN_SCHEDULE, true, true, "2020-01-01")
+                        .staffArea(StaffArea.RESTAURANT),
+                mgr.getId());
+        createdShiftCodeIds.add(op.getId());
+        LocalDate date = LocalDate.of(2027, 11, 3);
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), date.toString(), op.getId()), mgr.getId());
+
+        XSSFSheet anomalies = exportActualsWorkbook(2027, 11).getSheetAt(2);
+        List<Row> rows = punchRowsForEmployee(anomalies, employee.getName());
+
+        assertThat(rows).hasSize(1);
+        assertThat(cellText(rows.get(0), 2)).isEqualTo("MISSED");
+    }
+
+    @Test
+    void exportActuals_lateAndAnomalies_cleanDayProducesNoRow() {
+        UserEntity mgr = createEmployee(null, "Manager");
+        UserEntity employee = createEmployee(StaffArea.RESTAURANT, "Clean");
+        ShiftCode code = createCode(ShiftCodeKind.MORNING, true, "09:00", "17:00");
+        LocalDate date = LocalDate.of(2027, 11, 4);
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), date.toString(), code.getId()), mgr.getId());
+        punch(employee, mgr, date, 9, 0, PunchDirection.IN);
+        punch(employee, mgr, date, 17, 0, PunchDirection.OUT);
+
+        XSSFSheet anomalies = exportActualsWorkbook(2027, 11).getSheetAt(2);
+        List<Row> rows = punchRowsForEmployee(anomalies, employee.getName());
+
+        assertThat(rows).isEmpty();
     }
 }

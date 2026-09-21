@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
@@ -78,9 +79,12 @@ import org.springframework.transaction.annotation.Transactional;
  * "punched at least once" - narrower in the ordinary case (an active employee with neither is
  * simply absent from the report, not a zero-filled row) and occasionally wider (a punch with no
  * roster entry at all is exactly the anomaly this export exists to surface). Per-day IN/OUT
- * pairing is {@link AttendancePunchPairing#sumWorkedMinutes}, the same rule {@link
- * AttendanceService#summary} uses - see that class's own javadoc for why there is exactly one copy
- * of it.
+ * pairing is {@link AttendancePunchPairing#sumWorkedMinutes}/{@link AttendancePunchPairing#pairs},
+ * the same rule {@link AttendanceService#summary} uses - see that class's own javadoc for why
+ * there is exactly one copy of it. Three sheets, all built from the one set of entries/punches
+ * queried at the top of the method - Summary, Arrivals &amp; departures, and Late &amp; anomalies
+ * (per-issue rows: late arrivals, early departures, missed/unscheduled/incomplete days - see
+ * {@link #writeLateAndAnomaliesSheet} for the per-interval matching rule).
  */
 @Service
 public class RosterExportService {
@@ -292,6 +296,7 @@ public class RosterExportService {
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             writeActualsSummarySheet(workbook, orderedEmployeeIds, employees, assignedByEmployee, shiftCodesById, punchesByEmployee);
             writeActualsPunchSheet(workbook, orderedEmployeeIds, employees, punchesByEmployee);
+            writeLateAndAnomaliesSheet(workbook, orderedEmployeeIds, employees, assignedByEmployee, shiftCodesById, punchesByEmployee);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
@@ -375,6 +380,127 @@ public class RosterExportService {
         sheet.setColumnWidth(4, 12 * 256);
         sheet.setColumnWidth(5, 30 * 256);
         sheet.createFreezePane(0, 1);
+    }
+
+    /**
+     * One row per issue found on one employee's one day, reusing exactly the entries/punches the
+     * other two sheets already loaded - no new queries. Per {@code employeeId}, walks the union of
+     * "has a counts-as-worked entry" and "has a punch" dates, in order (the outer loop is already
+     * {@code employeeIds} in name order, so employee-then-date falls out for free):
+     *
+     * <ul>
+     *   <li>entry, no punches at all -&gt; {@code MISSED}.
+     *   <li>no entry, punches exist -&gt; {@code UNSCHEDULED}.
+     *   <li>entry and punches both exist -&gt; that day's punches are paired ({@link
+     *       AttendancePunchPairing#pairs}, the same positional pairing {@link
+     *       #actualsTotalsFor} sums minutes from) and matched, in order, to the shift code's own
+     *       intervals (1 for {@code MORNING}/{@code EVENING}, 2 for {@code SPLIT}, 0 for {@code
+     *       OPEN_SCHEDULE} - an {@code OP} day is therefore never eligible here, only for {@code
+     *       MISSED}). Only matched pairs are compared - a pair beyond the interval count, or an
+     *       interval beyond the pair count, has nothing to compare against and is silently not
+     *       flagged (the former is already visible as an extra row on the Arrivals &amp; departures
+     *       sheet). A late/early minute count is reported only when positive - arriving early or
+     *       leaving late is not an anomaly, and there is no grace-period threshold to round it away.
+     * </ul>
+     *
+     * <p>{@code INCOMPLETE} (an odd punch count that day) is checked independently of the three
+     * cases above, off the same day's punches, whether or not there's an entry - the identical rule
+     * {@link #actualsTotalsFor} already uses for the Summary sheet's "Incomplete days" column, so a
+     * day can carry both an {@code UNSCHEDULED} row and an {@code INCOMPLETE} row.
+     */
+    private void writeLateAndAnomaliesSheet(
+            XSSFWorkbook workbook, List<String> employeeIds, Map<String, UserEntity> employees,
+            Map<String, List<RosterEntryEntity>> assignedByEmployee, Map<String, ShiftCodeEntity> shiftCodesById,
+            Map<String, List<AttendancePunchEntity>> punchesByEmployee) {
+        XSSFSheet sheet = workbook.createSheet("Late & anomalies");
+        XSSFCellStyle headerStyle = boldStyle(workbook);
+
+        String[] columns = {"Employee", "Date", "Type", "Detail"};
+        Row header = sheet.createRow(0);
+        for (int i = 0; i < columns.length; i++) {
+            Cell cell = header.createCell(i);
+            cell.setCellValue(columns[i]);
+            cell.setCellStyle(headerStyle);
+        }
+
+        int rowIndex = 1;
+        for (String employeeId : employeeIds) {
+            String name = employees.get(employeeId).getName();
+            Map<LocalDate, RosterEntryEntity> entryByDate = assignedByEmployee.getOrDefault(employeeId, List.of()).stream()
+                    .collect(Collectors.toMap(RosterEntryEntity::getDate, e -> e));
+            Map<LocalDate, List<AttendancePunchEntity>> punchesByDate = punchesByEmployee.getOrDefault(employeeId, List.of()).stream()
+                    .collect(Collectors.groupingBy(p -> p.getPunchAt().toLocalDate()));
+
+            Set<LocalDate> dates = new TreeSet<>(entryByDate.keySet());
+            dates.addAll(punchesByDate.keySet());
+
+            for (LocalDate date : dates) {
+                RosterEntryEntity entry = entryByDate.get(date);
+                List<AttendancePunchEntity> dayPunches = punchesByDate.getOrDefault(date, List.of());
+
+                if (entry == null) {
+                    // Union membership guarantees dayPunches is non-empty here - a date with
+                    // neither an entry nor a punch was never added to `dates` at all.
+                    rowIndex = writeAnomalyRow(sheet, rowIndex, name, date, "UNSCHEDULED",
+                            dayPunches.size() + " punch(es) recorded with no counts-as-worked roster entry that day");
+                } else if (dayPunches.isEmpty()) {
+                    rowIndex = writeAnomalyRow(sheet, rowIndex, name, date, "MISSED",
+                            "Scheduled " + shiftCodesById.get(entry.getShiftCodeId()).getCode() + " - no punches recorded");
+                    continue;
+                } else {
+                    rowIndex = writeLateAndLeftEarlyRows(sheet, rowIndex, name, date, shiftCodesById.get(entry.getShiftCodeId()), dayPunches);
+                }
+
+                if (dayPunches.size() % 2 != 0) {
+                    rowIndex = writeAnomalyRow(sheet, rowIndex, name, date, "INCOMPLETE", dayPunches.size() + " punch(es) recorded - an odd count");
+                }
+            }
+        }
+
+        sheet.setColumnWidth(0, 24 * 256);
+        sheet.setColumnWidth(1, 12 * 256);
+        sheet.setColumnWidth(2, 14 * 256);
+        sheet.setColumnWidth(3, 46 * 256);
+        sheet.createFreezePane(0, 1);
+    }
+
+    /** Only reached when both an entry and at least one punch exist that day - see {@link #writeLateAndAnomaliesSheet}. */
+    private int writeLateAndLeftEarlyRows(
+            XSSFSheet sheet, int rowIndex, String employeeName, LocalDate date, ShiftCodeEntity shiftCode, List<AttendancePunchEntity> dayPunches) {
+        List<LocalTime[]> intervals = new java.util.ArrayList<>();
+        if (shiftCode.getStartTime1() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime1(), shiftCode.getEndTime1()});
+        if (shiftCode.getStartTime2() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime2(), shiftCode.getEndTime2()});
+
+        List<AttendancePunchPairing.PunchPair> pairs = AttendancePunchPairing.pairs(dayPunches);
+        int matched = Math.min(pairs.size(), intervals.size());
+        for (int i = 0; i < matched; i++) {
+            AttendancePunchPairing.PunchPair pair = pairs.get(i);
+            LocalTime start = intervals.get(i)[0];
+            LocalTime end = intervals.get(i)[1];
+            LocalTime inTime = pair.in().getPunchAt().toLocalTime();
+            LocalTime outTime = pair.out().getPunchAt().toLocalTime();
+
+            long lateMinutes = Duration.between(start, inTime).toMinutes();
+            if (lateMinutes > 0) {
+                rowIndex = writeAnomalyRow(sheet, rowIndex, employeeName, date, "LATE",
+                        lateMinutes + " min late for the " + start.format(TIME_FORMAT) + " shift (clocked in " + inTime.format(TIME_FORMAT) + ")");
+            }
+            long earlyMinutes = Duration.between(outTime, end).toMinutes();
+            if (earlyMinutes > 0) {
+                rowIndex = writeAnomalyRow(sheet, rowIndex, employeeName, date, "LEFT_EARLY",
+                        earlyMinutes + " min left early from the " + end.format(TIME_FORMAT) + " shift (clocked out " + outTime.format(TIME_FORMAT) + ")");
+            }
+        }
+        return rowIndex;
+    }
+
+    private int writeAnomalyRow(XSSFSheet sheet, int rowIndex, String employeeName, LocalDate date, String type, String detail) {
+        Row row = sheet.createRow(rowIndex);
+        row.createCell(0).setCellValue(employeeName);
+        row.createCell(1).setCellValue(date.toString());
+        row.createCell(2).setCellValue(type);
+        row.createCell(3).setCellValue(detail);
+        return rowIndex + 1;
     }
 
     private record ActualsTotals(int daysAssigned, BigDecimal hoursAssigned, int daysPresent, BigDecimal hoursWorked, int incompleteDays) {
