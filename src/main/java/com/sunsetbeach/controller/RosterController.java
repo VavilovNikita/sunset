@@ -199,10 +199,15 @@ public class RosterController implements RosterApi {
     }
 
     @Override
-    public ResponseEntity<String> exportRosterActuals(Integer year, Integer month) {
+    public ResponseEntity<Resource> exportRosterActuals(Integer year, Integer month) {
+        byte[] workbook = rosterExportService.exportActuals(year, month, callerId());
+        Resource resource = new ByteArrayResource(workbook);
+        String filename = "roster-actuals-" + year + "-" + String.format("%02d", month) + ".xlsx";
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
-                .body(rosterService.exportActualsCsv(year, month, callerId()));
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(filename).build().toString())
+                .body(resource);
     }
 
     @Override

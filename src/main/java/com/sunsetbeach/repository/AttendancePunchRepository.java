@@ -13,6 +13,14 @@ public interface AttendancePunchRepository extends JpaRepository<AttendancePunch
     List<AttendancePunchEntity> findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(
             String employeeUserId, LocalDateTime from, LocalDateTime to);
 
+    /**
+     * Every employee's punches in a range, not one employee's - the actuals export (unlike {@code
+     * summary}) reports across the whole roster at once. Ordered by employee first so a caller can
+     * group consecutive rows into one employee's list with the punchAt order inside each group
+     * already correct for same-day IN/OUT pairing, without a second sort.
+     */
+    List<AttendancePunchEntity> findByPunchAtBetweenOrderByEmployeeUserIdAscPunchAtAsc(LocalDateTime from, LocalDateTime to);
+
     boolean existsByDeviceId(String deviceId);
 
     boolean existsByDeviceIdAndEnrollmentNumberAndPunchAt(String deviceId, int enrollmentNumber, LocalDateTime punchAt);

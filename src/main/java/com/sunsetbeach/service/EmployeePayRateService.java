@@ -26,7 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p><b>Deliberately unused by the roster actuals export today.</b> The hotel's accountant keeps
  * pay calculation off-system - everyone is currently on a monthly salary held in a sheet this
- * system has never seen, and there are no part-timers - so {@link RosterService#exportActualsCsv}
+ * system has never seen, and there are no part-timers - so {@link RosterExportService#exportActuals}
  * reports only days and hours now, not money (see that method's own javadoc). This service,
  * {@link #rateAsOf}, and {@code EmployeePayRateEntity} are kept exactly as built anyway: the same
  * versioned-rate machinery becomes load-bearing again the day a part-timer is hired, and rebuilding

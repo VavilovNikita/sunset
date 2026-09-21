@@ -433,22 +433,22 @@ public interface RosterApi {
 
 
     /**
-     * GET /roster/actuals-export : Export a month&#39;s actual worked days and hours, as CSV
-     * Requires MANAGER or above, the same floor as the rest of the roster module&#39;s write/export surface. Each row is days actually worked that month (from &#x60;RosterEntry&#x60;s whose &#x60;shiftCode.countsAsWorked&#x60; is true - &#x60;OP&#x60; counts, &#x60;PH&#x60; does not) and total hours worked, summed from each day&#39;s shift-code interval(s) - &#x60;OP&#x60; has no fixed interval, so it adds a day without adding hours. No money: the hotel&#39;s accountant keeps pay calculation off-system (everyone is currently on a monthly salary held in a sheet this system has never seen, and there are no part-timers), so this export reports only the underlying facts and leaves the arithmetic where it already lives. 
+     * GET /roster/actuals-export : Export a month&#39;s assigned vs. actual worked days and hours, as an Excel workbook
+     * Requires MANAGER or above, the same floor as the rest of the roster module&#39;s write/export surface. Two sheets. \&quot;Summary\&quot;: one row per employee who either had a &#x60;shiftCode.countsAsWorked&#x60; roster entry that month or at least one real &#x60;AttendancePunch&#x60; that month (a punch with no matching entry is exactly the kind of anomaly this export exists to surface, not drop) - Days assigned/Hours assigned are the plan (&#x60;OP&#x60; counts as a day with no fixed hours, &#x60;PH&#x60; doesn&#39;t count at all, same as before this export reported real attendance); Days present/Hours worked are real punches, paired consecutive IN/OUT per day the same way &#x60;GET /attendance/summary&#x60; does; Incomplete days counts days that month with an odd punch count. \&quot;Arrivals &amp; departures\&quot;: one row per punch that month across every employee in scope, sorted by employee then punch time - the raw log Summary&#39;s totals are computed from, not pre-paired into sessions here. No money: the hotel&#39;s accountant keeps pay calculation off-system (everyone is currently on a monthly salary held in a sheet this system has never seen, and there are no part-timers), so this export reports only the underlying facts and leaves the arithmetic where it already lives. 
      *
      * @param year  (required)
      * @param month  (required)
-     * @return CSV, one row per employee. (status code 200)
+     * @return The .xlsx workbook (Summary, Arrivals &amp; departures). (status code 200)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
      */
     @RequestMapping(
         method = RequestMethod.GET,
         value = "/roster/actuals-export",
-        produces = { "text/csv", "application/json" }
+        produces = { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/json" }
     )
     
-    default ResponseEntity<String> exportRosterActuals(
+    default ResponseEntity<org.springframework.core.io.Resource> exportRosterActuals(
         @NotNull  @Valid @RequestParam(value = "year", required = true) Integer year,
         @NotNull @Min(1) @Max(12)  @Valid @RequestParam(value = "month", required = true) Integer month
     ) {

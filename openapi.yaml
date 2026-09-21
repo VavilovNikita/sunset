@@ -6531,16 +6531,22 @@ paths:
     get:
       operationId: exportRosterActuals
       tags: [Roster]
-      summary: Export a month's actual worked days and hours, as CSV
+      summary: Export a month's assigned vs. actual worked days and hours, as an Excel workbook
       description: >
         Requires MANAGER or above, the same floor as the rest of the roster module's write/export
-        surface. Each row is days actually worked that month (from `RosterEntry`s whose
-        `shiftCode.countsAsWorked` is true - `OP` counts, `PH` does not) and total hours worked,
-        summed from each day's shift-code interval(s) - `OP` has no fixed interval, so it adds a
-        day without adding hours. No money: the hotel's accountant keeps pay calculation
-        off-system (everyone is currently on a monthly salary held in a sheet this system has
-        never seen, and there are no part-timers), so this export reports only the underlying
-        facts and leaves the arithmetic where it already lives.
+        surface. Two sheets. "Summary": one row per employee who either had a
+        `shiftCode.countsAsWorked` roster entry that month or at least one real `AttendancePunch`
+        that month (a punch with no matching entry is exactly the kind of anomaly this export
+        exists to surface, not drop) - Days assigned/Hours assigned are the plan (`OP` counts as a
+        day with no fixed hours, `PH` doesn't count at all, same as before this export reported
+        real attendance); Days present/Hours worked are real punches, paired consecutive IN/OUT
+        per day the same way `GET /attendance/summary` does; Incomplete days counts days that
+        month with an odd punch count. "Arrivals & departures": one row per punch that month
+        across every employee in scope, sorted by employee then punch time - the raw log Summary's
+        totals are computed from, not pre-paired into sessions here. No money: the hotel's
+        accountant keeps pay calculation off-system (everyone is currently on a monthly salary
+        held in a sheet this system has never seen, and there are no part-timers), so this export
+        reports only the underlying facts and leaves the arithmetic where it already lives.
       parameters:
         - name: year
           in: query
@@ -6556,11 +6562,12 @@ paths:
             maximum: 12
       responses:
         "200":
-          description: CSV, one row per employee.
+          description: The .xlsx workbook (Summary, Arrivals & departures).
           content:
-            text/csv:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
                 type: string
+                format: binary
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":

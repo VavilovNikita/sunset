@@ -1,5 +1,9 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.entity.AttendancePunchEntity;
+import com.sunsetbeach.entity.RosterEntryEntity;
+import com.sunsetbeach.entity.ShiftCodeEntity;
+import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.RosterEmployee;
@@ -8,17 +12,28 @@ import com.sunsetbeach.model.RosterMonth;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
+import com.sunsetbeach.repository.AttendancePunchRepository;
+import com.sunsetbeach.repository.RosterEntryRepository;
+import com.sunsetbeach.repository.ShiftCodeRepository;
+import com.sunsetbeach.repository.UserRepository;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.FillPatternType;
@@ -36,12 +51,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * {@code GET /roster/export} - an .xlsx mirror of the on-screen grid ({@code RosterGrid.tsx}) for
- * one month, ADMIN only (same floor as the Excel *import*, not the CSV actuals export - see this
- * endpoint's own openapi.yaml description for why). Deliberately re-derives {@link RosterService
- * #getMonth} rather than reading a stored grid: there is no cached "the grid" anywhere, the React
- * component computes what's on screen straight from {@code RosterMonth} + a client-side reducer
- * every render, and this does the same in Java, row for row.
+ * Two of this module's Excel exports, sharing one class for the POI plumbing (cell styles, byte[]
+ * plumbing) neither is big enough to justify factoring out on its own.
+ *
+ * <p>{@link #exportGrid} ({@code GET /roster/export}) is an .xlsx mirror of the on-screen grid
+ * ({@code RosterGrid.tsx}) for one month, ADMIN only (same floor as the Excel *import*, not the
+ * actuals export - see this endpoint's own openapi.yaml description for why). Deliberately
+ * re-derives {@link RosterService#getMonth} rather than reading a stored grid: there is no cached
+ * "the grid" anywhere, the React component computes what's on screen straight from {@code
+ * RosterMonth} + a client-side reducer every render, and this does the same in Java, row for row.
  *
  * <p>Grouping/order, per-day totals (Working/Off/Absent), and cell colouring (kind-shape cues
  * layered under a code's own {@code displayColor}, falling back to the grid's own
@@ -51,6 +69,18 @@ import org.springframework.transaction.annotation.Transactional;
  * this endpoint. Kept in careful lockstep with that file's own comments (see the constants below)
  * rather than factored into a shared module, since there is no shared module between a Next.js
  * frontend and this Java backend to put one in.
+ *
+ * <p>{@link #exportActuals} ({@code GET /roster/actuals-export}) reports what the roster planned
+ * against what {@code AttendancePunch} actually recorded, MANAGER floor. Unlike {@code
+ * exportGrid}, it queries {@code RosterEntryRepository}/{@code AttendancePunchRepository} directly
+ * rather than going through {@code RosterService#getMonth}: that method's employee universe is
+ * every *active* {@code User}, but this export's is the union of "had a counts-as-worked entry" and
+ * "punched at least once" - narrower in the ordinary case (an active employee with neither is
+ * simply absent from the report, not a zero-filled row) and occasionally wider (a punch with no
+ * roster entry at all is exactly the anomaly this export exists to surface). Per-day IN/OUT
+ * pairing is {@link AttendancePunchPairing#sumWorkedMinutes}, the same rule {@link
+ * AttendanceService#summary} uses - see that class's own javadoc for why there is exactly one copy
+ * of it.
  */
 @Service
 public class RosterExportService {
@@ -79,12 +109,28 @@ public class RosterExportService {
     private static final int[] UNCONFIRMED_FILL_RGB = {0xE0, 0xE0, 0xE0};
     private static final int[] WEEKEND_FILL_RGB = {0xF0, 0xF0, 0xF0};
 
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+
     private final RosterService rosterService;
     private final AuditLogService auditLogService;
+    private final RosterEntryRepository rosterEntryRepository;
+    private final ShiftCodeRepository shiftCodeRepository;
+    private final AttendancePunchRepository attendancePunchRepository;
+    private final UserRepository userRepository;
 
-    public RosterExportService(RosterService rosterService, AuditLogService auditLogService) {
+    public RosterExportService(
+            RosterService rosterService,
+            AuditLogService auditLogService,
+            RosterEntryRepository rosterEntryRepository,
+            ShiftCodeRepository shiftCodeRepository,
+            AttendancePunchRepository attendancePunchRepository,
+            UserRepository userRepository) {
         this.rosterService = rosterService;
         this.auditLogService = auditLogService;
+        this.rosterEntryRepository = rosterEntryRepository;
+        this.shiftCodeRepository = shiftCodeRepository;
+        this.attendancePunchRepository = attendancePunchRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional(readOnly = true)
@@ -201,6 +247,179 @@ public class RosterExportService {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * Plan vs. reality for one month, two sheets. No money: the hotel's accountant keeps pay
+     * calculation off-system - everyone is currently on a monthly salary held in a sheet this
+     * system has never seen, and there are no part-timers - so this export reports only the
+     * underlying facts and leaves the arithmetic where it already lives. See {@link
+     * EmployeePayRateService}'s own javadoc for why the versioned rate model stays in the codebase
+     * even though nothing here calls it.
+     */
+    @Transactional(readOnly = true)
+    public byte[] exportActuals(int year, int month, String actorUserId) {
+        YearMonth ym = YearMonth.of(year, month);
+        LocalDate from = ym.atDay(1);
+        LocalDate to = ym.atEndOfMonth();
+
+        List<RosterEntryEntity> entries = rosterEntryRepository.findByDateBetween(from, to);
+        Map<String, ShiftCodeEntity> shiftCodesById = shiftCodeRepository
+                .findAllById(entries.stream().map(RosterEntryEntity::getShiftCodeId).distinct().toList())
+                .stream()
+                .collect(Collectors.toMap(ShiftCodeEntity::getId, s -> s));
+        Map<String, List<RosterEntryEntity>> assignedByEmployee = entries.stream()
+                .filter(e -> {
+                    ShiftCodeEntity sc = shiftCodesById.get(e.getShiftCodeId());
+                    return sc != null && sc.isCountsAsWorked();
+                })
+                .collect(Collectors.groupingBy(RosterEntryEntity::getEmployeeUserId));
+
+        // Ordered by employeeUserId then punchAt (see the repository method's own javadoc) - each
+        // group's own list below stays punchAt-sorted for free, exactly what same-day pairing needs.
+        List<AttendancePunchEntity> punches =
+                attendancePunchRepository.findByPunchAtBetweenOrderByEmployeeUserIdAscPunchAtAsc(from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+        Map<String, List<AttendancePunchEntity>> punchesByEmployee = punches.stream().collect(Collectors.groupingBy(AttendancePunchEntity::getEmployeeUserId));
+
+        // Union, not just who's scheduled - a punch with no roster entry is exactly the anomaly
+        // this export exists to surface, not drop. See this class's own javadoc for why this
+        // can't just reuse RosterService#getMonth's "every active employee" universe.
+        Set<String> employeeIds = new HashSet<>(assignedByEmployee.keySet());
+        employeeIds.addAll(punchesByEmployee.keySet());
+        Map<String, UserEntity> employees = userRepository.findAllById(employeeIds).stream().collect(Collectors.toMap(UserEntity::getId, u -> u));
+        List<String> orderedEmployeeIds = employeeIds.stream().sorted((a, b) -> employees.get(a).getName().compareTo(employees.get(b).getName())).toList();
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            writeActualsSummarySheet(workbook, orderedEmployeeIds, employees, assignedByEmployee, shiftCodesById, punchesByEmployee);
+            writeActualsPunchSheet(workbook, orderedEmployeeIds, employees, punchesByEmployee);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+
+            auditLogService.record(
+                    AuditAction.ROSTER_ACTUALS_EXPORTED, AuditEntityType.ROSTER_ENTRY, null,
+                    "Exported " + ym + " roster actuals for " + orderedEmployeeIds.size() + " employee(s)");
+
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private void writeActualsSummarySheet(
+            XSSFWorkbook workbook, List<String> employeeIds, Map<String, UserEntity> employees,
+            Map<String, List<RosterEntryEntity>> assignedByEmployee, Map<String, ShiftCodeEntity> shiftCodesById,
+            Map<String, List<AttendancePunchEntity>> punchesByEmployee) {
+        XSSFSheet sheet = workbook.createSheet("Summary");
+        XSSFCellStyle headerStyle = boldStyle(workbook);
+
+        String[] columns = {"Employee", "Days assigned", "Hours assigned", "Days present", "Hours worked", "Incomplete days"};
+        Row header = sheet.createRow(0);
+        for (int i = 0; i < columns.length; i++) {
+            Cell cell = header.createCell(i);
+            cell.setCellValue(columns[i]);
+            cell.setCellStyle(headerStyle);
+        }
+
+        int rowIndex = 1;
+        for (String employeeId : employeeIds) {
+            ActualsTotals totals = actualsTotalsFor(assignedByEmployee.get(employeeId), shiftCodesById, punchesByEmployee.get(employeeId));
+            Row row = sheet.createRow(rowIndex++);
+            row.createCell(0).setCellValue(employees.get(employeeId).getName());
+            row.createCell(1).setCellValue(totals.daysAssigned());
+            row.createCell(2).setCellValue(totals.hoursAssigned().doubleValue());
+            row.createCell(3).setCellValue(totals.daysPresent());
+            row.createCell(4).setCellValue(totals.hoursWorked().doubleValue());
+            row.createCell(5).setCellValue(totals.incompleteDays());
+        }
+
+        sheet.setColumnWidth(0, 24 * 256);
+        for (int i = 1; i < columns.length; i++) {
+            sheet.setColumnWidth(i, 14 * 256);
+        }
+        sheet.createFreezePane(0, 1);
+    }
+
+    private void writeActualsPunchSheet(
+            XSSFWorkbook workbook, List<String> employeeIds, Map<String, UserEntity> employees,
+            Map<String, List<AttendancePunchEntity>> punchesByEmployee) {
+        XSSFSheet sheet = workbook.createSheet("Arrivals & departures");
+        XSSFCellStyle headerStyle = boldStyle(workbook);
+
+        String[] columns = {"Employee", "Date", "Direction", "Time", "Source", "Note"};
+        Row header = sheet.createRow(0);
+        for (int i = 0; i < columns.length; i++) {
+            Cell cell = header.createCell(i);
+            cell.setCellValue(columns[i]);
+            cell.setCellStyle(headerStyle);
+        }
+
+        int rowIndex = 1;
+        for (String employeeId : employeeIds) {
+            String name = employees.get(employeeId).getName();
+            for (AttendancePunchEntity punch : punchesByEmployee.getOrDefault(employeeId, List.of())) {
+                Row row = sheet.createRow(rowIndex++);
+                row.createCell(0).setCellValue(name);
+                row.createCell(1).setCellValue(punch.getPunchAt().toLocalDate().toString());
+                row.createCell(2).setCellValue(punch.getDirection().getValue());
+                row.createCell(3).setCellValue(punch.getPunchAt().toLocalTime().format(TIME_FORMAT));
+                row.createCell(4).setCellValue(punch.getSource().getValue());
+                row.createCell(5).setCellValue(punch.getNote() != null ? punch.getNote() : "");
+            }
+        }
+
+        sheet.setColumnWidth(0, 24 * 256);
+        sheet.setColumnWidth(1, 12 * 256);
+        sheet.setColumnWidth(2, 12 * 256);
+        sheet.setColumnWidth(3, 10 * 256);
+        sheet.setColumnWidth(4, 12 * 256);
+        sheet.setColumnWidth(5, 30 * 256);
+        sheet.createFreezePane(0, 1);
+    }
+
+    private record ActualsTotals(int daysAssigned, BigDecimal hoursAssigned, int daysPresent, BigDecimal hoursWorked, int incompleteDays) {
+    }
+
+    /**
+     * {@code assignedEntries}/{@code employeePunches} are null, not an empty list, when this
+     * employee has none of either - {@code Map#get} on an absent key, same as everywhere else this
+     * class reads {@code punchesByEmployee}/{@code assignedByEmployee}.
+     */
+    private ActualsTotals actualsTotalsFor(
+            List<RosterEntryEntity> assignedEntries, Map<String, ShiftCodeEntity> shiftCodesById, List<AttendancePunchEntity> employeePunches) {
+        List<RosterEntryEntity> assigned = assignedEntries == null ? List.of() : assignedEntries;
+        BigDecimal hoursAssigned = BigDecimal.ZERO;
+        for (RosterEntryEntity entry : assigned) {
+            hoursAssigned = hoursAssigned.add(hoursWorked(shiftCodesById.get(entry.getShiftCodeId())));
+        }
+
+        List<AttendancePunchEntity> punches = employeePunches == null ? List.of() : employeePunches;
+        Map<LocalDate, List<AttendancePunchEntity>> byDay = punches.stream().collect(Collectors.groupingBy(p -> p.getPunchAt().toLocalDate(), LinkedHashMap::new, Collectors.toList()));
+
+        int incompleteDays = 0;
+        int workedMinutes = 0;
+        for (List<AttendancePunchEntity> dayPunches : byDay.values()) {
+            if (dayPunches.size() % 2 != 0) {
+                incompleteDays++;
+            }
+            workedMinutes += AttendancePunchPairing.sumWorkedMinutes(dayPunches);
+        }
+
+        return new ActualsTotals(
+                assigned.size(), hoursAssigned.setScale(2, RoundingMode.HALF_UP), byDay.size(),
+                BigDecimal.valueOf(workedMinutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP), incompleteDays);
+    }
+
+    /** {@code OP} has no interval at all and contributes zero here - it still counts as a day assigned, just not as hours. */
+    private static BigDecimal hoursWorked(ShiftCodeEntity shiftCode) {
+        long minutes = 0;
+        if (shiftCode.getStartTime1() != null) {
+            minutes += Duration.between(shiftCode.getStartTime1(), shiftCode.getEndTime1()).toMinutes();
+        }
+        if (shiftCode.getStartTime2() != null) {
+            minutes += Duration.between(shiftCode.getStartTime2(), shiftCode.getEndTime2()).toMinutes();
+        }
+        return BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
     }
 
     private interface DayValue {

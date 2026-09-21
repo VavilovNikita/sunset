@@ -204,7 +204,7 @@ public class AttendanceService {
             // opening punch has nothing to total, not a total that happens to be 0. A day with a
             // trailing unpaired punch (3, 5, ...) still totals whatever pairs did complete,
             // alongside incomplete=true - the two facts aren't mutually exclusive.
-            Integer workedMinutes = dayPunches.size() < 2 ? null : sumWorkedMinutes(dayPunches);
+            Integer workedMinutes = dayPunches.size() < 2 ? null : AttendancePunchPairing.sumWorkedMinutes(dayPunches);
 
             AttendanceDaySummary daySummary = new AttendanceDaySummary(date.toString(), plannedIntervals, punchDtos, incomplete);
             if (shiftCode != null) {
@@ -216,19 +216,6 @@ public class AttendanceService {
             summaries.add(daySummary);
         }
         return summaries;
-    }
-
-    /** Pairs consecutive IN/OUT punches; an unpaired trailing IN (an incomplete day) contributes nothing rather than a guess. */
-    private static int sumWorkedMinutes(List<AttendancePunchEntity> dayPunches) {
-        int minutes = 0;
-        for (int i = 0; i + 1 < dayPunches.size(); i += 2) {
-            AttendancePunchEntity in = dayPunches.get(i);
-            AttendancePunchEntity out = dayPunches.get(i + 1);
-            if (in.getDirection() == PunchDirection.IN && out.getDirection() == PunchDirection.OUT) {
-                minutes += (int) java.time.Duration.between(in.getPunchAt(), out.getPunchAt()).toMinutes();
-            }
-        }
-        return minutes;
     }
 
     private Map<String, String> resolveEmails(List<String> userIds) {

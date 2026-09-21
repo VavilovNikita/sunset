@@ -22,9 +22,6 @@ import com.sunsetbeach.repository.RosterEntryRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.StaffAreaCoverageRuleRepository;
 import com.sunsetbeach.repository.UserRepository;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -348,62 +345,6 @@ public class RosterService {
         }
 
         return new RosterMonth(year, month, entryDtos, employeeDtos, warnings);
-    }
-
-    /**
-     * One row per employee: days actually worked that month ({@code countsAsWorked} entries -
-     * {@code OP} counts, {@code PH} does not) and total hours worked, summed from each day's
-     * shift-code interval(s) ({@code OP} has no fixed interval, so it adds a day without adding
-     * hours). No money: the hotel's accountant keeps pay calculation off-system - everyone is
-     * currently on a monthly salary held in a sheet this system has never seen, and there are no
-     * part-timers - so this export reports only the underlying facts and leaves the arithmetic
-     * where it already lives. See {@link EmployeePayRateService}'s own javadoc for why the
-     * versioned rate model stays in the codebase even though nothing here calls it.
-     */
-    @Transactional(readOnly = true)
-    public String exportActualsCsv(int year, int month, String actorUserId) {
-        YearMonth ym = YearMonth.of(year, month);
-        List<RosterEntryEntity> entries = rosterEntryRepository.findByDateBetween(ym.atDay(1), ym.atEndOfMonth());
-        Map<String, ShiftCodeEntity> shiftCodes = resolveShiftCodes(entries);
-
-        Map<String, List<RosterEntryEntity>> entriesByEmployee = entries.stream()
-                .filter(e -> {
-                    ShiftCodeEntity sc = shiftCodes.get(e.getShiftCodeId());
-                    return sc != null && sc.isCountsAsWorked();
-                })
-                .collect(Collectors.groupingBy(RosterEntryEntity::getEmployeeUserId));
-
-        List<String> employeeIds = entriesByEmployee.keySet().stream().sorted().toList();
-        Map<String, UserEntity> employees = resolveUsers(employeeIds);
-
-        CsvBuilder csv = new CsvBuilder();
-        csv.row("Employee", "Days worked", "Hours worked");
-        for (String employeeId : employeeIds) {
-            List<RosterEntryEntity> employeeEntries = entriesByEmployee.get(employeeId);
-            BigDecimal hours = BigDecimal.ZERO;
-            for (RosterEntryEntity entry : employeeEntries) {
-                hours = hours.add(hoursWorked(shiftCodes.get(entry.getShiftCodeId())));
-            }
-            csv.row(employees.get(employeeId).getName(), String.valueOf(employeeEntries.size()), hours.setScale(2, RoundingMode.HALF_UP).toPlainString());
-        }
-
-        auditLogService.record(
-                AuditAction.ROSTER_ACTUALS_EXPORTED, AuditEntityType.ROSTER_ENTRY, null,
-                "Exported " + ym + " roster actuals for " + employeeIds.size() + " employee(s)");
-
-        return csv.toString();
-    }
-
-    /** {@code OP} has no interval at all and contributes zero here - it still counts as a day worked, just not as hours. */
-    private static BigDecimal hoursWorked(ShiftCodeEntity shiftCode) {
-        long minutes = 0;
-        if (shiftCode.getStartTime1() != null) {
-            minutes += Duration.between(shiftCode.getStartTime1(), shiftCode.getEndTime1()).toMinutes();
-        }
-        if (shiftCode.getStartTime2() != null) {
-            minutes += Duration.between(shiftCode.getStartTime2(), shiftCode.getEndTime2()).toMinutes();
-        }
-        return BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
     }
 
     private Map<String, UserEntity> resolveUsers(List<String> userIds) {
