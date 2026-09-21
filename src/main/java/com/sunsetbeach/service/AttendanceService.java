@@ -15,18 +15,24 @@ import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.PunchDirection;
 import com.sunsetbeach.model.PunchSource;
 import com.sunsetbeach.model.ShiftInterval;
+import com.sunsetbeach.model.TodayShiftState;
+import com.sunsetbeach.model.TodayShiftStatus;
 import com.sunsetbeach.repository.AttendancePunchRepository;
 import com.sunsetbeach.repository.RosterEntryRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.UserRepository;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,18 +53,24 @@ public class AttendanceService {
     private final ShiftCodeRepository shiftCodeRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final Clock clock;
+    private final Duration upcomingWindow;
 
     public AttendanceService(
             AttendancePunchRepository attendancePunchRepository,
             RosterEntryRepository rosterEntryRepository,
             ShiftCodeRepository shiftCodeRepository,
             UserRepository userRepository,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            Clock clock,
+            @Value("${app.attendance.upcoming-window-minutes:60}") long upcomingWindowMinutes) {
         this.attendancePunchRepository = attendancePunchRepository;
         this.rosterEntryRepository = rosterEntryRepository;
         this.shiftCodeRepository = shiftCodeRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
+        this.clock = clock;
+        this.upcomingWindow = Duration.ofMinutes(upcomingWindowMinutes);
     }
 
     @Transactional(readOnly = true)
@@ -216,6 +228,115 @@ public class AttendanceService {
             summaries.add(daySummary);
         }
         return summaries;
+    }
+
+    /**
+     * "Who's on shift right now" - {@code GET /attendance/today}. One row per employee with a
+     * {@code countsAsWorked} {@code RosterEntry} today; an {@code ABSENCE}-kind entry ({@code PH})
+     * and an employee with no entry today are both simply absent, the same "a day off is the
+     * absence of a row" convention {@code RosterEntry} itself already uses. See {@code
+     * TodayShiftState}'s own openapi.yaml description for exactly how each state is derived - this
+     * method (and {@link #toTodayShiftStatus}) is the one place that logic lives, matching today's
+     * punches to the shift code's own interval(s) positionally, the same rule {@code
+     * RosterExportService#writeLateAndLeftEarlyRows} already uses for its "Late & anomalies" sheet.
+     */
+    @Transactional(readOnly = true)
+    public List<TodayShiftStatus> getTodayShiftBoard() {
+        LocalDate today = LocalDate.now(clock);
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        List<RosterEntryEntity> entries = rosterEntryRepository.findByDateBetween(today, today);
+        Map<String, ShiftCodeEntity> shiftCodesById =
+                shiftCodeRepository.findAllById(entries.stream().map(RosterEntryEntity::getShiftCodeId).distinct().toList()).stream()
+                        .collect(Collectors.toMap(ShiftCodeEntity::getId, s -> s));
+
+        List<RosterEntryEntity> workingEntries = entries.stream().filter(e -> shiftCodesById.get(e.getShiftCodeId()).isCountsAsWorked()).toList();
+        if (workingEntries.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, UserEntity> employees = userRepository
+                .findAllById(workingEntries.stream().map(RosterEntryEntity::getEmployeeUserId).toList()).stream()
+                .collect(Collectors.toMap(UserEntity::getId, u -> u));
+
+        List<AttendancePunchEntity> punches = attendancePunchRepository
+                .findByPunchAtBetweenOrderByEmployeeUserIdAscPunchAtAsc(today.atStartOfDay(), today.plusDays(1).atStartOfDay());
+        Map<String, List<AttendancePunchEntity>> punchesByEmployee = punches.stream().collect(Collectors.groupingBy(AttendancePunchEntity::getEmployeeUserId));
+
+        List<TodayShiftStatus> board = new ArrayList<>();
+        for (RosterEntryEntity entry : workingEntries) {
+            UserEntity employee = employees.get(entry.getEmployeeUserId());
+            ShiftCodeEntity shiftCode = shiftCodesById.get(entry.getShiftCodeId());
+            List<AttendancePunchEntity> dayPunches = punchesByEmployee.getOrDefault(employee.getId(), List.of());
+            board.add(toTodayShiftStatus(employee, shiftCode, dayPunches, today, now));
+        }
+        return board;
+    }
+
+    /**
+     * One employee's live state - see {@code TodayShiftState}'s own openapi.yaml description for
+     * the rules this implements. {@code OPEN_SCHEDULE} (no intervals) only ever reaches three of
+     * the eight states; a fixed-interval code (1 or 2) walks to the first interval not yet
+     * satisfied by a complete pair, matched positionally exactly like {@code
+     * RosterExportService#writeLateAndLeftEarlyRows}.
+     */
+    private TodayShiftStatus toTodayShiftStatus(
+            UserEntity employee, ShiftCodeEntity shiftCode, List<AttendancePunchEntity> dayPunches, LocalDate today, LocalDateTime now) {
+        List<LocalTime[]> intervals = new ArrayList<>();
+        if (shiftCode.getStartTime1() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime1(), shiftCode.getEndTime1()});
+        if (shiftCode.getStartTime2() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime2(), shiftCode.getEndTime2()});
+
+        boolean hasTrailingUnmatchedIn =
+                dayPunches.size() % 2 == 1 && dayPunches.get(dayPunches.size() - 1).getDirection() == PunchDirection.IN;
+        int matched = Math.min(AttendancePunchPairing.pairs(dayPunches).size(), intervals.size());
+
+        TodayShiftState state;
+        LocalDateTime referenceTime;
+
+        if (intervals.isEmpty()) {
+            // OPEN_SCHEDULE (OP) - no fixed interval, so only these three states are reachable.
+            if (dayPunches.isEmpty()) {
+                state = TodayShiftState.NOT_YET_ARRIVED;
+                referenceTime = null;
+            } else if (hasTrailingUnmatchedIn) {
+                state = TodayShiftState.ON_SHIFT;
+                referenceTime = dayPunches.get(dayPunches.size() - 1).getPunchAt();
+            } else {
+                state = TodayShiftState.FINISHED;
+                referenceTime = dayPunches.get(dayPunches.size() - 1).getPunchAt();
+            }
+        } else if (matched == intervals.size() && !hasTrailingUnmatchedIn) {
+            state = TodayShiftState.FINISHED;
+            referenceTime = dayPunches.get(dayPunches.size() - 1).getPunchAt();
+        } else if (hasTrailingUnmatchedIn) {
+            state = TodayShiftState.ON_SHIFT;
+            referenceTime = dayPunches.get(dayPunches.size() - 1).getPunchAt();
+        } else {
+            LocalTime[] currentInterval = intervals.get(matched);
+            LocalDateTime intervalStart = today.atTime(currentInterval[0]);
+            LocalDateTime intervalEnd = today.atTime(currentInterval[1]);
+            LocalDateTime upcomingFrom = intervalStart.minus(upcomingWindow);
+
+            if (matched == 1 && now.isBefore(upcomingFrom)) {
+                // Split shift only: interval 1 is already done, interval 2 isn't due for a while -
+                // distinct from SCHEDULED so a returning employee never reads as not-yet-arrived.
+                state = TodayShiftState.BETWEEN_SHIFTS;
+            } else if (now.isBefore(upcomingFrom)) {
+                state = TodayShiftState.SCHEDULED;
+            } else if (now.isBefore(intervalStart)) {
+                state = TodayShiftState.ARRIVING_SOON;
+            } else if (!now.isAfter(intervalEnd)) {
+                state = TodayShiftState.LATE;
+            } else {
+                state = TodayShiftState.MISSED;
+            }
+            referenceTime = intervalStart;
+        }
+
+        TodayShiftStatus dto = new TodayShiftStatus(employee.getId(), employee.getName(), ShiftCodeService.toDto(shiftCode, null), state);
+        if (employee.getStaffArea() != null) dto.staffArea(employee.getStaffArea());
+        if (referenceTime != null) dto.referenceTime(TimestampFormat.toUtc(referenceTime));
+        return dto;
     }
 
     private Map<String, String> resolveEmails(List<String> userIds) {

@@ -36,6 +36,7 @@ import com.sunsetbeach.model.ShiftCodeKindUpdateInput;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.StaffAreaCoverageRule;
 import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
+import com.sunsetbeach.model.TodayShiftStatus;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -662,6 +663,47 @@ public interface RosterApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"entries\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ], \"month\" : 6, \"year\" : 0, \"employees\" : [ { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ], \"coverageWarnings\" : [ { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 }, { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /attendance/today : Who&#39;s on shift right now
+     * Requires MANAGER or above, same floor as the rest of attendance. One row per employee with a &#x60;countsAsWorked&#x60; &#x60;RosterEntry&#x60; for today - see &#x60;TodayShiftStatus&#x60;&#39;s own description for exactly who that excludes. Meant to be polled (there is no push mechanism here): every value is computed fresh from this instant&#39;s &#x60;Clock&#x60;, today&#39;s &#x60;RosterEntry&#x60;/&#x60;ShiftCode&#x60;, and today&#39;s &#x60;AttendancePunch&#x60; rows - never cached between requests. 
+     *
+     * @return One status row per employee on shift-relevant duty today. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/attendance/today",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<List<TodayShiftStatus>> getTodayShiftBoard(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"staffArea\" : \"\", \"employeeName\" : \"employeeName\", \"referenceTime\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }, \"state\" : \"NOT_YET_ARRIVED\", \"employeeUserId\" : \"employeeUserId\" }, { \"staffArea\" : \"\", \"employeeName\" : \"employeeName\", \"referenceTime\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }, \"state\" : \"NOT_YET_ARRIVED\", \"employeeUserId\" : \"employeeUserId\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

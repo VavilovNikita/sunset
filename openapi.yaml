@@ -6285,6 +6285,31 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /attendance/today:
+    get:
+      operationId: getTodayShiftBoard
+      tags: [Roster]
+      summary: Who's on shift right now
+      description: >
+        Requires MANAGER or above, same floor as the rest of attendance. One row per employee
+        with a `countsAsWorked` `RosterEntry` for today - see `TodayShiftStatus`'s own description
+        for exactly who that excludes. Meant to be polled (there is no push mechanism here): every
+        value is computed fresh from this instant's `Clock`, today's `RosterEntry`/`ShiftCode`,
+        and today's `AttendancePunch` rows - never cached between requests.
+      responses:
+        "200":
+          description: One status row per employee on shift-relevant duty today.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TodayShiftStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /attendance/devices:
     get:
       operationId: listAttendanceDevices
@@ -10987,6 +11012,67 @@ components:
           description: Null when there are no punches yet for this day, not zero.
         incomplete:
           type: boolean
+
+    TodayShiftState:
+      type: string
+      description: >
+        Where one employee stands against their own shift, right now - `GET /attendance/today`.
+        Computed live from today's `ShiftCode` interval(s) plus the same punch pairing
+        `GET /attendance/summary` and the roster actuals export already use
+        (`AttendancePunchPairing`) - never precomputed or cached, since every value here is only
+        true as of this instant.
+
+
+        `OPEN_SCHEDULE` (`OP`) has no fixed interval, so it only ever takes three of these values
+        - `NOT_YET_ARRIVED`, `ON_SHIFT`, `FINISHED` - the rest apply only to a fixed-interval code.
+        `NOT_YET_ARRIVED`: no punches yet today. `ON_SHIFT`: a trailing unmatched `IN` punch -
+        currently clocked in, for either shape. `FINISHED`: every applicable interval satisfied by
+        a complete pair (or, for `OP`, at least one complete pair), no trailing unmatched `IN`.
+        `SCHEDULED`: more than the configured upcoming-window away from the current interval's own
+        start, not yet arrived. `ARRIVING_SOON`: inside that window, not yet arrived. `LATE`: at
+        or past the interval's own start but still at or before its own end, not yet arrived -
+        could still show up. `MISSED`: past the interval's own end with zero punches matched to
+        it - the same fact the actuals export's "Late & anomalies" sheet already calls `MISSED`,
+        just observed live instead of at month-end. `BETWEEN_SHIFTS`: a split shift only -
+        interval 1 already complete, well before interval 2's own upcoming-window opens; kept
+        distinct from `SCHEDULED` so someone who has already shown up once today never reads as
+        indistinguishable from someone who hasn't shown up at all.
+      enum: [NOT_YET_ARRIVED, ON_SHIFT, FINISHED, SCHEDULED, ARRIVING_SOON, LATE, BETWEEN_SHIFTS, MISSED]
+
+    TodayShiftStatus:
+      type: object
+      description: >
+        One employee's live status on `GET /attendance/today` - "who's on shift right now", not
+        "who's scheduled this month" (`GET /attendance/summary`) or "what actually happened last
+        month" (`GET /roster/actuals-export`). Only employees with a `countsAsWorked` `RosterEntry`
+        for today appear at all - an `ABSENCE`-kind entry (`PH` and the like) and an employee with
+        no entry today are both simply absent from this list, the same "a day off is the absence
+        of a row" convention `RosterEntry` itself already uses for the roster grid.
+
+        `referenceTime` is deliberately one raw timestamp whose meaning switches with `state`, not
+        a pre-formatted "in 23 minutes" string - the frontend derives (and re-derives, every poll
+        tick) the relative time itself, so it never goes stale between polls on its own:
+        `SCHEDULED`/`ARRIVING_SOON`/`LATE`/`BETWEEN_SHIFTS`/`MISSED` carry the current interval's
+        own expected start time, today; `ON_SHIFT` carries the actual punch time of the trailing
+        unmatched `IN`; `FINISHED` carries the punch time of the last completed pair's `OUT`;
+        `NOT_YET_ARRIVED` carries nothing - there is genuinely nothing to report yet.
+      required: [employeeUserId, employeeName, shiftCode, state]
+      properties:
+        employeeUserId:
+          type: string
+        employeeName:
+          type: string
+        staffArea:
+          allOf: [{ $ref: "#/components/schemas/StaffArea" }]
+          nullable: true
+        shiftCode:
+          $ref: "#/components/schemas/ShiftCode"
+        state:
+          $ref: "#/components/schemas/TodayShiftState"
+        referenceTime:
+          type: string
+          format: date-time
+          nullable: true
 
     EmployeePayRate:
       type: object

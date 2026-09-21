@@ -31,6 +31,7 @@ import com.sunsetbeach.model.ShiftCodeKindUpdateInput;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.StaffAreaCoverageRule;
 import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
+import com.sunsetbeach.model.TodayShiftStatus;
 import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.AttendanceService;
 import com.sunsetbeach.service.EmployeePatternService;
@@ -186,6 +187,11 @@ public class RosterController implements RosterApi {
     @Override
     public ResponseEntity<List<AttendanceDaySummary>> getAttendanceSummary(String employeeUserId, Integer year, Integer month) {
         return ResponseEntity.ok(attendanceService.summary(employeeUserId, year, month));
+    }
+
+    @Override
+    public ResponseEntity<List<TodayShiftStatus>> getTodayShiftBoard() {
+        return ResponseEntity.ok(attendanceService.getTodayShiftBoard());
     }
 
     @Override
