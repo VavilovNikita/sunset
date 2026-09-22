@@ -12,6 +12,7 @@ import com.sunsetbeach.mapper.GuestAccountMapper;
 import com.sunsetbeach.model.GuestBookingView;
 import com.sunsetbeach.repository.GuestAccountRepository;
 import com.sunsetbeach.repository.RoomRepository;
+import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.security.GuestJwtService;
 import com.sunsetbeach.security.GuestPrincipal;
@@ -68,6 +69,9 @@ class GuestAccountControllerTests {
     @MockitoBean
     private RoomRepository roomRepository;
 
+    @MockitoBean
+    private RoomUnitRepository roomUnitRepository;
+
     // SecurityConfig's filter chain also wires the staff JwtAuthFilter (see that class) - never
     // exercised by this guest-only suite, but the bean it depends on must still resolve for the
     // context to start.
@@ -119,8 +123,8 @@ class GuestAccountControllerTests {
 
     @Test
     void bookings_returnsThisGuestsHistory() throws Exception {
-        GuestBookingView view = new GuestBookingView("booking-1", "Ocean View", "2026-01-01", "2026-01-05", "5000.00",
-                com.sunsetbeach.model.BookingStatus.PAID, OffsetDateTime.now());
+        GuestBookingView view = new GuestBookingView("booking-1", "Ocean View", "204", "2026-01-01", "2026-01-05", "5000.00",
+                com.sunsetbeach.model.BookingStatus.PAID, com.sunsetbeach.model.OccupancyStatus.CHECKED_IN, OffsetDateTime.now());
         when(guestAccountService.listBookings("guest@example.com")).thenReturn(List.of(view));
 
         mockMvc.perform(get("/guest/bookings").header("Authorization", tokenFor("guest-1", 0)))

@@ -20,7 +20,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * The guest-facing projection of &#x60;Order&#x60;, returned by both &#x60;PublicOrderingApi&#x60; operations. Deliberately not &#x60;Order&#x60; itself - never carries &#x60;openedByUserId&#x60;/&#x60;openedByEmail&#x60;, &#x60;guestName&#x60;, &#x60;bookingId&#x60;, &#x60;paymentMethod&#x60;, or &#x60;guestAccessToken&#x60; (the token that gated the request that produced this response is never echoed back in it). &#x60;locationLabel&#x60; is the same \&quot;zone – table label\&quot; text &#x60;OrderPrintingService#describeLocation&#x60; puts on a printed ticket, so a guest looking at their phone sees the same identifier staff do. 
+ * The guest-facing projection of &#x60;Order&#x60;, returned by both &#x60;PublicOrderingApi&#x60; operations and &#x60;GuestOrderApi&#x60; (see that tag&#39;s own description for the room-service case - the &#x60;locationLabel&#x60; below is the same identifier either way, whatever &#x60;OrderPrintingService#describeLocation&#x60; resolves for the order). Deliberately not &#x60;Order&#x60; itself - never carries &#x60;openedByUserId&#x60;/&#x60;openedByEmail&#x60;, &#x60;guestName&#x60;, &#x60;bookingId&#x60;, &#x60;paymentMethod&#x60;, or &#x60;guestAccessToken&#x60; (the token that gated the request that produced this response is never echoed back in it). &#x60;locationLabel&#x60; is the same \&quot;zone – table label\&quot; text &#x60;OrderPrintingService#describeLocation&#x60; puts on a printed ticket, so a guest looking at their phone sees the same identifier staff do. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

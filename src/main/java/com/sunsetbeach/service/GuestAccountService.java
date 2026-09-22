@@ -9,6 +9,7 @@ import com.sunsetbeach.model.GuestAccountRegisterInput;
 import com.sunsetbeach.model.GuestBookingView;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.GuestAccountRepository;
+import com.sunsetbeach.security.PasswordTimingNormalization;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
@@ -123,7 +124,13 @@ public class GuestAccountService {
     public GuestAccountEntity login(String rawEmail, String password) {
         String email = normalize(rawEmail);
         GuestAccountEntity account = guestAccountRepository.findByEmail(email).orElse(null);
-        if (account == null || !passwordEncoder.matches(password, account.getPasswordHash())) {
+        // passwordOk is computed unconditionally, even when account is null, against a fixed dummy
+        // hash in that case - see PasswordTimingNormalization's own javadoc for why a short-circuit
+        // here would be a timing oracle for email enumeration.
+        boolean passwordOk = passwordEncoder.matches(
+                password,
+                account != null ? account.getPasswordHash() : PasswordTimingNormalization.DUMMY_HASH);
+        if (account == null || !passwordOk) {
             throw new UnauthorizedException("Invalid email or password");
         }
         if (account.getEmailVerifiedAt() == null) {

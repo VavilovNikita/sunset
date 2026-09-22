@@ -243,9 +243,15 @@ public class OrderPrintingService {
         return "Order #" + shortId(order.getId());
     }
 
+    /**
+     * {@code null} now means specifically "a guest placed this room-service order, not a staff
+     * member" (see {@code Order.openedByUserId}'s own openapi.yaml description) - the kitchen
+     * printing a ticket with no waiter to ask about it is exactly the case worth calling out by
+     * name, so this prints "Room service" rather than the old placeholder dash.
+     */
     private String resolveWaiterLabel(String userId) {
         if (userId == null) {
-            return "—";
+            return "Room service";
         }
         return userRepository.findById(userId).map(u -> u.getEmail()).orElse(userId);
     }

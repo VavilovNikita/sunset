@@ -65,6 +65,8 @@ public class OrderService {
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
     private static final Set<OrderStatus> CLOSED_STATUSES = Set.of(OrderStatus.PAID, OrderStatus.CANCELLED);
     private static final Set<OrderStatus> ADDABLE_STATUSES = Set.of(OrderStatus.OPEN, OrderStatus.SENT);
+    /** {@link #resolveEmail}'s label for a room-service order - see {@code Order.openedByUserId}'s own openapi.yaml description for why this id is null in the first place. */
+    private static final String GUEST_ROOM_SERVICE_LABEL = "Guest (room service)";
     private static final List<SpaAppointmentStatus> LINKABLE_SPA_APPOINTMENT_STATUSES =
             List.of(SpaAppointmentStatus.BOOKED, SpaAppointmentStatus.COMPLETED);
 
@@ -646,20 +648,34 @@ public class OrderService {
         // One batched lookup, not one query per row - same pattern as itemsByOrderId above.
         Map<String, PaymentMethod> paymentMethodByOrderId = paymentRepository.findByOrderIdIn(orderIds).stream()
                 .collect(Collectors.toMap(PaymentEntity::getOrderId, PaymentEntity::getMethod));
-        List<String> userIds = orders.stream().map(OrderEntity::getOpenedByUserId).distinct().toList();
+        // Room-service orders (Order.openedByUserId == null - see that field's own openapi.yaml
+        // description) are filtered out here: JpaRepository#findAllById rejects a null id in the
+        // list outright, and there's no row to look up for one anyway.
+        List<String> userIds = orders.stream().map(OrderEntity::getOpenedByUserId).filter(Objects::nonNull).distinct().toList();
         Map<String, String> emailsById =
                 userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
         return orders.stream()
                 .map(o -> orderMapper.toDto(
                         o,
                         itemsByOrderId.getOrDefault(o.getId(), List.of()),
-                        emailsById.getOrDefault(o.getOpenedByUserId(), o.getOpenedByUserId()),
+                        o.getOpenedByUserId() == null
+                                ? GUEST_ROOM_SERVICE_LABEL
+                                : emailsById.getOrDefault(o.getOpenedByUserId(), o.getOpenedByUserId()),
                         paymentMethodByOrderId.get(o.getId())))
                 .toList();
     }
 
-    /** Falls back to the raw id if the user was since deleted - same convention as {@code OrderPrintingService.resolveWaiterLabel}. */
+    /**
+     * Falls back to the raw id if the user was since deleted - same convention as {@code
+     * OrderPrintingService.resolveWaiterLabel}. {@code null} exactly for a room-service order
+     * (see {@code Order.openedByUserId}'s own openapi.yaml description) - a guest has no
+     * {@code User} row to look up, so this returns a fixed human label instead of calling the
+     * repository with a null id (which {@code JpaRepository#findById} rejects outright).
+     */
     private String resolveEmail(String userId) {
+        if (userId == null) {
+            return GUEST_ROOM_SERVICE_LABEL;
+        }
         return userRepository.findById(userId).map(UserEntity::getEmail).orElse(userId);
     }
 

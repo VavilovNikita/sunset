@@ -170,4 +170,27 @@ class OrderListTests extends AbstractIntegrationTest {
         assertThat(listedPaid.getPaymentMethod().get()).isEqualTo(PaymentMethod.CARD);
         assertThat(listedPaid.getOpenedByEmail()).isEqualTo(staffOne.getEmail());
     }
+
+    /**
+     * A room-service order has no staff opener (see {@code Order.openedByUserId}'s own
+     * openapi.yaml description) - {@code getById}/{@code list} must resolve a human label instead
+     * of calling {@code UserRepository} with a null id, which throws outright. Covers both the
+     * single-order path ({@code resolveEmail}) and the batched one ({@code toDtos}) so they can
+     * never silently diverge on this.
+     */
+    @Test
+    void openedByUserIdNull_getByIdAndList_resolveAGuestLabel_neverThrow() {
+        OrderEntity roomServiceOrder = new OrderEntity();
+        roomServiceOrder.setOpenedByUserId(null);
+        OrderEntity saved = orderRepository.saveAndFlush(roomServiceOrder);
+
+        Order fetched = orderService.getById(saved.getId());
+        assertThat(fetched.getOpenedByUserId().get()).isNull();
+        assertThat(fetched.getOpenedByEmail()).isEqualTo("Guest (room service)");
+
+        List<Order> listed = orderService.list(null, null, null, null, null);
+        Order listedOne = listed.stream().filter(o -> o.getId().equals(saved.getId())).findFirst().orElseThrow();
+        assertThat(listedOne.getOpenedByUserId().get()).isNull();
+        assertThat(listedOne.getOpenedByEmail()).isEqualTo("Guest (room service)");
+    }
 }

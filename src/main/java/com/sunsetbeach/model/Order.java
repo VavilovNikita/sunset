@@ -23,7 +23,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * &#x60;total&#x60; is always server-computed from &#x60;items&#x60; — never taken from the client (same rule as &#x60;Booking.totalPrice&#x60;). &#x60;paymentMethod&#x60; is a convenience denormalization of the &#x60;Payment&#x60; this order settled with (there&#39;s at most one - see &#x60;Payment_unique_per_order&#x60;); it&#39;s &#x60;null&#x60; for anything still &#x60;OPEN&#x60;/&#x60;SENT&#x60;/&#x60;CANCELLED&#x60;, and set once and never changed once the order is &#x60;PAID&#x60;. Exists so a closed-order list/detail view can show how it was paid without a second round trip - there&#39;s no &#x60;GET /payments/{id}&#x60; or &#x60;?orderId&#x3D;&#x60; filter on &#x60;Payment&#x60; to fetch it separately. &#x60;openedByEmail&#x60; is the same kind of denormalization of &#x60;openedByUserId&#x60; that &#x60;ShiftListItem.openedByEmail&#x60; is of &#x60;Shift.openedByUserId&#x60; - a MANAGER building the staff filter on &#x60;GET /orders&#x60; can&#39;t fall back to &#x60;GET /users&#x60; (ADMIN-only) the way a CASHIER+ page elsewhere in this API can. 
+ * &#x60;total&#x60; is always server-computed from &#x60;items&#x60; — never taken from the client (same rule as &#x60;Booking.totalPrice&#x60;). &#x60;paymentMethod&#x60; is a convenience denormalization of the &#x60;Payment&#x60; this order settled with (there&#39;s at most one - see &#x60;Payment_unique_per_order&#x60;); it&#39;s &#x60;null&#x60; for anything still &#x60;OPEN&#x60;/&#x60;SENT&#x60;/&#x60;CANCELLED&#x60;, and set once and never changed once the order is &#x60;PAID&#x60;. Exists so a closed-order list/detail view can show how it was paid without a second round trip - there&#39;s no &#x60;GET /payments/{id}&#x60; or &#x60;?orderId&#x3D;&#x60; filter on &#x60;Payment&#x60; to fetch it separately. &#x60;openedByEmail&#x60; is the same kind of denormalization of &#x60;openedByUserId&#x60; that &#x60;ShiftListItem.openedByEmail&#x60; is of &#x60;Shift.openedByUserId&#x60; - a MANAGER building the staff filter on &#x60;GET /orders&#x60; can&#39;t fall back to &#x60;GET /users&#x60; (ADMIN-only) the way a CASHIER+ page elsewhere in this API can. &#x60;openedByUserId&#x60; is &#x60;null&#x60; exactly for a room-service order (see the &#x60;GuestOrder&#x60; tag) - a guest has no &#x60;User&#x60; row to point at; &#x60;openedByEmail&#x60; still reads a non-null, human label in that case (see &#x60;OrderService#resolveEmail&#x60;&#39;s own comment), never &#x60;null&#x60;. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -39,7 +39,7 @@ public class Order {
 
   private OrderStatus status;
 
-  private String openedByUserId;
+  private JsonNullable<String> openedByUserId = JsonNullable.<String>undefined();
 
   private String openedByEmail;
 
@@ -73,7 +73,7 @@ public class Order {
     this.bookingId = JsonNullable.of(bookingId);
     this.guestName = JsonNullable.of(guestName);
     this.status = status;
-    this.openedByUserId = openedByUserId;
+    this.openedByUserId = JsonNullable.of(openedByUserId);
     this.openedByEmail = openedByEmail;
     this.total = total;
     this.note = JsonNullable.of(note);
@@ -128,7 +128,7 @@ public class Order {
   }
 
   /**
-   * Settable only via `OrderCreateInput.bookingId` at creation. The spa billing door (`billSpaAppointment`, `lib/spaOrderClient.ts`) sends it as a pre-fill convenience - \"which guest is this treatment for\" - so it reads non-null there; most other order creation paths never send it, so it reads null everywhere else. Either way, it is *not* the record of what a closed order was charged to - that's `Payment.bookingId` (see that field's own description), set independently at `POST /orders/{id}/close` and never mirrored back here. Money reads (a booking's folio, its room-charges list) and the spa auto-link's booking axis both go through `Payment.bookingId` for exactly this reason - never this field. The one live reader of this field is the \"Linked booking\" link on the admin order ticket, a plain navigation convenience back to the booking a spa-billed order was opened for; it is not a billing signal. 
+   * Settable only via `OrderCreateInput.bookingId` at creation. The spa billing door (`billSpaAppointment`, `lib/spaOrderClient.ts`) sends it as a pre-fill convenience - \"which guest is this treatment for\"; room-service ordering (`GuestOrder`) always sends it, since it's how a room-service order is defined - see that tag's own description. Most other order creation paths never send it, so it reads null everywhere else. Either way, it is *not* the record of what a closed order was charged to - that's `Payment.bookingId` (see that field's own description), set independently at `POST /orders/{id}/close` and never mirrored back here. Money reads (a booking's folio, its room-charges list) and the spa auto-link's booking axis both go through `Payment.bookingId` for exactly this reason - never this field. The one live reader of this field is the \"Linked booking\" link on the admin order ticket, a plain navigation convenience back to the booking a spa-billed order was opened for; it is not a billing signal. 
    * @return bookingId
    */
   @NotNull 
@@ -180,21 +180,21 @@ public class Order {
   }
 
   public Order openedByUserId(String openedByUserId) {
-    this.openedByUserId = openedByUserId;
+    this.openedByUserId = JsonNullable.of(openedByUserId);
     return this;
   }
 
   /**
-   * Get openedByUserId
+   * `null` for a room-service order opened by a guest, not a staff member - see this schema's own description.
    * @return openedByUserId
    */
   @NotNull 
   @JsonProperty("openedByUserId")
-  public String getOpenedByUserId() {
+  public JsonNullable<String> getOpenedByUserId() {
     return openedByUserId;
   }
 
-  public void setOpenedByUserId(String openedByUserId) {
+  public void setOpenedByUserId(JsonNullable<String> openedByUserId) {
     this.openedByUserId = openedByUserId;
   }
 

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.OccupancyStatus;
 import java.time.OffsetDateTime;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -18,7 +19,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * The guest-facing projection of &#x60;Booking&#x60; returned by &#x60;GET /guest/bookings&#x60; - deliberately not &#x60;Booking&#x60; itself, the same \&quot;narrow, guest-facing DTO\&quot; discipline as &#x60;GuestOrderView&#x60;. Never carries &#x60;paymentNote&#x60;, &#x60;source&#x60;, &#x60;expiryReminderSent&#x60;, &#x60;guestId&#x60;/&#x60;guest&#x60;, &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60;, or occupancy timestamps/status - none of that is this guest&#39;s business or safe to hand back to their own phone. 
+ * The guest-facing projection of &#x60;Booking&#x60; returned by &#x60;GET /guest/bookings&#x60; - deliberately not &#x60;Booking&#x60; itself, the same \&quot;narrow, guest-facing DTO\&quot; discipline as &#x60;GuestOrderView&#x60;. Never carries &#x60;paymentNote&#x60;, &#x60;source&#x60;, &#x60;expiryReminderSent&#x60;, &#x60;guestId&#x60;/&#x60;guest&#x60;, &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60;, or occupancy timestamps - none of that is this guest&#39;s business or safe to hand back to their own phone. &#x60;occupancyStatus&#x60; is the one exception - exposed specifically so the frontend can show \&quot;order room service\&quot; only on a &#x60;CHECKED_IN&#x60; booking; this is a UI convenience only, never the actual gate (every &#x60;GuestOrder&#x60; write re-checks &#x60;Booking.occupancyStatus&#x60; itself - see that tag&#39;s own description). 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -28,6 +29,8 @@ public class GuestBookingView {
 
   private String roomName;
 
+  private JsonNullable<String> roomLabel = JsonNullable.<String>undefined();
+
   private String checkIn;
 
   private String checkOut;
@@ -35,6 +38,8 @@ public class GuestBookingView {
   private String totalPrice;
 
   private BookingStatus status;
+
+  private OccupancyStatus occupancyStatus;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
@@ -46,13 +51,15 @@ public class GuestBookingView {
   /**
    * Constructor with only required parameters
    */
-  public GuestBookingView(String id, String roomName, String checkIn, String checkOut, String totalPrice, BookingStatus status, OffsetDateTime createdAt) {
+  public GuestBookingView(String id, String roomName, String roomLabel, String checkIn, String checkOut, String totalPrice, BookingStatus status, OccupancyStatus occupancyStatus, OffsetDateTime createdAt) {
     this.id = id;
     this.roomName = roomName;
+    this.roomLabel = JsonNullable.of(roomLabel);
     this.checkIn = checkIn;
     this.checkOut = checkOut;
     this.totalPrice = totalPrice;
     this.status = status;
+    this.occupancyStatus = occupancyStatus;
     this.createdAt = createdAt;
   }
 
@@ -81,7 +88,7 @@ public class GuestBookingView {
   }
 
   /**
-   * `Room.name` at read time - denormalized, not frozen (same convention as `SpaAppointmentTreatment.currentPrice`), since a room type's name is cosmetic, not an agreed term.
+   * `Room.name` (the room *type*) at read time - denormalized, not frozen (same convention as `SpaAppointmentTreatment.currentPrice`), since a room type's name is cosmetic, not an agreed term.
    * @return roomName
    */
   @NotNull 
@@ -92,6 +99,25 @@ public class GuestBookingView {
 
   public void setRoomName(String roomName) {
     this.roomName = roomName;
+  }
+
+  public GuestBookingView roomLabel(String roomLabel) {
+    this.roomLabel = JsonNullable.of(roomLabel);
+    return this;
+  }
+
+  /**
+   * The assigned physical room's own `RoomUnit.label` (e.g. `\"204\"`) at read time, same denormalized-not-frozen convention as `roomName` - distinct from it, since `roomName` is the room *type*. `null` if this booking has no room unit assigned yet. 
+   * @return roomLabel
+   */
+  @NotNull 
+  @JsonProperty("roomLabel")
+  public JsonNullable<String> getRoomLabel() {
+    return roomLabel;
+  }
+
+  public void setRoomLabel(JsonNullable<String> roomLabel) {
+    this.roomLabel = roomLabel;
   }
 
   public GuestBookingView checkIn(String checkIn) {
@@ -170,6 +196,25 @@ public class GuestBookingView {
     this.status = status;
   }
 
+  public GuestBookingView occupancyStatus(OccupancyStatus occupancyStatus) {
+    this.occupancyStatus = occupancyStatus;
+    return this;
+  }
+
+  /**
+   * Get occupancyStatus
+   * @return occupancyStatus
+   */
+  @NotNull @Valid 
+  @JsonProperty("occupancyStatus")
+  public OccupancyStatus getOccupancyStatus() {
+    return occupancyStatus;
+  }
+
+  public void setOccupancyStatus(OccupancyStatus occupancyStatus) {
+    this.occupancyStatus = occupancyStatus;
+  }
+
   public GuestBookingView createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -200,16 +245,18 @@ public class GuestBookingView {
     GuestBookingView guestBookingView = (GuestBookingView) o;
     return Objects.equals(this.id, guestBookingView.id) &&
         Objects.equals(this.roomName, guestBookingView.roomName) &&
+        Objects.equals(this.roomLabel, guestBookingView.roomLabel) &&
         Objects.equals(this.checkIn, guestBookingView.checkIn) &&
         Objects.equals(this.checkOut, guestBookingView.checkOut) &&
         Objects.equals(this.totalPrice, guestBookingView.totalPrice) &&
         Objects.equals(this.status, guestBookingView.status) &&
+        Objects.equals(this.occupancyStatus, guestBookingView.occupancyStatus) &&
         Objects.equals(this.createdAt, guestBookingView.createdAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomName, checkIn, checkOut, totalPrice, status, createdAt);
+    return Objects.hash(id, roomName, roomLabel, checkIn, checkOut, totalPrice, status, occupancyStatus, createdAt);
   }
 
   @Override
@@ -218,10 +265,12 @@ public class GuestBookingView {
     sb.append("class GuestBookingView {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    roomName: ").append(toIndentedString(roomName)).append("\n");
+    sb.append("    roomLabel: ").append(toIndentedString(roomLabel)).append("\n");
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
+    sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();

@@ -51,6 +51,24 @@ tags:
       verifies an email that already has past stays under it sees them immediately, with no
       manual linking step anywhere. Requires a guest JWT (`Authorization: Bearer <token>` from
       `GuestAccountAuth`), never a staff one - see that tag's own description.
+  - name: GuestOrder
+    description: >
+      Room-service ordering for a verified, currently `CHECKED_IN` guest (`Authorization: Bearer`
+      guest JWT, same as `GuestAccount`) - a separate tag/generated `GuestOrderApi` from both
+      `GuestAccount` (identity, not ordering) and `PublicOrdering` (unauthenticated, token-gated
+      dine-in, not account-gated room charges), same one-tag-per-concern convention as elsewhere
+      in this spec. A room-service order is an ordinary `Order` with `bookingId` set and no
+      `tableId` - not a second order concept - opened, added to, and sent through the same
+      `OrderService` machinery staff and dine-in QR ordering already use. Every operation here
+      re-verifies, against the named booking, both that `Booking.guestEmail` matches this
+      account's own verified email (case-insensitively) and that `Booking.occupancyStatus` is
+      `CHECKED_IN` at the moment of the call - not just at order creation, since a guest can be
+      checked out between two room-service actions. `GET /guest/orders/{id}` is the one exception:
+      it checks ownership only, not occupancy, so a guest can still see their own receipt after
+      checkout. Every failure - wrong booking, not checked in, an order that isn't this guest's
+      own room-service order - collapses to the same generic 404, so a guessing attempt learns
+      nothing about which reason applies (same discipline as `PublicOrdering`'s
+      `OrderService#requireGuestAccess`).
   - name: Rooms
     description: Room (room *type*) CRUD and image management (staff only).
   - name: RoomUnits
@@ -577,6 +595,170 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Current password is incorrect
+
+  /guest/orders:
+    post:
+      operationId: submitGuestOrder
+      tags: [GuestOrder]
+      summary: Place a room-service order
+      description: >
+        The guest's own "place my order" action - there's no waiter to separately confirm and
+        send the way dine-in staff do, so this doesn't stop at `OPEN`: it creates the `Order`
+        (`bookingId` set, `tableId` null), adds `items`, and immediately transitions it to `SENT`
+        (dispatching the kitchen/bar ticket, same as `PATCH /orders/{id}` does for staff). `403`/
+        `not found`-style distinctions are deliberately never surfaced - see the `GuestOrder` tag's
+        own description for why `bookingId` failing any of "exists" / "is yours" / "is currently
+        `CHECKED_IN`" all return the same 404. Rate limited per guest account, same shape as
+        `PublicOrdering.addPublicOrderItems`.
+      security:
+        - guestBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestOrderSubmitInput"
+      responses:
+        "201":
+          description: Order placed and sent - the order's guest-facing view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestOrderView"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Missing/invalid/expired guest token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: >
+            `bookingId` doesn't exist, isn't this guest's own booking, or isn't currently
+            `CHECKED_IN` - all three collapse to this one response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Booking not found
+        "429":
+          description: Too many requests from this guest account recently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many requests. Please slow down and try again.
+
+  /guest/orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getGuestOrder
+      tags: [GuestOrder]
+      summary: Get a room-service order's guest-facing view
+      description: >
+        Ownership check only (this order's `bookingId` belongs to this guest account) - no
+        `CHECKED_IN` requirement, so a guest can still see their own room-service receipt after
+        checkout.
+      security:
+        - guestBearerAuth: []
+      responses:
+        "200":
+          description: The order's guest-facing view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestOrderView"
+        "401":
+          description: Missing/invalid/expired guest token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: Unknown order, or it isn't this guest's own room-service order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Order not found
+
+  /guest/orders/{id}/items:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: addGuestOrderItems
+      tags: [GuestOrder]
+      summary: Order another round on an already-open room-service order
+      description: >
+        Re-verifies ownership and `CHECKED_IN` again (not just at the original `submitGuestOrder`
+        call - see the `GuestOrder` tag's own description), then delegates straight into
+        `OrderService#addItems` - the same merge-into-unsent-line and re-order-ticket-print
+        behavior staff and dine-in QR ordering get, not a second implementation of it. Rate
+        limited per guest account, same shape as `submitGuestOrder`.
+      security:
+        - guestBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/OrderItemInput"
+      responses:
+        "201":
+          description: Items added; the order's updated guest-facing view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestOrderView"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Missing/invalid/expired guest token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: >
+            Unknown order, it isn't this guest's own room-service order, or the booking is no
+            longer `CHECKED_IN` - all collapse to this one response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Order not found
+        "429":
+          description: Too many requests from this guest account recently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many requests. Please slow down and try again.
 
   /rooms:
     get:
@@ -9554,15 +9736,25 @@ components:
         The guest-facing projection of `Booking` returned by `GET /guest/bookings` - deliberately
         not `Booking` itself, the same "narrow, guest-facing DTO" discipline as `GuestOrderView`.
         Never carries `paymentNote`, `source`, `expiryReminderSent`, `guestId`/`guest`,
-        `roomUnitId`/`roomUnit`, or occupancy timestamps/status - none of that is this guest's
-        business or safe to hand back to their own phone.
-      required: [id, roomName, checkIn, checkOut, totalPrice, status, createdAt]
+        `roomUnitId`/`roomUnit`, or occupancy timestamps - none of that is this guest's business
+        or safe to hand back to their own phone. `occupancyStatus` is the one exception - exposed
+        specifically so the frontend can show "order room service" only on a `CHECKED_IN` booking;
+        this is a UI convenience only, never the actual gate (every `GuestOrder` write re-checks
+        `Booking.occupancyStatus` itself - see that tag's own description).
+      required: [id, roomName, roomLabel, checkIn, checkOut, totalPrice, status, occupancyStatus, createdAt]
       properties:
         id:
           type: string
         roomName:
           type: string
-          description: "`Room.name` at read time - denormalized, not frozen (same convention as `SpaAppointmentTreatment.currentPrice`), since a room type's name is cosmetic, not an agreed term."
+          description: "`Room.name` (the room *type*) at read time - denormalized, not frozen (same convention as `SpaAppointmentTreatment.currentPrice`), since a room type's name is cosmetic, not an agreed term."
+        roomLabel:
+          type: string
+          nullable: true
+          description: >
+            The assigned physical room's own `RoomUnit.label` (e.g. `"204"`) at read time, same
+            denormalized-not-frozen convention as `roomName` - distinct from it, since `roomName`
+            is the room *type*. `null` if this booking has no room unit assigned yet.
         checkIn:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
@@ -9574,6 +9766,8 @@ components:
           description: Decimal(10,2) rendered as a string, e.g. `"4500.00"` - same server-computed total as `Booking.totalPrice`.
         status:
           $ref: "#/components/schemas/BookingStatus"
+        occupancyStatus:
+          $ref: "#/components/schemas/OccupancyStatus"
         createdAt:
           type: string
           format: date-time
@@ -10070,7 +10264,10 @@ components:
         on `Payment` to fetch it separately. `openedByEmail` is the same kind of denormalization
         of `openedByUserId` that `ShiftListItem.openedByEmail` is of `Shift.openedByUserId` - a
         MANAGER building the staff filter on `GET /orders` can't fall back to `GET /users`
-        (ADMIN-only) the way a CASHIER+ page elsewhere in this API can.
+        (ADMIN-only) the way a CASHIER+ page elsewhere in this API can. `openedByUserId` is `null`
+        exactly for a room-service order (see the `GuestOrder` tag) - a guest has no `User` row to
+        point at; `openedByEmail` still reads a non-null, human label in that case (see
+        `OrderService#resolveEmail`'s own comment), never `null`.
       required:
         [
           id,
@@ -10100,8 +10297,10 @@ components:
           description: >
             Settable only via `OrderCreateInput.bookingId` at creation. The spa billing door
             (`billSpaAppointment`, `lib/spaOrderClient.ts`) sends it as a pre-fill convenience -
-            "which guest is this treatment for" - so it reads non-null there; most other order
-            creation paths never send it, so it reads null everywhere else. Either way, it is
+            "which guest is this treatment for"; room-service ordering (`GuestOrder`) always sends
+            it, since it's how a room-service order is defined - see that tag's own description.
+            Most other order creation paths never send it, so it reads null everywhere else. Either
+            way, it is
             *not* the record of what a closed order was charged to - that's `Payment.bookingId`
             (see that field's own description), set independently at `POST /orders/{id}/close`
             and never mirrored back here. Money reads (a booking's folio, its room-charges list)
@@ -10116,6 +10315,8 @@ components:
           $ref: "#/components/schemas/OrderStatus"
         openedByUserId:
           type: string
+          nullable: true
+          description: "`null` for a room-service order opened by a guest, not a staff member - see this schema's own description."
         openedByEmail:
           type: string
         total:
@@ -10294,10 +10495,25 @@ components:
           type: string
           description: Decimal(10,2) rendered as a string - same snapshot-at-add-time value as `OrderItem.unitPrice`.
 
+    GuestOrderSubmitInput:
+      type: object
+      description: Body of `POST /guest/orders` - see that operation's own description.
+      required: [bookingId, items]
+      properties:
+        bookingId:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItemInput"
+
     GuestOrderView:
       type: object
       description: >
-        The guest-facing projection of `Order`, returned by both `PublicOrderingApi` operations.
+        The guest-facing projection of `Order`, returned by both `PublicOrderingApi` operations
+        and `GuestOrderApi` (see that tag's own description for the room-service case - the
+        `locationLabel` below is the same identifier either way, whatever
+        `OrderPrintingService#describeLocation` resolves for the order).
         Deliberately not `Order` itself - never carries `openedByUserId`/`openedByEmail`,
         `guestName`, `bookingId`, `paymentMethod`, or `guestAccessToken` (the token that gated
         the request that produced this response is never echoed back in it). `locationLabel` is

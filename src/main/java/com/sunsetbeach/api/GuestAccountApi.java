@@ -131,7 +131,7 @@ public interface GuestAccountApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomName\" : \"roomName\", \"status\" : \"NEW\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"totalPrice\" : \"totalPrice\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomName\" : \"roomName\", \"status\" : \"NEW\" } ]";
+                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomLabel\" : \"roomLabel\", \"totalPrice\" : \"totalPrice\", \"occupancyStatus\" : \"EXPECTED\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomName\" : \"roomName\", \"status\" : \"NEW\" }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"checkIn\" : \"checkIn\", \"roomLabel\" : \"roomLabel\", \"totalPrice\" : \"totalPrice\", \"occupancyStatus\" : \"EXPECTED\", \"id\" : \"id\", \"checkOut\" : \"checkOut\", \"roomName\" : \"roomName\", \"status\" : \"NEW\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

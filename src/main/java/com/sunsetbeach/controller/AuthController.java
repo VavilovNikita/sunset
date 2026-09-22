@@ -12,6 +12,7 @@ import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.security.ClientIpResolver;
 import com.sunsetbeach.security.JwtService;
 import com.sunsetbeach.security.LoginRateLimiter;
+import com.sunsetbeach.security.PasswordTimingNormalization;
 import com.sunsetbeach.security.StaffPrincipal;
 import com.sunsetbeach.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -65,7 +66,14 @@ public class AuthController {
         // A disabled account fails login the same as a wrong password - no distinct error
         // message, so a caller can't use this endpoint to probe which accounts exist vs. which
         // exist but are disabled.
-        if (entity == null || !entity.isActive() || !passwordEncoder.matches(request.getPassword(), entity.getPasswordHash())) {
+        //
+        // passwordOk is computed unconditionally, even when entity is null, against a fixed dummy
+        // hash in that case - see PasswordTimingNormalization's own javadoc for why a short-circuit
+        // here would be a timing oracle for email enumeration.
+        boolean passwordOk = passwordEncoder.matches(
+                request.getPassword(),
+                entity != null ? entity.getPasswordHash() : PasswordTimingNormalization.DUMMY_HASH);
+        if (entity == null || !entity.isActive() || !passwordOk) {
             loginRateLimiter.recordFailure(ip, email);
             throw new UnauthorizedException("Invalid email or password");
         }
