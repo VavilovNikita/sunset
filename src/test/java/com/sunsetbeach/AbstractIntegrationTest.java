@@ -17,18 +17,23 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * as the same configuration and reuses one Spring context too, rather than restarting it 25
  * times.
  *
- * <p>Flyway alone CANNOT bootstrap this schema on an empty database: migration {@code V1} is an
- * intentionally empty placeholder (the original tables were created by Prisma, years before this
- * app owned the schema - see {@code V1}'s own description). That's harmless when restoring a real
- * backup (the dump carries the physical schema regardless of what created it - see
- * backup/README.md), but a genuinely empty Testcontainers database has nothing for {@code V1} to
- * be a no-op *of*. test-db-baseline.sql (a {@code pg_dump --schema-only} of the dev database, plus
- * just the data rows of {@code flyway_schema_history} - no business data) is loaded into the
- * container first, so Flyway sees a schema already at version 20 and only needs to apply whatever
- * migrations come after that, exactly like it would against any real environment. This file does
- * NOT need regenerating after every new migration - Flyway applies anything newer than V20 on top
- * of the baseline normally; only refresh it if V1-V20 themselves ever change (they shouldn't) or
- * to fold newer migrations in for tidiness.
+ * <p>Flyway alone CANNOT bootstrap this schema on a database that was never touched by Prisma:
+ * migration {@code V1} is an intentionally empty placeholder (the original tables were created by
+ * Prisma, years before this app owned the schema - see {@code V1}'s own description), and relied
+ * on {@code baseline-on-migrate} adopting Prisma's already-existing schema. {@code
+ * V1_1__prisma_baseline_schema.sql} now recreates that Prisma-era schema for a genuinely empty
+ * database instead (see its own comment), so this file no longer strictly needs a pre-Prisma
+ * schema to adopt - but it's kept anyway as a plain optimization: test-db-baseline.sql (a {@code
+ * pg_dump --schema-only} of a fully-migrated database, plus just the data rows of {@code
+ * flyway_schema_history} - no business data) is loaded into the container first, so Flyway sees a
+ * schema already at the version captured below and only needs to apply whatever migrations come
+ * after that, instead of re-running the entire history through Testcontainers on every test JVM
+ * boot. This file does NOT need regenerating after every new migration - Flyway applies anything
+ * newer than the captured version on top of the baseline normally; only refresh it (see the
+ * regeneration steps in this fix's own history for the exact procedure - a scratch Postgres
+ * container, boot the app so Flyway applies every migration, then {@code pg_dump}) if the already-
+ * applied migrations themselves ever change (they shouldn't) or to fold newer migrations in for
+ * tidiness. Currently captured at V90 (V1 through V90, 91 migrations including {@code V1_1}).
  *
  * <p>No explicit stop() call: Testcontainers' own Ryuk reaper container removes this one when the
  * JVM exits (test run end, or a killed/crashed run), so there's nothing to leak even if a run is
