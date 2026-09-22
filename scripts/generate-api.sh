@@ -18,6 +18,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# openapi-generator-cli.jar is gitignored (30MB build tool, not source) - if it's missing, fetch
+# the exact version this script is written against:
+#   curl -Lo openapi-generator-cli.jar https://repo1.maven.org/maven2/org/openapitools/openapi-generator-cli/7.10.0/openapi-generator-cli-7.10.0.jar
+
 OUT_DIR="$(mktemp -d)"
 trap 'rm -rf "$OUT_DIR"' EXIT
 

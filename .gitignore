@@ -41,3 +41,14 @@ build/
 .vscode/
 
 .codegraph/
+
+### Build tool binary - not source, fetched on demand (see scripts/generate-api.sh) ###
+/openapi-generator-cli.jar
+
+### Stray personal file that landed in repo root by accident ###
+/Sep 2026 schedule.xlsx
+
+### Local planning/analysis notes - not part of the shipped app, kept on disk only ###
+/BACKEND_ANALYSIS.md
+/POS_DTO_SYNC.md
+/POS_MODULE_PLAN.md
