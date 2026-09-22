@@ -26,6 +26,31 @@ tags:
     description: >
       Self-hosted authentication - this app owns the `User` table and issues/verifies
       its own JWTs. Replaces the old NextAuth.js-managed cookie session.
+  - name: GuestAccountAuth
+    description: >
+      Public registration/login for a brand-new, persistent guest identity (`GuestAccount`) -
+      entirely separate from staff `Auth`/`User`/`Role` and from the CRM-facing `Guests` tag.
+      Names deliberately don't collide with either: this is a guest creating their own
+      self-service account (email + password, email-verified), not a staff member managing a
+      `Guest` contact card. Issues its own JWT, signed with its own secret
+      (`app.security.guest-jwt-secret`) - a guest token can never satisfy a staff-only route and
+      a staff token can never satisfy `GuestAccount`, even if a filter were misconfigured later,
+      because the two schemes don't share a key. `register`/`resend-verification` return the same
+      generic message regardless of whether the email is already registered/verified, and
+      `login` returns the same generic "Invalid email or password" for a wrong email or a wrong
+      password - same anti-enumeration posture as `Auth.login` - but a *correct* password against
+      an unverified account gets its own distinct, actionable error, since a correct password
+      already proves legitimate possession of the account and there's nothing left to hide.
+      All four operations are rate-limited (see each operation's own 429).
+  - name: GuestAccount
+    description: >
+      Authenticated actions for a verified `GuestAccount` - profile, self-service password
+      change, and read-only booking history. Booking history is computed at read time by
+      matching `Booking.guestEmail` (case-insensitively) against this account's own verified
+      email - not a stored link, not something staff or this account can edit - so a guest who
+      verifies an email that already has past stays under it sees them immediately, with no
+      manual linking step anywhere. Requires a guest JWT (`Authorization: Bearer <token>` from
+      `GuestAccountAuth`), never a staff one - see that tag's own description.
   - name: Rooms
     description: Room (room *type*) CRUD and image management (staff only).
   - name: RoomUnits
@@ -266,6 +291,286 @@ paths:
                 $ref: "#/components/schemas/ValidationError"
         "401":
           description: Missing/invalid token, or `currentPassword` is incorrect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Current password is incorrect
+
+  /guest-auth/register:
+    post:
+      operationId: registerGuestAccount
+      tags: [GuestAccountAuth]
+      summary: Create a guest account (unverified)
+      description: >
+        Creates a `GuestAccount` with `emailVerifiedAt` null and emails a verification link
+        (`EmailService#sendGuestVerificationEmail`, same fail-open contract as every other
+        `EmailService` method - the account is still created even if the email send fails).
+        Never returns a token - the account can't authenticate until verified.
+
+        Always returns the same 200 with a generic message, regardless of what's already true
+        about `email`: if it already has a *verified* account, nothing is created or changed and
+        no email is sent, so a caller can't use this to learn whether an email is registered. If
+        it already has an *unverified* account (an abandoned signup), no second account is
+        created - the existing one's verification token is simply regenerated and re-sent.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestAccountRegisterInput"
+      responses:
+        "200":
+          description: >
+            Always this, whether or not `email` was free, already pending, or already verified -
+            see this operation's own description.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestAccountMessage"
+              example:
+                message: If this email isn't already registered, we've sent a verification link.
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "429":
+          description: Too many registration attempts from this IP/email recently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many requests. Please slow down and try again.
+
+  /guest-auth/verify:
+    post:
+      operationId: verifyGuestAccount
+      tags: [GuestAccountAuth]
+      summary: Verify a guest account's email
+      description: >
+        A `POST`, not a `GET` a link click could fire by itself (prefetch, an email client's own
+        link-scanning) - verification is a mutating, one-shot action, not a page view. Looks up
+        the account by `token`, checks it against `emailVerificationExpiresAt` (24h from issue by
+        default, see `app.guest-account.verification-ttl-hours`), sets `emailVerifiedAt`, clears
+        the token, and returns a `guestBearerAuth` token so the guest is logged in immediately -
+        no separate login step after verifying.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestAccountVerifyInput"
+      responses:
+        "200":
+          description: Verified - `token` logs the guest in immediately.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestAccountAuthResponse"
+        "400":
+          description: Token is unknown, already used, or expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Invalid or expired verification token
+        "429":
+          description: Too many verification attempts from this IP recently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many requests. Please slow down and try again.
+
+  /guest-auth/resend-verification:
+    post:
+      operationId: resendGuestAccountVerification
+      tags: [GuestAccountAuth]
+      summary: Resend the verification email
+      description: >
+        Same generic response every time, whether `email` doesn't exist, is already verified, or
+        is genuinely pending - only an unverified account actually gets a new token and a new
+        email (regenerating the token, same as a fresh `register` of an already-pending email).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestAccountResendVerificationInput"
+      responses:
+        "200":
+          description: Always this - see this operation's own description.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestAccountMessage"
+              example:
+                message: If this email has a pending verification, we've sent a new link.
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "429":
+          description: Too many resend attempts from this IP/email recently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many requests. Please slow down and try again.
+
+  /guest-auth/login:
+    post:
+      operationId: loginGuestAccount
+      tags: [GuestAccountAuth]
+      summary: Log in with email/password
+      description: >
+        Wrong email or wrong password both return the identical generic 401 below - same
+        discipline as `Auth.login`, so a caller can't tell which is wrong. A *correct* password
+        against an account whose `emailVerifiedAt` is still null is different: the password
+        already proves this caller legitimately owns the account, so there's nothing left to hide
+        - it gets its own distinct, actionable 403 instead of the generic message.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestAccountLoginInput"
+      responses:
+        "200":
+          description: Login succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestAccountAuthResponse"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Email not found or password incorrect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Invalid email or password
+        "403":
+          description: Password is correct, but this account's email isn't verified yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Please verify your email before logging in.
+        "429":
+          description: Too many failed attempts for this IP/email pair recently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many failed login attempts. Try again later.
+
+  /guest/me:
+    get:
+      operationId: getCurrentGuestAccount
+      tags: [GuestAccount]
+      summary: Get the currently authenticated guest account
+      description: "Requires a valid guest `Authorization: Bearer` JWT (see `GuestAccountAuth`)."
+      security:
+        - guestBearerAuth: []
+      responses:
+        "200":
+          description: The authenticated guest account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestAccount"
+        "401":
+          description: Missing/invalid/expired guest token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /guest/bookings:
+    get:
+      operationId: listCurrentGuestBookings
+      tags: [GuestAccount]
+      summary: This guest's booking history
+      description: >
+        Every `Booking` whose `guestEmail` matches this account's own verified email,
+        case-insensitively, newest (`createdAt`) first - past, current, and future stays alike.
+        Computed fresh on every call, not a stored link (see the `GuestAccount` tag's own
+        description) - deliberately narrow, guest-facing `GuestBookingView`, never the staff
+        `Booking` shape (no `paymentNote`, `source`, `guestId`/`guest`, `roomUnitId`/`roomUnit`,
+        occupancy timestamps, or anything else staff-internal).
+      security:
+        - guestBearerAuth: []
+      responses:
+        "200":
+          description: This guest's bookings, newest first. Empty array if none.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GuestBookingView"
+        "401":
+          description: Missing/invalid/expired guest token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /guest/password:
+    patch:
+      operationId: changeGuestAccountPassword
+      tags: [GuestAccount]
+      summary: Change your own guest account password
+      description: >
+        Same shape as `Auth.changeOwnPassword`: verifies `currentPassword` against this account's
+        own `passwordHash`, then bumps `tokenVersion` - every other guest token already issued to
+        this account is rejected on its next request. The response carries a fresh token so this
+        session keeps working without a re-login.
+      security:
+        - guestBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestPasswordChangeInput"
+      responses:
+        "200":
+          description: Password changed - a fresh token is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestAccountAuthResponse"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Missing/invalid guest token, or `currentPassword` is incorrect.
           content:
             application/json:
               schema:
@@ -6989,6 +7294,16 @@ components:
         endpoints (`login`, `logout`) requires a valid token, returning 401 if
         missing/invalid/expired, and 403 where the route additionally requires
         role `ADMIN`.
+    guestBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT returned by `POST /guest-auth/verify` or `POST /guest-auth/login`, sent the same way
+        as `bearerAuth` (`Authorization: Bearer <token>`) but signed with a completely different
+        secret and verified by a separate filter - see the `GuestAccountAuth` tag. A staff
+        `bearerAuth` token never satisfies this scheme and vice versa. Required by every
+        `GuestAccount`-tagged operation; 401 if missing/invalid/expired.
 
   responses:
     Unauthorized:
@@ -9141,6 +9456,140 @@ components:
           description: "JWT to send as `Authorization: Bearer <token>` on subsequent requests."
         user:
           $ref: "#/components/schemas/User"
+
+    GuestAccountRegisterInput:
+      type: object
+      description: Body of `POST /guest-auth/register`.
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          x-sensitive: true
+        password:
+          type: string
+          minLength: 8
+          maxLength: 200
+        name:
+          type: string
+          nullable: true
+          description: Optional - purely a display name, never used to look up or merge anything.
+
+    GuestAccountVerifyInput:
+      type: object
+      description: Body of `POST /guest-auth/verify`.
+      required: [token]
+      properties:
+        token:
+          type: string
+
+    GuestAccountResendVerificationInput:
+      type: object
+      description: Body of `POST /guest-auth/resend-verification`.
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          x-sensitive: true
+
+    GuestAccountLoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    GuestAccountAuthResponse:
+      type: object
+      required: [token, account]
+      properties:
+        token:
+          type: string
+          description: "JWT to send as `Authorization: Bearer <token>` on subsequent GuestAccount-tagged requests."
+        account:
+          $ref: "#/components/schemas/GuestAccount"
+
+    GuestAccountMessage:
+      type: object
+      description: >
+        Generic success shape shared by `GuestAccountAuth` operations that deliberately reveal
+        nothing about the target email's actual state (registered/verified/pending) - see
+        `POST /guest-auth/register`'s own description.
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    GuestAccount:
+      type: object
+      description: >
+        A guest's own persistent, self-service login - entirely separate from the CRM `Guest`
+        schema (see the `GuestAccountAuth` tag's own description for why). Usable only once
+        `emailVerifiedAt` is set.
+      required: [id, email, createdAt]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          x-sensitive: true
+        name:
+          type: string
+          nullable: true
+        emailVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    GuestBookingView:
+      type: object
+      description: >
+        The guest-facing projection of `Booking` returned by `GET /guest/bookings` - deliberately
+        not `Booking` itself, the same "narrow, guest-facing DTO" discipline as `GuestOrderView`.
+        Never carries `paymentNote`, `source`, `expiryReminderSent`, `guestId`/`guest`,
+        `roomUnitId`/`roomUnit`, or occupancy timestamps/status - none of that is this guest's
+        business or safe to hand back to their own phone.
+      required: [id, roomName, checkIn, checkOut, totalPrice, status, createdAt]
+      properties:
+        id:
+          type: string
+        roomName:
+          type: string
+          description: "`Room.name` at read time - denormalized, not frozen (same convention as `SpaAppointmentTreatment.currentPrice`), since a room type's name is cosmetic, not an agreed term."
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        totalPrice:
+          type: string
+          description: Decimal(10,2) rendered as a string, e.g. `"4500.00"` - same server-computed total as `Booking.totalPrice`.
+        status:
+          $ref: "#/components/schemas/BookingStatus"
+        createdAt:
+          type: string
+          format: date-time
+
+    GuestPasswordChangeInput:
+      type: object
+      description: Body of `PATCH /guest/password`.
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          description: Verified against the caller's own `GuestAccount.passwordHash` before the change is accepted.
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 200
 
     UserCreateInput:
       type: object

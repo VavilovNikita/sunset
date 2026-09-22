@@ -41,4 +41,13 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
 
     /** A guest's stay history for {@code GET /guests/{id}}, newest first - every status, cancelled included, see {@code GuestDetail}. */
     List<BookingEntity> findByGuestIdOrderByCreatedAtDesc(String guestId);
+
+    /**
+     * A guest account's own booking history for {@code GET /guest/bookings}, newest first -
+     * matched by the account's verified email against {@code Booking.guestEmail} alone (never
+     * {@code guestId}/{@code guest} - see {@code GuestAccount}'s own openapi.yaml description for
+     * why that link would be unreliable). Case-insensitive since {@code guestEmail} is whatever a
+     * guest typed at booking time, not normalized to any particular case.
+     */
+    List<BookingEntity> findByGuestEmailIgnoreCaseOrderByCreatedAtDesc(String guestEmail);
 }

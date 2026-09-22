@@ -1,5 +1,6 @@
 package com.sunsetbeach.security;
 
+import com.sunsetbeach.repository.GuestAccountRepository;
 import com.sunsetbeach.repository.UserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -33,6 +34,8 @@ public class SecurityConfig {
             HttpSecurity http,
             JwtService jwtService,
             UserRepository userRepository,
+            GuestJwtService guestJwtService,
+            GuestAccountRepository guestAccountRepository,
             RestAuthEntryPoint authEntryPoint,
             RestAccessDeniedHandler accessDeniedHandler) throws Exception {
         http
@@ -45,6 +48,14 @@ public class SecurityConfig {
                         .requestMatchers("/uploads/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/bookings").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+                        // GuestAccount: a brand-new, fully separate identity system from staff Auth -
+                        // see the GuestAccountAuth/GuestAccount tag descriptions. /guest-auth/** is
+                        // public (its own rate limiters guard abuse - see GuestAccountAuthController);
+                        // /guest/** requires a valid guestBearerAuth JWT, granted as ROLE_GUEST by
+                        // GuestJwtAuthFilter below - never hasRole() against the staff RoleHierarchy,
+                        // since GUEST isn't part of it and must never inherit/be inherited by it.
+                        .requestMatchers("/guest-auth/**").permitAll()
+                        .requestMatchers("/guest/**").hasRole("GUEST")
                         // Self-service password change: any authenticated staff role, no ADMIN
                         // needed - this is the one account-security action every user can take
                         // on their own account without help. See PATCH /users/{id}/password for
@@ -327,7 +338,11 @@ public class SecurityConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(authEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
-                .addFilterBefore(new JwtAuthFilter(jwtService, userRepository), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new JwtAuthFilter(jwtService, userRepository), UsernamePasswordAuthenticationFilter.class)
+                // Same position as JwtAuthFilter, not before/after it - the two verify against
+                // different secrets and populate the same SecurityContext independently, so
+                // there's no ordering dependency between them (see this filter's own javadoc).
+                .addFilterBefore(new GuestJwtAuthFilter(guestJwtService, guestAccountRepository), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

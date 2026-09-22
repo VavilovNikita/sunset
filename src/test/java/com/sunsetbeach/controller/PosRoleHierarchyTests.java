@@ -135,11 +135,12 @@ import tools.jackson.databind.json.JsonMapper;
             com.sunsetbeach.controller.RosterController.class,
             com.sunsetbeach.controller.AttendanceDeviceController.class
         })
-@Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
+@Import({SecurityConfig.class, JwtService.class, com.sunsetbeach.security.GuestJwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
         com.sunsetbeach.security.BookingRateLimiter.class})
 class PosRoleHierarchyTests {
 
     private static final String JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long!!";
+    private static final String GUEST_JWT_SECRET = "test-guest-jwt-secret-at-least-32-bytes!!";
 
     @Autowired
     private MockMvc mockMvc;
@@ -243,10 +244,18 @@ class PosRoleHierarchyTests {
     @MockitoBean
     private UserRepository userRepository;
 
+    // SecurityConfig's filter chain now also wires GuestJwtAuthFilter (see that class) - never
+    // exercised by this staff-only role-hierarchy suite, but the bean it depends on must still
+    // resolve for the context to start.
+    @MockitoBean
+    private com.sunsetbeach.repository.GuestAccountRepository guestAccountRepository;
+
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("app.security.jwt-secret", () -> JWT_SECRET);
         registry.add("app.security.jwt-ttl-days", () -> "7");
+        registry.add("app.security.guest-jwt-secret", () -> GUEST_JWT_SECRET);
+        registry.add("app.security.guest-jwt-ttl-days", () -> "30");
     }
 
     @BeforeEach

@@ -42,7 +42,18 @@ public abstract class AbstractIntegrationTest {
             .withDatabaseName("sunsetbeach")
             .withUsername("sunsetbeach")
             .withPassword("sunsetbeach")
-            .withInitScript("test-db-baseline.sql");
+            .withInitScript("test-db-baseline.sql")
+            // Postgres's default max_connections (100) is shared across every distinct Spring
+            // context this suite creates - each unique combination of @DynamicPropertySource
+            // values/bean overrides across ~60+ @SpringBootTest classes gets its own cached
+            // ApplicationContext, and therefore its own HikariCP pool, against this one container.
+            // The suite runs close enough to that ceiling that adding even one more genuinely
+            // distinct full-context test class can tip an unrelated, alphabetically-later class
+            // over into "FATAL: sorry, too many clients already" - reproduced deterministically,
+            // not flaky, since Surefire's run order is stable. Raised well above what this suite
+            // could plausibly need, rather than tuned to the current count, so this doesn't need
+            // revisiting every time a future test adds one more context.
+            .withCommand("postgres", "-c", "max_connections=300");
 
     static {
         POSTGRES.start();

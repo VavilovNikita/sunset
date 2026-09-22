@@ -170,6 +170,28 @@ public class EmailService {
         }
     }
 
+    /**
+     * Sent by {@code GuestAccountService} on register/resend - same fail-open contract as every
+     * other method here (the account is still created/regenerated even if this fails; the
+     * {@code POST /guest-auth/register}/{@code resend-verification} response is identical either
+     * way, see those operations' own descriptions). {@code name} is nullable (optional at
+     * register) and only used for the greeting, never for lookup.
+     */
+    public void sendGuestVerificationEmail(String email, String name, String token) {
+        try {
+            String greetingName = (name == null || name.isBlank()) ? "there" : name;
+            String link = siteUrl + "/guest/verify?token=" + token;
+            String html = "<p>Hi " + greetingName + ",</p>"
+                    + "<p>Verify your email to activate your guest account:</p>"
+                    + "<p><a href=\"" + link + "\">Verify email</a></p>"
+                    + "<p>This link expires in 24 hours. If you didn't request this, you can ignore this email.</p>";
+
+            send(List.of(email), "Verify your email — The Sunset Beach Resort & Spa", html);
+        } catch (Exception e) {
+            log.error("sendGuestVerificationEmail failed:", e);
+        }
+    }
+
     private void send(List<String> to, String subject, String html) {
         if (resendApiKey == null || resendApiKey.isBlank()) {
             // Deliberately does not log `to` or `html`: both can carry guest personal data

@@ -42,13 +42,21 @@ DEST=src/main/java/com/sunsetbeach
 # Skipped so it doesn't reappear as a dead, never-wired file on every future regeneration.
 echo "Skipping AuthApi.java (see comment in this script for why)."
 
-# These three models carry hand-maintained behavior a regeneration cannot express and must
+# GuestAccountAuthApi.java: same structural limitation as AuthApi.java above, for the same
+# reason - register/resend-verification/login are all IP-rate-limited (see GuestAccountAuthRateLimiter),
+# which needs an HttpServletRequest the generated interface can't carry. GuestAccountAuthController
+# hand-rolls all four /guest-auth/* routes as plain @PostMapping methods instead of implementing
+# a generated interface - see that class's own comment.
+echo "Skipping GuestAccountAuthApi.java (see comment in this script for why)."
+
+# These models carry hand-maintained behavior a regeneration cannot express and must
 # never silently overwrite:
-#   - AuthResponse.java, LoginRequest.java: fully hand-written, not templated output. Custom
-#     Bean Validation (LoginRequest adds @NotBlank on password, on top of the generated
-#     @NotNull), and deliberately no equals()/hashCode()/toString() override at all - the
-#     default Object.toString() means a stray log of one of these can never print a raw JWT or
-#     password, which a generated toString() would do immediately.
+#   - AuthResponse.java, LoginRequest.java, GuestAccountAuthResponse.java, GuestAccountLoginInput.java:
+#     fully hand-written, not templated output. Custom Bean Validation (LoginRequest/
+#     GuestAccountLoginInput add @NotBlank on password, on top of the generated @NotNull), and
+#     deliberately no equals()/hashCode()/toString() override at all on the two *Response classes -
+#     the default Object.toString() means a stray log of one of these can never print a raw JWT,
+#     which a generated toString() would do immediately.
 #   - DeleteRoomImageRequest.java: deliberately missing @NotNull on `path`, even though
 #     `required: [path]` in openapi.yaml would normally generate it. With @NotNull, Spring's
 #     @Valid would reject a null `path` with this app's ValidationError shape (fieldErrors) -
@@ -56,18 +64,19 @@ echo "Skipping AuthApi.java (see comment in this script for why)."
 #     ({"error": "path is required"}), which is exactly what RoomController's manual null-check
 #     already produces. Restoring @NotNull would make a real request's response shape stop
 #     matching the spec that documents it.
-echo "Skipping AuthResponse.java, LoginRequest.java, DeleteRoomImageRequest.java (hand-maintained, see comment in this script)."
+echo "Skipping AuthResponse.java, LoginRequest.java, GuestAccountAuthResponse.java, GuestAccountLoginInput.java, DeleteRoomImageRequest.java (hand-maintained, see comment in this script)."
 
 for f in "$OUT_DIR"/src/main/java/com/sunsetbeach/api/*.java; do
   base="$(basename "$f")"
   [ "$base" = "AuthApi.java" ] && continue
+  [ "$base" = "GuestAccountAuthApi.java" ] && continue
   cp "$f" "$DEST/api/$base"
 done
 
 for f in "$OUT_DIR"/src/main/java/com/sunsetbeach/model/*.java; do
   base="$(basename "$f")"
   case "$base" in
-    AuthResponse.java|LoginRequest.java|DeleteRoomImageRequest.java) continue ;;
+    AuthResponse.java|LoginRequest.java|GuestAccountAuthResponse.java|GuestAccountLoginInput.java|DeleteRoomImageRequest.java) continue ;;
   esac
   cp "$f" "$DEST/model/$base"
 done

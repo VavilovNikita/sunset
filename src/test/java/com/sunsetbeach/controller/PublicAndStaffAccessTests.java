@@ -45,10 +45,11 @@ import org.springframework.test.web.servlet.MockMvc;
  * directory, so the file-serving 200/404 cases hit an actual filesystem lookup).
  */
 @WebMvcTest(controllers = {RoomController.class, UserController.class, PublicController.class})
-@Import({SecurityConfig.class, JwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, RoomImageService.class})
+@Import({SecurityConfig.class, JwtService.class, com.sunsetbeach.security.GuestJwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, RoomImageService.class})
 class PublicAndStaffAccessTests {
 
     private static final String JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long!!";
+    private static final String GUEST_JWT_SECRET = "test-guest-jwt-secret-at-least-32-bytes!!";
 
     @Autowired
     private MockMvc mockMvc;
@@ -73,6 +74,12 @@ class PublicAndStaffAccessTests {
     @MockitoBean
     private UserRepository userRepository;
 
+    // SecurityConfig's filter chain now also wires GuestJwtAuthFilter (see that class) - never
+    // exercised by this staff/public suite, but the bean it depends on must still resolve for the
+    // context to start.
+    @MockitoBean
+    private com.sunsetbeach.repository.GuestAccountRepository guestAccountRepository;
+
     @TempDir
     static Path uploadsRoot;
 
@@ -80,6 +87,8 @@ class PublicAndStaffAccessTests {
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("app.security.jwt-secret", () -> JWT_SECRET);
         registry.add("app.security.jwt-ttl-days", () -> "7");
+        registry.add("app.security.guest-jwt-secret", () -> GUEST_JWT_SECRET);
+        registry.add("app.security.guest-jwt-ttl-days", () -> "30");
         registry.add("app.uploads.root", () -> uploadsRoot.toString());
     }
 
