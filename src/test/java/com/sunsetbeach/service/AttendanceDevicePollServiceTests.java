@@ -270,6 +270,39 @@ class AttendanceDevicePollServiceTests extends AbstractIntegrationTest {
     }
 
     /**
+     * A device (or a windowed-read merge across a poll boundary) can hand back records slightly
+     * out of chronological order. {@code pollOneDevice} sorts by {@code deviceTimestamp} before
+     * ingesting so history-based direction parity (see {@code AttendanceService#ingestDevicePunch})
+     * is computed correctly regardless - queuing the OUT punch ahead of the IN punch here proves
+     * the sort runs, not just that the fake happens to hand records back in a convenient order.
+     */
+    @Test
+    void pollDevices_punchesReturnedOutOfOrder_stillIngestedWithCorrectParity() {
+        AttendanceDeviceEntity device = createDevice();
+        int enrollmentNumber = uniqueEnrollmentNumber();
+        UserEntity employee = createEnrolledUser(enrollmentNumber);
+        LocalDate date = LocalDate.of(2027, 9, 14);
+        LocalDateTime morning = date.atTime(9, 0);
+        LocalDateTime evening = date.atTime(18, 0);
+        // Deliberately queued out of chronological order.
+        fake().queue(
+                device.getId(),
+                List.of(
+                        new RawAttendancePunch(enrollmentNumber, evening, PunchDirection.IN),
+                        new RawAttendancePunch(enrollmentNumber, morning, PunchDirection.IN)));
+
+        attendanceDevicePollService.pollDevices();
+
+        List<com.sunsetbeach.entity.AttendancePunchEntity> saved = attendancePunchRepository
+                .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), date.atStartOfDay(), date.plusDays(1).atStartOfDay());
+        assertThat(saved).hasSize(2);
+        assertThat(saved.get(0).getPunchAt()).isEqualTo(morning);
+        assertThat(saved.get(0).getDirection()).isEqualTo(PunchDirection.IN);
+        assertThat(saved.get(1).getPunchAt()).isEqualTo(evening);
+        assertThat(saved.get(1).getDirection()).isEqualTo(PunchDirection.OUT);
+    }
+
+    /**
      * The whole point of this change: a device whose firmware rejects the windowed command must
      * not fail silently into "reads the full log forever, nobody notices" - the poll service has
      * to persist that fact where a person can see it (see AttendanceDeviceEntity#

@@ -59,10 +59,13 @@ import org.springframework.stereotype.Component;
  *   <li>What the device's own per-record "punch" byte means. The convention used here (0 = check
  *   in, 1 = check out) is the one most ZK integrations report as the default when a terminal is
  *   in ordinary in/out mode, but it is a convention, not something this protocol documents
- *   anywhere - a device configured for break/overtime tracking uses more codes than that. Any
- *   code outside {0, 1} is refused, not guessed at as one or the other (see {@link
- *   #directionOf}) - <b>this needs confirming against the real K60 once it arrives</b>, most
- *   directly by punching it once in each direction and reading back what code each one produced.
+ *   anywhere - a device configured for break/overtime tracking uses more codes than that, and a
+ *   real K60 was in fact found labeling several consecutive same-day scans all "In" once
+ *   connected, proving this byte can't be trusted as-is. A code outside {0, 1} maps to no
+ *   direction guess at all (see {@link #directionOf}) but the record is still returned, not
+ *   dropped - {@code AttendanceService#ingestDevicePunch} decides the real direction server-side
+ *   from punch history regardless of what this byte says, and only uses it as an ongoing
+ *   diagnostic signal toward eventually learning what it actually encodes.
  * </ul>
  *
  * <p><b>Windowed reads (a third thing unverified without hardware).</b> {@code
@@ -429,9 +432,10 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
         }
         PunchDirection direction = directionOf(punchCode);
         if (direction == null) {
-            log.warn("Skipping an attendance record for enrollment number {} with an unrecognised punch code {} (status {})", enrollmentNumber,
-                    punchCode, status);
-            return;
+            log.debug(
+                    "Attendance record for enrollment number {} carries punch code {} (status {}) with no direction guess - direction will be "
+                            + "decided server-side from this employee's punch history",
+                    enrollmentNumber, punchCode, status);
         }
         punches.add(new RawAttendancePunch(enrollmentNumber, decodeTime(timeBytes), direction));
     }
@@ -446,9 +450,11 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
 
     /**
      * 0 = check in, 1 = check out - the common default-mode convention, not something this
-     * protocol documents. Anything else (break/overtime codes some configurations use) is refused
-     * rather than mapped to one of the two directions this system has - see this class's own
-     * javadoc.
+     * protocol documents, and not proven reliable against a real K60 (see this class's own
+     * javadoc). Anything else (break/overtime codes some configurations use) maps to {@code null}
+     * rather than being guessed at as one of the two directions - a diagnostic hint only, never
+     * something that gates whether a record is kept. {@code AttendanceService#ingestDevicePunch}
+     * is the actual authority on direction.
      */
     private static PunchDirection directionOf(int punchCode) {
         return switch (punchCode) {

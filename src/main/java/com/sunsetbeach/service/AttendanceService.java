@@ -35,6 +35,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -49,6 +51,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AttendanceService {
 
+    private static final Logger log = LoggerFactory.getLogger(AttendanceService.class);
+
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
 
     private final AttendancePunchRepository attendancePunchRepository;
@@ -58,6 +62,7 @@ public class AttendanceService {
     private final AuditLogService auditLogService;
     private final Clock clock;
     private final Duration upcomingWindow;
+    private final Duration punchDebounceWindow;
 
     public AttendanceService(
             AttendancePunchRepository attendancePunchRepository,
@@ -66,7 +71,8 @@ public class AttendanceService {
             UserRepository userRepository,
             AuditLogService auditLogService,
             Clock clock,
-            @Value("${app.attendance.upcoming-window-minutes:60}") long upcomingWindowMinutes) {
+            @Value("${app.attendance.upcoming-window-minutes:60}") long upcomingWindowMinutes,
+            @Value("${app.attendance.punch-debounce-minutes:2}") long punchDebounceMinutes) {
         this.attendancePunchRepository = attendancePunchRepository;
         this.rosterEntryRepository = rosterEntryRepository;
         this.shiftCodeRepository = shiftCodeRepository;
@@ -74,6 +80,7 @@ public class AttendanceService {
         this.auditLogService = auditLogService;
         this.clock = clock;
         this.upcomingWindow = Duration.ofMinutes(upcomingWindowMinutes);
+        this.punchDebounceWindow = Duration.ofMinutes(punchDebounceMinutes);
     }
 
     @Transactional(readOnly = true)
@@ -125,20 +132,19 @@ public class AttendanceService {
     }
 
     /**
-     * Writes one {@code SCANNER}-sourced punch - the write path a device poll (not yet built)
-     * calls once per raw record read off a terminal. Idempotent by construction, not by
-     * convention: {@code (deviceId, enrollmentNumber, punchAt)} is a unique triple (see V75), and
-     * this method checks for that triple before writing rather than writing and catching the
-     * violation - a caught {@code DataIntegrityViolationException} still leaves the surrounding
-     * Spring transaction marked rollback-only (JPA's own flush failure poisons it before a
-     * {@code catch} block ever runs, regardless of {@code REQUIRES_NEW}; the transaction, not just
-     * the Java exception, has to be dealt with), so for the *expected* case - a device resending a
-     * record after a network drop, a restart, or a re-read of the same window - checking first is
-     * what actually lets this method return normally instead of throwing
-     * {@code UnexpectedRollbackException} on every re-send. The unique index stays as a real,
-     * database-enforced backstop for whatever this check can't see (two overlapping polls, say);
-     * that genuinely-unexpected case is allowed to throw and fail the one record, same as any
-     * other DB hiccup.
+     * Writes one {@code SCANNER}-sourced punch - the write path a device poll calls once per raw
+     * record read off a terminal. Idempotent by construction, not by convention: {@code
+     * (deviceId, enrollmentNumber, punchAt)} is a unique triple (see V75), and this method checks
+     * for that triple before writing rather than writing and catching the violation - a caught
+     * {@code DataIntegrityViolationException} still leaves the surrounding Spring transaction
+     * marked rollback-only (JPA's own flush failure poisons it before a {@code catch} block ever
+     * runs, regardless of {@code REQUIRES_NEW}; the transaction, not just the Java exception, has
+     * to be dealt with), so for the *expected* case - a device resending a record after a network
+     * drop, a restart, or a re-read of the same window - checking first is what actually lets this
+     * method return normally instead of throwing {@code UnexpectedRollbackException} on every
+     * re-send. The unique index stays as a real, database-enforced backstop for whatever this
+     * check can't see (two overlapping polls, say); that genuinely-unexpected case is allowed to
+     * throw and fail the one record, same as any other DB hiccup.
      *
      * <p>{@code REQUIRES_NEW}, so one record's own transaction can never be the reason another
      * record's write doesn't happen - a poll ingests many records in one pass, and every one of
@@ -149,9 +155,30 @@ public class AttendanceService {
      * all - see {@code User.enrollmentNumber}'s own description: without one, nothing here can
      * say who this punch belongs to, and a punch attributed to nobody is worse than a punch not
      * recorded yet, which can still be backfilled once the number is assigned.
+     *
+     * <p><b>Direction is decided here, from this employee's own punch history, never from {@code
+     * reportedDirection}.</b> A live K60 was found labeling three consecutive same-day scans all
+     * "In" - the device's raw per-record punch byte can't be trusted as the source of truth (see
+     * {@code ZkTerminalClientImpl#directionOf}'s own javadoc). Every prior punch today (any {@code
+     * PunchSource} - a manual correction earlier in the day still counts) is fetched, and an even
+     * prior count (0, 2, 4, ...) makes this one {@code IN}, an odd count makes it {@code OUT} -
+     * the same alternation {@code AttendancePunchPairing} and {@code recordPunch}'s own {@code
+     * closesAnIncompleteDay} already assume elsewhere; this is what makes that assumption actually
+     * true at write time. {@code reportedDirection} is kept only as a diagnostic hint: a
+     * disagreement is logged at WARN (not thrown, not skipped) since it's the only ongoing signal
+     * toward eventually learning what that raw byte really encodes.
+     *
+     * <p>Before direction is even computed, a debounce check guards against a misread fingerprint
+     * or a habitual double-tap: if this employee's most recent punch today (any source) is less
+     * than {@link #punchDebounceWindow} before {@code deviceTimestamp}, this record is treated as
+     * an accidental repeat - not inserted, returned as {@link DeviceIngestResult#IGNORED_DUPLICATE_SCAN}
+     * - rather than being ingested and flipping every later punch's parity for the rest of the
+     * day. This only applies to device ingestion; {@link #recordPunch} is a deliberate human
+     * action and is never debounced.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public DeviceIngestResult ingestDevicePunch(AttendanceDeviceEntity device, int enrollmentNumber, LocalDateTime deviceTimestamp, PunchDirection direction) {
+    public DeviceIngestResult ingestDevicePunch(
+            AttendanceDeviceEntity device, int enrollmentNumber, LocalDateTime deviceTimestamp, PunchDirection reportedDirection) {
         UserEntity employee = userRepository.findByEnrollmentNumber(enrollmentNumber).orElse(null);
         if (employee == null) {
             return DeviceIngestResult.UNKNOWN_ENROLLMENT_NUMBER;
@@ -160,10 +187,33 @@ public class AttendanceService {
             return DeviceIngestResult.DUPLICATE;
         }
 
+        LocalDate day = deviceTimestamp.toLocalDate();
+        List<AttendancePunchEntity> dayPunches = attendancePunchRepository
+                .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), day.atStartOfDay(), day.plusDays(1).atStartOfDay());
+
+        if (!dayPunches.isEmpty()) {
+            AttendancePunchEntity mostRecent = dayPunches.get(dayPunches.size() - 1);
+            Duration gap = Duration.between(mostRecent.getPunchAt(), deviceTimestamp);
+            if (!gap.isNegative() && gap.compareTo(punchDebounceWindow) < 0) {
+                log.info(
+                        "Ignoring a likely double-scan for {} (enrollment {}): {} is only {} after the previous punch at {}", employee.getName(),
+                        enrollmentNumber, deviceTimestamp, gap, mostRecent.getPunchAt());
+                return DeviceIngestResult.IGNORED_DUPLICATE_SCAN;
+            }
+        }
+
+        PunchDirection computedDirection = dayPunches.size() % 2 == 0 ? PunchDirection.IN : PunchDirection.OUT;
+        if (reportedDirection != null && reportedDirection != computedDirection) {
+            log.warn(
+                    "Device {} reported {} as the direction for enrollment {} at {}, but this employee's punch history today says {} - trusting "
+                            + "the computed direction",
+                    device.getName(), reportedDirection, enrollmentNumber, deviceTimestamp, computedDirection);
+        }
+
         AttendancePunchEntity entity = new AttendancePunchEntity();
         entity.setEmployeeUserId(employee.getId());
         entity.setPunchAt(deviceTimestamp);
-        entity.setDirection(direction);
+        entity.setDirection(computedDirection);
         entity.setSource(PunchSource.SCANNER);
         entity.setDeviceId(device.getId());
         entity.setEnrollmentNumber(enrollmentNumber);

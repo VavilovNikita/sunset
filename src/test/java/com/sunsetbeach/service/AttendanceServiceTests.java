@@ -23,6 +23,9 @@ import com.sunsetbeach.repository.EmployeePatternRepository;
 import com.sunsetbeach.repository.RosterEntryRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.UserRepository;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -33,6 +36,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -313,6 +317,117 @@ class AttendanceServiceTests extends AbstractIntegrationTest {
         assertThat(saved.getRecordedByUserId()).isNull();
         assertThat(saved.getDeviceId()).isEqualTo(device.getId());
         assertThat(saved.getEnrollmentNumber()).isEqualTo(enrollmentNumber);
+    }
+
+    /**
+     * Reproduces the live K60 symptom that motivated deriving direction from history instead of
+     * trusting the device: three real scans in one day, every single one reported by the device as
+     * "In". Direction must still come out IN/OUT/IN, from this employee's own prior-count parity,
+     * never from the device's own (here, uniformly wrong) claim.
+     */
+    @Test
+    void ingestDevicePunch_deviceReportsSameDirectionEveryTime_directionStillAlternatesByHistory() {
+        AttendanceDeviceEntity device = createDevice();
+        int enrollmentNumber = uniqueEnrollmentNumber();
+        UserEntity employee = createEnrolledUser(enrollmentNumber);
+        LocalDate date = LocalDate.of(2027, 9, 10);
+
+        attendanceService.ingestDevicePunch(device, enrollmentNumber, date.atTime(9, 0), PunchDirection.IN);
+        attendanceService.ingestDevicePunch(device, enrollmentNumber, date.atTime(13, 0), PunchDirection.IN);
+        attendanceService.ingestDevicePunch(device, enrollmentNumber, date.atTime(18, 0), PunchDirection.IN);
+
+        List<AttendancePunchEntity> saved = attendancePunchRepository
+                .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), date.atStartOfDay(), date.plusDays(1).atStartOfDay());
+        assertThat(saved).hasSize(3);
+        assertThat(saved.get(0).getDirection()).isEqualTo(PunchDirection.IN);
+        assertThat(saved.get(1).getDirection()).isEqualTo(PunchDirection.OUT);
+        assertThat(saved.get(2).getDirection()).isEqualTo(PunchDirection.IN);
+    }
+
+    /**
+     * The device's raw claim is kept only as a diagnostic hint - a disagreement with the computed
+     * direction must be visible in the logs (this is now the only ongoing signal toward learning
+     * what the raw byte actually encodes), but must never stop the record from being ingested.
+     */
+    @Test
+    void ingestDevicePunch_reportedDirectionDisagreesWithComputed_logsWarnAndStillIngests() {
+        ch.qos.logback.classic.Logger logbackLogger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(AttendanceService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logbackLogger.addAppender(appender);
+        try {
+            AttendanceDeviceEntity device = createDevice();
+            int enrollmentNumber = uniqueEnrollmentNumber();
+            UserEntity employee = createEnrolledUser(enrollmentNumber);
+            LocalDate date = LocalDate.of(2027, 9, 11);
+
+            // First punch of the day always computes as IN - reporting OUT manufactures a disagreement.
+            DeviceIngestResult result = attendanceService.ingestDevicePunch(device, enrollmentNumber, date.atTime(9, 0), PunchDirection.OUT);
+
+            assertThat(result).isEqualTo(DeviceIngestResult.INGESTED);
+            AttendancePunchEntity saved = attendancePunchRepository
+                    .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), date.atStartOfDay(), date.plusDays(1).atStartOfDay())
+                    .get(0);
+            assertThat(saved.getDirection()).isEqualTo(PunchDirection.IN);
+            assertThat(appender.list)
+                    .anyMatch(e -> e.getLevel() == Level.WARN && e.getFormattedMessage().contains(String.valueOf(enrollmentNumber)));
+        } finally {
+            logbackLogger.detachAppender(appender);
+        }
+    }
+
+    /**
+     * A misread fingerprint or a habitual double-tap seconds apart must not be ingested as a
+     * separate row - under history-based parity that would flip direction and throw off every
+     * later punch's parity for the rest of the day, worse than the old byte-based logic ever was.
+     */
+    @Test
+    void ingestDevicePunch_secondScanWithinDebounceWindow_isIgnoredAndDoesNotAffectParity() {
+        AttendanceDeviceEntity device = createDevice();
+        int enrollmentNumber = uniqueEnrollmentNumber();
+        UserEntity employee = createEnrolledUser(enrollmentNumber);
+        LocalDate date = LocalDate.of(2027, 9, 12);
+        LocalDateTime first = date.atTime(9, 0, 0);
+        LocalDateTime accidentalRepeat = first.plusSeconds(30);
+
+        DeviceIngestResult firstResult = attendanceService.ingestDevicePunch(device, enrollmentNumber, first, PunchDirection.IN);
+        DeviceIngestResult repeatResult = attendanceService.ingestDevicePunch(device, enrollmentNumber, accidentalRepeat, PunchDirection.IN);
+
+        assertThat(firstResult).isEqualTo(DeviceIngestResult.INGESTED);
+        assertThat(repeatResult).isEqualTo(DeviceIngestResult.IGNORED_DUPLICATE_SCAN);
+        assertThat(attendancePunchRepository
+                        .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), date.atStartOfDay(), date.plusDays(1).atStartOfDay()))
+                .hasSize(1);
+
+        // The next real punch must still parity as OUT (second real punch), unaffected by the ignored scan.
+        DeviceIngestResult secondRealPunch = attendanceService.ingestDevicePunch(device, enrollmentNumber, date.atTime(18, 0), PunchDirection.OUT);
+        assertThat(secondRealPunch).isEqualTo(DeviceIngestResult.INGESTED);
+        List<AttendancePunchEntity> saved = attendancePunchRepository
+                .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), date.atStartOfDay(), date.plusDays(1).atStartOfDay());
+        assertThat(saved).hasSize(2);
+        assertThat(saved.get(1).getDirection()).isEqualTo(PunchDirection.OUT);
+    }
+
+    /** A genuine short break (further apart than the debounce window) is ingested as two ordinary punches. */
+    @Test
+    void ingestDevicePunch_secondScanBeyondDebounceWindow_isIngestedNormally() {
+        AttendanceDeviceEntity device = createDevice();
+        int enrollmentNumber = uniqueEnrollmentNumber();
+        UserEntity employee = createEnrolledUser(enrollmentNumber);
+        LocalDate date = LocalDate.of(2027, 9, 13);
+        LocalDateTime first = date.atTime(9, 0);
+        LocalDateTime second = first.plusMinutes(10); // default debounce window is 2 minutes
+
+        DeviceIngestResult firstResult = attendanceService.ingestDevicePunch(device, enrollmentNumber, first, PunchDirection.IN);
+        DeviceIngestResult secondResult = attendanceService.ingestDevicePunch(device, enrollmentNumber, second, PunchDirection.IN);
+
+        assertThat(firstResult).isEqualTo(DeviceIngestResult.INGESTED);
+        assertThat(secondResult).isEqualTo(DeviceIngestResult.INGESTED);
+        List<AttendancePunchEntity> saved = attendancePunchRepository
+                .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), date.atStartOfDay(), date.plusDays(1).atStartOfDay());
+        assertThat(saved).hasSize(2);
+        assertThat(saved.get(0).getDirection()).isEqualTo(PunchDirection.IN);
+        assertThat(saved.get(1).getDirection()).isEqualTo(PunchDirection.OUT);
     }
 
     /**

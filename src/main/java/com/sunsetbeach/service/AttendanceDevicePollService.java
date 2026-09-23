@@ -10,6 +10,8 @@ import com.sunsetbeach.repository.AttendanceDeviceRepository;
 import com.sunsetbeach.repository.AttendancePunchRepository;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -161,10 +163,17 @@ public class AttendanceDevicePollService {
 
         markSeen(device, result.recordSize(), result.windowedReadUnsupported());
 
+        // Sorted so a per-employee prior-count parity and the debounce check both see this
+        // employee's punches in true chronological order, even if the device (or a windowed-read
+        // merge across a poll boundary) ever returns records slightly out of order across
+        // employees - see AttendanceService#ingestDevicePunch's own javadoc.
+        List<RawAttendancePunch> punches = result.punches().stream().sorted(Comparator.comparing(RawAttendancePunch::deviceTimestamp)).toList();
+
         int ingested = 0;
         int duplicate = 0;
         int unknown = 0;
-        for (RawAttendancePunch punch : result.punches()) {
+        int ignoredDoubleScan = 0;
+        for (RawAttendancePunch punch : punches) {
             try {
                 DeviceIngestResult ingestResult =
                         attendanceService.ingestDevicePunch(device, punch.enrollmentNumber(), punch.deviceTimestamp(), punch.direction());
@@ -172,6 +181,7 @@ public class AttendanceDevicePollService {
                     case INGESTED -> ingested++;
                     case DUPLICATE -> duplicate++;
                     case UNKNOWN_ENROLLMENT_NUMBER -> unknown++;
+                    case IGNORED_DUPLICATE_SCAN -> ignoredDoubleScan++;
                 }
             } catch (RuntimeException e) {
                 // One bad record must not lose the rest of an otherwise-good batch - same
@@ -185,8 +195,8 @@ public class AttendanceDevicePollService {
             log.warn("Device {} reported {} punch(es) whose enrollment number matches no employee", device.getName(), unknown);
         }
         log.info(
-                "Polled device {} ({}): {} new punch(es), {} already seen, {} unattributable", device.getName(),
-                since == null ? "full read" : "windowed from " + since, ingested, duplicate, unknown);
+                "Polled device {} ({}): {} new punch(es), {} already seen, {} unattributable, {} ignored as likely double-scans", device.getName(),
+                since == null ? "full read" : "windowed from " + since, ingested, duplicate, unknown, ignoredDoubleScan);
     }
 
     /**

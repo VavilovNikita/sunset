@@ -140,17 +140,24 @@ class ZkTerminalClientImplTests {
         }
     }
 
-    /** An unrecognised punch code (not 0 or 1) is refused, not guessed at - see ZkTerminalClientImpl's own javadoc. */
+    /**
+     * An unrecognised punch code (not 0 or 1) gets no direction guess, but the record itself is
+     * still kept - direction is decided server-side from punch history regardless, so dropping the
+     * record here would silently lose a real scan. See ZkTerminalClientImpl's own javadoc.
+     */
     @Test
-    void poll_unrecognisedPunchCode_skipsThatRecord() throws Exception {
+    void poll_unrecognisedPunchCode_isIncludedWithNullDirection() throws Exception {
         LocalDateTime timestamp = LocalDateTime.of(2027, 8, 17, 9, 0, 0);
         byte[] records = concat(sixteenByteRecord(1, timestamp, 4), sixteenByteRecord(2, timestamp, 0));
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 2, false)) {
             server.start();
             List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null).punches();
 
-            assertThat(punches).hasSize(1);
-            assertThat(punches.get(0).enrollmentNumber()).isEqualTo(2);
+            assertThat(punches).hasSize(2);
+            assertThat(punches.get(0).enrollmentNumber()).isEqualTo(1);
+            assertThat(punches.get(0).direction()).isNull();
+            assertThat(punches.get(1).enrollmentNumber()).isEqualTo(2);
+            assertThat(punches.get(1).direction()).isEqualTo(PunchDirection.IN);
         }
     }
 
