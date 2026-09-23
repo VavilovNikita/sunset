@@ -32,6 +32,7 @@ import com.sunsetbeach.model.RosterMonth;
 import com.sunsetbeach.model.RosterMoveInput;
 import com.sunsetbeach.model.RosterReassignInput;
 import com.sunsetbeach.model.RosterSwapInput;
+import com.sunsetbeach.model.ServerTime;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
 import com.sunsetbeach.model.ShiftCodeDisplayColorUpdateInput;
@@ -721,6 +722,47 @@ public interface RosterApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"entries\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ], \"month\" : 6, \"year\" : 0, \"employees\" : [ { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ], \"coverageWarnings\" : [ { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 }, { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /attendance/server-time : What time the server currently thinks it is
+     * Requires MANAGER or above, same floor as the rest of attendance. A diagnostic read of the app&#39;s own injected &#x60;Clock&#x60; bean (&#x60;ClockConfig&#x60;) - not a fresh &#x60;Instant.now()&#x60;/ &#x60;LocalDateTime.now()&#x60; - so this can never disagree with what \&quot;today\&quot;/\&quot;now\&quot; actually resolves to for attendance and roster. Exists so a clock/timezone drift (the server computing \&quot;today\&quot; in the wrong zone) is visible at a glance instead of only showing up as a subtly wrong attendance status. 
+     *
+     * @return The server&#39;s current time, per its own clock. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/attendance/server-time",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<ServerTime> getServerTime(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"zone\" : \"zone\", \"now\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

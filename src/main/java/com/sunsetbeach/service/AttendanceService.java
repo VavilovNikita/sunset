@@ -14,6 +14,7 @@ import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.PunchDirection;
 import com.sunsetbeach.model.PunchSource;
+import com.sunsetbeach.model.ServerTime;
 import com.sunsetbeach.model.ShiftInterval;
 import com.sunsetbeach.model.TodayShiftState;
 import com.sunsetbeach.model.TodayShiftStatus;
@@ -26,6 +27,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -271,6 +273,15 @@ public class AttendanceService {
             board.add(toTodayShiftStatus(employee, shiftCode, dayPunches, today, now));
         }
         return board;
+    }
+
+    /**
+     * A diagnostic read of the injected {@link #clock}, not a fresh {@code Instant.now()} - see
+     * {@code ServerTime}'s own openapi.yaml description for why this can never disagree with
+     * what "today"/"now" resolves to everywhere else in this service.
+     */
+    public ServerTime getServerTime() {
+        return new ServerTime(OffsetDateTime.now(clock), clock.getZone().getId());
     }
 
     /**

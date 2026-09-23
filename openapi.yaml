@@ -6931,6 +6931,30 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /attendance/server-time:
+    get:
+      operationId: getServerTime
+      tags: [Roster]
+      summary: What time the server currently thinks it is
+      description: >
+        Requires MANAGER or above, same floor as the rest of attendance. A diagnostic read of
+        the app's own injected `Clock` bean (`ClockConfig`) - not a fresh `Instant.now()`/
+        `LocalDateTime.now()` - so this can never disagree with what "today"/"now" actually
+        resolves to for attendance and roster. Exists so a clock/timezone drift (the server
+        computing "today" in the wrong zone) is visible at a glance instead of only showing up
+        as a subtly wrong attendance status.
+      responses:
+        "200":
+          description: The server's current time, per its own clock.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerTime"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /attendance/devices:
     get:
       operationId: listAttendanceDevices
@@ -12386,6 +12410,22 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    ServerTime:
+      type: object
+      description: >
+        `GET /attendance/server-time` - the server's own idea of "now", read straight off the
+        injected `Clock` bean (`ClockConfig`). A diagnostic snapshot, not a ticking clock: the
+        frontend fetches this once per page load and renders it statically.
+      required: [now, zone]
+      properties:
+        now:
+          type: string
+          format: date-time
+          description: The clock's current instant, rendered in its own zone's offset.
+        zone:
+          type: string
+          description: The clock's zone id, e.g. "Asia/Bangkok".
 
     EmployeePayRate:
       type: object
