@@ -299,6 +299,11 @@ public class SecurityConfig {
                         // is also hard-restricted to ADMIN for, regardless of the role hierarchy.
                         .requestMatchers("/roster/import/preview", "/roster/import/name-mappings", "/roster/import/color-mappings", "/roster/import/commit")
                         .hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
+                        // The grid re-import is the same ADMIN floor as the hand-built import above,
+                        // for the same reason - it can also create User accounts (path B's employee
+                        // fallback reuses RosterImportService#createNameMapping) and, on top of that,
+                        // new ShiftCode rows (see RosterGridImportService's own javadoc).
+                        .requestMatchers("/roster/grid-import/preview", "/roster/grid-import/commit").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
                         // The Excel grid export is ADMIN only too - same floor as the import, not
                         // the CSV actuals export (which stays MANAGER+ below). Not a prefix of the
                         // bare "/roster" MANAGER+ rule below, so order relative to it doesn't

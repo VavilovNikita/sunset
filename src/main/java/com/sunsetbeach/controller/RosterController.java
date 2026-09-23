@@ -11,6 +11,9 @@ import com.sunsetbeach.model.EmployeePayRateCreateInput;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.RosterEntry;
 import com.sunsetbeach.model.RosterEntryCreateInput;
+import com.sunsetbeach.model.RosterGridImportCommitInput;
+import com.sunsetbeach.model.RosterGridImportPreview;
+import com.sunsetbeach.model.RosterGridImportResult;
 import com.sunsetbeach.model.RosterImportColorMappingInput;
 import com.sunsetbeach.model.RosterImportColorMappingResult;
 import com.sunsetbeach.model.RosterImportCommitInput;
@@ -37,6 +40,7 @@ import com.sunsetbeach.service.AttendanceService;
 import com.sunsetbeach.service.EmployeePatternService;
 import com.sunsetbeach.service.EmployeePayRateService;
 import com.sunsetbeach.service.RosterExportService;
+import com.sunsetbeach.service.RosterGridImportService;
 import com.sunsetbeach.service.RosterImportService;
 import com.sunsetbeach.service.RosterService;
 import com.sunsetbeach.service.ShiftCodeService;
@@ -63,6 +67,7 @@ public class RosterController implements RosterApi {
     private final AttendanceService attendanceService;
     private final EmployeePayRateService employeePayRateService;
     private final RosterImportService rosterImportService;
+    private final RosterGridImportService rosterGridImportService;
 
     public RosterController(
             ShiftCodeService shiftCodeService,
@@ -72,7 +77,8 @@ public class RosterController implements RosterApi {
             StaffAreaCoverageRuleService staffAreaCoverageRuleService,
             AttendanceService attendanceService,
             EmployeePayRateService employeePayRateService,
-            RosterImportService rosterImportService) {
+            RosterImportService rosterImportService,
+            RosterGridImportService rosterGridImportService) {
         this.shiftCodeService = shiftCodeService;
         this.employeePatternService = employeePatternService;
         this.rosterService = rosterService;
@@ -81,6 +87,7 @@ public class RosterController implements RosterApi {
         this.attendanceService = attendanceService;
         this.employeePayRateService = employeePayRateService;
         this.rosterImportService = rosterImportService;
+        this.rosterGridImportService = rosterGridImportService;
     }
 
     @Override
@@ -246,6 +253,16 @@ public class RosterController implements RosterApi {
     @Override
     public ResponseEntity<RosterImportResult> commitRosterImport(RosterImportCommitInput rosterImportCommitInput) {
         return ResponseEntity.ok(rosterImportService.commit(rosterImportCommitInput.getImportId(), callerId()));
+    }
+
+    @Override
+    public ResponseEntity<RosterGridImportPreview> previewRosterGridImport(MultipartFile file, Integer year, Integer month) {
+        return ResponseEntity.ok(rosterGridImportService.preview(file, year, month));
+    }
+
+    @Override
+    public ResponseEntity<RosterGridImportResult> commitRosterGridImport(RosterGridImportCommitInput rosterGridImportCommitInput) {
+        return ResponseEntity.ok(rosterGridImportService.commit(rosterGridImportCommitInput, callerId()));
     }
 
     private static String callerId() {

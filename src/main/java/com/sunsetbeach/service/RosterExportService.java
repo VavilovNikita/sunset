@@ -16,6 +16,8 @@ import com.sunsetbeach.repository.AttendancePunchRepository;
 import com.sunsetbeach.repository.RosterEntryRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.UserRepository;
+import com.sunsetbeach.rosterimport.RosterGridImportFormat;
+import com.sunsetbeach.rosterimport.ShiftCodeSnapshot;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -23,6 +25,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
@@ -42,6 +45,7 @@ import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.SheetVisibility;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFCellStyle;
 import org.apache.poi.xssf.usermodel.XSSFColor;
@@ -168,8 +172,15 @@ public class RosterExportService {
             byArea.computeIfAbsent(resolveArea(emp), k -> new java.util.ArrayList<>()).add(emp);
         }
 
+        // Populated while writing the visible grid below, then written to the hidden companion
+        // columns/sheet at the end - see RosterGridImportFormat's own javadoc for why per-row/
+        // per-cell facts live as hidden columns on this same sheet (row-insert/delete safe) while
+        // the shift-code dictionary lives on a separate hidden sheet (a whole-file fact, not a
+        // per-row one).
+        Map<String, ShiftCodeSnapshot> shiftCodesUsed = new LinkedHashMap<>();
+
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
-            XSSFSheet sheet = workbook.createSheet("Roster " + year + "-" + String.format("%02d", month));
+            XSSFSheet sheet = workbook.createSheet(RosterGridImportFormat.visibleSheetName(year, month));
 
             XSSFCellStyle headerStyle = boldStyle(workbook);
             XSSFCellStyle groupStyle = groupHeaderStyle(workbook);
@@ -213,6 +224,7 @@ public class RosterExportService {
                     Cell nameCell = row.createCell(0);
                     nameCell.setCellValue(emp.getName());
                     nameCell.setCellStyle(nameStyle);
+                    row.createCell(RosterGridImportFormat.employeeIdColumn(days)).setCellValue(emp.getId());
 
                     for (int day = 1; day <= days; day++) {
                         String date = ym.atDay(day).toString();
@@ -224,10 +236,14 @@ public class RosterExportService {
                         } else {
                             cell.setCellValue(entry.getShiftCode().getCode());
                             cell.setCellStyle(chipCellStyle(workbook, entry.getShiftCode()));
+                            row.createCell(RosterGridImportFormat.shiftCodeIdColumn(days, day)).setCellValue(entry.getShiftCode().getId());
+                            shiftCodesUsed.putIfAbsent(entry.getShiftCode().getId(), snapshotOf(entry.getShiftCode()));
                         }
                     }
                 }
             }
+
+            writeImportMetadataSheet(workbook, shiftCodesUsed);
 
             rowIndex += 1;
             rowIndex = writeTotalsRow(sheet, rowIndex, days, "Working", day -> workingByDay.getOrDefault(day, 0), totalsLabelStyle, workbook);
@@ -602,6 +618,60 @@ public class RosterExportService {
 
     private static String startTime2Of(ShiftCode sc) {
         return sc.getStartTime2() != null && sc.getStartTime2().isPresent() ? sc.getStartTime2().get() : null;
+    }
+
+    private static String endTime1Of(ShiftCode sc) {
+        return sc.getEndTime1() != null && sc.getEndTime1().isPresent() ? sc.getEndTime1().get() : null;
+    }
+
+    private static String endTime2Of(ShiftCode sc) {
+        return sc.getEndTime2() != null && sc.getEndTime2().isPresent() ? sc.getEndTime2().get() : null;
+    }
+
+    private static StaffArea staffAreaOf(ShiftCode sc) {
+        return sc.getStaffArea() != null && sc.getStaffArea().isPresent() ? sc.getStaffArea().get() : null;
+    }
+
+    private static ShiftCodeSnapshot snapshotOf(ShiftCode sc) {
+        return new ShiftCodeSnapshot(
+                sc.getId(), sc.getCode(), staffAreaOf(sc), kindOf(sc), startTime1Of(sc), endTime1Of(sc), startTime2Of(sc), endTime2Of(sc),
+                Boolean.TRUE.equals(sc.getCountsAsWorked()), Boolean.TRUE.equals(sc.getIsPaid()), sc.getEffectiveFrom(), displayColorOf(sc));
+    }
+
+    /**
+     * The hidden sheet's own two whole-file facts - see {@link RosterGridImportFormat}'s own
+     * javadoc for why these live here rather than as hidden columns on the visible sheet (they
+     * aren't tied to any one row). {@code VERY_HIDDEN} rather than plain hidden - an ordinary
+     * "unhide all sheets" in Excel shouldn't surface this as something to look at or edit.
+     */
+    private void writeImportMetadataSheet(XSSFWorkbook workbook, Map<String, ShiftCodeSnapshot> shiftCodesUsed) {
+        XSSFSheet sheet = workbook.createSheet(RosterGridImportFormat.METADATA_SHEET_NAME);
+
+        int r = 0;
+        Row exportedAtRow = sheet.createRow(r++);
+        exportedAtRow.createCell(0).setCellValue(RosterGridImportFormat.EXPORTED_AT_LABEL);
+        exportedAtRow.createCell(1).setCellValue(Instant.now().toString());
+
+        r++; // blank separator - RosterGridImportParser reads each block until a blank row
+        Row shiftCodesHeader = sheet.createRow(r++);
+        shiftCodesHeader.createCell(0).setCellValue(RosterGridImportFormat.SHIFT_CODES_BLOCK_LABEL);
+        for (ShiftCodeSnapshot snapshot : shiftCodesUsed.values()) {
+            Row row = sheet.createRow(r++);
+            row.createCell(0).setCellValue(snapshot.id());
+            row.createCell(1).setCellValue(snapshot.code());
+            row.createCell(2).setCellValue(snapshot.staffArea() != null ? snapshot.staffArea().getValue() : "");
+            row.createCell(3).setCellValue(snapshot.kind() != null ? snapshot.kind().getValue() : "");
+            row.createCell(4).setCellValue(snapshot.startTime1() != null ? snapshot.startTime1() : "");
+            row.createCell(5).setCellValue(snapshot.endTime1() != null ? snapshot.endTime1() : "");
+            row.createCell(6).setCellValue(snapshot.startTime2() != null ? snapshot.startTime2() : "");
+            row.createCell(7).setCellValue(snapshot.endTime2() != null ? snapshot.endTime2() : "");
+            row.createCell(8).setCellValue(snapshot.countsAsWorked());
+            row.createCell(9).setCellValue(snapshot.isPaid());
+            row.createCell(10).setCellValue(snapshot.effectiveFrom());
+            row.createCell(11).setCellValue(snapshot.displayColor() != null ? snapshot.displayColor() : "");
+        }
+
+        workbook.setSheetVisibility(workbook.getSheetIndex(sheet), SheetVisibility.VERY_HIDDEN);
     }
 
     // --- Cell appearance, mirroring RosterGrid.tsx's chipAppearanceFor ------------------------

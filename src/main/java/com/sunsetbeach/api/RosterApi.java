@@ -17,6 +17,9 @@ import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.RosterEmployee;
 import com.sunsetbeach.model.RosterEntry;
 import com.sunsetbeach.model.RosterEntryCreateInput;
+import com.sunsetbeach.model.RosterGridImportCommitInput;
+import com.sunsetbeach.model.RosterGridImportPreview;
+import com.sunsetbeach.model.RosterGridImportResult;
 import com.sunsetbeach.model.RosterImportColorMappingInput;
 import com.sunsetbeach.model.RosterImportColorMappingResult;
 import com.sunsetbeach.model.RosterImportCommitInput;
@@ -60,6 +63,61 @@ public interface RosterApi {
     default Optional<NativeWebRequest> getRequest() {
         return Optional.empty();
     }
+
+    /**
+     * POST /roster/grid-import/commit : Write a previously-previewed roster grid re-import
+     * Requires ADMIN. Re-reads the same file &#x60;importId&#x60; refers to and re-resolves it fresh against whatever is true right now - never trusts an earlier preview&#39;s \&quot;canCommit\&quot;. Refuses (400) if any &#x60;unmatchedEmployees&#x60;, &#x60;retiredCodes&#x60;, or &#x60;unknownCodes&#x60; entry a fresh preview would report isn&#39;t covered by this call&#39;s own &#x60;retiredCodeResolutions&#x60;/ &#x60;unknownCodeResolutions&#x60; (or, for a name, isn&#39;t already resolvable via &#x60;/roster/import/name-mappings&#x60;). A &#x60;RosterEntry&#x60; with &#x60;locked: true&#x60; is never overwritten or removed by this call, regardless of what the file says - it&#39;s always excluded and counted in &#x60;skippedLocked&#x60;, the same \&quot;front desk decides\&quot; posture this app uses everywhere else &#x60;locked&#x60; matters. &#x60;excludeCells&#x60; lets the caller additionally skip specific non-locked rows by hand (typically ones flagged &#x60;staleSinceExport&#x60; in the preview) without having to omit them from the file itself. Exactly one audit entry is written for the whole import. 
+     *
+     * @param rosterGridImportCommitInput  (required)
+     * @return What was actually written. (status code 200)
+     *         or Unresolved employees, retired codes, or unknown codes remain - see &#x60;RosterGridImportPreview&#x60; (call preview again to see what&#39;s left). (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or This importId is unknown or has expired - upload the file again. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/roster/grid-import/commit",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<RosterGridImportResult> commitRosterGridImport(
+         @Valid @RequestBody RosterGridImportCommitInput rosterGridImportCommitInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"month\" : 6, \"removed\" : 5, \"year\" : 0, \"created\" : 1, \"skippedLocked\" : 2, \"skippedExcluded\" : 7, \"createdShiftCodes\" : 9, \"changed\" : 5 }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
 
     /**
      * POST /roster/import/commit : Write a previously-previewed Excel schedule import
@@ -1003,6 +1061,59 @@ public interface RosterApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /roster/grid-import/preview : Dry-run re-importing this app&#39;s own roster grid export
+     * Requires ADMIN, same floor as &#x60;/roster/import/_**&#x60; and &#x60;/roster/export&#x60;. Reads a file previously produced by &#x60;GET /roster/export&#x60; - not the hotel&#39;s hand-built schedule (&#x60;/roster/import/_**&#x60; is that path) - by way of a hidden metadata sheet that export writes alongside the visible grid, carrying the export&#39;s own timestamp plus, for every cell it wrote, exactly which &#x60;User&#x60; and which &#x60;ShiftCode&#x60; (by id, not by text) it meant. A cell resolves positionally against that metadata whenever it&#39;s unchanged since export; a cell whose row or code text doesn&#39;t match the metadata (added or retyped by hand after export) falls back to ordinary name/code-text resolution instead - see each &#x60;RosterGridImportDiffRow.resolution&#x60; for which happened. Nothing is written by this call. Reports only rows that would actually change (&#x60;diffRows&#x60; - &#x60;ADD&#x60;/&#x60;REMOVE&#x60;/&#x60;CHANGE&#x60;; unchanged cells are just a count) plus what would need resolving before &#x60;POST /roster/grid-import/commit&#x60; can apply everything: &#x60;unmatchedEmployees&#x60; (resolve exactly like &#x60;/roster/import/name-mappings&#x60; - the same remembered mapping is reused, so resolving one here also resolves it for the hand-built importer and vice versa), &#x60;retiredCodes&#x60; (a cell&#39;s metadata names a &#x60;ShiftCode&#x60; id that&#39;s since been superseded - &#x60;RosterGridImportCommitInput.retiredCodeResolutions&#x60; recreates it with its exact historical definition, shown here in full for review/edit), and &#x60;unknownCodes&#x60; (a hand-typed code with no metadata at all - &#x60;RosterGridImportCommitInput.unknownCodeResolutions&#x60; defines it from scratch, same fields &#x60;POST /shift-codes&#x60; takes). &#x60;canCommit&#x60; is true only once all three of those are empty; a &#x60;lockedConflict&#x60; or &#x60;staleSinceExport&#x60; row never blocks commit, only flags itself for review (see each field&#39;s own description). 
+     *
+     * @param file  (required)
+     * @param year  (required)
+     * @param month  (required)
+     * @return The dry-run report. (status code 200)
+     *         or Not a readable .xlsx, no sheet named \&quot;Roster {year}-{month}\&quot;, or that sheet has no import-metadata sheet alongside it (not produced by this app&#39;s own export). (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/roster/grid-import/preview",
+        produces = { "application/json" },
+        consumes = { "multipart/form-data" }
+    )
+    
+    default ResponseEntity<RosterGridImportPreview> previewRosterGridImport(
+         @RequestPart(value = "file", required = true) MultipartFile file,
+         @Valid @RequestParam(value = "year", required = true) Integer year,
+         @Valid @RequestParam(value = "month", required = true) Integer month
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"lockedConflictCount\" : 9, \"addCount\" : 1, \"year\" : 0, \"staleCount\" : 7, \"diffRows\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"pendingUnknownCode\" : true, \"changeType\" : \"ADD\", \"staleSinceExport\" : true, \"previousCode\" : \"previousCode\", \"lockedConflict\" : true, \"resolution\" : \"POSITIONAL\", \"employeeUserId\" : \"employeeUserId\", \"newCode\" : \"newCode\", \"pendingRetiredCodeId\" : \"pendingRetiredCodeId\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"pendingUnknownCode\" : true, \"changeType\" : \"ADD\", \"staleSinceExport\" : true, \"previousCode\" : \"previousCode\", \"lockedConflict\" : true, \"resolution\" : \"POSITIONAL\", \"employeeUserId\" : \"employeeUserId\", \"newCode\" : \"newCode\", \"pendingRetiredCodeId\" : \"pendingRetiredCodeId\" } ], \"changeCount\" : 5, \"unchangedCount\" : 2, \"unknownCodes\" : [ { \"staffArea\" : \"\", \"occurrences\" : 2, \"rawCode\" : \"rawCode\" }, { \"staffArea\" : \"\", \"occurrences\" : 2, \"rawCode\" : \"rawCode\" } ], \"retiredCodes\" : [ { \"staffArea\" : \"ADMIN\", \"occurrences\" : 3, \"code\" : \"code\", \"shiftCodeId\" : \"shiftCodeId\", \"kind\" : \"MORNING\", \"countsAsWorked\" : true, \"endTime1\" : \"endTime1\", \"isPaid\" : true, \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\" }, { \"staffArea\" : \"ADMIN\", \"occurrences\" : 3, \"code\" : \"code\", \"shiftCodeId\" : \"shiftCodeId\", \"kind\" : \"MORNING\", \"countsAsWorked\" : true, \"endTime1\" : \"endTime1\", \"isPaid\" : true, \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\" } ], \"unmatchedEmployees\" : [ { \"occurrences\" : 1, \"employeeName\" : \"employeeName\", \"suggestedStaffArea\" : \"\", \"mapped\" : true, \"rawName\" : \"rawName\", \"employeeUserId\" : \"employeeUserId\" }, { \"occurrences\" : 1, \"employeeName\" : \"employeeName\", \"suggestedStaffArea\" : \"\", \"mapped\" : true, \"rawName\" : \"rawName\", \"employeeUserId\" : \"employeeUserId\" } ], \"importId\" : \"importId\", \"month\" : 6, \"exportedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"canCommit\" : true, \"removeCount\" : 5 }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

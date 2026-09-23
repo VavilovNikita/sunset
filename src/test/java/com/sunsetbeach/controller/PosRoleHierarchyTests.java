@@ -236,6 +236,9 @@ class PosRoleHierarchyTests {
     private com.sunsetbeach.service.RosterImportService rosterImportService;
 
     @MockitoBean
+    private com.sunsetbeach.service.RosterGridImportService rosterGridImportService;
+
+    @MockitoBean
     private com.sunsetbeach.service.RosterExportService rosterExportService;
 
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every

@@ -16,6 +16,7 @@ import com.sunsetbeach.repository.AttendancePunchRepository;
 import com.sunsetbeach.repository.RosterEntryRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.UserRepository;
+import com.sunsetbeach.rosterimport.RosterGridImportFormat;
 import java.io.ByteArrayInputStream;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -26,6 +27,7 @@ import java.util.UUID;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.SheetVisibility;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
@@ -126,6 +128,17 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         try {
             XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes));
             return workbook.getSheetAt(0);
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    // Same "don't close the workbook" reasoning as exportSheet above.
+    @SuppressWarnings("resource")
+    private XSSFWorkbook exportWorkbook(int year, int month) {
+        byte[] bytes = rosterExportService.exportGrid(year, month, "irrelevant-actor-id");
+        try {
+            return new XSSFWorkbook(new ByteArrayInputStream(bytes));
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException(e);
         }
@@ -498,5 +511,47 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         List<Row> rows = punchRowsForEmployee(anomalies, employee.getName());
 
         assertThat(rows).isEmpty();
+    }
+
+    /**
+     * The hidden metadata {@code RosterGridImportService} depends on - see {@link
+     * RosterGridImportFormat}'s own javadoc for why per-row/per-cell facts live as hidden
+     * companion columns on the visible sheet itself rather than a separate row-indexed sheet.
+     */
+    @Test
+    void exportGrid_hiddenMetadata_isVeryHiddenAndCarriesEmployeeAndShiftCodeIds() {
+        UserEntity mgr = createEmployee(null, "Manager");
+        UserEntity employee = createEmployee(StaffArea.RESTAURANT, "Hidden");
+        ShiftCode code = createCode(ShiftCodeKind.MORNING, true, "09:00", "17:00");
+        LocalDate date = LocalDate.of(2027, 8, 4);
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), date.toString(), code.getId()), mgr.getId());
+
+        XSSFWorkbook workbook = exportWorkbook(2027, 8);
+        XSSFSheet visible = workbook.getSheetAt(0);
+        int days = LocalDate.of(2027, 8, 1).lengthOfMonth();
+
+        Row row = visible.getRow(rowIndexOfEmployee(visible, employee.getName()));
+        assertThat(cellText(row, RosterGridImportFormat.employeeIdColumn(days))).isEqualTo(employee.getId());
+        assertThat(cellText(row, RosterGridImportFormat.shiftCodeIdColumn(days, date.getDayOfMonth()))).isEqualTo(code.getId());
+        // A day with no entry has no hidden shiftCodeId either - never a stale or default value.
+        int blankDay = date.getDayOfMonth() == 1 ? 2 : 1;
+        assertThat(row.getCell(RosterGridImportFormat.shiftCodeIdColumn(days, blankDay))).isNull();
+
+        int metaSheetIndex = workbook.getSheetIndex(RosterGridImportFormat.METADATA_SHEET_NAME);
+        assertThat(metaSheetIndex).isGreaterThanOrEqualTo(0);
+        assertThat(workbook.getSheetVisibility(metaSheetIndex)).isEqualTo(SheetVisibility.VERY_HIDDEN);
+
+        XSSFSheet metaSheet = workbook.getSheetAt(metaSheetIndex);
+        assertThat(cellText(metaSheet.getRow(0), 0)).isEqualTo(RosterGridImportFormat.EXPORTED_AT_LABEL);
+        assertThat(metaSheet.getRow(0).getCell(1)).isNotNull();
+
+        boolean foundShiftCodeRow = false;
+        for (Row metaRow : metaSheet) {
+            if (code.getId().equals(cellText(metaRow, 0))) {
+                foundShiftCodeRow = true;
+                assertThat(cellText(metaRow, 1)).isEqualTo(code.getCode());
+            }
+        }
+        assertThat(foundShiftCodeRow).isTrue();
     }
 }
