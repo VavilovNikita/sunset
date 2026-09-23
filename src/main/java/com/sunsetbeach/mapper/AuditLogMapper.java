@@ -12,11 +12,11 @@ public class AuditLogMapper {
                         entity.getId(),
                         entity.getActorUserId(),
                         entity.getActorEmail(),
-                        entity.getActorRole(),
                         entity.getAction(),
                         entity.getEntityType(),
                         entity.getSummary(),
                         TimestampFormat.toUtc(entity.getCreatedAt()))
+                .actorRole(entity.getActorRole())
                 .entityId(entity.getEntityId());
     }
 }

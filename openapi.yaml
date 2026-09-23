@@ -11095,6 +11095,12 @@ components:
         - ROSTER_MONTH_IMPORTED
         - ROSTER_GRID_EXPORTED
         - ROSTER_GRID_IMPORTED
+        - ATTENDANCE_DEVICE_CREATED
+        - ATTENDANCE_DEVICE_UPDATED
+        - ATTENDANCE_DEVICE_DELETED
+        - MENU_ITEM_CREATED
+        - MENU_ITEM_UPDATED
+        - MENU_ITEM_DELETED
 
     AuditEntityType:
       type: string
@@ -11108,7 +11114,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM]
 
     AuditLogEntry:
       type: object
@@ -11121,13 +11127,17 @@ components:
         to read and, for the fields that actually matter here, no more precise than a sentence
         written at the one point in the code that already knows what changed and why it
         matters).
-      required: [id, actorUserId, actorEmail, actorRole, action, entityType, summary, createdAt]
+      required: [id, actorUserId, actorEmail, action, entityType, summary, createdAt]
       properties:
         id:
           type: string
         actorUserId:
           type: string
-          description: 'The acting user''s id at the time of the action. Not guaranteed to still resolve via `GET /users/{id}` - see `actorEmail`.'
+          description: >
+            The acting user's id at the time of the action. Not guaranteed to still resolve via
+            `GET /users/{id}` - see `actorEmail`. For a system-initiated action with no
+            authenticated staff principal (e.g. `BookingExpiryService`'s scheduled sweep), this is
+            the fixed literal `"SYSTEM"`, not a real user id - see `actorRole`.
         actorEmail:
           type: string
           description: >
@@ -11135,10 +11145,16 @@ components:
             live join to the current `User` row. This is deliberate: the acting user's account
             may since have had its email changed, or (if account deletion is ever added - today
             accounts are only disabled, never deleted) no longer exist at all, and this row must
-            still say who did it.
+            still say who did it. For a system-initiated action (see `actorUserId`), this is the
+            fixed literal `"system@sunsetbeach.internal"`, not a real address.
         actorRole:
-          $ref: "#/components/schemas/Role"
-          description: The acting user's role at the time of the action - also a snapshot, for the same reason as `actorEmail`.
+          allOf:
+            - $ref: "#/components/schemas/Role"
+          nullable: true
+          description: >
+            The acting user's role at the time of the action - also a snapshot, for the same
+            reason as `actorEmail`. Null only for a system-initiated action with no authenticated
+            staff principal (see `actorUserId`) - never null for anything a real staff member did.
         action:
           $ref: "#/components/schemas/AuditAction"
         entityType:

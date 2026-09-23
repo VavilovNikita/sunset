@@ -8,6 +8,7 @@ import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.AuditLogEntry;
 import com.sunsetbeach.model.AuditLogPage;
+import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.AuditLogRepository;
 import com.sunsetbeach.security.StaffPrincipal;
 import jakarta.persistence.criteria.Predicate;
@@ -82,11 +83,27 @@ import org.springframework.transaction.annotation.Transactional;
  * write has already succeeded - so the (much smaller, and now-mitigated) inverse risk, an audit
  * row surviving for an action whose surrounding transaction later fails for an unrelated reason,
  * essentially never arises in practice.
+ *
+ * <h2>System-initiated actions</h2>
+ * {@link #record} always reads the acting user from {@link SecurityContextHolder}, which only
+ * exists for an authenticated HTTP request - a {@code @Scheduled} sweep (e.g.
+ * {@code BookingExpiryService}) runs on its own thread with no such context, so calling
+ * {@link #record} there throws inside the try/catch and silently writes nothing.
+ * {@link #recordSystemAction} is the alternative for exactly that case: it never touches
+ * {@link SecurityContextHolder} and instead writes the fixed sentinel {@code actorUserId="SYSTEM"}
+ * / {@code actorEmail="system@sunsetbeach.internal"}, with {@code actorRole} left {@code null}
+ * (migration V100) - not a new {@code Role} value, since {@code Role} also drives the staff
+ * authorization hierarchy and user-creation UI, and a sentinel there would need excluding from
+ * every exhaustive switch/dropdown over it. A null {@code actorRole} is reserved for this path
+ * only; nothing a real staff member does should ever produce one.
  */
 @Service
 public class AuditLogService {
 
     private static final Logger log = LoggerFactory.getLogger(AuditLogService.class);
+
+    private static final String SYSTEM_ACTOR_USER_ID = "SYSTEM";
+    private static final String SYSTEM_ACTOR_EMAIL = "system@sunsetbeach.internal";
 
     private final AuditLogRepository auditLogRepository;
     private final AuditLogMapper auditLogMapper;
@@ -100,15 +117,7 @@ public class AuditLogService {
     public void record(AuditAction action, AuditEntityType entityType, String entityId, String summary) {
         try {
             StaffPrincipal actor = (StaffPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            AuditLogEntity entry = new AuditLogEntity();
-            entry.setActorUserId(actor.id());
-            entry.setActorEmail(actor.email());
-            entry.setActorRole(actor.role());
-            entry.setAction(action);
-            entry.setEntityType(entityType);
-            entry.setEntityId(entityId);
-            entry.setSummary(summary);
-            auditLogRepository.save(entry);
+            persist(actor.id(), actor.email(), actor.role(), action, entityType, entityId, summary);
         } catch (Exception e) {
             log.error(
                     "Failed to record audit log entry (action={}, entityType={}, entityId={}, summary=\"{}\")",
@@ -118,6 +127,45 @@ public class AuditLogService {
                     summary,
                     e);
         }
+    }
+
+    /**
+     * For a mutation with no authenticated {@link StaffPrincipal} to attribute it to - see this
+     * class's own "System-initiated actions" javadoc section. Same fail-open/{@code REQUIRES_NEW}
+     * contract as {@link #record}.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordSystemAction(AuditAction action, AuditEntityType entityType, String entityId, String summary) {
+        try {
+            persist(SYSTEM_ACTOR_USER_ID, SYSTEM_ACTOR_EMAIL, null, action, entityType, entityId, summary);
+        } catch (Exception e) {
+            log.error(
+                    "Failed to record system audit log entry (action={}, entityType={}, entityId={}, summary=\"{}\")",
+                    action,
+                    entityType,
+                    entityId,
+                    summary,
+                    e);
+        }
+    }
+
+    private void persist(
+            String actorUserId,
+            String actorEmail,
+            Role actorRole,
+            AuditAction action,
+            AuditEntityType entityType,
+            String entityId,
+            String summary) {
+        AuditLogEntity entry = new AuditLogEntity();
+        entry.setActorUserId(actorUserId);
+        entry.setActorEmail(actorEmail);
+        entry.setActorRole(actorRole);
+        entry.setAction(action);
+        entry.setEntityType(entityType);
+        entry.setEntityId(entityId);
+        entry.setSummary(summary);
+        auditLogRepository.save(entry);
     }
 
     @Transactional(readOnly = true)

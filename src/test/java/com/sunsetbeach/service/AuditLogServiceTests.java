@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.sunsetbeach.entity.AuditLogEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.model.AuditAction;
@@ -82,7 +83,7 @@ class AuditLogServiceTests extends AbstractIntegrationTest {
         var page = auditLogService.search(actorEmail, null, null, null, null, null, 0, 50);
         assertThat(page.getItems()).hasSize(1);
         assertThat(page.getItems().get(0).getActorEmail()).isEqualTo(actorEmail);
-        assertThat(page.getItems().get(0).getActorRole()).isEqualTo(Role.MANAGER);
+        assertThat(page.getItems().get(0).getActorRole().orElse(null)).isEqualTo(Role.MANAGER);
         assertThat(page.getItems().get(0).getActorUserId()).isEqualTo("actor-1");
         assertThat(page.getItems().get(0).getSummary()).isEqualTo("Test entry");
     }
@@ -92,6 +93,28 @@ class AuditLogServiceTests extends AbstractIntegrationTest {
         SecurityContextHolder.clearContext();
         assertThatCode(() -> auditLogService.record(AuditAction.BOOKING_CREATED, AuditEntityType.BOOKING, "x", "should not throw"))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void recordSystemAction_noAuthenticatedPrincipal_writesSentinelActorWithNullRole() {
+        // The whole point of recordSystemAction: it must not need SecurityContextHolder at all -
+        // clear it first to prove that, unlike record() above (see both methods' own javadoc).
+        SecurityContextHolder.clearContext();
+        String entityId = "booking-" + UUID.randomUUID();
+
+        auditLogService.recordSystemAction(AuditAction.BOOKING_STATUS_CHANGED, AuditEntityType.BOOKING, entityId, "Auto-cancelled by the sweep");
+
+        List<AuditLogEntity> written = auditLogRepository.findAll().stream()
+                .filter(e -> entityId.equals(e.getEntityId()))
+                .toList();
+        written.forEach(e -> createdIds.add(e.getId()));
+
+        assertThat(written).hasSize(1);
+        AuditLogEntity entry = written.get(0);
+        assertThat(entry.getActorUserId()).isEqualTo("SYSTEM");
+        assertThat(entry.getActorEmail()).isEqualTo("system@sunsetbeach.internal");
+        assertThat(entry.getActorRole()).isNull();
+        assertThat(entry.getAction()).isEqualTo(AuditAction.BOOKING_STATUS_CHANGED);
     }
 
     @Test

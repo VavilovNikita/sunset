@@ -3,6 +3,8 @@ package com.sunsetbeach.service;
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSource;
 import com.sunsetbeach.entity.RoomEntity;
+import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.RoomRepository;
@@ -63,6 +65,13 @@ import org.springframework.transaction.annotation.Transactional;
  * over a small filtered query, re-run periodically) rather than introducing a second scheduling
  * mechanism for what is the same kind of problem: a durable row that needs periodic follow-up
  * with no request driving it.
+ *
+ * <p>The auto-cancellation is audited via {@link AuditLogService#recordSystemAction} rather than
+ * {@link AuditLogService#record}, using the same {@code BOOKING_STATUS_CHANGED} action a
+ * human-driven cancellation uses (see {@link BookingService#updateStatus}) - this sweep runs on
+ * its own thread with no authenticated {@code StaffPrincipal} to attribute the change to, and
+ * {@code record} would silently write nothing there. See {@code recordSystemAction}'s own javadoc
+ * for what it writes instead.
  */
 @Service
 public class BookingExpiryService {
@@ -72,12 +81,14 @@ public class BookingExpiryService {
     private final BookingRepository bookingRepository;
     private final RoomRepository roomRepository;
     private final EmailService emailService;
+    private final AuditLogService auditLogService;
     private final int expiryBusinessDays;
 
     public BookingExpiryService(
             BookingRepository bookingRepository,
             RoomRepository roomRepository,
             EmailService emailService,
+            AuditLogService auditLogService,
             // 2 business days: a request that arrives Monday gets a staff reminder Tuesday and
             // expires Wednesday if still untouched; one that arrives Friday evening gets its
             // reminder Monday and expires Tuesday - the weekend costs it nothing. Long enough
@@ -88,6 +99,7 @@ public class BookingExpiryService {
         this.bookingRepository = bookingRepository;
         this.roomRepository = roomRepository;
         this.emailService = emailService;
+        this.auditLogService = auditLogService;
         this.expiryBusinessDays = expiryBusinessDays;
     }
 
@@ -113,8 +125,9 @@ public class BookingExpiryService {
             int businessDaysWaiting = BusinessDayCounter.countBusinessDaysBetween(booking.getCreatedAt().toLocalDate(), today);
 
             if (businessDaysWaiting >= expiryBusinessDays) {
+                BookingStatus oldStatus = booking.getStatus();
                 booking.setStatus(BookingStatus.CANCELLED);
-                bookingRepository.save(booking);
+                BookingEntity saved = bookingRepository.save(booking);
                 log.info(
                         "Auto-cancelled unconfirmed public booking {} ({} business day(s) unconfirmed) - guest not notified, "
                                 + "see BookingExpiryService's javadoc",
@@ -124,6 +137,14 @@ public class BookingExpiryService {
                 // javadoc for why an automated guest-facing cancellation notice is the wrong
                 // move for a request the hotel simply never got to, as opposed to one a human
                 // actually declined via BookingService.updateStatus.
+                String roomName = roomRepository.findById(saved.getRoomId()).map(RoomEntity::getName).orElse(saved.getRoomId());
+                auditLogService.recordSystemAction(
+                        AuditAction.BOOKING_STATUS_CHANGED,
+                        AuditEntityType.BOOKING,
+                        saved.getId(),
+                        "Status changed from " + oldStatus.getValue() + " to " + saved.getStatus().getValue() + " for "
+                                + saved.getGuestName() + " in " + roomName + " - auto-cancelled after " + businessDaysWaiting
+                                + " business day(s) unconfirmed, guest not notified");
             } else if (businessDaysWaiting >= expiryBusinessDays - 1 && !booking.isExpiryReminderSent()) {
                 // Collected, not emailed immediately - see the class javadoc and
                 // EmailService#sendBookingExpiringReminderDigestEmail for why every booking that

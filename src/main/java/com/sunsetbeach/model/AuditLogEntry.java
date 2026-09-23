@@ -35,7 +35,7 @@ public class AuditLogEntry {
 
   private String actorEmail;
 
-  private Role actorRole;
+  private JsonNullable<Role> actorRole = JsonNullable.<Role>undefined();
 
   private AuditAction action;
 
@@ -55,11 +55,10 @@ public class AuditLogEntry {
   /**
    * Constructor with only required parameters
    */
-  public AuditLogEntry(String id, String actorUserId, String actorEmail, Role actorRole, AuditAction action, AuditEntityType entityType, String summary, OffsetDateTime createdAt) {
+  public AuditLogEntry(String id, String actorUserId, String actorEmail, AuditAction action, AuditEntityType entityType, String summary, OffsetDateTime createdAt) {
     this.id = id;
     this.actorUserId = actorUserId;
     this.actorEmail = actorEmail;
-    this.actorRole = actorRole;
     this.action = action;
     this.entityType = entityType;
     this.summary = summary;
@@ -91,7 +90,7 @@ public class AuditLogEntry {
   }
 
   /**
-   * The acting user's id at the time of the action. Not guaranteed to still resolve via `GET /users/{id}` - see `actorEmail`.
+   * The acting user's id at the time of the action. Not guaranteed to still resolve via `GET /users/{id}` - see `actorEmail`. For a system-initiated action with no authenticated staff principal (e.g. `BookingExpiryService`'s scheduled sweep), this is the fixed literal `\"SYSTEM\"`, not a real user id - see `actorRole`. 
    * @return actorUserId
    */
   @NotNull 
@@ -110,7 +109,7 @@ public class AuditLogEntry {
   }
 
   /**
-   * The acting user's email *as it was at the time of the action* - a snapshot, not a live join to the current `User` row. This is deliberate: the acting user's account may since have had its email changed, or (if account deletion is ever added - today accounts are only disabled, never deleted) no longer exist at all, and this row must still say who did it. 
+   * The acting user's email *as it was at the time of the action* - a snapshot, not a live join to the current `User` row. This is deliberate: the acting user's account may since have had its email changed, or (if account deletion is ever added - today accounts are only disabled, never deleted) no longer exist at all, and this row must still say who did it. For a system-initiated action (see `actorUserId`), this is the fixed literal `\"system@sunsetbeach.internal\"`, not a real address. 
    * @return actorEmail
    */
   @NotNull 
@@ -124,21 +123,21 @@ public class AuditLogEntry {
   }
 
   public AuditLogEntry actorRole(Role actorRole) {
-    this.actorRole = actorRole;
+    this.actorRole = JsonNullable.of(actorRole);
     return this;
   }
 
   /**
-   * Get actorRole
+   * The acting user's role at the time of the action - also a snapshot, for the same reason as `actorEmail`. Null only for a system-initiated action with no authenticated staff principal (see `actorUserId`) - never null for anything a real staff member did. 
    * @return actorRole
    */
-  @NotNull @Valid 
+  @Valid 
   @JsonProperty("actorRole")
-  public Role getActorRole() {
+  public JsonNullable<Role> getActorRole() {
     return actorRole;
   }
 
-  public void setActorRole(Role actorRole) {
+  public void setActorRole(JsonNullable<Role> actorRole) {
     this.actorRole = actorRole;
   }
 
@@ -249,7 +248,7 @@ public class AuditLogEntry {
     return Objects.equals(this.id, auditLogEntry.id) &&
         Objects.equals(this.actorUserId, auditLogEntry.actorUserId) &&
         Objects.equals(this.actorEmail, auditLogEntry.actorEmail) &&
-        Objects.equals(this.actorRole, auditLogEntry.actorRole) &&
+        equalsNullable(this.actorRole, auditLogEntry.actorRole) &&
         Objects.equals(this.action, auditLogEntry.action) &&
         Objects.equals(this.entityType, auditLogEntry.entityType) &&
         equalsNullable(this.entityId, auditLogEntry.entityId) &&
@@ -263,7 +262,7 @@ public class AuditLogEntry {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, actorUserId, actorEmail, actorRole, action, entityType, hashCodeNullable(entityId), summary, createdAt);
+    return Objects.hash(id, actorUserId, actorEmail, hashCodeNullable(actorRole), action, entityType, hashCodeNullable(entityId), summary, createdAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {

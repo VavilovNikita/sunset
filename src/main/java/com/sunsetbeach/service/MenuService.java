@@ -4,11 +4,14 @@ import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.mapper.MenuItemMapper;
+import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.MenuItem;
 import com.sunsetbeach.model.MenuItemInput;
 import com.sunsetbeach.repository.MenuItemRepository;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,10 +21,12 @@ public class MenuService {
 
     private final MenuItemRepository menuItemRepository;
     private final MenuItemMapper menuItemMapper;
+    private final AuditLogService auditLogService;
 
-    public MenuService(MenuItemRepository menuItemRepository, MenuItemMapper menuItemMapper) {
+    public MenuService(MenuItemRepository menuItemRepository, MenuItemMapper menuItemMapper, AuditLogService auditLogService) {
         this.menuItemRepository = menuItemRepository;
         this.menuItemMapper = menuItemMapper;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -53,27 +58,37 @@ public class MenuService {
     public MenuItem create(MenuItemInput input) {
         MenuItemEntity entity = new MenuItemEntity();
         menuItemMapper.applyInput(entity, input);
-        return menuItemMapper.toDto(menuItemRepository.saveAndFlush(entity));
+        MenuItemEntity saved = menuItemRepository.saveAndFlush(entity);
+        auditLogService.record(AuditAction.MENU_ITEM_CREATED, AuditEntityType.MENU_ITEM, saved.getId(), "Menu item " + saved.getName() + " created");
+        return menuItemMapper.toDto(saved);
     }
 
     @Transactional
     public MenuItem update(String id, MenuItemInput input) {
         MenuItemEntity entity = findOrThrow(id);
+        String oldName = entity.getName();
         menuItemMapper.applyInput(entity, input);
-        return menuItemMapper.toDto(menuItemRepository.save(entity));
+        MenuItemEntity saved = menuItemRepository.save(entity);
+
+        StringBuilder summary = new StringBuilder("Menu item ").append(oldName).append(" updated");
+        if (!Objects.equals(oldName, saved.getName())) {
+            summary.append(" (renamed to ").append(saved.getName()).append(")");
+        }
+        auditLogService.record(AuditAction.MENU_ITEM_UPDATED, AuditEntityType.MENU_ITEM, saved.getId(), summary.toString());
+
+        return menuItemMapper.toDto(saved);
     }
 
     @Transactional
     public void delete(String id) {
-        if (!menuItemRepository.existsById(id)) {
-            throw new NotFoundException("Menu item not found");
-        }
+        MenuItemEntity entity = findOrThrow(id);
         try {
             menuItemRepository.deleteById(id);
             menuItemRepository.flush();
         } catch (DataIntegrityViolationException e) {
             throw new ConflictException("This menu item has existing order lines and can't be deleted.");
         }
+        auditLogService.record(AuditAction.MENU_ITEM_DELETED, AuditEntityType.MENU_ITEM, id, "Menu item " + entity.getName() + " deleted");
     }
 
     private MenuItemEntity findOrThrow(String id) {
