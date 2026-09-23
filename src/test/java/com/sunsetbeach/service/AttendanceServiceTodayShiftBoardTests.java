@@ -25,7 +25,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,6 +50,15 @@ import org.springframework.security.crypto.password.PasswordEncoder;
  * so every interval used below, from 06:00 to 21:00, stays on {@code FIXED_DATE} with no midnight
  * wraparound to reason about.
  *
+ * <p>The fixed clock's own zone is pinned to {@link ZoneOffset#UTC}, not {@code
+ * ZoneId.systemDefault()} - this class only cares about state transitions (SCHEDULED vs. LATE,
+ * etc.), which compare same-zone wall-clock values and so are zone-agnostic, but {@code
+ * referenceTime} is converted through the clock's real zone before being reported as UTC (see
+ * {@code AttendanceService#toTodayShiftStatus}), so a {@code systemDefault()} zone would make
+ * every {@code referenceTime} assertion below pass or fail depending on the machine running the
+ * suite. {@link AttendanceServiceTodayShiftBoardTimezoneTests} is the one that actually exercises
+ * a non-UTC (Bangkok) clock zone end to end.
+ *
  * <p>Not {@code @Transactional}: {@code getTodayShiftBoard} reads across every employee's {@code
  * RosterEntry} for "today" in the shared Testcontainers database, so each test filters the
  * returned board down to its own {@code createdUserIds} rather than asserting on its size -
@@ -69,8 +77,8 @@ class AttendanceServiceTodayShiftBoardTests extends AbstractIntegrationTest {
         @Bean
         @Primary
         Clock fixedClock() {
-            Instant fixedInstant = LocalDateTime.of(FIXED_DATE, FIXED_TIME).atZone(ZoneId.systemDefault()).toInstant();
-            return Clock.fixed(fixedInstant, ZoneId.systemDefault());
+            Instant fixedInstant = LocalDateTime.of(FIXED_DATE, FIXED_TIME).atZone(ZoneOffset.UTC).toInstant();
+            return Clock.fixed(fixedInstant, ZoneOffset.UTC);
         }
     }
 

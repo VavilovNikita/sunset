@@ -29,6 +29,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -341,7 +342,12 @@ public class AttendanceService {
             } else {
                 state = TodayShiftState.MISSED;
             }
-            referenceTime = intervalStart;
+            // intervalStart is built from today.atTime(...), i.e. clock-zone (Bangkok) wall-clock
+            // numbers - unlike every other assignment to referenceTime in this method (all sourced
+            // from AttendancePunchEntity.punchAt, which is already UTC-denominated), so it must be
+            // converted to true UTC here to keep referenceTime's own denomination consistent for
+            // the single TimestampFormat.toUtc(referenceTime) call below.
+            referenceTime = intervalStart.atZone(clock.getZone()).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
         }
 
         TodayShiftStatus dto = new TodayShiftStatus(employee.getId(), employee.getName(), ShiftCodeService.toDto(shiftCode, null), state);
