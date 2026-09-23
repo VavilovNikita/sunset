@@ -8,7 +8,10 @@ import com.sunsetbeach.model.PunchDirection;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +24,8 @@ import org.junit.jupiter.api.Test;
  * exists to catch it.
  */
 class ZkTerminalClientImplTests {
+
+    private static final Clock CLOCK = Clock.system(ZoneId.of("Asia/Bangkok"));
 
     private static AttendanceDeviceEntity deviceAt(int port) {
         AttendanceDeviceEntity device = new AttendanceDeviceEntity();
@@ -99,7 +104,7 @@ class ZkTerminalClientImplTests {
         byte[] records = sixteenByteRecord(123, timestamp, 0);
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 1, false)) {
             server.start();
-            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
+            TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null);
 
             assertThat(result.punches()).hasSize(1);
             assertThat(result.punches().get(0).enrollmentNumber()).isEqualTo(123);
@@ -116,7 +121,7 @@ class ZkTerminalClientImplTests {
         byte[] records = fortyByteRecord("456", timestamp, 1);
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 1, false)) {
             server.start();
-            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
+            TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null);
 
             assertThat(result.punches()).hasSize(1);
             assertThat(result.punches().get(0).enrollmentNumber()).isEqualTo(456);
@@ -132,7 +137,7 @@ class ZkTerminalClientImplTests {
         byte[] records = concat(sixteenByteRecord(1, in, 0), sixteenByteRecord(1, out, 1));
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 2, false)) {
             server.start();
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null).punches();
+            List<RawAttendancePunch> punches = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null).punches();
 
             assertThat(punches).hasSize(2);
             assertThat(punches.get(0).direction()).isEqualTo(PunchDirection.IN);
@@ -151,7 +156,7 @@ class ZkTerminalClientImplTests {
         byte[] records = concat(sixteenByteRecord(1, timestamp, 4), sixteenByteRecord(2, timestamp, 0));
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 2, false)) {
             server.start();
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null).punches();
+            List<RawAttendancePunch> punches = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null).punches();
 
             assertThat(punches).hasSize(2);
             assertThat(punches.get(0).enrollmentNumber()).isEqualTo(1);
@@ -168,7 +173,7 @@ class ZkTerminalClientImplTests {
         byte[] records = fortyByteRecord("not-a-number", timestamp, 0);
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 1, false)) {
             server.start();
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null).punches();
+            List<RawAttendancePunch> punches = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null).punches();
 
             assertThat(punches).isEmpty();
         }
@@ -179,7 +184,7 @@ class ZkTerminalClientImplTests {
         byte[] garbage = new byte[24]; // matches none of the three known layouts (8/16/40)
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(garbage, 1, false)) {
             server.start();
-            assertThatThrownBy(() -> new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null))
+            assertThatThrownBy(() -> new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null))
                     .isInstanceOf(AttendanceDeviceException.class)
                     .hasMessageContaining("Unrecognised attendance record size");
         }
@@ -195,7 +200,7 @@ class ZkTerminalClientImplTests {
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 3, true)) {
             server.start();
             // A tiny max chunk forces several CMD_READ_BUFFER round trips for 3*16=48 bytes of records.
-            List<RawAttendancePunch> punches = new ZkTerminalClientImpl(10).poll(deviceAt(server.port()), null, null).punches();
+            List<RawAttendancePunch> punches = new ZkTerminalClientImpl(CLOCK, 10).poll(deviceAt(server.port()), null, null).punches();
 
             assertThat(punches).hasSize(3);
             assertThat(punches.get(2).deviceTimestamp()).isEqualTo(t3);
@@ -209,9 +214,9 @@ class ZkTerminalClientImplTests {
         byte[] records = new byte[0];
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 0, false)) {
             server.start();
-            LocalDateTime before = LocalDateTime.now().minusMinutes(1);
+            LocalDateTime before = LocalDateTime.now(CLOCK).minusMinutes(1);
 
-            new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
+            new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null);
 
             assertThat(server.lastSetTimeData()).isNotNull();
             int encoded = ByteBuffer.wrap(server.lastSetTimeData()).order(ByteOrder.LITTLE_ENDIAN).getInt();
@@ -222,11 +227,33 @@ class ZkTerminalClientImplTests {
         }
     }
 
+    /**
+     * Pins the client's clock to a known Bangkok instant and confirms the CMD_SET_TIME payload
+     * encodes that exact time - the regression test for the bug where this class read the JVM's
+     * default-zone clock (UTC in the container) instead of the app's shared Asia/Bangkok clock,
+     * silently skewing the device's clock by ~7h on every poll.
+     */
+    @Test
+    void poll_setsTheDevicesClockUsingTheInjectedClock() throws Exception {
+        LocalDateTime fixedNow = LocalDateTime.of(2026, 9, 23, 14, 5, 30);
+        Clock fixedClock = Clock.fixed(fixedNow.atZone(ZoneId.of("Asia/Bangkok")).toInstant(), ZoneId.of("Asia/Bangkok"));
+        byte[] records = new byte[0];
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 0, false)) {
+            server.start();
+
+            new ZkTerminalClientImpl(fixedClock).poll(deviceAt(server.port()), null, null);
+
+            assertThat(server.lastSetTimeData()).isNotNull();
+            int encoded = ByteBuffer.wrap(server.lastSetTimeData()).order(ByteOrder.LITTLE_ENDIAN).getInt();
+            assertThat(encoded).isEqualTo(encodeTimeAsInt(fixedNow));
+        }
+    }
+
     @Test
     void poll_noRecordsAtAll_returnsEmptyWithoutReadingTheLog() throws Exception {
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(new byte[0], 0, false)) {
             server.start();
-            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
+            TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null);
 
             assertThat(result.punches()).isEmpty();
             // recordCount 0 - the client should skip straight past PREPARE_BUFFER/ATTLOG entirely.
@@ -239,7 +266,7 @@ class ZkTerminalClientImplTests {
         AttendanceDeviceEntity device = deviceAt(1); // nothing listens on port 1
         device.setAddress("127.0.0.1");
 
-        assertThatThrownBy(() -> new ZkTerminalClientImpl().poll(device, null, null)).isInstanceOf(AttendanceDeviceException.class);
+        assertThatThrownBy(() -> new ZkTerminalClientImpl(CLOCK).poll(device, null, null)).isInstanceOf(AttendanceDeviceException.class);
     }
 
     /** A device that never answers CMD_ACK_UNAUTH never sees a CMD_AUTH - the ordinary connect path is unaffected. */
@@ -247,7 +274,7 @@ class ZkTerminalClientImplTests {
     void poll_deviceNeverRequiresAuth_neverSendsCommKeyHandshake() throws Exception {
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(new byte[0], 0, false)) {
             server.start();
-            new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
+            new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null);
 
             assertThat(server.receivedCommands()).doesNotContain(1102);
         }
@@ -266,7 +293,7 @@ class ZkTerminalClientImplTests {
         byte[] records = sixteenByteRecord(1, timestamp, 0);
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 1, false).withUnauthConnect(true)) {
             server.start();
-            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
+            TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null);
 
             assertThat(result.punches()).hasSize(1);
             assertThat(server.receivedCommands()).containsExactly(1000, 1102, 50, 1503, 202, 1001);
@@ -284,7 +311,7 @@ class ZkTerminalClientImplTests {
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(new byte[0], 0, false).withUnauthConnect(false)) {
             server.start();
 
-            assertThatThrownBy(() -> new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null))
+            assertThatThrownBy(() -> new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null))
                     .isInstanceOf(AttendanceDeviceException.class)
                     .hasMessageContaining("rejected authentication")
                     .hasMessageContaining("non-zero comm-key");
@@ -309,7 +336,7 @@ class ZkTerminalClientImplTests {
 
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(fullLogRecords, 1, false).withRangedRecords(rangedRecords)) {
             server.start();
-            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), since, 16);
+            TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), since, 16);
 
             assertThat(result.punches()).hasSize(1);
             assertThat(result.punches().get(0).enrollmentNumber()).isEqualTo(2);
@@ -336,7 +363,7 @@ class ZkTerminalClientImplTests {
         // No .withRangedRecords(...) - the server rejects CMD_ATTLOG_TIME_RRQ with CMD_ACK_ERROR.
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(fullLogRecords, 1, false)) {
             server.start();
-            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), since, 16);
+            TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), since, 16);
 
             assertThat(result.punches()).hasSize(1);
             assertThat(result.punches().get(0).enrollmentNumber()).isEqualTo(9);
@@ -357,7 +384,7 @@ class ZkTerminalClientImplTests {
 
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(fullLogRecords, 1, false).withRangedRecords(new byte[0])) {
             server.start();
-            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), since, 40);
+            TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), since, 40);
 
             assertThat(result.punches()).isEmpty();
             assertThat(result.recordSize()).isEqualTo(40);
@@ -376,7 +403,7 @@ class ZkTerminalClientImplTests {
 
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 1, false)) {
             server.start();
-            TerminalPollResult result = new ZkTerminalClientImpl().poll(deviceAt(server.port()), null, null);
+            TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null);
 
             assertThat(result.windowedReadUnsupported()).isNull();
         }

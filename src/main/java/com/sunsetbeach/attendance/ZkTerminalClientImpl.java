@@ -10,12 +10,14 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -122,14 +124,17 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
     /** Some firmware prepends this 8-byte sentinel before real 40-byte records - see parseAttendanceRecords. */
     private static final byte[] RECORD_40_SENTINEL = {(byte) 0xFF, '2', '5', '5', 0, 0, 0, 0};
 
+    private final Clock clock;
     private final int maxChunk;
 
-    public ZkTerminalClientImpl() {
-        this(DEFAULT_MAX_CHUNK);
+    @Autowired
+    public ZkTerminalClientImpl(Clock clock) {
+        this(clock, DEFAULT_MAX_CHUNK);
     }
 
     /** Package-private: lets a test force the multi-chunk CMD_READ_BUFFER path with a small fixture instead of needing tens of thousands of dummy records. */
-    ZkTerminalClientImpl(int maxChunk) {
+    ZkTerminalClientImpl(Clock clock, int maxChunk) {
+        this.clock = clock;
         this.maxChunk = maxChunk;
     }
 
@@ -140,7 +145,7 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
             Session session = connect(socket);
             try {
-                LocalDateTime now = LocalDateTime.now();
+                LocalDateTime now = LocalDateTime.now(clock);
                 int recordCount = readRecordCount(socket, session);
                 TerminalPollResult result;
                 if (recordCount == 0) {
