@@ -25,9 +25,9 @@ import java.util.concurrent.Executors;
  * protocol.
  *
  * <p>Handles exactly the fixed sequence {@code ZkTerminalClientImpl#poll} always drives: CONNECT,
- * GET_FREE_SIZES, PREPARE_BUFFER (responding either with the data immediately, or PREPARE_DATA
+ * SET_TIME, GET_FREE_SIZES, PREPARE_BUFFER (responding either with the data immediately, or PREPARE_DATA
  * followed by as many READ_BUFFER chunks as the script's chunk size demands, then FREE_DATA),
- * SET_TIME, EXIT. Records every command it receives and the raw bytes of the SET_TIME request, so
+ * EXIT. Records every command it receives and the raw bytes of the SET_TIME request, so
  * a test can assert on the exact sequence a poll sent.
  *
  * <p>A PREPARE_BUFFER request's own {@code fct} field (see {@code
@@ -82,6 +82,7 @@ class FakeZkTerminalServer implements AutoCloseable {
     private boolean requireAuthHandshake;
     private boolean acceptAuthHandshake = true;
     private byte[] lastAuthData;
+    private boolean rejectSetTime;
 
     /**
      * @param attendanceRecords the raw record bytes (post the 4-byte total-size header) to serve.
@@ -113,6 +114,12 @@ class FakeZkTerminalServer implements AutoCloseable {
     FakeZkTerminalServer withUnauthConnect(boolean acceptHandshake) {
         this.requireAuthHandshake = true;
         this.acceptAuthHandshake = acceptHandshake;
+        return this;
+    }
+
+    /** Makes CMD_SET_TIME answer CMD_ACK_ERROR - a terminal refusing to have its clock set - while every other command behaves normally. */
+    FakeZkTerminalServer withSetTimeRejected() {
+        this.rejectSetTime = true;
         return this;
     }
 
@@ -174,7 +181,7 @@ class FakeZkTerminalServer implements AutoCloseable {
                     case CMD_FREE_DATA -> writeResponse(out, CMD_ACK_OK, sessionId, request.replyId(), new byte[0]);
                     case CMD_SET_TIME -> {
                         lastSetTimeData = request.data();
-                        writeResponse(out, CMD_ACK_OK, sessionId, request.replyId(), new byte[0]);
+                        writeResponse(out, rejectSetTime ? CMD_ACK_ERROR : CMD_ACK_OK, sessionId, request.replyId(), new byte[0]);
                     }
                     case CMD_EXIT -> {
                         writeResponse(out, CMD_ACK_OK, sessionId, request.replyId(), new byte[0]);

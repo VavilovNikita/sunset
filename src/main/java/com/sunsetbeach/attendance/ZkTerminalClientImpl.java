@@ -26,8 +26,8 @@ import org.springframework.stereotype.Component;
  * knowledge of this protocol (pyzk, MIT - github.com/fananimi/pyzk, and cross-checked against
  * zkteco4730-java and the PHP implementations the protocol's actually been reverse-engineered
  * against over years of real hardware, since ZKTeco itself has never published it), not
- * reimplemented from a spec - there isn't one. Only what a poll needs: connect, read the
- * attendance log, set the clock, disconnect.
+ * reimplemented from a spec - there isn't one. Only what a poll needs: connect, set the clock, read the
+ * attendance log, disconnect.
  *
  * <p><b>Two things this class deliberately does NOT do:</b>
  * <ul>
@@ -146,6 +146,7 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
             Session session = connect(socket);
             try {
                 LocalDateTime now = LocalDateTime.now(clock);
+                trySetClock(socket, session, now, device.getName());
                 int recordCount = readRecordCount(socket, session);
                 TerminalPollResult result;
                 if (recordCount == 0) {
@@ -160,7 +161,6 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
                     }
                     result = readWindowedAttendanceLog(socket, session, since, now, knownRecordSize, recordCount, device.getName());
                 }
-                setClock(socket, session, now);
                 return result;
             } finally {
                 // Best-effort - a failed EXIT doesn't undo a successful read, and the socket close
@@ -259,6 +259,23 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
             }
         }
         return records;
+    }
+
+    /**
+     * Sets the device's clock as its own step, first thing after connecting - never gated on the
+     * log read succeeding. It used to run last, after the read, so any read failure (a timeout, a
+     * refused record layout) skipped it entirely and the terminal's clock drifted between the rare
+     * polls that got all the way through. A failure here is logged and swallowed so the read still
+     * gets its attempt; symmetrically, nothing a later read failure does can undo a clock already
+     * set. Only a timeout can leave the stream out of step (a late ACK arriving where the next
+     * response is expected) - that surfaces as the read's own framing/size failure, not silently.
+     */
+    private void trySetClock(Socket socket, Session session, LocalDateTime now, String deviceName) {
+        try {
+            setClock(socket, session, now);
+        } catch (IOException | AttendanceDeviceException e) {
+            log.warn("Could not set {}'s clock this poll - reading its attendance log anyway: {}", deviceName, e.getMessage());
+        }
     }
 
     private void setClock(Socket socket, Session session, LocalDateTime now) throws IOException {

@@ -111,7 +111,7 @@ class ZkTerminalClientImplTests {
             assertThat(result.punches().get(0).deviceTimestamp()).isEqualTo(timestamp);
             assertThat(result.punches().get(0).direction()).isEqualTo(PunchDirection.IN);
             assertThat(result.recordSize()).isEqualTo(16);
-            assertThat(server.receivedCommands()).containsExactly(1000, 50, 1503, 202, 1001);
+            assertThat(server.receivedCommands()).containsExactly(1000, 202, 50, 1503, 1001);
         }
     }
 
@@ -249,6 +249,46 @@ class ZkTerminalClientImplTests {
         }
     }
 
+    /**
+     * The regression test for the clock drifting despite the injected-clock fix: setting the clock
+     * used to be the last step of a poll, so a log read that failed first (here, a record layout
+     * the client refuses) skipped it entirely. The clock must be set before the read is attempted,
+     * and the read's failure must still surface exactly as before.
+     */
+    @Test
+    void poll_logReadFails_stillSetsTheDevicesClockFirst() throws Exception {
+        LocalDateTime fixedNow = LocalDateTime.of(2026, 9, 24, 3, 15, 0);
+        Clock fixedClock = Clock.fixed(fixedNow.atZone(ZoneId.of("Asia/Bangkok")).toInstant(), ZoneId.of("Asia/Bangkok"));
+        byte[] garbage = new byte[24]; // matches none of the three known layouts (8/16/40)
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(garbage, 1, false)) {
+            server.start();
+
+            assertThatThrownBy(() -> new ZkTerminalClientImpl(fixedClock).poll(deviceAt(server.port()), null, null))
+                    .isInstanceOf(AttendanceDeviceException.class)
+                    .hasMessageContaining("Unrecognised attendance record size");
+
+            assertThat(server.lastSetTimeData()).isNotNull();
+            assertThat(ByteBuffer.wrap(server.lastSetTimeData()).order(ByteOrder.LITTLE_ENDIAN).getInt()).isEqualTo(encodeTimeAsInt(fixedNow));
+            List<Integer> commands = server.receivedCommands();
+            assertThat(commands.indexOf(202)).isLessThan(commands.indexOf(1503));
+        }
+    }
+
+    /** The other direction: a terminal refusing CMD_SET_TIME must not cost this poll its log read. */
+    @Test
+    void poll_deviceRejectsSetTime_stillReadsTheLog() throws Exception {
+        LocalDateTime timestamp = LocalDateTime.of(2027, 8, 22, 9, 0, 0);
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(sixteenByteRecord(1, timestamp, 0), 1, false).withSetTimeRejected()) {
+            server.start();
+
+            List<RawAttendancePunch> punches = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null).punches();
+
+            assertThat(punches).hasSize(1);
+            assertThat(punches.get(0).deviceTimestamp()).isEqualTo(timestamp);
+            assertThat(server.receivedCommands()).containsExactly(1000, 202, 50, 1503, 1001);
+        }
+    }
+
     @Test
     void poll_noRecordsAtAll_returnsEmptyWithoutReadingTheLog() throws Exception {
         try (FakeZkTerminalServer server = new FakeZkTerminalServer(new byte[0], 0, false)) {
@@ -257,7 +297,7 @@ class ZkTerminalClientImplTests {
 
             assertThat(result.punches()).isEmpty();
             // recordCount 0 - the client should skip straight past PREPARE_BUFFER/ATTLOG entirely.
-            assertThat(server.receivedCommands()).containsExactly(1000, 50, 202, 1001);
+            assertThat(server.receivedCommands()).containsExactly(1000, 202, 50, 1001);
         }
     }
 
@@ -296,7 +336,7 @@ class ZkTerminalClientImplTests {
             TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null);
 
             assertThat(result.punches()).hasSize(1);
-            assertThat(server.receivedCommands()).containsExactly(1000, 1102, 50, 1503, 202, 1001);
+            assertThat(server.receivedCommands()).containsExactly(1000, 1102, 202, 50, 1503, 1001);
             assertThat(server.lastAuthData()).isEqualTo(expectedCommKey(0, server.sessionId(), 50));
         }
     }
