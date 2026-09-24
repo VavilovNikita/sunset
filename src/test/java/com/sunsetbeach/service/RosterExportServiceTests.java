@@ -20,7 +20,7 @@ import com.sunsetbeach.rosterimport.RosterGridImportFormat;
 import java.io.ByteArrayInputStream;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -88,8 +88,13 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         createdUserIds.forEach(userRepository::deleteById);
     }
 
+    /**
+     * A manager enters a punch as hotel-local wall-clock time, and recordPunch stores it in the
+     * app clock's zone (Asia/Bangkok, see ClockConfig) - so the input is built in that same zone,
+     * not UTC, or a late-evening punch would land on the next calendar day.
+     */
     private static OffsetDateTime at(LocalDate date, int hour, int minute) {
-        return date.atTime(hour, minute).atOffset(ZoneOffset.UTC);
+        return date.atTime(hour, minute).atZone(ZoneId.of("Asia/Bangkok")).toOffsetDateTime();
     }
 
     private void punch(UserEntity employee, UserEntity actor, LocalDate date, int hour, int minute, PunchDirection direction) {

@@ -29,7 +29,6 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -105,7 +104,11 @@ public class AttendanceService {
         UserEntity employee = userRepository.findById(input.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found"));
         UserEntity actor = userRepository.findById(actorUserId).orElseThrow(() -> new NotFoundException("Actor not found"));
 
-        LocalDateTime punchAt = input.getPunchAt().toLocalDateTime();
+        // punchAt is stored as clock-zone (Bangkok) wall-clock, the same denomination a SCANNER
+        // row already has and every day/interval comparison in this module assumes - convert the
+        // input's real instant into that zone rather than keeping whatever offset's digits it
+        // arrived with (the frontend sends a UTC "Z" instant).
+        LocalDateTime punchAt = input.getPunchAt().atZoneSameInstant(clock.getZone()).toLocalDateTime();
         LocalDate day = punchAt.toLocalDate();
         long priorCountToday = attendancePunchRepository
                 .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), day.atStartOfDay(), day.plusDays(1).atStartOfDay())
@@ -392,17 +395,15 @@ public class AttendanceService {
             } else {
                 state = TodayShiftState.MISSED;
             }
-            // intervalStart is built from today.atTime(...), i.e. clock-zone (Bangkok) wall-clock
-            // numbers - unlike every other assignment to referenceTime in this method (all sourced
-            // from AttendancePunchEntity.punchAt, which is already UTC-denominated), so it must be
-            // converted to true UTC here to keep referenceTime's own denomination consistent for
-            // the single TimestampFormat.toUtc(referenceTime) call below.
-            referenceTime = intervalStart.atZone(clock.getZone()).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+            referenceTime = intervalStart;
         }
 
         TodayShiftStatus dto = new TodayShiftStatus(employee.getId(), employee.getName(), ShiftCodeService.toDto(shiftCode, null), state);
         if (employee.getStaffArea() != null) dto.staffArea(employee.getStaffArea());
-        if (referenceTime != null) dto.referenceTime(TimestampFormat.toUtc(referenceTime));
+        // Every branch above leaves referenceTime as clock-zone (Bangkok) wall-clock - punchAt and
+        // today.atTime(...) alike - so it's zoned here once, never TimestampFormat.toUtc(), which
+        // would only label those digits as UTC (see that utility's own javadoc).
+        if (referenceTime != null) dto.referenceTime(referenceTime.atZone(clock.getZone()).toOffsetDateTime());
         return dto;
     }
 
@@ -418,9 +419,11 @@ public class AttendanceService {
         return userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
     }
 
-    private static AttendancePunch toDto(AttendancePunchEntity e, UserEntity employee, String recordedByEmail) {
+    private AttendancePunch toDto(AttendancePunchEntity e, UserEntity employee, String recordedByEmail) {
+        // punchAt is clock-zone wall-clock (see recordPunch), so it's zoned, not toUtc()-labeled;
+        // createdAt is Hibernate-populated UTC, which is exactly what toUtc() is for.
         AttendancePunch dto = new AttendancePunch(
-                e.getId(), e.getEmployeeUserId(), employee.getName(), TimestampFormat.toUtc(e.getPunchAt()), e.getDirection(), e.getSource(),
+                e.getId(), e.getEmployeeUserId(), employee.getName(), e.getPunchAt().atZone(clock.getZone()).toOffsetDateTime(), e.getDirection(), e.getSource(),
                 TimestampFormat.toUtc(e.getCreatedAt()));
         dto.setEmployeeEmail(employee.getEmail());
         if (recordedByEmail != null) {
