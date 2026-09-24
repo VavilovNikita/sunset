@@ -1,0 +1,12 @@
+-- "punchAt" is Asia/Bangkok wall-clock: a SCANNER row carries the terminal's own clock reading,
+-- and every day-boundary and shift-interval comparison in the attendance module (the today
+-- board, ingestion's same-day debounce/IN-OUT parity, the monthly summary, the export's lateness
+-- sheet) reads it that way. MANUAL rows were the exception: recordPunch kept the digits of the
+-- UTC instant the frontend sends (new Date(local).toISOString()), so a 09:00 punch entered at the
+-- hotel was stored as 02:00. recordPunch now converts into the clock's zone; this shifts the rows
+-- written before that fix into the same denomination.
+--
+-- A flat +7h is exact: Thailand has no DST. Only MANUAL rows are touched - SCANNER rows were
+-- always Bangkok wall-clock. Flyway runs this exactly once; re-running it by hand would shift
+-- the rows a second time. Take a dump before deploying, like any migration that rewrites data.
+UPDATE "AttendancePunch" SET "punchAt" = "punchAt" + INTERVAL '7 hours' WHERE source = 'MANUAL';
