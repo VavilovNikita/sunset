@@ -26,6 +26,10 @@ public class UserEntity {
     // staff-facing screen (roster, patterns, pay rates) displays and sorts by instead of email.
     private String name;
 
+    // Optional full legal name, admin reference only - see User.fullName's own openapi.yaml
+    // description. Never a substitute for name, which every other screen keeps displaying.
+    private String fullName;
+
     // Null for a no-login account. Paired with passwordHash by a DB CHECK constraint (see V68) -
     // never set independently of it, see UserService#create/#grantCredentials.
     private String email;
@@ -90,6 +94,14 @@ public class UserEntity {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getFullName() {
+        return fullName;
+    }
+
+    public void setFullName(String fullName) {
+        this.fullName = fullName;
     }
 
     public String getEmail() {

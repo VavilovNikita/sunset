@@ -75,6 +75,7 @@ public class UserService {
 
         UserEntity entity = new UserEntity();
         entity.setName(input.getName().trim());
+        entity.setFullName(normalizeFullName(input.getFullName().orElse(null)));
         if (input.getEmail() != null) {
             entity.setEmail(input.getEmail().trim());
             entity.setPasswordHash(passwordEncoder.encode(input.getPassword()));
@@ -281,6 +282,37 @@ public class UserService {
                 saved.getId(),
                 "Overtime eligibility for " + saved.getName() + " set to " + saved.isOvertimeEligible());
         return userMapper.toDto(saved);
+    }
+
+    /**
+     * {@code PATCH /users/{id}/full-name} - see {@code User.fullName}'s own openapi.yaml
+     * description. {@code fullName} must actually be present in the body (a string to assign, or
+     * explicit {@code null} to clear) - same "a JsonNullable left undefined has no sensible no-op
+     * interpretation" reasoning as {@link #updateEnrollmentNumber}. No {@code tokenVersion} bump,
+     * no self-change restriction - like overtimeEligible, this doesn't touch authentication.
+     */
+    @Transactional
+    public User updateFullName(String id, JsonNullable<String> fullName) {
+        if (!fullName.isPresent()) {
+            throw new BadRequestException("fullName is required (send null to clear it)");
+        }
+        UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        entity.setFullName(normalizeFullName(fullName.get()));
+        UserEntity saved = userRepository.save(entity);
+        auditLogService.record(
+                AuditAction.USER_FULL_NAME_CHANGED,
+                AuditEntityType.USER,
+                saved.getId(),
+                "Full name for " + saved.getName() + " set to " + (saved.getFullName() != null ? saved.getFullName() : "none"));
+        return userMapper.toDto(saved);
+    }
+
+    /** Trimmed; blank means unset, so a cleared text field stores null rather than "". */
+    private static String normalizeFullName(String fullName) {
+        if (fullName == null || fullName.isBlank()) {
+            return null;
+        }
+        return fullName.trim();
     }
 
     /**

@@ -35,6 +35,8 @@ public class User {
 
   private String name;
 
+  private JsonNullable<String> fullName = JsonNullable.<String>undefined();
+
   private String email;
 
   private Role role;
@@ -106,6 +108,25 @@ public class User {
 
   public void setName(String name) {
     this.name = name;
+  }
+
+  public User fullName(String fullName) {
+    this.fullName = JsonNullable.of(fullName);
+    return this;
+  }
+
+  /**
+   * The person's full legal name, for admin reference only - optional, and separate from `name`, which stays the short display name every other screen (POS headers, punch logs, audit entries) shows. Nothing else in this API reads it. Absent until set, either at creation (see `UserCreateInput`) or later via `PATCH /users/{id}/full-name`. 
+   * @return fullName
+   */
+  
+  @JsonProperty("fullName")
+  public JsonNullable<String> getFullName() {
+    return fullName;
+  }
+
+  public void setFullName(JsonNullable<String> fullName) {
+    this.fullName = fullName;
   }
 
   public User email(String email) {
@@ -279,6 +300,7 @@ public class User {
     User user = (User) o;
     return Objects.equals(this.id, user.id) &&
         Objects.equals(this.name, user.name) &&
+        equalsNullable(this.fullName, user.fullName) &&
         Objects.equals(this.email, user.email) &&
         Objects.equals(this.role, user.role) &&
         Objects.equals(this.active, user.active) &&
@@ -295,7 +317,7 @@ public class User {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, email, role, active, functions, overtimeEligible, enrollmentNumber, hashCodeNullable(staffArea), createdAt);
+    return Objects.hash(id, name, hashCodeNullable(fullName), email, role, active, functions, overtimeEligible, enrollmentNumber, hashCodeNullable(staffArea), createdAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -311,6 +333,7 @@ public class User {
     sb.append("class User {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    name: ").append(toIndentedString(name)).append("\n");
+    sb.append("    fullName: ").append(toIndentedString(fullName)).append("\n");
     sb.append("    email: ").append(toIndentedString(email)).append("\n");
     sb.append("    role: ").append(toIndentedString(role)).append("\n");
     sb.append("    active: ").append(toIndentedString(active)).append("\n");

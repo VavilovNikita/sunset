@@ -7,6 +7,9 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.StaffArea;
+import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -24,6 +27,8 @@ import jakarta.annotation.Generated;
 public class UserCreateInput {
 
   private String name;
+
+  private JsonNullable<@Size(max = 200) String> fullName = JsonNullable.<String>undefined();
 
   private String email;
 
@@ -65,6 +70,25 @@ public class UserCreateInput {
 
   public void setName(String name) {
     this.name = name;
+  }
+
+  public UserCreateInput fullName(String fullName) {
+    this.fullName = JsonNullable.of(fullName);
+    return this;
+  }
+
+  /**
+   * See `User`'s own description. Omit (or send blank) to leave unset; set later via `PATCH /users/{id}/full-name`.
+   * @return fullName
+   */
+  @Size(max = 200) 
+  @JsonProperty("fullName")
+  public JsonNullable<@Size(max = 200) String> getFullName() {
+    return fullName;
+  }
+
+  public void setFullName(JsonNullable<String> fullName) {
+    this.fullName = fullName;
   }
 
   public UserCreateInput email(String email) {
@@ -191,6 +215,7 @@ public class UserCreateInput {
     }
     UserCreateInput userCreateInput = (UserCreateInput) o;
     return Objects.equals(this.name, userCreateInput.name) &&
+        equalsNullable(this.fullName, userCreateInput.fullName) &&
         Objects.equals(this.email, userCreateInput.email) &&
         Objects.equals(this.password, userCreateInput.password) &&
         Objects.equals(this.role, userCreateInput.role) &&
@@ -199,9 +224,20 @@ public class UserCreateInput {
         Objects.equals(this.staffArea, userCreateInput.staffArea);
   }
 
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
+  }
+
   @Override
   public int hashCode() {
-    return Objects.hash(name, email, password, role, overtimeEligible, enrollmentNumber, staffArea);
+    return Objects.hash(name, hashCodeNullable(fullName), email, password, role, overtimeEligible, enrollmentNumber, staffArea);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -209,6 +245,7 @@ public class UserCreateInput {
     StringBuilder sb = new StringBuilder();
     sb.append("class UserCreateInput {\n");
     sb.append("    name: ").append(toIndentedString(name)).append("\n");
+    sb.append("    fullName: ").append(toIndentedString(fullName)).append("\n");
     sb.append("    email: ").append(toIndentedString(email)).append("\n");
     sb.append("    password: ").append(toIndentedString(password)).append("\n");
     sb.append("    role: ").append(toIndentedString(role)).append("\n");

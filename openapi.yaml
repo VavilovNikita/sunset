@@ -5695,6 +5695,60 @@ paths:
               example:
                 error: User not found
 
+  /users/{id}/full-name:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateUserFullName
+      tags: [Users]
+      summary: Set or clear a staff user's full name
+      description: >
+        Requires an authenticated session with role `ADMIN`. See `User.fullName`'s own
+        description. `fullName` must be sent - a string to assign it, or `null` to clear it
+        (a blank or whitespace-only string also clears it) - omitting it entirely is a 400, not a
+        no-op. No self-change restriction, and no `tokenVersion` bump - this doesn't affect
+        authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserFullNameUpdateInput"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Body failed validation, or `fullName` was omitted entirely.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                omitted:
+                  value: { error: "fullName is required (send null to clear it)" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: User not found
+
   /users/{id}/enrollment-number:
     parameters:
       - name: id
@@ -9687,6 +9741,14 @@ components:
             The person's name - always present, unlike `email`. This is the only durable
             identifier for a `POST /users` account created without login credentials (see
             `UserCreateInput`), so it exists independently of whether the account can authenticate.
+        fullName:
+          type: string
+          nullable: true
+          description: >
+            The person's full legal name, for admin reference only - optional, and separate from
+            `name`, which stays the short display name every other screen (POS headers, punch
+            logs, audit entries) shows. Nothing else in this API reads it. Absent until set,
+            either at creation (see `UserCreateInput`) or later via `PATCH /users/{id}/full-name`.
         email:
           type: string
           description: >
@@ -9941,6 +10003,11 @@ components:
         name:
           type: string
           minLength: 1
+        fullName:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: See `User`'s own description. Omit (or send blank) to leave unset; set later via `PATCH /users/{id}/full-name`.
         email:
           type: string
           format: email
@@ -10022,6 +10089,19 @@ components:
       properties:
         overtimeEligible:
           type: boolean
+
+    UserFullNameUpdateInput:
+      type: object
+      description: >
+        Body of `PATCH /users/{id}/full-name`. See `User.fullName`'s own description. `fullName`
+        is deliberately not in `required` - same nullable-plus-required `@NotNull` trap as
+        `UserEnrollmentNumberUpdateInput`; the service validates its presence manually.
+      properties:
+        fullName:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: Send a string to assign it, or explicit `null` (or blank) to clear it - omitting the field entirely is rejected.
 
     UserEnrollmentNumberUpdateInput:
       type: object
@@ -11049,6 +11129,7 @@ components:
         - USER_OVERTIME_ELIGIBILITY_CHANGED
         - USER_ENROLLMENT_NUMBER_CHANGED
         - USER_STAFF_AREA_CHANGED
+        - USER_FULL_NAME_CHANGED
         - ROOM_UNIT_CREATED
         - ROOM_UNIT_UPDATED
         - ROOM_UNIT_DELETED
