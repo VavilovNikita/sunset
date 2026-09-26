@@ -58,6 +58,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -67,6 +69,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class BookingService {
+
+    private static final Logger log = LoggerFactory.getLogger(BookingService.class);
 
     private static final String SERIALIZATION_FAILURE_SQLSTATE = "40001";
 
@@ -83,6 +87,7 @@ public class BookingService {
     private final OrderItemRepository orderItemRepository;
     private final MenuItemRepository menuItemRepository;
     private final AuditLogService auditLogService;
+    private final GuestLinkService guestLinkService;
 
     public BookingService(
             RoomRepository roomRepository,
@@ -97,7 +102,8 @@ public class BookingService {
             FolioPaymentRepository folioPaymentRepository,
             OrderItemRepository orderItemRepository,
             MenuItemRepository menuItemRepository,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            GuestLinkService guestLinkService) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.guestRepository = guestRepository;
@@ -111,6 +117,7 @@ public class BookingService {
         this.orderItemRepository = orderItemRepository;
         this.menuItemRepository = menuItemRepository;
         this.auditLogService = auditLogService;
+        this.guestLinkService = guestLinkService;
     }
 
     private List<BookingSegmentEntity> loadSegments(String bookingId) {
@@ -137,8 +144,27 @@ public class BookingService {
             throw e;
         }
 
+        GuestEntity guest = linkGuestQuietly(saved);
         emailService.sendNewBookingEmail(saved, room);
-        return bookingMapper.toDto(saved, room, null, null, loadSegments(saved.getId()));
+        return bookingMapper.toDto(saved, room, null, guest, loadSegments(saved.getId()));
+    }
+
+    /**
+     * Find-or-create the booking's Guest card by email (see {@link GuestLinkService}) - after the
+     * booking has committed, never inside {@link BookingWriter}'s SERIALIZABLE transaction, where
+     * reading {@code Guest} would add a new source of serialization conflicts to every booking.
+     * Same "never break the operation it accompanies" rule as printing/email/audit: a booking that
+     * failed to link is still a booking, and staff can link it by hand.
+     */
+    private GuestEntity linkGuestQuietly(BookingEntity booking) {
+        try {
+            GuestEntity guest = guestLinkService.linkNewBooking(booking.getId());
+            booking.setGuestId(guest != null ? guest.getId() : null);
+            return guest;
+        } catch (RuntimeException e) {
+            log.error("Failed to link booking {} to a guest card", booking.getId(), e);
+            return null;
+        }
     }
 
     /**
@@ -175,6 +201,7 @@ public class BookingService {
             throw e;
         }
 
+        GuestEntity guest = linkGuestQuietly(saved);
         RoomUnitEntity assignedUnit = findRoomUnit(saved.getRoomUnitId());
         auditLogService.record(
                 AuditAction.BOOKING_CREATED,
@@ -182,7 +209,7 @@ public class BookingService {
                 saved.getId(),
                 "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + checkIn + " to " + checkOut + ")"
                         + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : ""));
-        return bookingMapper.toDto(saved, room, assignedUnit, null, loadSegments(saved.getId()));
+        return bookingMapper.toDto(saved, room, assignedUnit, guest, loadSegments(saved.getId()));
     }
 
     @Transactional

@@ -1,5 +1,6 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.GuestAccountEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ForbiddenException;
@@ -21,11 +22,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * A brand-new, persistent guest identity - entirely separate from staff {@code User}/{@code Role}
- * and from the CRM-facing {@code Guest} (see {@code GuestAccount}'s own openapi.yaml description
- * and CLAUDE.md's Authorization section). Booking history is never a stored link - see
- * {@link #listBookings} - so verifying an email that already has past bookings under it makes
- * that history appear with no migration, backfill, or manual staff action anywhere.
+ * A guest's own persistent login - entirely separate from staff {@code User}/{@code Role} (see
+ * {@code GuestAccount}'s own openapi.yaml description and CLAUDE.md's Authorization section), but
+ * linked to the CRM-facing {@code Guest} card by {@code guestId} (see {@link GuestLinkService}), and
+ * booking history follows that link - see {@link #listBookings}.
  */
 @Service
 public class GuestAccountService {
@@ -35,6 +35,7 @@ public class GuestAccountService {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final GuestAccountMapper guestAccountMapper;
+    private final GuestLinkService guestLinkService;
     private final long verificationTtlHours;
 
     public GuestAccountService(
@@ -43,12 +44,14 @@ public class GuestAccountService {
             PasswordEncoder passwordEncoder,
             EmailService emailService,
             GuestAccountMapper guestAccountMapper,
+            GuestLinkService guestLinkService,
             @Value("${app.guest-account.verification-ttl-hours}") long verificationTtlHours) {
         this.guestAccountRepository = guestAccountRepository;
         this.bookingRepository = bookingRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
         this.guestAccountMapper = guestAccountMapper;
+        this.guestLinkService = guestLinkService;
         this.verificationTtlHours = verificationTtlHours;
     }
 
@@ -83,6 +86,8 @@ public class GuestAccountService {
 
         entity.setEmailVerificationToken(generateToken());
         entity.setEmailVerificationExpiresAt(LocalDateTime.now().plusHours(verificationTtlHours));
+        // Links to an existing card only - see GuestLinkService#linkAccount's allowCreate.
+        guestLinkService.linkAccount(entity, false);
         guestAccountRepository.save(entity);
 
         emailService.sendGuestVerificationEmail(email, name, entity.getEmailVerificationToken());
@@ -111,6 +116,7 @@ public class GuestAccountService {
         account.setEmailVerifiedAt(LocalDateTime.now());
         account.setEmailVerificationToken(null);
         account.setEmailVerificationExpiresAt(null);
+        guestLinkService.linkAccount(account, true);
         return guestAccountRepository.save(account);
     }
 
@@ -151,11 +157,21 @@ public class GuestAccountService {
         return guestAccountRepository.save(account);
     }
 
+    /**
+     * Every booking linked to this account's Guest card - the same set staff see on that card's
+     * stay history ({@code GET /guests/{id}}), including bookings staff linked by hand. An account
+     * with no card yet (its email matched several cards, or the card was deleted) falls back to
+     * matching {@code Booking.guestEmail} against the account's own email, case-insensitively -
+     * the pre-V104 behaviour, kept only as a safety net.
+     */
     @Transactional(readOnly = true)
-    public List<GuestBookingView> listBookings(String email) {
-        return bookingRepository.findByGuestEmailIgnoreCaseOrderByCreatedAtDesc(email).stream()
-                .map(guestAccountMapper::toGuestBookingView)
-                .toList();
+    public List<GuestBookingView> listBookings(String accountId) {
+        GuestAccountEntity account = guestAccountRepository.findById(accountId)
+                .orElseThrow(() -> new UnauthorizedException("Account no longer exists"));
+        List<BookingEntity> bookings = account.getGuestId() != null
+                ? bookingRepository.findByGuestIdOrderByCreatedAtDesc(account.getGuestId())
+                : bookingRepository.findByGuestEmailIgnoreCaseOrderByCreatedAtDesc(account.getEmail());
+        return bookings.stream().map(guestAccountMapper::toGuestBookingView).toList();
     }
 
     private static String normalize(String email) {

@@ -19,7 +19,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A guest&#39;s own persistent, self-service login - entirely separate from the CRM &#x60;Guest&#x60; schema (see the &#x60;GuestAccountAuth&#x60; tag&#39;s own description for why). Usable only once &#x60;emailVerifiedAt&#x60; is set. 
+ * A guest&#39;s own persistent, self-service login - a separate identity from the CRM &#x60;Guest&#x60; schema, with its own credentials (see the &#x60;GuestAccountAuth&#x60; tag&#39;s own description for why), linked to the &#x60;Guest&#x60; card with the same email when exactly one exists (see &#x60;GuestDetail.account&#x60;). Usable only once &#x60;emailVerifiedAt&#x60; is set. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

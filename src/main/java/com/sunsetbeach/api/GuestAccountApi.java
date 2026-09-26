@@ -114,7 +114,7 @@ public interface GuestAccountApi {
 
     /**
      * GET /guest/bookings : This guest&#39;s booking history
-     * Every &#x60;Booking&#x60; whose &#x60;guestEmail&#x60; matches this account&#39;s own verified email, case-insensitively, newest (&#x60;createdAt&#x60;) first - past, current, and future stays alike. Computed fresh on every call, not a stored link (see the &#x60;GuestAccount&#x60; tag&#39;s own description) - deliberately narrow, guest-facing &#x60;GuestBookingView&#x60;, never the staff &#x60;Booking&#x60; shape (no &#x60;paymentNote&#x60;, &#x60;source&#x60;, &#x60;guestId&#x60;/&#x60;guest&#x60;, &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60;, occupancy timestamps, or anything else staff-internal). 
+     * Every &#x60;Booking&#x60; linked (&#x60;guestId&#x60;) to this account&#39;s own &#x60;Guest&#x60; card, newest (&#x60;createdAt&#x60;) first - past, current, and future stays alike, and exactly the set staff see on that card (see the &#x60;GuestAccount&#x60; tag&#39;s own description). An account with no card link (its email matched more than one &#x60;Guest&#x60;, so none was picked) falls back to every &#x60;Booking&#x60; whose &#x60;guestEmail&#x60; matches the account&#39;s own email, case-insensitively. Deliberately narrow, guest-facing &#x60;GuestBookingView&#x60;, never the staff &#x60;Booking&#x60; shape (no &#x60;paymentNote&#x60;, &#x60;source&#x60;, &#x60;guestId&#x60;/&#x60;guest&#x60;, &#x60;roomUnitId&#x60;/&#x60;roomUnit&#x60;, occupancy timestamps, or anything else staff-internal). 
      *
      * @return This guest&#39;s bookings, newest first. Empty array if none. (status code 200)
      *         or Missing/invalid/expired guest token. (status code 401)

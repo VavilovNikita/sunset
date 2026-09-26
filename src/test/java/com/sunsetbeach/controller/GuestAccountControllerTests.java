@@ -125,7 +125,7 @@ class GuestAccountControllerTests {
     void bookings_returnsThisGuestsHistory() throws Exception {
         GuestBookingView view = new GuestBookingView("booking-1", "Ocean View", "204", "2026-01-01", "2026-01-05", "5000.00",
                 com.sunsetbeach.model.BookingStatus.PAID, com.sunsetbeach.model.OccupancyStatus.CHECKED_IN, OffsetDateTime.now());
-        when(guestAccountService.listBookings("guest@example.com")).thenReturn(List.of(view));
+        when(guestAccountService.listBookings("guest-1")).thenReturn(List.of(view));
 
         mockMvc.perform(get("/guest/bookings").header("Authorization", tokenFor("guest-1", 0)))
                 .andExpect(status().isOk())

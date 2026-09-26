@@ -10,4 +10,8 @@ public interface GuestAccountRepository extends JpaRepository<GuestAccountEntity
     Optional<GuestAccountEntity> findByEmail(String email);
 
     Optional<GuestAccountEntity> findByEmailVerificationToken(String emailVerificationToken);
+
+    Optional<GuestAccountEntity> findByGuestId(String guestId);
+
+    boolean existsByGuestId(String guestId);
 }

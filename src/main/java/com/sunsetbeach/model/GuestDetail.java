@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.GuestAccountLinkSummary;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -20,7 +21,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * &#x60;GET /guests/{id}&#x60; - the full guest card. &#x60;bookings&#x60; is this guest&#39;s entire stay history (every booking with this &#x60;guestId&#x60;, regardless of status - a cancelled stay is still a real interaction and hiding it would make the card lie by omission), newest &#x60;checkIn&#x60; first. Deliberately no lifetime-spend or stay-count total here: each booking already shows its own &#x60;totalPrice&#x60;/&#x60;status&#x60; (the same server-computed figures the booking detail page itself shows, not a second computation of them), and a real rolled-up total would need to correctly sum room revenue, POS orders, and folio settlements across every booking while excluding cancellations - a reporting feature in its own right, with the same care the rest of the money logic in this API already gets, not one field bolted onto a contact card. 
+ * &#x60;GET /guests/{id}&#x60; - the full guest card. &#x60;bookings&#x60; is this guest&#39;s entire stay history (every booking with this &#x60;guestId&#x60;, regardless of status - a cancelled stay is still a real interaction and hiding it would make the card lie by omission), newest &#x60;checkIn&#x60; first. Deliberately no lifetime-spend or stay-count total here: each booking already shows its own &#x60;totalPrice&#x60;/&#x60;status&#x60; (the same server-computed figures the booking detail page itself shows, not a second computation of them), and a real rolled-up total would need to correctly sum room revenue, POS orders, and folio settlements across every booking while excluding cancellations - a reporting feature in its own right, with the same care the rest of the money logic in this API already gets, not one field bolted onto a contact card. &#x60;account&#x60; is the one derived field, and it lives here, not on &#x60;Guest&#x60; (which &#x60;Booking&#x60; embeds, and which carries no computed fields - see its description): whether this card has a linked self-service &#x60;GuestAccount&#x60;, read live from that table on every call, never stored on the card. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -45,6 +46,8 @@ public class GuestDetail {
   @Valid
   private List<@Valid Booking> bookings = new ArrayList<>();
 
+  private GuestAccountLinkSummary account;
+
   public GuestDetail() {
     super();
   }
@@ -52,7 +55,7 @@ public class GuestDetail {
   /**
    * Constructor with only required parameters
    */
-  public GuestDetail(String id, String name, String email, String phone, String notes, OffsetDateTime createdAt, OffsetDateTime updatedAt, List<@Valid Booking> bookings) {
+  public GuestDetail(String id, String name, String email, String phone, String notes, OffsetDateTime createdAt, OffsetDateTime updatedAt, List<@Valid Booking> bookings, GuestAccountLinkSummary account) {
     this.id = id;
     this.name = name;
     this.email = JsonNullable.of(email);
@@ -61,6 +64,7 @@ public class GuestDetail {
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
     this.bookings = bookings;
+    this.account = account;
   }
 
   public GuestDetail id(String id) {
@@ -223,6 +227,25 @@ public class GuestDetail {
     this.bookings = bookings;
   }
 
+  public GuestDetail account(GuestAccountLinkSummary account) {
+    this.account = account;
+    return this;
+  }
+
+  /**
+   * Get account
+   * @return account
+   */
+  @NotNull @Valid 
+  @JsonProperty("account")
+  public GuestAccountLinkSummary getAccount() {
+    return account;
+  }
+
+  public void setAccount(GuestAccountLinkSummary account) {
+    this.account = account;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -239,12 +262,13 @@ public class GuestDetail {
         Objects.equals(this.notes, guestDetail.notes) &&
         Objects.equals(this.createdAt, guestDetail.createdAt) &&
         Objects.equals(this.updatedAt, guestDetail.updatedAt) &&
-        Objects.equals(this.bookings, guestDetail.bookings);
+        Objects.equals(this.bookings, guestDetail.bookings) &&
+        Objects.equals(this.account, guestDetail.account);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, email, phone, notes, createdAt, updatedAt, bookings);
+    return Objects.hash(id, name, email, phone, notes, createdAt, updatedAt, bookings, account);
   }
 
   @Override
@@ -259,6 +283,7 @@ public class GuestDetail {
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("    bookings: ").append(toIndentedString(bookings)).append("\n");
+    sb.append("    account: ").append(toIndentedString(account)).append("\n");
     sb.append("}");
     return sb.toString();
   }

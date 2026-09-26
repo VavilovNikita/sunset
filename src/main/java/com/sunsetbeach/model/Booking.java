@@ -268,7 +268,7 @@ public class Booking {
   }
 
   /**
-   * Get guestId
+   * Set automatically at creation when `guestEmail` matches exactly one `Guest` card (trimmed, case-insensitive) - or, when it matches none, to a card created from this booking's own guest fields. Left null when the email is missing or matches several cards. Correctable afterwards with `PUT /bookings/{id}/guest`. 
    * @return guestId
    */
   @NotNull 

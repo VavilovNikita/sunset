@@ -1,8 +1,10 @@
 package com.sunsetbeach.mapper;
 
+import com.sunsetbeach.entity.GuestAccountEntity;
 import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.Guest;
+import com.sunsetbeach.model.GuestAccountLinkSummary;
 import com.sunsetbeach.model.GuestCreateInput;
 import com.sunsetbeach.model.GuestDetail;
 import com.sunsetbeach.model.GuestUpdateInput;
@@ -23,8 +25,12 @@ public class GuestMapper {
                 TimestampFormat.toUtc(entity.getUpdatedAt()));
     }
 
-    /** {@code bookings} must already be this guest's full stay history, newest first - see {@code GuestDetail}'s own description. */
-    public GuestDetail toDetailDto(GuestEntity entity, List<Booking> bookings) {
+    /**
+     * {@code bookings} must already be this guest's full stay history, newest first - see
+     * {@code GuestDetail}'s own description. {@code account} is the linked self-service account,
+     * or null; only its verification state is exposed, never credentials or tokens.
+     */
+    public GuestDetail toDetailDto(GuestEntity entity, List<Booking> bookings, GuestAccountEntity account) {
         return new GuestDetail(
                 entity.getId(),
                 entity.getName(),
@@ -33,7 +39,8 @@ public class GuestMapper {
                 entity.getNotes(),
                 TimestampFormat.toUtc(entity.getCreatedAt()),
                 TimestampFormat.toUtc(entity.getUpdatedAt()),
-                bookings);
+                bookings,
+                account != null ? new GuestAccountLinkSummary(account.getEmailVerifiedAt() != null) : null);
     }
 
     public void applyCreate(GuestEntity entity, GuestCreateInput input) {

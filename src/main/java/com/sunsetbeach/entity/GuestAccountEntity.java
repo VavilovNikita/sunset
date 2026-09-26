@@ -11,7 +11,8 @@ import org.hibernate.annotations.UuidGenerator;
 /**
  * A guest's own persistent, self-service login - see this table's own V89 migration comment and
  * GuestAccount's openapi.yaml description for why this is a brand-new identity system, entirely
- * separate from "User" (staff) and "Guest" (the CRM contact card).
+ * separate from "User" (staff). It is linked to "Guest" (the CRM contact card) by {@code guestId}
+ * since V104, but carries its own credentials - "Guest" never holds any.
  */
 @Entity
 @Table(name = "GuestAccount")
@@ -29,6 +30,10 @@ public class GuestAccountEntity {
     private String passwordHash;
 
     private String name;
+
+    // The CRM contact card this account belongs to - see V104's own comment and GuestLinkService.
+    // Null when no single Guest could be matched by email (none yet, or an ambiguous duplicate).
+    private String guestId;
 
     // Null means unverified/unusable - see GuestJwtAuthFilter, which rejects every token for an
     // account whose row still has this null, the same way JwtAuthFilter rejects a disabled User.
@@ -80,6 +85,14 @@ public class GuestAccountEntity {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getGuestId() {
+        return guestId;
+    }
+
+    public void setGuestId(String guestId) {
+        this.guestId = guestId;
     }
 
     public LocalDateTime getEmailVerifiedAt() {

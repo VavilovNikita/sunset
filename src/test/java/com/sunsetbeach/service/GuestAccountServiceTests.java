@@ -37,8 +37,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * DB-backed (real Postgres, rolled back after each test - see AbstractIntegrationTest) - covers
- * the guest-account lifecycle (register/verify/resend/login/change-password) and the "booking
- * history is a live email match, never a stored link" mechanism, both of which depend on real
+ * the guest-account lifecycle (register/verify/resend/login/change-password) and booking
+ * history's email-match fallback for an account with no Guest card link, both of which depend on real
  * unique-constraint and case-insensitive-query behavior a mocked repository can't exercise.
  */
 @SpringBootTest
@@ -247,16 +247,19 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
                 .hasMessage("Current password is incorrect");
     }
 
+    // An account with no Guest card link - the fallback path. The linked path (the primary one)
+    // is covered by GuestLinkTests.
     @Test
-    void listBookings_matchesCaseInsensitively_newestFirst_excludesOtherEmails() {
+    void listBookings_unlinkedAccount_matchesEmailCaseInsensitively_newestFirst_excludesOtherEmails() {
         String email = "guest-history-" + UUID.randomUUID() + "@example.com";
         String otherEmail = "someone-else-" + UUID.randomUUID() + "@example.com";
+        GuestAccountEntity account = persistAccount(email, "a-good-password1", LocalDateTime.now());
 
         BookingEntity older = persistBooking(email.toUpperCase(), LocalDateTime.now().minusDays(2));
         BookingEntity newer = persistBooking(email, LocalDateTime.now());
         persistBooking(otherEmail, LocalDateTime.now());
 
-        List<GuestBookingView> history = guestAccountService.listBookings(email);
+        List<GuestBookingView> history = guestAccountService.listBookings(account.getId());
 
         assertThat(history).hasSize(2);
         assertThat(history.get(0).getId()).isEqualTo(newer.getId());
@@ -266,7 +269,8 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
 
     @Test
     void listBookings_noMatches_returnsEmpty() {
-        assertThat(guestAccountService.listBookings("nobody-" + UUID.randomUUID() + "@example.com")).isEmpty();
+        GuestAccountEntity account = persistAccount("nobody-" + UUID.randomUUID() + "@example.com", "a-good-password1", LocalDateTime.now());
+        assertThat(guestAccountService.listBookings(account.getId())).isEmpty();
     }
 
     private GuestAccountEntity persistAccount(String email, String rawPassword, LocalDateTime emailVerifiedAt) {

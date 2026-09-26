@@ -10,6 +10,7 @@ import com.sunsetbeach.model.Guest;
 import com.sunsetbeach.model.GuestCreateInput;
 import com.sunsetbeach.model.GuestDetail;
 import com.sunsetbeach.model.GuestUpdateInput;
+import com.sunsetbeach.repository.GuestAccountRepository;
 import com.sunsetbeach.repository.GuestRepository;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -20,12 +21,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class GuestService {
 
     private final GuestRepository guestRepository;
+    private final GuestAccountRepository guestAccountRepository;
     private final GuestMapper guestMapper;
     private final BookingService bookingService;
     private final AuditLogService auditLogService;
 
-    public GuestService(GuestRepository guestRepository, GuestMapper guestMapper, BookingService bookingService, AuditLogService auditLogService) {
+    public GuestService(
+            GuestRepository guestRepository,
+            GuestAccountRepository guestAccountRepository,
+            GuestMapper guestMapper,
+            BookingService bookingService,
+            AuditLogService auditLogService) {
         this.guestRepository = guestRepository;
+        this.guestAccountRepository = guestAccountRepository;
         this.guestMapper = guestMapper;
         this.bookingService = bookingService;
         this.auditLogService = auditLogService;
@@ -41,7 +49,7 @@ public class GuestService {
     @Transactional(readOnly = true)
     public GuestDetail getDetail(String id) {
         GuestEntity entity = findEntity(id);
-        return guestMapper.toDetailDto(entity, bookingService.listByGuestId(id));
+        return guestMapper.toDetailDto(entity, bookingService.listByGuestId(id), guestAccountRepository.findByGuestId(id).orElse(null));
     }
 
     @Transactional

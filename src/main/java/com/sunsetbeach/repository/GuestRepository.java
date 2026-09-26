@@ -24,4 +24,17 @@ public interface GuestRepository extends JpaRepository<GuestEntity, String> {
         ORDER BY g.createdAt DESC
         """)
     List<GuestEntity> search(@Param("pattern") String pattern);
+
+    /** Exact match on trimmed, lowercased email - {@code normalizedEmail} must already be both. Can return several rows: Guest.email has no unique constraint. */
+    @Query("SELECT g FROM GuestEntity g WHERE LOWER(TRIM(g.email)) = :normalizedEmail")
+    List<GuestEntity> findByNormalizedEmail(@Param("normalizedEmail") String normalizedEmail);
+
+    /**
+     * Transaction-scoped advisory lock on one normalized email - see
+     * {@code GuestLinkService#findOrCreate} for why. Released automatically at commit/rollback.
+     * Cast to text only because {@code pg_advisory_xact_lock} returns void, which Hibernate has no
+     * JDBC mapping for.
+     */
+    @Query(value = "SELECT CAST(pg_advisory_xact_lock(hashtext('guest-email:' || :normalizedEmail)) AS text)", nativeQuery = true)
+    String lockEmail(@Param("normalizedEmail") String normalizedEmail);
 }

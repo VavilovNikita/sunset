@@ -46,7 +46,7 @@ public class GuestAccountController implements GuestAccountApi {
 
     @Override
     public ResponseEntity<List<GuestBookingView>> listCurrentGuestBookings() {
-        return ResponseEntity.ok(guestAccountService.listBookings(CurrentGuest.email()));
+        return ResponseEntity.ok(guestAccountService.listBookings(CurrentGuest.id()));
     }
 
     @Override

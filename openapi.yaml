@@ -45,11 +45,12 @@ tags:
   - name: GuestAccount
     description: >
       Authenticated actions for a verified `GuestAccount` - profile, self-service password
-      change, and read-only booking history. Booking history is computed at read time by
-      matching `Booking.guestEmail` (case-insensitively) against this account's own verified
-      email - not a stored link, not something staff or this account can edit - so a guest who
-      verifies an email that already has past stays under it sees them immediately, with no
-      manual linking step anywhere. Requires a guest JWT (`Authorization: Bearer <token>` from
+      change, and read-only booking history. Booking history follows the account's link to its
+      CRM `Guest` card: every `Booking` whose `guestId` is that card - the same stay history staff
+      see on `GET /guests/{id}`. Both links are made automatically by email (an account on
+      registration/verification, a booking on creation - see `GuestDetail.account`), so a guest
+      who verifies an email that already has past stays under it sees them immediately, with no
+      manual linking step. Requires a guest JWT (`Authorization: Bearer <token>` from
       `GuestAccountAuth`), never a staff one - see that tag's own description.
   - name: GuestOrder
     description: >
@@ -532,10 +533,12 @@ paths:
       tags: [GuestAccount]
       summary: This guest's booking history
       description: >
-        Every `Booking` whose `guestEmail` matches this account's own verified email,
-        case-insensitively, newest (`createdAt`) first - past, current, and future stays alike.
-        Computed fresh on every call, not a stored link (see the `GuestAccount` tag's own
-        description) - deliberately narrow, guest-facing `GuestBookingView`, never the staff
+        Every `Booking` linked (`guestId`) to this account's own `Guest` card, newest
+        (`createdAt`) first - past, current, and future stays alike, and exactly the set staff see
+        on that card (see the `GuestAccount` tag's own description). An account with no card link
+        (its email matched more than one `Guest`, so none was picked) falls back to every
+        `Booking` whose `guestEmail` matches the account's own email, case-insensitively.
+        Deliberately narrow, guest-facing `GuestBookingView`, never the staff
         `Booking` shape (no `paymentNote`, `source`, `guestId`/`guest`, `roomUnitId`/`roomUnit`,
         occupancy timestamps, or anything else staff-internal).
       security:
@@ -2411,10 +2414,14 @@ paths:
       description: >
         Requires CASHIER or above. One endpoint for both directions, same shape as
         `PUT /bookings/{id}/room-unit`: a non-null `guestId` links that guest to the booking,
-        `null` clears the link. Relinking to a different guest needs no confirmation and no
-        state check - nothing downstream depends on which `Guest` a booking points to except
-        that guest's own stay history (`GET /guests/{id}`), so there is nothing to protect the
-        way `PUT /bookings/{id}/room-unit` protects inventory. Never touches
+        `null` clears the link. New bookings are already linked automatically by email when one
+        `Guest` card matches it unambiguously; this is for corrections. Relinking to a different
+        guest needs no confirmation and no state check - nothing contends for a guest link the
+        way `PUT /bookings/{id}/room-unit` contends for inventory. It is not inconsequential,
+        though: which `Guest` a booking points to decides both that card's stay history
+        (`GET /guests/{id}`) and whose self-service account lists the booking
+        (`GET /guest/bookings`), so linking a booking to the wrong card shows that stay to the
+        wrong guest. Never touches
         `guestName`/`guestEmail`/`guestPhone` - those stay frozen exactly as given at booking
         time regardless of what this endpoint does.
       requestBody:
@@ -9484,6 +9491,11 @@ components:
         guestId:
           type: string
           nullable: true
+          description: >
+            Set automatically at creation when `guestEmail` matches exactly one `Guest` card
+            (trimmed, case-insensitive) - or, when it matches none, to a card created from this
+            booking's own guest fields. Left null when the email is missing or matches several
+            cards. Correctable afterwards with `PUT /bookings/{id}/guest`.
         guest:
           $ref: "#/components/schemas/Guest"
           nullable: true
@@ -9632,7 +9644,12 @@ components:
         booking while excluding cancellations - a reporting feature in its own right, with the
         same care the rest of the money logic in this API already gets, not one field bolted onto
         a contact card.
-      required: [id, name, email, phone, notes, createdAt, updatedAt, bookings]
+
+        `account` is the one derived field, and it lives here, not on `Guest` (which `Booking`
+        embeds, and which carries no computed fields - see its description): whether this card
+        has a linked self-service `GuestAccount`, read live from that table on every call, never
+        stored on the card.
+      required: [id, name, email, phone, notes, createdAt, updatedAt, bookings, account]
       properties:
         id:
           type: string
@@ -9660,6 +9677,22 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Booking"
+        account:
+          $ref: "#/components/schemas/GuestAccountLinkSummary"
+          nullable: true
+
+    GuestAccountLinkSummary:
+      type: object
+      description: >
+        Staff-facing summary of the `GuestAccount` linked to a `Guest` card - presence and
+        verification only. Deliberately no id, email, password hash, token version, or
+        verification token: staff can see that a guest has an account, never anything that
+        would help act as it.
+      required: [emailVerified]
+      properties:
+        emailVerified:
+          type: boolean
+          description: False while the guest hasn't confirmed their email yet (they can't log in until they do).
 
     GuestCreateInput:
       type: object
@@ -9720,9 +9753,8 @@ components:
         generated `@NotNull` on a `nullable: true` + `required` property would validate the
         *unwrapped* value, rejecting the exact `null` this field exists to accept. Presence is
         checked manually in `BookingService`. Relinking to a different guest needs no
-        confirmation and no state check - nothing downstream depends on which `Guest` a booking
-        points to except that guest's own stay history, so there is nothing to protect against
-        the way there is for occupancy or payment actions.
+        confirmation and no state check - see `PUT /bookings/{id}/guest` for what the link
+        decides (including which guest account lists the booking).
       properties:
         guestId:
           type: string
@@ -9913,9 +9945,10 @@ components:
     GuestAccount:
       type: object
       description: >
-        A guest's own persistent, self-service login - entirely separate from the CRM `Guest`
-        schema (see the `GuestAccountAuth` tag's own description for why). Usable only once
-        `emailVerifiedAt` is set.
+        A guest's own persistent, self-service login - a separate identity from the CRM `Guest`
+        schema, with its own credentials (see the `GuestAccountAuth` tag's own description for
+        why), linked to the `Guest` card with the same email when exactly one exists (see
+        `GuestDetail.account`). Usable only once `emailVerifiedAt` is set.
       required: [id, email, createdAt]
       properties:
         id:

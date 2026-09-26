@@ -1457,7 +1457,7 @@ class PosRoleHierarchyTests {
 
     private static GuestDetail sampleGuestDetail() {
         return new GuestDetail(
-                "guest-1", "Jane Doe", "jane@example.com", "+66800000000", null, OffsetDateTime.now(), OffsetDateTime.now(), List.of());
+                "guest-1", "Jane Doe", "jane@example.com", "+66800000000", null, OffsetDateTime.now(), OffsetDateTime.now(), List.of(), null);
     }
 
     private static PrintJob samplePrintJob() {
