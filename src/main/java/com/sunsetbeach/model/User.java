@@ -97,7 +97,7 @@ public class User {
   }
 
   /**
-   * The person's name - always present, unlike `email`. This is the only durable identifier for a `POST /users` account created without login credentials (see `UserCreateInput`), so it exists independently of whether the account can authenticate. 
+   * The person's name - always present, unlike `email`. This is the only durable identifier for a `POST /users` account created without login credentials (see `UserCreateInput`), so it exists independently of whether the account can authenticate. Renamable via `PATCH /users/{id}/name`, and a rename is retroactive: nothing freezes a copy of it, so punch logs, the roster grid and every other screen that shows a person's name reads this field live and relabels past records too. The one exception is audit log `summary` text, which is a sentence written at the time of the action. 
    * @return name
    */
   @NotNull 

@@ -15,6 +15,7 @@ import com.sunsetbeach.model.UserCredentialsInput;
 import com.sunsetbeach.model.UserEnrollmentNumberUpdateInput;
 import com.sunsetbeach.model.UserFullNameUpdateInput;
 import com.sunsetbeach.model.UserFunctionsUpdateInput;
+import com.sunsetbeach.model.UserNameUpdateInput;
 import com.sunsetbeach.model.UserOvertimeEligibilityUpdateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
 import com.sunsetbeach.model.UserStaffAreaUpdateInput;
@@ -463,6 +464,63 @@ public interface UsersApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"warning\" : \"warning\", \"user\" : { \"overtimeEligible\" : true, \"staffArea\" : \"\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"fullName\" : \"fullName\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /users/{id}/name : Rename a staff user
+     * Requires an authenticated session with role &#x60;ADMIN&#x60;. Changes &#x60;User.name&#x60; - see that field&#39;s own description for the retroactive-relabeling consequence: every screen that reads &#x60;name&#x60; live (punch logs, the roster grid and its Excel export, the spa therapist list, the admin Users screen) shows the new name for past records too, which is the point for a typo fix or a legal name change. Audit log &#x60;summary&#x60; text is the exception - it was written once, at the time of each action, and keeps whatever name it was written with. &#x60;name&#x60; cannot be cleared: it is trimmed, and a blank or whitespace-only value is a 400 (there is no \&quot;send null to clear\&quot; case, unlike &#x60;PATCH /users/{id}/full-name&#x60;). No self-change restriction, and no &#x60;tokenVersion&#x60; bump - &#x60;name&#x60; is not carried in the JWT, so renaming doesn&#39;t affect anyone&#39;s session. 
+     *
+     * @param id  (required)
+     * @param userNameUpdateInput  (required)
+     * @return Updated user. (status code 200)
+     *         or Body failed validation, or &#x60;name&#x60; was blank after trimming. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or User not found. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/users/{id}/name",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<User> updateUserName(
+         @PathVariable("id") String id,
+         @Valid @RequestBody UserNameUpdateInput userNameUpdateInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"overtimeEligible\" : true, \"staffArea\" : \"\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"role\" : \"ADMIN\", \"functions\" : [ \"ENGINEER\", \"ENGINEER\" ], \"enrollmentNumber\" : 0, \"name\" : \"name\", \"fullName\" : \"fullName\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

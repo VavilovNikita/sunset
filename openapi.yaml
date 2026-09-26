@@ -5702,6 +5702,65 @@ paths:
               example:
                 error: User not found
 
+  /users/{id}/name:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateUserName
+      tags: [Users]
+      summary: Rename a staff user
+      description: >
+        Requires an authenticated session with role `ADMIN`. Changes `User.name` - see that
+        field's own description for the retroactive-relabeling consequence: every screen that
+        reads `name` live (punch logs, the roster grid and its Excel export, the spa therapist
+        list, the admin Users screen) shows the new name for past records too, which is the point
+        for a typo fix or a legal name change. Audit log `summary` text is the exception - it was
+        written once, at the time of each action, and keeps whatever name it was written with.
+        `name` cannot be cleared: it is trimmed, and a blank or whitespace-only value is a 400
+        (there is no "send null to clear" case, unlike `PATCH /users/{id}/full-name`). No
+        self-change restriction, and no `tokenVersion` bump - `name` is not carried in the JWT,
+        so renaming doesn't affect anyone's session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserNameUpdateInput"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Body failed validation, or `name` was blank after trimming.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+              examples:
+                blank:
+                  value: { error: "name must not be blank" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: User not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: User not found
+
   /users/{id}/full-name:
     parameters:
       - name: id
@@ -9773,6 +9832,10 @@ components:
             The person's name - always present, unlike `email`. This is the only durable
             identifier for a `POST /users` account created without login credentials (see
             `UserCreateInput`), so it exists independently of whether the account can authenticate.
+            Renamable via `PATCH /users/{id}/name`, and a rename is retroactive: nothing freezes
+            a copy of it, so punch logs, the roster grid and every other screen that shows a
+            person's name reads this field live and relabels past records too. The one exception
+            is audit log `summary` text, which is a sentence written at the time of the action.
         fullName:
           type: string
           nullable: true
@@ -10122,6 +10185,19 @@ components:
       properties:
         overtimeEligible:
           type: boolean
+
+    UserNameUpdateInput:
+      type: object
+      description: >
+        Body of `PATCH /users/{id}/name`. See `User.name`'s own description. Unlike
+        `UserFullNameUpdateInput`, `name` is a plain required string - it cannot be cleared, so
+        there is no null case. The service also trims it and rejects a blank result, so a
+        whitespace-only value that passes `minLength` is still a 400.
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
 
     UserFullNameUpdateInput:
       type: object
@@ -11163,6 +11239,7 @@ components:
         - USER_ENROLLMENT_NUMBER_CHANGED
         - USER_STAFF_AREA_CHANGED
         - USER_FULL_NAME_CHANGED
+        - USER_NAME_CHANGED
         - ROOM_UNIT_CREATED
         - ROOM_UNIT_UPDATED
         - ROOM_UNIT_DELETED

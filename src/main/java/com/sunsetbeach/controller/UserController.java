@@ -9,6 +9,7 @@ import com.sunsetbeach.model.UserCredentialsInput;
 import com.sunsetbeach.model.UserEnrollmentNumberUpdateInput;
 import com.sunsetbeach.model.UserFullNameUpdateInput;
 import com.sunsetbeach.model.UserFunctionsUpdateInput;
+import com.sunsetbeach.model.UserNameUpdateInput;
 import com.sunsetbeach.model.UserOvertimeEligibilityUpdateInput;
 import com.sunsetbeach.model.UserRoleUpdateInput;
 import com.sunsetbeach.model.UserStaffAreaUpdateInput;
@@ -70,6 +71,11 @@ public class UserController implements UsersApi {
     @Override
     public ResponseEntity<User> updateUserOvertimeEligibility(String id, UserOvertimeEligibilityUpdateInput userOvertimeEligibilityUpdateInput) {
         return ResponseEntity.ok(userService.updateOvertimeEligible(id, userOvertimeEligibilityUpdateInput.getOvertimeEligible()));
+    }
+
+    @Override
+    public ResponseEntity<User> updateUserName(String id, UserNameUpdateInput userNameUpdateInput) {
+        return ResponseEntity.ok(userService.updateName(id, userNameUpdateInput.getName()));
     }
 
     @Override

@@ -285,6 +285,31 @@ public class UserService {
     }
 
     /**
+     * {@code PATCH /users/{id}/name} - see {@code User.name}'s own openapi.yaml description: a
+     * rename is retroactive everywhere {@code name} is read live (punch logs, roster grid), which
+     * is the point for a typo fix or legal name change. Trimmed and checked for blank here as
+     * well as by the schema's {@code minLength}, which a whitespace-only value would pass. No
+     * {@code tokenVersion} bump, no self-change restriction - {@code name} isn't a JWT claim.
+     */
+    @Transactional
+    public User updateName(String id, String name) {
+        String trimmed = name == null ? "" : name.trim();
+        if (trimmed.isEmpty()) {
+            throw new BadRequestException("name must not be blank");
+        }
+        UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        String previous = entity.getName();
+        entity.setName(trimmed);
+        UserEntity saved = userRepository.save(entity);
+        auditLogService.record(
+                AuditAction.USER_NAME_CHANGED,
+                AuditEntityType.USER,
+                saved.getId(),
+                "Renamed " + previous + " to " + saved.getName());
+        return userMapper.toDto(saved);
+    }
+
+    /**
      * {@code PATCH /users/{id}/full-name} - see {@code User.fullName}'s own openapi.yaml
      * description. {@code fullName} must actually be present in the body (a string to assign, or
      * explicit {@code null} to clear) - same "a JsonNullable left undefined has no sensible no-op

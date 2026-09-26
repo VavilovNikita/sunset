@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -382,6 +384,37 @@ class PosRoleHierarchyTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"overtimeEligible\":false}"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void updateUserName_withManagerToken_isForbidden() throws Exception {
+        mockMvc.perform(patch("/users/user-2/name")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Renamed\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateUserName_withAdminToken_isOk() throws Exception {
+        when(userService.updateName(eq("user-2"), any())).thenReturn(sampleUser());
+        mockMvc.perform(patch("/users/user-2/name")
+                        .header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Renamed\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void updateUserName_emptyOrMissing_isRejectedBySchemaBeforeTheService() throws Exception {
+        for (String body : new String[] {"{\"name\":\"\"}", "{}"}) {
+            mockMvc.perform(patch("/users/user-2/name")
+                            .header("Authorization", token(Role.ADMIN))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        verify(userService, never()).updateName(any(), any());
     }
 
     @Test
