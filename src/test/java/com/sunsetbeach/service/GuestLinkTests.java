@@ -28,7 +28,9 @@ import com.sunsetbeach.repository.GuestRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.security.StaffPrincipal;
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -38,20 +40,24 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * {@link GuestLinkService}: Guest as the one person record GuestAccount and Booking both point at
  * - find-or-create by email, never overwriting an existing card, never guessing between
  * duplicates - plus the two readers that now follow the link ({@code GET /guest/bookings},
- * {@code GuestDetail.account}).
+ * {@code GuestDetail.account}) and V105's backfill.
  *
  * <p>NOT {@code @Transactional}: the booking path links in its own transaction after the booking
  * commits (see {@code BookingService#linkGuestQuietly}), and auto-created cards are audited via
  * {@code AuditLogService}'s REQUIRES_NEW - both would escape a test rollback anyway. Everything is
- * deleted explicitly in {@link #cleanUp}.
+ * deleted explicitly in {@link #cleanUp}. The backfill test is the exception: it runs the real
+ * V105 script inside a transaction it rolls back itself.
  */
 @SpringBootTest
 class GuestLinkTests extends AbstractIntegrationTest {
@@ -66,6 +72,8 @@ class GuestLinkTests extends AbstractIntegrationTest {
     @Autowired private RoomRepository roomRepository;
     @Autowired private RoomUnitRepository roomUnitRepository;
     @Autowired private AuditLogRepository auditLogRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private TransactionTemplate transactionTemplate;
 
     private final List<String> emails = new ArrayList<>();
     private final List<String> bookingIds = new ArrayList<>();
@@ -272,7 +280,50 @@ class GuestLinkTests extends AbstractIntegrationTest {
         assertThat(guestService.getDetail(verified.getId()).getAccount().getEmailVerified()).isTrue();
     }
 
+    // --- V105 backfill -------------------------------------------------------------------------
+
+    @Test
+    void backfill_linksOnlyUnambiguousMatches_andNeverOverwritesAManualLink() throws IOException {
+        String sql = new ClassPathResource("db/migration/V105__backfill_guest_links.sql").getContentAsString(StandardCharsets.UTF_8);
+
+        String uniqueEmail = newEmail();
+        String dupEmail = newEmail();
+        String orphanEmail = newEmail();
+
+        transactionTemplate.executeWithoutResult(status -> {
+            GuestEntity unique = persistGuest("Unique", "  " + uniqueEmail.toUpperCase(), null, null);
+            persistGuest("Dup One", dupEmail, null, null);
+            persistGuest("Dup Two", dupEmail, null, null);
+            GuestEntity manualTarget = persistGuest("Manual Target", newEmail(), null, null);
+
+            GuestAccountEntity uniqueAccount = persistAccount(uniqueEmail, null, true);
+            GuestAccountEntity dupAccount = persistAccount(dupEmail, null, true);
+            GuestAccountEntity orphanAccount = persistAccount(orphanEmail, null, false);
+
+            BookingEntity toLink = persistBooking(uniqueEmail, null);
+            BookingEntity manual = persistBooking(uniqueEmail, manualTarget.getId());
+            BookingEntity ambiguous = persistBooking(dupEmail, null);
+            BookingEntity noMatch = persistBooking(orphanEmail, null);
+
+            jdbcTemplate.execute(sql);
+
+            assertThat(guestIdOf("GuestAccount", uniqueAccount.getId())).isEqualTo(unique.getId());
+            assertThat(guestIdOf("GuestAccount", dupAccount.getId())).isNull();
+            assertThat(guestIdOf("GuestAccount", orphanAccount.getId())).isNull();
+            assertThat(guestIdOf("Booking", toLink.getId())).isEqualTo(unique.getId());
+            assertThat(guestIdOf("Booking", manual.getId())).isEqualTo(manualTarget.getId());
+            assertThat(guestIdOf("Booking", ambiguous.getId())).isNull();
+            assertThat(guestIdOf("Booking", noMatch.getId())).isNull();
+
+            status.setRollbackOnly();
+        });
+    }
+
     // --- helpers -------------------------------------------------------------------------------
+
+    private String guestIdOf(String table, String id) {
+        return jdbcTemplate.queryForObject("SELECT \"guestId\" FROM \"" + table + "\" WHERE id = ?", String.class, id);
+    }
 
     private String newEmail() {
         String email = "guest-link-" + UUID.randomUUID() + "@example.com";
