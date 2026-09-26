@@ -107,7 +107,7 @@ tags:
   - name: Payments
     description: Cross-shift POS payment reporting for a date range (MANAGER or above).
   - name: Reports
-    description: Financial exports for the hotel's accountant (MANAGER or above).
+    description: Financial exports for the hotel's accountant, and occupancy, sales-mix and guest-value reports (MANAGER or above).
   - name: Printers
     description: >
       ESC/POS network printer CRUD and connection testing (MANAGER or above), plus the durable
@@ -5317,6 +5317,198 @@ paths:
                 format: binary
         "400":
           description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /reports/occupancy:
+    get:
+      operationId: getOccupancyReport
+      tags: [Reports]
+      summary: Occupancy, ADR and RevPAR for a date range, per room type and in total
+      description: >
+        Requires role `MANAGER` or above, same floor as `GET /reports/revenue-export`. One set of
+        figures for the whole requested range (no daily breakdown), per room type and for the
+        property as a whole.
+
+
+        **Nights.** `from`/`to` are inclusive hotel-local calendar dates, and each date in the
+        range is one night: `from=2026-09-01&to=2026-09-30` is 30 nights. A stay occupies the
+        nights `checkIn <= night < checkOut`, the same rule availability uses.
+
+
+        **Room-nights sold** counts every night of every `BookingSegment` whose booking is not
+        `CANCELLED` (any other status counts, `NEW` included, same as availability) that falls
+        inside the range. A segment that starts before `from` or ends after `to` counts only the
+        nights inside it. A segment with no physical room assigned yet still counts for its room
+        type.
+
+
+        **Room revenue** is each such segment's `totalPrice`, prorated to the nights inside the
+        range: `totalPrice × nightsInRange / segmentNights`. Rounded to two decimals once, on the
+        final sum, not per segment. It is the agreed room price, not money collected: see
+        `GET /reports/revenue-export` for cash actually received.
+
+
+        **Room-nights available is a known simplification.** It is the number of physical units of
+        the room type that are active *today*, times the number of nights in the range. It is not
+        a historical day-by-day count: a unit added or deactivated during the range counts as if
+        it had always been in its current state for the whole range. Nights a unit was blocked out
+        of sale (`RoomUnitBlock`) are not subtracted either. Occupancy and RevPAR for a past range
+        are therefore only as accurate as today's inventory is representative of that period.
+
+
+        `occupancyPercent` = sold / available × 100. `adr` (average daily rate) = revenue / sold.
+        `revpar` = revenue / available. Each is `null` when its denominator is zero. All three are
+        computed from the unrounded revenue and rounded to two decimals at the end.
+
+
+        A room type appears if it has at least one active unit today or at least one night sold in
+        the range. `total` sums the rows; its ratios are recomputed from those sums, not averaged.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: First night of the range, inclusive (Asia/Bangkok).
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Last night of the range, inclusive (Asia/Bangkok).
+      responses:
+        "200":
+          description: The occupancy figures.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccupancyReport"
+        "400":
+          description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /reports/pos-sales-mix:
+    get:
+      operationId: getPosSalesMixReport
+      tags: [Reports]
+      summary: What the POS sold in a date range, by menu item, category and department
+      description: >
+        Requires role `MANAGER` or above, same floor as `GET /reports/revenue-export`.
+
+
+        Counts the items of every order that is `PAID` and whose `Payment` was recorded inside the
+        range. An order has exactly one `Payment` (a unique constraint enforces it), so "when was
+        this order settled" has one answer. Days are Asia/Bangkok calendar days, bucketed exactly
+        the way `GET /reports/revenue-export` buckets payments, so the two reports agree on which
+        day a sale belongs to. Open, sent and cancelled orders are not counted.
+
+
+        Every payment method counts, `ROOM_CHARGE` included: this report is about what sold, not
+        about whether the money has been collected yet.
+
+
+        `revenue` is `quantity × unitPrice` summed over order lines, using the price frozen on each
+        line when it was added to the order (the same figure the order's `total` was built from),
+        not today's menu price. `name`, `category` and `department` are read from the menu item as
+        it is now, so an item renamed or moved since is reported under its current name and
+        grouping.
+
+
+        `items` has one row per menu item. `categories` and `departments` roll the same rows up,
+        and each list sums to `totalQuantity`/`totalRevenue`. Every list is sorted by revenue,
+        highest first.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Inclusive start date (Asia/Bangkok).
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Inclusive end date (Asia/Bangkok).
+      responses:
+        "200":
+          description: The sales mix.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PosSalesMixReport"
+        "400":
+          description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /reports/guest-ltv:
+    get:
+      operationId: getGuestLtvReport
+      tags: [Reports]
+      summary: Top guests by lifetime room revenue
+      description: >
+        Requires role `MANAGER` or above, same floor as `GET /reports/revenue-export`. No date
+        range: every booking ever made counts.
+
+
+        Only bookings linked to a guest card (`Booking.guestId`) count, and only those that are not
+        `CANCELLED`. A guest whose every booking is cancelled does not appear.
+
+
+        `roomRevenue` is the sum of those bookings' `totalPrice`, which is the agreed room price
+        only. Guests are ranked by it, highest first. POS spend is not inside `totalPrice`: an
+        order charged to the room is recorded as a separate `ROOM_CHARGE` payment. That is
+        reported as its own figure, `roomChargesTotal`, and is not part of the ranking. A POS order
+        the guest paid for on the spot (cash, card) is linked to no booking or guest and so cannot
+        be attributed to anyone.
+
+
+        Future bookings count the same as past ones, in every figure: `lastCheckIn` can be a date
+        that has not arrived yet.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: How many guests to return.
+      responses:
+        "200":
+          description: The top guests, highest room revenue first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestLtvReport"
+        "400":
+          description: '`limit` is not an integer from 1 to 200.'
           content:
             application/json:
               schema:
@@ -12761,3 +12953,172 @@ components:
         effectiveFrom:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
+
+    OccupancyReport:
+      type: object
+      description: '`GET /reports/occupancy` - see that operation for how each figure is computed.'
+      required: [from, to, nights, rooms, total]
+      properties:
+        from:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        to:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        nights:
+          type: integer
+          description: Number of nights in the range (`to` - `from` + 1).
+        rooms:
+          type: array
+          description: One row per room type, sorted by name.
+          items:
+            $ref: "#/components/schemas/OccupancyReportRow"
+        total:
+          $ref: "#/components/schemas/OccupancyReportRow"
+
+    OccupancyReportRow:
+      type: object
+      description: >
+        One room type's figures, or the property total (where `roomId`/`roomName` are null).
+        Money is a decimal string with two decimals.
+      required: [roomId, roomName, activeUnits, roomNightsAvailable, roomNightsSold, occupancyPercent, roomRevenue, adr, revpar]
+      properties:
+        roomId:
+          type: string
+          nullable: true
+        roomName:
+          type: string
+          nullable: true
+        activeUnits:
+          type: integer
+          description: Physical units of this type active today - see the operation's note on why this is today's count.
+        roomNightsAvailable:
+          type: integer
+        roomNightsSold:
+          type: integer
+        occupancyPercent:
+          type: string
+          nullable: true
+          description: sold / available × 100, two decimals (e.g. "66.67"). Null when nothing was available.
+        roomRevenue:
+          type: string
+        adr:
+          type: string
+          nullable: true
+          description: Room revenue / room-nights sold. Null when nothing was sold.
+        revpar:
+          type: string
+          nullable: true
+          description: Room revenue / room-nights available. Null when nothing was available.
+
+    PosSalesMixReport:
+      type: object
+      description: '`GET /reports/pos-sales-mix` - see that operation for what counts.'
+      required: [from, to, totalQuantity, totalRevenue, items, categories, departments]
+      properties:
+        from:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        to:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        totalQuantity:
+          type: integer
+        totalRevenue:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PosSalesMixItem"
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/PosSalesMixCategory"
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/PosSalesMixDepartment"
+
+    PosSalesMixItem:
+      type: object
+      required: [menuItemId, name, category, department, quantity, revenue]
+      properties:
+        menuItemId:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        department:
+          $ref: "#/components/schemas/MenuDepartment"
+        quantity:
+          type: integer
+        revenue:
+          type: string
+
+    PosSalesMixCategory:
+      type: object
+      required: [category, quantity, revenue]
+      properties:
+        category:
+          type: string
+        quantity:
+          type: integer
+        revenue:
+          type: string
+
+    PosSalesMixDepartment:
+      type: object
+      required: [department, quantity, revenue]
+      properties:
+        department:
+          $ref: "#/components/schemas/MenuDepartment"
+        quantity:
+          type: integer
+        revenue:
+          type: string
+
+    GuestLtvReport:
+      type: object
+      description: '`GET /reports/guest-ltv` - see that operation for what counts.'
+      required: [guests]
+      properties:
+        guests:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuestLtvRow"
+
+    GuestLtvRow:
+      type: object
+      required: [guestId, name, email, bookingCount, totalNights, roomRevenue, roomChargesTotal, firstCheckIn, lastCheckIn]
+      properties:
+        guestId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          nullable: true
+          x-sensitive: true
+        bookingCount:
+          type: integer
+          description: Bookings linked to this guest that are not `CANCELLED`.
+        totalNights:
+          type: integer
+          description: Nights across those bookings' segments.
+        roomRevenue:
+          type: string
+          description: Sum of those bookings' `totalPrice` - room price only. The ranking key.
+        roomChargesTotal:
+          type: string
+          description: >
+            Sum of `ROOM_CHARGE` payments posted to those bookings - POS orders charged to the
+            room. Gross of any later folio settlement: it is what was spent, not what is still owed.
+        firstCheckIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Earliest `checkIn` among those bookings.
+        lastCheckIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Latest `checkIn` among those bookings - can be in the future.

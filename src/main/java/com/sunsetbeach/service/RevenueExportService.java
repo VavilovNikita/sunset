@@ -5,7 +5,6 @@ import com.sunsetbeach.entity.FolioPaymentEntity;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.TableEntity;
-import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
@@ -25,10 +24,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -98,15 +94,11 @@ public class RevenueExportService {
 
     @Transactional(readOnly = true)
     public byte[] export(String from, String to) {
-        LocalDate fromDate = parseDate("from", from);
-        LocalDate toDate = parseDate("to", to);
-        if (fromDate.isAfter(toDate)) {
-            throw ValidationException.field("to", "must be on or after from");
-        }
-
-        ZoneId zone = clock.getZone();
-        LocalDateTime startUtc = fromDate.atStartOfDay(zone).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
-        LocalDateTime endUtc = toDate.plusDays(1).atStartOfDay(zone).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        ReportDateRange range = ReportDateRange.parse(from, to);
+        LocalDate fromDate = range.from();
+        LocalDate toDate = range.to();
+        LocalDateTime startUtc = range.startUtc(clock.getZone());
+        LocalDateTime endUtc = range.endUtcExclusive(clock.getZone());
 
         List<PaymentEntity> payments = paymentRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(startUtc, endUtc).stream()
                 .sorted(Comparator.comparing(PaymentEntity::getCreatedAt))
@@ -149,18 +141,6 @@ public class RevenueExportService {
             return out.toByteArray();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
-        }
-    }
-
-    /**
-     * The openapi {@code pattern} only guarantees the shape - {@code 2026-02-30} passes it, and
-     * an unhandled {@link DateTimeParseException} would surface as a 500, not the documented 400.
-     */
-    private static LocalDate parseDate(String field, String value) {
-        try {
-            return LocalDate.parse(value);
-        } catch (DateTimeParseException e) {
-            throw ValidationException.field(field, "must be a valid date (YYYY-MM-DD)");
         }
     }
 

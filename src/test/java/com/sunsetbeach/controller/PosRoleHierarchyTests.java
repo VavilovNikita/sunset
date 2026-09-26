@@ -173,6 +173,9 @@ class PosRoleHierarchyTests {
     private com.sunsetbeach.service.RevenueExportService revenueExportService;
 
     @MockitoBean
+    private com.sunsetbeach.service.ReportService reportService;
+
+    @MockitoBean
     private PrinterService printerService;
 
     @MockitoBean
@@ -620,6 +623,52 @@ class PosRoleHierarchyTests {
         when(revenueExportService.export(anyString(), anyString())).thenThrow(com.sunsetbeach.error.ValidationException.field("to", "must be on or after from"));
         mockMvc.perform(get("/reports/revenue-export?from=2031-02-01&to=2031-01-31").header("Authorization", token(Role.MANAGER)))
                 .andExpect(status().isBadRequest());
+    }
+
+    // --- GET /reports/occupancy, /reports/pos-sales-mix, /reports/guest-ltv: same MANAGER floor ---
+
+    private static final String[] DASHBOARD_REPORTS = {
+        "/reports/occupancy?from=2031-01-01&to=2031-01-31",
+        "/reports/pos-sales-mix?from=2031-01-01&to=2031-01-31",
+        "/reports/guest-ltv",
+    };
+
+    @Test
+    void dashboardReports_belowManager_areForbidden() throws Exception {
+        for (String url : DASHBOARD_REPORTS) {
+            for (Role role : new Role[] {Role.CASHIER, Role.WAITER}) {
+                mockMvc.perform(get(url).header("Authorization", token(role))).andExpect(status().isForbidden());
+            }
+        }
+    }
+
+    @Test
+    void dashboardReports_withManagerToken_areOk() throws Exception {
+        when(reportService.occupancy(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.OccupancyReport());
+        when(reportService.posSalesMix(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.PosSalesMixReport());
+        when(reportService.guestLtv(any())).thenReturn(new com.sunsetbeach.model.GuestLtvReport());
+        for (String url : DASHBOARD_REPORTS) {
+            mockMvc.perform(get(url).header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+        }
+    }
+
+    @Test
+    void dashboardReports_missingOrMalformedDate_isBadRequest() throws Exception {
+        for (String path : new String[] {"/reports/occupancy", "/reports/pos-sales-mix"}) {
+            for (String query : new String[] {"to=2031-01-31", "from=2031-01-01", "from=2031-1-1&to=2031-01-31"}) {
+                mockMvc.perform(get(path + "?" + query).header("Authorization", token(Role.MANAGER))).andExpect(status().isBadRequest());
+            }
+        }
+        verify(reportService, never()).occupancy(any(), any());
+        verify(reportService, never()).posSalesMix(any(), any());
+    }
+
+    @Test
+    void guestLtv_limitOutOfRange_isBadRequest() throws Exception {
+        for (String limit : new String[] {"0", "201", "abc"}) {
+            mockMvc.perform(get("/reports/guest-ltv?limit=" + limit).header("Authorization", token(Role.MANAGER))).andExpect(status().isBadRequest());
+        }
+        verify(reportService, never()).guestLtv(any());
     }
 
     // --- GET /audit-log requires MANAGER or above - same reasoning as /payments/summary above:

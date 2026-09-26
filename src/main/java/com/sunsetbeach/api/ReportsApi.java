@@ -6,6 +6,9 @@
 package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.ErrorMessage;
+import com.sunsetbeach.model.GuestLtvReport;
+import com.sunsetbeach.model.OccupancyReport;
+import com.sunsetbeach.model.PosSalesMixReport;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -53,6 +56,154 @@ public interface ReportsApi {
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/guest-ltv : Top guests by lifetime room revenue
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as &#x60;GET /reports/revenue-export&#x60;. No date range: every booking ever made counts.  Only bookings linked to a guest card (&#x60;Booking.guestId&#x60;) count, and only those that are not &#x60;CANCELLED&#x60;. A guest whose every booking is cancelled does not appear.  &#x60;roomRevenue&#x60; is the sum of those bookings&#39; &#x60;totalPrice&#x60;, which is the agreed room price only. Guests are ranked by it, highest first. POS spend is not inside &#x60;totalPrice&#x60;: an order charged to the room is recorded as a separate &#x60;ROOM_CHARGE&#x60; payment. That is reported as its own figure, &#x60;roomChargesTotal&#x60;, and is not part of the ranking. A POS order the guest paid for on the spot (cash, card) is linked to no booking or guest and so cannot be attributed to anyone.  Future bookings count the same as past ones, in every figure: &#x60;lastCheckIn&#x60; can be a date that has not arrived yet. 
+     *
+     * @param limit How many guests to return. (optional, default to 50)
+     * @return The top guests, highest room revenue first. (status code 200)
+     *         or &#x60;limit&#x60; is not an integer from 1 to 200. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/guest-ltv",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<GuestLtvReport> getGuestLtvReport(
+        @Min(1) @Max(200)  @Valid @RequestParam(value = "limit", required = false, defaultValue = "50") Integer limit
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"guests\" : [ { \"roomRevenue\" : \"roomRevenue\", \"name\" : \"name\", \"firstCheckIn\" : \"firstCheckIn\", \"bookingCount\" : 0, \"lastCheckIn\" : \"lastCheckIn\", \"guestId\" : \"guestId\", \"email\" : \"email\", \"totalNights\" : 6, \"roomChargesTotal\" : \"roomChargesTotal\" }, { \"roomRevenue\" : \"roomRevenue\", \"name\" : \"name\", \"firstCheckIn\" : \"firstCheckIn\", \"bookingCount\" : 0, \"lastCheckIn\" : \"lastCheckIn\", \"guestId\" : \"guestId\", \"email\" : \"email\", \"totalNights\" : 6, \"roomChargesTotal\" : \"roomChargesTotal\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/occupancy : Occupancy, ADR and RevPAR for a date range, per room type and in total
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as &#x60;GET /reports/revenue-export&#x60;. One set of figures for the whole requested range (no daily breakdown), per room type and for the property as a whole.  **Nights.** &#x60;from&#x60;/&#x60;to&#x60; are inclusive hotel-local calendar dates, and each date in the range is one night: &#x60;from&#x3D;2026-09-01&amp;to&#x3D;2026-09-30&#x60; is 30 nights. A stay occupies the nights &#x60;checkIn &lt;&#x3D; night &lt; checkOut&#x60;, the same rule availability uses.  **Room-nights sold** counts every night of every &#x60;BookingSegment&#x60; whose booking is not &#x60;CANCELLED&#x60; (any other status counts, &#x60;NEW&#x60; included, same as availability) that falls inside the range. A segment that starts before &#x60;from&#x60; or ends after &#x60;to&#x60; counts only the nights inside it. A segment with no physical room assigned yet still counts for its room type.  **Room revenue** is each such segment&#39;s &#x60;totalPrice&#x60;, prorated to the nights inside the range: &#x60;totalPrice × nightsInRange / segmentNights&#x60;. Rounded to two decimals once, on the final sum, not per segment. It is the agreed room price, not money collected: see &#x60;GET /reports/revenue-export&#x60; for cash actually received.  **Room-nights available is a known simplification.** It is the number of physical units of the room type that are active *today*, times the number of nights in the range. It is not a historical day-by-day count: a unit added or deactivated during the range counts as if it had always been in its current state for the whole range. Nights a unit was blocked out of sale (&#x60;RoomUnitBlock&#x60;) are not subtracted either. Occupancy and RevPAR for a past range are therefore only as accurate as today&#39;s inventory is representative of that period.  &#x60;occupancyPercent&#x60; &#x3D; sold / available × 100. &#x60;adr&#x60; (average daily rate) &#x3D; revenue / sold. &#x60;revpar&#x60; &#x3D; revenue / available. Each is &#x60;null&#x60; when its denominator is zero. All three are computed from the unrounded revenue and rounded to two decimals at the end.  A room type appears if it has at least one active unit today or at least one night sold in the range. &#x60;total&#x60; sums the rows; its ratios are recomputed from those sums, not averaged. 
+     *
+     * @param from First night of the range, inclusive (Asia/Bangkok). (required)
+     * @param to Last night of the range, inclusive (Asia/Bangkok). (required)
+     * @return The occupancy figures. (status code 200)
+     *         or &#x60;from&#x60;/&#x60;to&#x60; missing, not a valid date, or &#x60;from&#x60; after &#x60;to&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/occupancy",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<OccupancyReport> getOccupancyReport(
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = true) String from,
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = true) String to
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"rooms\" : [ { \"roomNightsSold\" : 5, \"revpar\" : \"revpar\", \"roomRevenue\" : \"roomRevenue\", \"roomNightsAvailable\" : 1, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"adr\" : \"adr\", \"activeUnits\" : 6 }, { \"roomNightsSold\" : 5, \"revpar\" : \"revpar\", \"roomRevenue\" : \"roomRevenue\", \"roomNightsAvailable\" : 1, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"adr\" : \"adr\", \"activeUnits\" : 6 } ], \"total\" : { \"roomNightsSold\" : 5, \"revpar\" : \"revpar\", \"roomRevenue\" : \"roomRevenue\", \"roomNightsAvailable\" : 1, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"adr\" : \"adr\", \"activeUnits\" : 6 }, \"nights\" : 0, \"from\" : \"from\", \"to\" : \"to\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/pos-sales-mix : What the POS sold in a date range, by menu item, category and department
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as &#x60;GET /reports/revenue-export&#x60;.  Counts the items of every order that is &#x60;PAID&#x60; and whose &#x60;Payment&#x60; was recorded inside the range. An order has exactly one &#x60;Payment&#x60; (a unique constraint enforces it), so \&quot;when was this order settled\&quot; has one answer. Days are Asia/Bangkok calendar days, bucketed exactly the way &#x60;GET /reports/revenue-export&#x60; buckets payments, so the two reports agree on which day a sale belongs to. Open, sent and cancelled orders are not counted.  Every payment method counts, &#x60;ROOM_CHARGE&#x60; included: this report is about what sold, not about whether the money has been collected yet.  &#x60;revenue&#x60; is &#x60;quantity × unitPrice&#x60; summed over order lines, using the price frozen on each line when it was added to the order (the same figure the order&#39;s &#x60;total&#x60; was built from), not today&#39;s menu price. &#x60;name&#x60;, &#x60;category&#x60; and &#x60;department&#x60; are read from the menu item as it is now, so an item renamed or moved since is reported under its current name and grouping.  &#x60;items&#x60; has one row per menu item. &#x60;categories&#x60; and &#x60;departments&#x60; roll the same rows up, and each list sums to &#x60;totalQuantity&#x60;/&#x60;totalRevenue&#x60;. Every list is sorted by revenue, highest first. 
+     *
+     * @param from Inclusive start date (Asia/Bangkok). (required)
+     * @param to Inclusive end date (Asia/Bangkok). (required)
+     * @return The sales mix. (status code 200)
+     *         or &#x60;from&#x60;/&#x60;to&#x60; missing, not a valid date, or &#x60;from&#x60; after &#x60;to&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/pos-sales-mix",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<PosSalesMixReport> getPosSalesMixReport(
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = true) String from,
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = true) String to
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"totalQuantity\" : 0, \"from\" : \"from\", \"to\" : \"to\", \"totalRevenue\" : \"totalRevenue\", \"categories\" : [ { \"revenue\" : \"revenue\", \"quantity\" : 1, \"category\" : \"category\" }, { \"revenue\" : \"revenue\", \"quantity\" : 1, \"category\" : \"category\" } ], \"departments\" : [ { \"revenue\" : \"revenue\", \"quantity\" : 5 }, { \"revenue\" : \"revenue\", \"quantity\" : 5 } ], \"items\" : [ { \"revenue\" : \"revenue\", \"quantity\" : 6, \"name\" : \"name\", \"category\" : \"category\", \"department\" : \"KITCHEN\", \"menuItemId\" : \"menuItemId\" }, { \"revenue\" : \"revenue\", \"quantity\" : 6, \"name\" : \"name\", \"category\" : \"category\", \"department\" : \"KITCHEN\", \"menuItemId\" : \"menuItemId\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);

@@ -268,6 +268,11 @@ public class SecurityConfig {
                         // Same floor as /payments/summary and /bookings/export - the accountant's
                         // revenue workbook exposes nothing either of those doesn't already.
                         .requestMatchers(HttpMethod.GET, "/reports/revenue-export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Same floor again: occupancy/ADR is derived from booking prices a manager
+                        // already sees, the sales mix from the same payments as the revenue export,
+                        // and guest LTV from the booking list plus guest cards.
+                        .requestMatchers(HttpMethod.GET, "/reports/occupancy", "/reports/pos-sales-mix", "/reports/guest-ltv")
+                                .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Audit log: read-only, MANAGER+ - the disputes it exists to resolve (a
                         // cash discrepancy, a guest billing question, a suspected misuse of a
                         // role) are exactly what a manager needs to investigate without

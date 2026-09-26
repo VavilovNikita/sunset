@@ -4,10 +4,15 @@ import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSource;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface BookingRepository extends JpaRepository<BookingEntity, String>, JpaSpecificationExecutor<BookingEntity> {
 
@@ -52,4 +57,34 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
      * whatever a guest typed at booking time, not normalized to any particular case.
      */
     List<BookingEntity> findByGuestEmailIgnoreCaseOrderByCreatedAtDesc(String guestEmail);
+
+    /**
+     * {@code GET /reports/guest-ltv}'s ranking - one row per guest card with at least one booking
+     * whose status isn't {@code excludedStatus}, highest summed {@code totalPrice} first. The
+     * {@code guestId} tie-break only keeps the order stable between calls; the page size is the
+     * report's {@code limit}.
+     */
+    @Query("""
+        SELECT b.guestId AS guestId, COUNT(b) AS bookingCount, SUM(b.totalPrice) AS roomRevenue,
+               MIN(b.checkIn) AS firstCheckIn, MAX(b.checkIn) AS lastCheckIn
+        FROM BookingEntity b
+        WHERE b.guestId IS NOT NULL AND b.status <> :excludedStatus
+        GROUP BY b.guestId
+        ORDER BY SUM(b.totalPrice) DESC, b.guestId ASC
+        """)
+    List<GuestBookingTotals> sumByGuest(@Param("excludedStatus") BookingStatus excludedStatus, Pageable page);
+
+    List<BookingEntity> findByGuestIdInAndStatusNot(Collection<String> guestIds, BookingStatus excludedStatus);
+
+    interface GuestBookingTotals {
+        String getGuestId();
+
+        long getBookingCount();
+
+        BigDecimal getRoomRevenue();
+
+        LocalDate getFirstCheckIn();
+
+        LocalDate getLastCheckIn();
+    }
 }

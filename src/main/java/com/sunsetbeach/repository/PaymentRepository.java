@@ -14,6 +14,9 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, String> 
 
     List<PaymentEntity> findByBookingIdAndMethod(String bookingId, PaymentMethod method);
 
+    /** Bulk counterpart of {@link #findByBookingIdAndMethod} for {@code GET /reports/guest-ltv}. */
+    List<PaymentEntity> findByBookingIdInAndMethod(Collection<String> bookingIds, PaymentMethod method);
+
     /** At most one row - see the {@code Payment_unique_per_order} constraint. */
     Optional<PaymentEntity> findByOrderId(String orderId);
 

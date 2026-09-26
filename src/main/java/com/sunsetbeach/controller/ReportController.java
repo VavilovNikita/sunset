@@ -1,6 +1,10 @@
 package com.sunsetbeach.controller;
 
 import com.sunsetbeach.api.ReportsApi;
+import com.sunsetbeach.model.GuestLtvReport;
+import com.sunsetbeach.model.OccupancyReport;
+import com.sunsetbeach.model.PosSalesMixReport;
+import com.sunsetbeach.service.ReportService;
 import com.sunsetbeach.service.RevenueExportService;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
@@ -14,9 +18,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ReportController implements ReportsApi {
 
     private final RevenueExportService revenueExportService;
+    private final ReportService reportService;
 
-    public ReportController(RevenueExportService revenueExportService) {
+    public ReportController(RevenueExportService revenueExportService, ReportService reportService) {
         this.revenueExportService = revenueExportService;
+        this.reportService = reportService;
     }
 
     @Override
@@ -27,5 +33,20 @@ public class ReportController implements ReportsApi {
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(filename).build().toString())
                 .body(new ByteArrayResource(workbook));
+    }
+
+    @Override
+    public ResponseEntity<OccupancyReport> getOccupancyReport(String from, String to) {
+        return ResponseEntity.ok(reportService.occupancy(from, to));
+    }
+
+    @Override
+    public ResponseEntity<PosSalesMixReport> getPosSalesMixReport(String from, String to) {
+        return ResponseEntity.ok(reportService.posSalesMix(from, to));
+    }
+
+    @Override
+    public ResponseEntity<GuestLtvReport> getGuestLtvReport(Integer limit) {
+        return ResponseEntity.ok(reportService.guestLtv(limit));
     }
 }
