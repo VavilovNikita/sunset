@@ -106,6 +106,8 @@ tags:
     description: POS cashier shift open/close and cash reconciliation (CASHIER or above).
   - name: Payments
     description: Cross-shift POS payment reporting for a date range (MANAGER or above).
+  - name: Reports
+    description: Financial exports for the hotel's accountant (MANAGER or above).
   - name: Printers
     description: >
       ESC/POS network printer CRUD and connection testing (MANAGER or above), plus the durable
@@ -5230,6 +5232,89 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PaymentsSummary"
+        "400":
+          description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /reports/revenue-export:
+    get:
+      operationId: exportRevenue
+      tags: [Reports]
+      summary: Export money collected in a date range, as an Excel workbook
+      description: >
+        Requires role `MANAGER` or above, same floor as `GET /payments/summary` and
+        `GET /bookings/export`. Gross amounts actually received, by day and by method, for a
+        bookkeeper to reconcile against cash and bank deposits. No tax breakdown: nothing in this
+        system records tax.
+
+
+        **Days are Asia/Bangkok calendar days.** `from`/`to` are inclusive hotel-local dates, and
+        each payment is placed on the Bangkok date of its `createdAt`. This differs from
+        `GET /payments/summary`, which compares `createdAt` against the dates without converting
+        it, so its days run 07:00 to 07:00 Bangkok time. For the same `from`/`to`, the two can
+        disagree by whatever was paid between 00:00 and 07:00 Bangkok time at either end of the
+        range.
+
+
+        **Room-rate revenue is not in any total.** This system has no payment record for the room
+        itself. The only sign that a stay was paid for is `Booking.status = PAID`, which has no
+        date, method or amount-paid of its own. The workbook therefore totals exactly two
+        channels, and says so on its Summary sheet:
+
+        - **POS payments received**: `Payment` rows with method `CASH`, `CARD` or `OTHER`.
+          `ROOM_CHARGE` payments are shown in their own column but never added to any total.
+          Closing an order to a room collects no money, it moves the amount onto the booking's
+          folio (see `GET /payments/summary`).
+
+        - **Room charges settled**: `FolioPayment` rows, i.e. money collected at the desk against
+          room-charged POS orders (see `POST /bookings/{id}/folio-payments`). This is where a
+          room-charged order's money is counted, once, when it is actually collected. It never
+          includes the room rate: a folio payment can't exceed the booking's outstanding room
+          charges.
+
+
+        Four sheets. "Summary": one row per day in the range (days with nothing collected
+        included, as zeros), then a totals row, then notes explaining the above. "POS payments":
+        every `Payment` in the range, `ROOM_CHARGE` included and marked as not counted, with its
+        order, table and the booking it was charged to. "Room charge settlements": every
+        `FolioPayment` in the range, with its booking and the booking's `guestName` (the name
+        stored on the booking, not a live guest-card lookup). "Paid bookings (info)":
+        bookings whose status is `PAID` now and whose check-out falls in the range, with
+        `totalPrice`. That sheet is for reference only. It is what the booking says today, not a
+        record of when or how it was paid, and none of it is added to any total.
+
+
+        Amounts are numeric cells with two decimals, so they can be summed in Excel.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Inclusive start date (Asia/Bangkok).
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Inclusive end date (Asia/Bangkok).
+      responses:
+        "200":
+          description: The .xlsx workbook (Summary, POS payments, Room charge settlements, Paid bookings (info)).
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
         "400":
           description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
           content:
@@ -11292,6 +11377,7 @@ components:
         - MENU_ITEM_CREATED
         - MENU_ITEM_UPDATED
         - MENU_ITEM_DELETED
+        - REVENUE_EXPORTED
 
     AuditEntityType:
       type: string
@@ -11305,7 +11391,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT]
 
     AuditLogEntry:
       type: object

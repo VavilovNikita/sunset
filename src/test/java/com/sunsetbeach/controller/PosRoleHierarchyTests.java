@@ -122,6 +122,7 @@ import tools.jackson.databind.json.JsonMapper;
             UserController.class,
             ShiftController.class,
             PaymentController.class,
+            ReportController.class,
             PrinterController.class,
             RoomUnitController.class,
             BookingController.class,
@@ -167,6 +168,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private PaymentService paymentService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.RevenueExportService revenueExportService;
 
     @MockitoBean
     private PrinterService printerService;
@@ -579,6 +583,43 @@ class PosRoleHierarchyTests {
     @Test
     void paymentsSummary_missingFromParam_isBadRequest() throws Exception {
         mockMvc.perform(get("/payments/summary?to=2031-01-31").header("Authorization", token(Role.MANAGER))).andExpect(status().isBadRequest());
+    }
+
+    // --- GET /reports/revenue-export: same MANAGER floor as /payments/summary ---
+
+    @Test
+    void revenueExport_withCashierToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/reports/revenue-export?from=2031-01-01&to=2031-01-31").header("Authorization", token(Role.CASHIER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void revenueExport_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/reports/revenue-export?from=2031-01-01&to=2031-01-31").header("Authorization", token(Role.WAITER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void revenueExport_withManagerToken_isOk() throws Exception {
+        when(revenueExportService.export(anyString(), anyString())).thenReturn(new byte[] {1});
+        mockMvc.perform(get("/reports/revenue-export?from=2031-01-01&to=2031-01-31").header("Authorization", token(Role.MANAGER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void revenueExport_missingOrMalformedDate_isBadRequest() throws Exception {
+        for (String query : new String[] {"to=2031-01-31", "from=2031-01-01", "from=2031-1-1&to=2031-01-31", "from=yesterday&to=2031-01-31"}) {
+            mockMvc.perform(get("/reports/revenue-export?" + query).header("Authorization", token(Role.MANAGER)))
+                    .andExpect(status().isBadRequest());
+        }
+        verify(revenueExportService, never()).export(any(), any());
+    }
+
+    @Test
+    void revenueExport_fromAfterTo_isBadRequest() throws Exception {
+        when(revenueExportService.export(anyString(), anyString())).thenThrow(com.sunsetbeach.error.ValidationException.field("to", "must be on or after from"));
+        mockMvc.perform(get("/reports/revenue-export?from=2031-02-01&to=2031-01-31").header("Authorization", token(Role.MANAGER)))
+                .andExpect(status().isBadRequest());
     }
 
     // --- GET /audit-log requires MANAGER or above - same reasoning as /payments/summary above:

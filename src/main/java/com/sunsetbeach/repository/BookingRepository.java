@@ -13,6 +13,9 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
 
     List<BookingEntity> findByRoomId(String roomId);
 
+    /** GET /reports/revenue-export's informational "Paid bookings" sheet - {@code checkOut} inclusive on both ends. */
+    List<BookingEntity> findByStatusAndCheckOutBetween(BookingStatus status, LocalDate from, LocalDate to);
+
     /**
      * Every unconfirmed public booking, regardless of age - {@link com.sunsetbeach.service.BookingExpiryService}
      * needs to run its own business-day-aware date math per row (skipping weekends), which isn't

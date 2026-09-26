@@ -265,6 +265,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/shifts").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/shifts/**").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.GET, "/payments/summary").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Same floor as /payments/summary and /bookings/export - the accountant's
+                        // revenue workbook exposes nothing either of those doesn't already.
+                        .requestMatchers(HttpMethod.GET, "/reports/revenue-export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Audit log: read-only, MANAGER+ - the disputes it exists to resolve (a
                         // cash discrepancy, a guest billing question, a suspected misuse of a
                         // role) are exactly what a manager needs to investigate without

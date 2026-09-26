@@ -60,7 +60,9 @@ public enum AuditEntityType {
   
   ATTENDANCE_DEVICE("ATTENDANCE_DEVICE"),
   
-  MENU_ITEM("MENU_ITEM");
+  MENU_ITEM("MENU_ITEM"),
+  
+  PAYMENT("PAYMENT");
 
   private String value;
 
