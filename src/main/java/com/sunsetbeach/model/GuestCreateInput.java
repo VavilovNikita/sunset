@@ -4,7 +4,9 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -17,7 +19,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Body of &#x60;POST /guests&#x60;. Nothing here is checked against existing guests before creating - no automatic merging, see &#x60;Guest&#x60;&#39;s own description - &#x60;GET /guests?q&#x3D;&#x60; is how a caller checks for a likely duplicate (by name, email, or phone) *before* submitting this, and is expected to be called for exactly that reason; this endpoint itself never blocks on it. 
+ * Body of &#x60;POST /guests&#x60;. Nothing here is checked against existing guests before creating - no automatic merging, see &#x60;Guest&#x60;&#39;s own description - &#x60;GET /guests?q&#x3D;&#x60; is how a caller checks for a likely duplicate (by name, email, or phone) *before* submitting this, and is expected to be called for exactly that reason; this endpoint itself never blocks on it. &#x60;vip&#x60;/&#x60;dateOfBirth&#x60;/&#x60;tags&#x60; are optional here and default to &#x60;false&#x60;/&#x60;null&#x60;/&#x60;[]&#x60;. &#x60;dateOfBirth&#x60; may not be in the future (400). Each tag is trimmed; blank tags and exact duplicates are silently dropped, so &#x60;[\&quot;\&quot;, \&quot;vip\&quot;, \&quot;  \&quot;, \&quot;vip\&quot;]&#x60; is stored as &#x60;[\&quot;vip\&quot;]&#x60; - the same normalization &#x60;GuestUpdateInput&#x60; applies. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -30,6 +32,13 @@ public class GuestCreateInput {
   private JsonNullable<String> phone = JsonNullable.<String>undefined();
 
   private JsonNullable<@Size(max = 2000) String> notes = JsonNullable.<String>undefined();
+
+  private Boolean vip = false;
+
+  private JsonNullable<@Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") String> dateOfBirth = JsonNullable.<String>undefined();
+
+  @Valid
+  private List<@Size(max = 50)String> tags = new ArrayList<>();
 
   public GuestCreateInput() {
     super();
@@ -118,6 +127,71 @@ public class GuestCreateInput {
     this.notes = notes;
   }
 
+  public GuestCreateInput vip(Boolean vip) {
+    this.vip = vip;
+    return this;
+  }
+
+  /**
+   * Get vip
+   * @return vip
+   */
+  
+  @JsonProperty("vip")
+  public Boolean getVip() {
+    return vip;
+  }
+
+  public void setVip(Boolean vip) {
+    this.vip = vip;
+  }
+
+  public GuestCreateInput dateOfBirth(String dateOfBirth) {
+    this.dateOfBirth = JsonNullable.of(dateOfBirth);
+    return this;
+  }
+
+  /**
+   * Get dateOfBirth
+   * @return dateOfBirth
+   */
+  @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") 
+  @JsonProperty("dateOfBirth")
+  public JsonNullable<@Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") String> getDateOfBirth() {
+    return dateOfBirth;
+  }
+
+  public void setDateOfBirth(JsonNullable<String> dateOfBirth) {
+    this.dateOfBirth = dateOfBirth;
+  }
+
+  public GuestCreateInput tags(List<@Size(max = 50)String> tags) {
+    this.tags = tags;
+    return this;
+  }
+
+  public GuestCreateInput addTagsItem(String tagsItem) {
+    if (this.tags == null) {
+      this.tags = new ArrayList<>();
+    }
+    this.tags.add(tagsItem);
+    return this;
+  }
+
+  /**
+   * Get tags
+   * @return tags
+   */
+  @Size(max = 20) 
+  @JsonProperty("tags")
+  public List<@Size(max = 50)String> getTags() {
+    return tags;
+  }
+
+  public void setTags(List<@Size(max = 50)String> tags) {
+    this.tags = tags;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -130,7 +204,10 @@ public class GuestCreateInput {
     return Objects.equals(this.name, guestCreateInput.name) &&
         equalsNullable(this.email, guestCreateInput.email) &&
         equalsNullable(this.phone, guestCreateInput.phone) &&
-        equalsNullable(this.notes, guestCreateInput.notes);
+        equalsNullable(this.notes, guestCreateInput.notes) &&
+        Objects.equals(this.vip, guestCreateInput.vip) &&
+        equalsNullable(this.dateOfBirth, guestCreateInput.dateOfBirth) &&
+        Objects.equals(this.tags, guestCreateInput.tags);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -139,7 +216,7 @@ public class GuestCreateInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, hashCodeNullable(email), hashCodeNullable(phone), hashCodeNullable(notes));
+    return Objects.hash(name, hashCodeNullable(email), hashCodeNullable(phone), hashCodeNullable(notes), vip, hashCodeNullable(dateOfBirth), tags);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -157,6 +234,9 @@ public class GuestCreateInput {
     sb.append("    email: ").append("[REDACTED]").append("\n");
     sb.append("    phone: ").append("[REDACTED]").append("\n");
     sb.append("    notes: ").append("[REDACTED]").append("\n");
+    sb.append("    vip: ").append(toIndentedString(vip)).append("\n");
+    sb.append("    dateOfBirth: ").append("[REDACTED]").append("\n");
+    sb.append("    tags: ").append("[REDACTED]").append("\n");
     sb.append("}");
     return sb.toString();
   }

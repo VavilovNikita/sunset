@@ -23,6 +23,8 @@ class ToStringRedactsGuestPiiTests {
     private static final String REAL_PHONE = "+66891234567";
     private static final String REAL_PAYMENT_NOTE = "Card ending 4242, ref JD-2031";
     private static final String REAL_NOTES = "Allergic to shellfish, prefers a quiet room away from the pool";
+    private static final String REAL_DATE_OF_BIRTH = "1987-04-12";
+    private static final String REAL_TAG = "recovering from knee surgery";
 
     @Test
     void booking_toStringDoesNotContainGuestEmailPhoneOrPaymentNote() {
@@ -85,29 +87,66 @@ class ToStringRedactsGuestPiiTests {
     }
 
     @Test
-    void guest_toStringDoesNotContainEmailPhoneOrNotes() {
-        Guest guest = new Guest("guest-1", "Jane Doe", REAL_EMAIL, REAL_PHONE, REAL_NOTES, OffsetDateTime.now(), OffsetDateTime.now());
+    void guest_toStringDoesNotContainEmailPhoneNotesDateOfBirthOrTags() {
+        Guest guest = new Guest(
+                "guest-1", "Jane Doe", REAL_EMAIL, REAL_PHONE, REAL_NOTES, true, REAL_DATE_OF_BIRTH, java.util.List.of(REAL_TAG),
+                OffsetDateTime.now(), OffsetDateTime.now());
 
         String rendered = guest.toString();
 
-        assertThat(rendered).doesNotContain(REAL_EMAIL).doesNotContain(REAL_PHONE).doesNotContain(REAL_NOTES);
+        assertThat(rendered)
+                .doesNotContain(REAL_EMAIL)
+                .doesNotContain(REAL_PHONE)
+                .doesNotContain(REAL_NOTES)
+                .doesNotContain(REAL_DATE_OF_BIRTH)
+                .doesNotContain(REAL_TAG);
     }
 
     @Test
-    void guestCreateInput_toStringDoesNotContainEmailPhoneOrNotes() {
-        GuestCreateInput input = new GuestCreateInput("Jane Doe").email(REAL_EMAIL).phone(REAL_PHONE).notes(REAL_NOTES);
+    void guestDetail_toStringDoesNotContainDateOfBirthOrTags() {
+        GuestDetail detail = new GuestDetail(
+                "guest-1", "Jane Doe", REAL_EMAIL, REAL_PHONE, REAL_NOTES, true, REAL_DATE_OF_BIRTH, java.util.List.of(REAL_TAG),
+                OffsetDateTime.now(), OffsetDateTime.now(), java.util.List.of(), null);
 
-        String rendered = input.toString();
+        String rendered = detail.toString();
 
-        assertThat(rendered).doesNotContain(REAL_EMAIL).doesNotContain(REAL_PHONE).doesNotContain(REAL_NOTES);
+        assertThat(rendered).doesNotContain(REAL_DATE_OF_BIRTH).doesNotContain(REAL_TAG);
     }
 
     @Test
-    void guestUpdateInput_toStringDoesNotContainEmailPhoneOrNotes() {
-        GuestUpdateInput input = new GuestUpdateInput("Jane Doe").email(REAL_EMAIL).phone(REAL_PHONE).notes(REAL_NOTES);
+    void guestCreateInput_toStringDoesNotContainEmailPhoneNotesDateOfBirthOrTags() {
+        GuestCreateInput input = new GuestCreateInput("Jane Doe")
+                .email(REAL_EMAIL)
+                .phone(REAL_PHONE)
+                .notes(REAL_NOTES)
+                .dateOfBirth(REAL_DATE_OF_BIRTH)
+                .tags(java.util.List.of(REAL_TAG));
 
         String rendered = input.toString();
 
-        assertThat(rendered).doesNotContain(REAL_EMAIL).doesNotContain(REAL_PHONE).doesNotContain(REAL_NOTES);
+        assertThat(rendered)
+                .doesNotContain(REAL_EMAIL)
+                .doesNotContain(REAL_PHONE)
+                .doesNotContain(REAL_NOTES)
+                .doesNotContain(REAL_DATE_OF_BIRTH)
+                .doesNotContain(REAL_TAG);
+    }
+
+    @Test
+    void guestUpdateInput_toStringDoesNotContainEmailPhoneNotesDateOfBirthOrTags() {
+        GuestUpdateInput input = new GuestUpdateInput("Jane Doe", false, java.util.List.of(REAL_TAG))
+                .email(REAL_EMAIL)
+                .phone(REAL_PHONE)
+                .notes(REAL_NOTES)
+                .dateOfBirth(REAL_DATE_OF_BIRTH);
+
+        String rendered = input.toString();
+
+        assertThat(rendered)
+                .doesNotContain(REAL_EMAIL)
+                .doesNotContain(REAL_PHONE)
+                .doesNotContain(REAL_NOTES)
+                .doesNotContain(REAL_DATE_OF_BIRTH)
+                .doesNotContain(REAL_TAG);
     }
 }

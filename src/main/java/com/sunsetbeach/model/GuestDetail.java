@@ -37,6 +37,13 @@ public class GuestDetail {
 
   private JsonNullable<String> notes = JsonNullable.<String>undefined();
 
+  private Boolean vip;
+
+  private JsonNullable<@Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") String> dateOfBirth = JsonNullable.<String>undefined();
+
+  @Valid
+  private List<String> tags = new ArrayList<>();
+
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
@@ -55,12 +62,15 @@ public class GuestDetail {
   /**
    * Constructor with only required parameters
    */
-  public GuestDetail(String id, String name, String email, String phone, String notes, OffsetDateTime createdAt, OffsetDateTime updatedAt, List<@Valid Booking> bookings, GuestAccountLinkSummary account) {
+  public GuestDetail(String id, String name, String email, String phone, String notes, Boolean vip, String dateOfBirth, List<String> tags, OffsetDateTime createdAt, OffsetDateTime updatedAt, List<@Valid Booking> bookings, GuestAccountLinkSummary account) {
     this.id = id;
     this.name = name;
     this.email = JsonNullable.of(email);
     this.phone = JsonNullable.of(phone);
     this.notes = JsonNullable.of(notes);
+    this.vip = vip;
+    this.dateOfBirth = JsonNullable.of(dateOfBirth);
+    this.tags = tags;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
     this.bookings = bookings;
@@ -162,6 +172,71 @@ public class GuestDetail {
     this.notes = notes;
   }
 
+  public GuestDetail vip(Boolean vip) {
+    this.vip = vip;
+    return this;
+  }
+
+  /**
+   * Get vip
+   * @return vip
+   */
+  @NotNull 
+  @JsonProperty("vip")
+  public Boolean getVip() {
+    return vip;
+  }
+
+  public void setVip(Boolean vip) {
+    this.vip = vip;
+  }
+
+  public GuestDetail dateOfBirth(String dateOfBirth) {
+    this.dateOfBirth = JsonNullable.of(dateOfBirth);
+    return this;
+  }
+
+  /**
+   * Get dateOfBirth
+   * @return dateOfBirth
+   */
+  @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") 
+  @JsonProperty("dateOfBirth")
+  public JsonNullable<@Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") String> getDateOfBirth() {
+    return dateOfBirth;
+  }
+
+  public void setDateOfBirth(JsonNullable<String> dateOfBirth) {
+    this.dateOfBirth = dateOfBirth;
+  }
+
+  public GuestDetail tags(List<String> tags) {
+    this.tags = tags;
+    return this;
+  }
+
+  public GuestDetail addTagsItem(String tagsItem) {
+    if (this.tags == null) {
+      this.tags = new ArrayList<>();
+    }
+    this.tags.add(tagsItem);
+    return this;
+  }
+
+  /**
+   * Get tags
+   * @return tags
+   */
+  @NotNull 
+  @JsonProperty("tags")
+  public List<String> getTags() {
+    return tags;
+  }
+
+  public void setTags(List<String> tags) {
+    this.tags = tags;
+  }
+
   public GuestDetail createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -260,6 +335,9 @@ public class GuestDetail {
         Objects.equals(this.email, guestDetail.email) &&
         Objects.equals(this.phone, guestDetail.phone) &&
         Objects.equals(this.notes, guestDetail.notes) &&
+        Objects.equals(this.vip, guestDetail.vip) &&
+        Objects.equals(this.dateOfBirth, guestDetail.dateOfBirth) &&
+        Objects.equals(this.tags, guestDetail.tags) &&
         Objects.equals(this.createdAt, guestDetail.createdAt) &&
         Objects.equals(this.updatedAt, guestDetail.updatedAt) &&
         Objects.equals(this.bookings, guestDetail.bookings) &&
@@ -268,7 +346,7 @@ public class GuestDetail {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, email, phone, notes, createdAt, updatedAt, bookings, account);
+    return Objects.hash(id, name, email, phone, notes, vip, dateOfBirth, tags, createdAt, updatedAt, bookings, account);
   }
 
   @Override
@@ -280,6 +358,9 @@ public class GuestDetail {
     sb.append("    email: ").append("[REDACTED]").append("\n");
     sb.append("    phone: ").append("[REDACTED]").append("\n");
     sb.append("    notes: ").append("[REDACTED]").append("\n");
+    sb.append("    vip: ").append(toIndentedString(vip)).append("\n");
+    sb.append("    dateOfBirth: ").append("[REDACTED]").append("\n");
+    sb.append("    tags: ").append("[REDACTED]").append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("    bookings: ").append(toIndentedString(bookings)).append("\n");

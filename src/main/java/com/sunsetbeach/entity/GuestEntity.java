@@ -3,10 +3,13 @@ package com.sunsetbeach.entity;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "Guest")
@@ -23,6 +26,13 @@ public class GuestEntity {
     private String phone;
 
     private String notes;
+
+    private boolean vip;
+
+    private LocalDate dateOfBirth;
+
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    private String[] tags = new String[0];
 
     @CreationTimestamp
     private LocalDateTime createdAt;
@@ -68,6 +78,30 @@ public class GuestEntity {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public boolean isVip() {
+        return vip;
+    }
+
+    public void setVip(boolean vip) {
+        this.vip = vip;
+    }
+
+    public LocalDate getDateOfBirth() {
+        return dateOfBirth;
+    }
+
+    public void setDateOfBirth(LocalDate dateOfBirth) {
+        this.dateOfBirth = dateOfBirth;
+    }
+
+    public String[] getTags() {
+        return tags;
+    }
+
+    public void setTags(String[] tags) {
+        this.tags = tags;
     }
 
     public LocalDateTime getCreatedAt() {

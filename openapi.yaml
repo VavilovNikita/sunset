@@ -9942,7 +9942,14 @@ components:
         `notes` itself - two cards for the same person can each accumulate their own free text
         before anyone notices, and reconciling two paragraphs is a job for a person reading both,
         not something a merge operation can do for you.
-      required: [id, name, email, phone, notes, createdAt, updatedAt]
+
+        `vip`/`dateOfBirth`/`tags` are staff-entered facts about the person, not computed ones -
+        the "no computed field" rule above is untouched by them. They live on `Guest`, not only
+        on `GuestDetail`, on purpose: every `Booking` that embeds its guest carries them too, so
+        the front desk sees a VIP flag without opening the card. `dateOfBirth` is PII on its own
+        and `tags` is staff-typed free text exactly like `notes` (a tag can as easily read
+        "recovering from surgery" as "honeymoon"), so both are `x-sensitive`.
+      required: [id, name, email, phone, notes, vip, dateOfBirth, tags, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -9959,6 +9966,19 @@ components:
         notes:
           type: string
           nullable: true
+          x-sensitive: true
+        vip:
+          type: boolean
+        dateOfBirth:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          nullable: true
+          x-sensitive: true
+        tags:
+          type: array
+          description: Free-form labels, in the order staff entered them. Empty array, never null, when there are none.
+          items:
+            type: string
           x-sensitive: true
         createdAt:
           type: string
@@ -9985,7 +10005,7 @@ components:
         embeds, and which carries no computed fields - see its description): whether this card
         has a linked self-service `GuestAccount`, read live from that table on every call, never
         stored on the card.
-      required: [id, name, email, phone, notes, createdAt, updatedAt, bookings, account]
+      required: [id, name, email, phone, notes, vip, dateOfBirth, tags, createdAt, updatedAt, bookings, account]
       properties:
         id:
           type: string
@@ -10002,6 +10022,18 @@ components:
         notes:
           type: string
           nullable: true
+          x-sensitive: true
+        vip:
+          type: boolean
+        dateOfBirth:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          nullable: true
+          x-sensitive: true
+        tags:
+          type: array
+          items:
+            type: string
           x-sensitive: true
         createdAt:
           type: string
@@ -10037,6 +10069,11 @@ components:
         no automatic merging, see `Guest`'s own description - `GET /guests?q=` is how a caller
         checks for a likely duplicate (by name, email, or phone) *before* submitting this, and is
         expected to be called for exactly that reason; this endpoint itself never blocks on it.
+
+        `vip`/`dateOfBirth`/`tags` are optional here and default to `false`/`null`/`[]`.
+        `dateOfBirth` may not be in the future (400). Each tag is trimmed; blank tags and exact
+        duplicates are silently dropped, so `["", "vip", "  ", "vip"]` is stored as `["vip"]` -
+        the same normalization `GuestUpdateInput` applies.
       required: [name]
       properties:
         name:
@@ -10055,12 +10092,36 @@ components:
           type: string
           nullable: true
           maxLength: 2000
+          x-sensitive: true
+        vip:
+          type: boolean
+          default: false
+        dateOfBirth:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          nullable: true
+          x-sensitive: true
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 50
           x-sensitive: true
 
     GuestUpdateInput:
       type: object
-      description: Body of `PATCH /guests/{id}`. Full replacement of every field below, same convention as `TableInput`/`RoomUnitUpdateInput` - no partial update.
-      required: [name]
+      description: >
+        Body of `PATCH /guests/{id}`. Full replacement of every field below, same convention as
+        `TableInput`/`RoomUnitUpdateInput` - no partial update. `vip` and `tags` are required
+        (not defaulted, unlike `GuestCreateInput`): a caller that doesn't know about them must get
+        a 400, not silently unmark a VIP or wipe their tags. Only `vip`'s requirement is actually
+        enforced - the generated model initializes `tags` to an empty list, so an omitted `tags`
+        is indistinguishable from `[]` - but that is enough: any caller unaware of these fields
+        also omits `vip` and is rejected before its missing `tags` could clear anything.
+        `dateOfBirth` follows `email`/`phone`/`notes` - omitted clears it. Same
+        `dateOfBirth`/`tags` rules as `GuestCreateInput`.
+      required: [name, vip, tags]
       properties:
         name:
           type: string
@@ -10078,6 +10139,20 @@ components:
           type: string
           nullable: true
           maxLength: 2000
+          x-sensitive: true
+        vip:
+          type: boolean
+        dateOfBirth:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          nullable: true
+          x-sensitive: true
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 50
           x-sensitive: true
 
     BookingGuestLinkInput:

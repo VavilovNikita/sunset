@@ -1216,7 +1216,7 @@ class PosRoleHierarchyTests {
         mockMvc.perform(patch("/guests/guest-1")
                         .header("Authorization", token(Role.WAITER))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new GuestUpdateInput("Jane Doe"))))
+                        .content(objectMapper.writeValueAsString(new GuestUpdateInput("Jane Doe", false, List.of()))))
                 .andExpect(status().isForbidden());
     }
 
@@ -1226,7 +1226,7 @@ class PosRoleHierarchyTests {
         mockMvc.perform(patch("/guests/guest-1")
                         .header("Authorization", token(Role.CASHIER))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new GuestUpdateInput("Jane Doe"))))
+                        .content(objectMapper.writeValueAsString(new GuestUpdateInput("Jane Doe", false, List.of()))))
                 .andExpect(status().isOk());
     }
 
@@ -1575,12 +1575,12 @@ class PosRoleHierarchyTests {
     }
 
     private static Guest sampleGuest() {
-        return new Guest("guest-1", "Jane Doe", "jane@example.com", "+66800000000", null, OffsetDateTime.now(), OffsetDateTime.now());
+        return new Guest("guest-1", "Jane Doe", "jane@example.com", "+66800000000", null, false, null, List.of(), OffsetDateTime.now(), OffsetDateTime.now());
     }
 
     private static GuestDetail sampleGuestDetail() {
         return new GuestDetail(
-                "guest-1", "Jane Doe", "jane@example.com", "+66800000000", null, OffsetDateTime.now(), OffsetDateTime.now(), List.of(), null);
+                "guest-1", "Jane Doe", "jane@example.com", "+66800000000", null, false, null, List.of(), OffsetDateTime.now(), OffsetDateTime.now(), List.of(), null);
     }
 
     private static PrintJob samplePrintJob() {

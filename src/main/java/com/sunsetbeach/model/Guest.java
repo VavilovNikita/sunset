@@ -5,6 +5,9 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -16,7 +19,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Contact details only - name, email, phone, staff notes, and the stay history that falls out of &#x60;Booking.guestId&#x60; (see &#x60;GuestDetail&#x60;). No documents, no nationality, no passport; adding any of those later is a purely additive migration (new nullable columns on this same row), nothing here would need to change. &#x60;email&#x60;/&#x60;phone&#x60;/&#x60;notes&#x60; are free text a staff member typed and are marked &#x60;x-sensitive&#x60; for the same reason &#x60;Booking.guestEmail&#x60;/&#x60;guestPhone&#x60;/&#x60;paymentNote&#x60; already are - &#x60;notes&#x60; in particular is exactly the kind of field that ends up carrying incidental PII (\&quot;allergic to shellfish\&quot;, a complaint from a past stay), and this project already treats free-text staff commentary as sensitive by default. &#x60;name&#x60; stays unmarked, matching &#x60;Booking.guestName&#x60;&#39;s own precedent - see &#x60;ToStringRedactsGuestPiiTests&#x60;, which only ever asserted on email/phone/paymentNote, never a name. Deliberately carries no computed/aggregated field (no stay count, no lifetime total, no cached last-stay date) - every fact about a guest is reachable by walking to &#x60;Booking&#x60; via &#x60;guestId&#x60;, never stored here independently. This is what keeps a future merge (out of scope for now - see &#x60;PUT /bookings/{id}/guest&#x60;) mechanical: repoint every &#x60;Booking.guestId&#x60; from one &#x60;Guest&#x60; to another and delete the loser, with nothing cached anywhere that would need recomputing. The one thing that doesn&#39;t merge cleanly even so is &#x60;notes&#x60; itself - two cards for the same person can each accumulate their own free text before anyone notices, and reconciling two paragraphs is a job for a person reading both, not something a merge operation can do for you. 
+ * Contact details only - name, email, phone, staff notes, and the stay history that falls out of &#x60;Booking.guestId&#x60; (see &#x60;GuestDetail&#x60;). No documents, no nationality, no passport; adding any of those later is a purely additive migration (new nullable columns on this same row), nothing here would need to change. &#x60;email&#x60;/&#x60;phone&#x60;/&#x60;notes&#x60; are free text a staff member typed and are marked &#x60;x-sensitive&#x60; for the same reason &#x60;Booking.guestEmail&#x60;/&#x60;guestPhone&#x60;/&#x60;paymentNote&#x60; already are - &#x60;notes&#x60; in particular is exactly the kind of field that ends up carrying incidental PII (\&quot;allergic to shellfish\&quot;, a complaint from a past stay), and this project already treats free-text staff commentary as sensitive by default. &#x60;name&#x60; stays unmarked, matching &#x60;Booking.guestName&#x60;&#39;s own precedent - see &#x60;ToStringRedactsGuestPiiTests&#x60;, which only ever asserted on email/phone/paymentNote, never a name. Deliberately carries no computed/aggregated field (no stay count, no lifetime total, no cached last-stay date) - every fact about a guest is reachable by walking to &#x60;Booking&#x60; via &#x60;guestId&#x60;, never stored here independently. This is what keeps a future merge (out of scope for now - see &#x60;PUT /bookings/{id}/guest&#x60;) mechanical: repoint every &#x60;Booking.guestId&#x60; from one &#x60;Guest&#x60; to another and delete the loser, with nothing cached anywhere that would need recomputing. The one thing that doesn&#39;t merge cleanly even so is &#x60;notes&#x60; itself - two cards for the same person can each accumulate their own free text before anyone notices, and reconciling two paragraphs is a job for a person reading both, not something a merge operation can do for you. &#x60;vip&#x60;/&#x60;dateOfBirth&#x60;/&#x60;tags&#x60; are staff-entered facts about the person, not computed ones - the \&quot;no computed field\&quot; rule above is untouched by them. They live on &#x60;Guest&#x60;, not only on &#x60;GuestDetail&#x60;, on purpose: every &#x60;Booking&#x60; that embeds its guest carries them too, so the front desk sees a VIP flag without opening the card. &#x60;dateOfBirth&#x60; is PII on its own and &#x60;tags&#x60; is staff-typed free text exactly like &#x60;notes&#x60; (a tag can as easily read \&quot;recovering from surgery\&quot; as \&quot;honeymoon\&quot;), so both are &#x60;x-sensitive&#x60;. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -32,6 +35,13 @@ public class Guest {
 
   private JsonNullable<String> notes = JsonNullable.<String>undefined();
 
+  private Boolean vip;
+
+  private JsonNullable<@Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") String> dateOfBirth = JsonNullable.<String>undefined();
+
+  @Valid
+  private List<String> tags = new ArrayList<>();
+
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
@@ -45,12 +55,15 @@ public class Guest {
   /**
    * Constructor with only required parameters
    */
-  public Guest(String id, String name, String email, String phone, String notes, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public Guest(String id, String name, String email, String phone, String notes, Boolean vip, String dateOfBirth, List<String> tags, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.name = name;
     this.email = JsonNullable.of(email);
     this.phone = JsonNullable.of(phone);
     this.notes = JsonNullable.of(notes);
+    this.vip = vip;
+    this.dateOfBirth = JsonNullable.of(dateOfBirth);
+    this.tags = tags;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
   }
@@ -150,6 +163,71 @@ public class Guest {
     this.notes = notes;
   }
 
+  public Guest vip(Boolean vip) {
+    this.vip = vip;
+    return this;
+  }
+
+  /**
+   * Get vip
+   * @return vip
+   */
+  @NotNull 
+  @JsonProperty("vip")
+  public Boolean getVip() {
+    return vip;
+  }
+
+  public void setVip(Boolean vip) {
+    this.vip = vip;
+  }
+
+  public Guest dateOfBirth(String dateOfBirth) {
+    this.dateOfBirth = JsonNullable.of(dateOfBirth);
+    return this;
+  }
+
+  /**
+   * Get dateOfBirth
+   * @return dateOfBirth
+   */
+  @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") 
+  @JsonProperty("dateOfBirth")
+  public JsonNullable<@Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") String> getDateOfBirth() {
+    return dateOfBirth;
+  }
+
+  public void setDateOfBirth(JsonNullable<String> dateOfBirth) {
+    this.dateOfBirth = dateOfBirth;
+  }
+
+  public Guest tags(List<String> tags) {
+    this.tags = tags;
+    return this;
+  }
+
+  public Guest addTagsItem(String tagsItem) {
+    if (this.tags == null) {
+      this.tags = new ArrayList<>();
+    }
+    this.tags.add(tagsItem);
+    return this;
+  }
+
+  /**
+   * Free-form labels, in the order staff entered them. Empty array, never null, when there are none.
+   * @return tags
+   */
+  @NotNull 
+  @JsonProperty("tags")
+  public List<String> getTags() {
+    return tags;
+  }
+
+  public void setTags(List<String> tags) {
+    this.tags = tags;
+  }
+
   public Guest createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -202,13 +280,16 @@ public class Guest {
         Objects.equals(this.email, guest.email) &&
         Objects.equals(this.phone, guest.phone) &&
         Objects.equals(this.notes, guest.notes) &&
+        Objects.equals(this.vip, guest.vip) &&
+        Objects.equals(this.dateOfBirth, guest.dateOfBirth) &&
+        Objects.equals(this.tags, guest.tags) &&
         Objects.equals(this.createdAt, guest.createdAt) &&
         Objects.equals(this.updatedAt, guest.updatedAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, email, phone, notes, createdAt, updatedAt);
+    return Objects.hash(id, name, email, phone, notes, vip, dateOfBirth, tags, createdAt, updatedAt);
   }
 
   @Override
@@ -220,6 +301,9 @@ public class Guest {
     sb.append("    email: ").append("[REDACTED]").append("\n");
     sb.append("    phone: ").append("[REDACTED]").append("\n");
     sb.append("    notes: ").append("[REDACTED]").append("\n");
+    sb.append("    vip: ").append(toIndentedString(vip)).append("\n");
+    sb.append("    dateOfBirth: ").append("[REDACTED]").append("\n");
+    sb.append("    tags: ").append("[REDACTED]").append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("}");

@@ -9,6 +9,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Booking;
@@ -194,7 +195,7 @@ class GuestServiceTests extends AbstractIntegrationTest {
         Guest guest = createGuest("Original Name " + UUID.randomUUID(), "original@example.com", "111");
 
         String newName = "Updated Name " + UUID.randomUUID();
-        Guest updated = guestService.update(guest.getId(), new GuestUpdateInput(newName).phone("222"));
+        Guest updated = guestService.update(guest.getId(), new GuestUpdateInput(newName, false, List.of()).phone("222"));
 
         assertThat(updated.getName()).isEqualTo(newName);
         assertThat(updated.getPhone().get()).isEqualTo("222");
@@ -205,6 +206,91 @@ class GuestServiceTests extends AbstractIntegrationTest {
                 .filter(e -> e.getAction() == AuditAction.GUEST_UPDATED)
                 .toList();
         assertThat(entries).hasSize(1);
+    }
+
+    // --- VIP / date of birth / tags -------------------------------------------------------------
+
+    @Test
+    void create_withoutProfileFields_defaultsToNotVipNoBirthDateNoTags() {
+        Guest guest = createGuest("Defaults Guest " + UUID.randomUUID(), null, null);
+
+        assertThat(guest.getVip()).isFalse();
+        assertThat(guest.getDateOfBirth().get()).isNull();
+        assertThat(guest.getTags()).isEmpty();
+    }
+
+    @Test
+    void createAndUpdate_roundTripProfileFields_andNormalizeTagsTheSameWay() {
+        GuestCreateInput input = new GuestCreateInput("Profile Guest " + UUID.randomUUID())
+                .vip(true)
+                .dateOfBirth("1987-04-12")
+                .tags(List.of("", " honeymoon ", "  ", "honeymoon", "late checkout"));
+        Guest created = guestService.create(input);
+        createdGuestIds.add(created.getId());
+
+        assertThat(created.getVip()).isTrue();
+        assertThat(created.getDateOfBirth().get()).isEqualTo("1987-04-12");
+        assertThat(created.getTags()).containsExactly("honeymoon", "late checkout");
+
+        Guest updated = guestService.update(
+                created.getId(), new GuestUpdateInput(created.getName(), false, List.of("repeat guest", " ", "repeat guest ")));
+
+        assertThat(updated.getVip()).isFalse();
+        // Full replacement: dateOfBirth, omitted this time, is cleared - same as email/phone/notes.
+        assertThat(updated.getDateOfBirth().get()).isNull();
+        assertThat(updated.getTags()).containsExactly("repeat guest");
+
+        GuestDetail detail = guestService.getDetail(created.getId());
+        assertThat(detail.getVip()).isFalse();
+        assertThat(detail.getTags()).containsExactly("repeat guest");
+    }
+
+    @Test
+    void create_dateOfBirthInTheFuture_isRejectedAndNothingIsSaved() {
+        String name = "Future Birth " + UUID.randomUUID();
+
+        assertThatThrownBy(() -> guestService.create(new GuestCreateInput(name).dateOfBirth("2999-01-01")))
+                .isInstanceOf(ValidationException.class)
+                .satisfies(e -> assertThat(((ValidationException) e).getFieldErrors()).containsKey("dateOfBirth"));
+
+        assertThat(guestService.search(name)).isEmpty();
+    }
+
+    @Test
+    void update_dateOfBirthInTheFuture_isRejected() {
+        Guest guest = createGuest("Future Birth Update " + UUID.randomUUID(), null, null);
+
+        assertThatThrownBy(() -> guestService.update(
+                        guest.getId(), new GuestUpdateInput(guest.getName(), false, List.of()).dateOfBirth("2999-01-01")))
+                .isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    void create_dateOfBirthMatchingPatternButNotARealDate_isRejectedNotA500() {
+        assertThatThrownBy(() -> guestService.create(new GuestCreateInput("Bad Date " + UUID.randomUUID()).dateOfBirth("1990-02-30")))
+                .isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    void update_togglingVip_saysSoInTheAuditSummary_andOtherEditsDoNot() {
+        Guest guest = createGuest("Vip Audit " + UUID.randomUUID(), null, null);
+        String name = guest.getName();
+
+        guestService.update(guest.getId(), new GuestUpdateInput(name, true, List.of()));
+        guestService.update(guest.getId(), new GuestUpdateInput(name, true, List.of("honeymoon")).notes("Prefers sea view"));
+        guestService.update(guest.getId(), new GuestUpdateInput(name, false, List.of("honeymoon")));
+        String newName = "Vip Audit Renamed " + UUID.randomUUID();
+        guestService.update(guest.getId(), new GuestUpdateInput(newName, true, List.of("honeymoon")));
+
+        List<String> summaries = entriesFor(AuditEntityType.GUEST, guest.getId()).stream()
+                .filter(e -> e.getAction() == AuditAction.GUEST_UPDATED)
+                .map(AuditLogEntity::getSummary)
+                .toList();
+        assertThat(summaries).containsExactlyInAnyOrder(
+                "Guest " + name + " marked VIP",
+                "Guest " + name + " updated",
+                "Guest " + name + " unmarked VIP",
+                "Guest " + name + " renamed to " + newName + "; marked VIP");
     }
 
     @Test

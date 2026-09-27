@@ -3,6 +3,7 @@ package com.sunsetbeach.service;
 import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.GuestMapper;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -12,6 +13,8 @@ import com.sunsetbeach.model.GuestDetail;
 import com.sunsetbeach.model.GuestUpdateInput;
 import com.sunsetbeach.repository.GuestAccountRepository;
 import com.sunsetbeach.repository.GuestRepository;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -25,18 +28,21 @@ public class GuestService {
     private final GuestMapper guestMapper;
     private final BookingService bookingService;
     private final AuditLogService auditLogService;
+    private final Clock clock;
 
     public GuestService(
             GuestRepository guestRepository,
             GuestAccountRepository guestAccountRepository,
             GuestMapper guestMapper,
             BookingService bookingService,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            Clock clock) {
         this.guestRepository = guestRepository;
         this.guestAccountRepository = guestAccountRepository;
         this.guestMapper = guestMapper;
         this.bookingService = bookingService;
         this.auditLogService = auditLogService;
+        this.clock = clock;
     }
 
     /** {@code q} blank or omitted returns every guest, newest first - see the operation's own description in openapi.yaml for why. */
@@ -56,6 +62,7 @@ public class GuestService {
     public Guest create(GuestCreateInput input) {
         GuestEntity entity = new GuestEntity();
         guestMapper.applyCreate(entity, input);
+        requireDateOfBirthNotInFuture(entity);
         GuestEntity saved = guestRepository.saveAndFlush(entity);
         auditLogService.record(AuditAction.GUEST_CREATED, AuditEntityType.GUEST, saved.getId(), "Guest " + saved.getName() + " created");
         return guestMapper.toDto(saved);
@@ -65,14 +72,29 @@ public class GuestService {
     public Guest update(String id, GuestUpdateInput input) {
         GuestEntity entity = findEntity(id);
         String oldName = entity.getName();
+        boolean wasVip = entity.isVip();
         guestMapper.applyUpdate(entity, input);
+        requireDateOfBirthNotInFuture(entity);
         GuestEntity saved = guestRepository.saveAndFlush(entity);
-        auditLogService.record(
-                AuditAction.GUEST_UPDATED,
-                AuditEntityType.GUEST,
-                saved.getId(),
-                oldName.equals(saved.getName()) ? "Guest " + saved.getName() + " updated" : "Guest " + oldName + " renamed to " + saved.getName());
+        boolean renamed = !oldName.equals(saved.getName());
+        // A VIP change is called out on its own, same reasoning as UserService#updateName's
+        // dedicated entry: it's the one field here someone scanning the log would look for.
+        String vipChange = wasVip == saved.isVip() ? null : saved.isVip() ? "marked VIP" : "unmarked VIP";
+        String summary;
+        if (renamed) {
+            summary = "Guest " + oldName + " renamed to " + saved.getName() + (vipChange != null ? "; " + vipChange : "");
+        } else {
+            summary = "Guest " + saved.getName() + " " + (vipChange != null ? vipChange : "updated");
+        }
+        auditLogService.record(AuditAction.GUEST_UPDATED, AuditEntityType.GUEST, saved.getId(), summary);
         return guestMapper.toDto(saved);
+    }
+
+    /** Today (hotel-local, via the shared {@link Clock}) is allowed; tomorrow is not. */
+    private void requireDateOfBirthNotInFuture(GuestEntity entity) {
+        if (entity.getDateOfBirth() != null && entity.getDateOfBirth().isAfter(LocalDate.now(clock))) {
+            throw ValidationException.field("dateOfBirth", "Date of birth can't be in the future");
+        }
     }
 
     /**
