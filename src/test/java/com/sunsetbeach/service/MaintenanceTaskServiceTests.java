@@ -11,6 +11,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.MaintenanceTask;
 import com.sunsetbeach.model.MaintenanceTaskBlockResult;
 import com.sunsetbeach.model.MaintenanceTaskStatus;
@@ -186,7 +187,7 @@ class MaintenanceTaskServiceTests extends AbstractIntegrationTest {
         LocalDate checkIn = LocalDate.now().plusDays(10);
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = bookingService.createStaffBooking(
-                new StaffBookingCreateInput(unit.getRoomId(), "Blocked Room Guest", checkIn.toString(), checkOut.toString()).roomUnitId(unit.getId()));
+                new StaffBookingCreateInput(unit.getRoomId(), "Blocked Room Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN).roomUnitId(unit.getId()));
 
         MaintenanceTaskBlockResult result =
                 maintenanceTaskService.addBlock(task.getId(), new RoomUnitBlockInput(checkIn.toString(), checkOut.toString(), "AC repair"), reporterId);

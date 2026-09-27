@@ -13,6 +13,7 @@ import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.model.AuditAction;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.FolioPayment;
 import com.sunsetbeach.model.FolioPaymentInput;
@@ -140,6 +141,7 @@ class RevenueExportServiceTests extends AbstractIntegrationTest {
 
     private BookingEntity persistBooking(BookingStatus status, LocalDate checkIn, LocalDate checkOut, String guestName, String totalPrice) {
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setGuestName(guestName);
         booking.setGuestEmail("guest@example.com");

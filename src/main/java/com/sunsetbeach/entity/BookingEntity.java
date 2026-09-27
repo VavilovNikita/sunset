@@ -17,6 +17,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 
@@ -67,6 +68,12 @@ public class BookingEntity {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private BookingSource source = BookingSource.PUBLIC;
+
+    // How the booking reached the hotel (marketing channel) - exposed via the API and unrelated to
+    // `source` above: changing this never moves a booking into or out of the expiry sweep.
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private BookingChannel channel;
 
     private String paymentNote;
 
@@ -205,6 +212,14 @@ public class BookingEntity {
 
     public void setSource(BookingSource source) {
         this.source = source;
+    }
+
+    public BookingChannel getChannel() {
+        return channel;
+    }
+
+    public void setChannel(BookingChannel channel) {
+        this.channel = channel;
     }
 
     public boolean isExpiryReminderSent() {

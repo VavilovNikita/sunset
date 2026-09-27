@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.RoomUnitBlockInput;
 import com.sunsetbeach.model.RoomUnitBlockResult;
@@ -76,13 +77,13 @@ class RoomUnitBlockOverlapWarningTests extends AbstractIntegrationTest {
     }
 
     private Booking bookUnit(RoomUnitEntity unit, LocalDate checkIn, LocalDate checkOut) {
-        return bookingService.createStaffBooking(new StaffBookingCreateInput(unit.getRoomId(), "Overlap Test Guest", checkIn.toString(), checkOut.toString())
+        return bookingService.createStaffBooking(new StaffBookingCreateInput(unit.getRoomId(), "Overlap Test Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN)
                 .roomUnitId(unit.getId()));
     }
 
     /** No {@code roomUnitId} - occupies the type's pool without pinning a specific physical room. */
     private Booking bookUnassigned(String roomId, LocalDate checkIn, LocalDate checkOut) {
-        return bookingService.createStaffBooking(new StaffBookingCreateInput(roomId, "Unassigned Overlap Guest", checkIn.toString(), checkOut.toString()));
+        return bookingService.createStaffBooking(new StaffBookingCreateInput(roomId, "Unassigned Overlap Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN));
     }
 
     @Test

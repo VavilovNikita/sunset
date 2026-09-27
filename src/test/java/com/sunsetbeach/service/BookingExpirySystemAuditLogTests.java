@@ -9,6 +9,7 @@ import com.sunsetbeach.entity.BookingSource;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.repository.AuditLogRepository;
 import com.sunsetbeach.repository.BookingRepository;
@@ -86,6 +87,7 @@ class BookingExpirySystemAuditLogTests extends AbstractIntegrationTest {
 
     private BookingEntity persistStalePublicBooking(RoomEntity room) {
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setGuestName("System Audit Guest");
         booking.setGuestEmail("system-audit-guest@example.com");

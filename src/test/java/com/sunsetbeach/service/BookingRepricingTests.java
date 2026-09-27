@@ -9,6 +9,7 @@ import com.sunsetbeach.entity.BookingSegmentNightlyRateEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
@@ -95,7 +96,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     // field defaults to absent, which BookingService.createStaffBooking treats as null) so this
     // also covers the no-room-unit-yet case for the staff path.
     private Booking createStaffBooking(String roomId, LocalDate checkIn, LocalDate checkOut) {
-        return bookingService.createStaffBooking(new StaffBookingCreateInput(roomId, "Guest", checkIn.toString(), checkOut.toString()));
+        return bookingService.createStaffBooking(new StaffBookingCreateInput(roomId, "Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN));
     }
 
     private List<BookingSegmentEntity> segmentsOf(String bookingId) {
@@ -156,7 +157,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
         LocalDate checkIn2 = checkIn.plusDays(10);
         LocalDate checkOut2 = checkIn2.plusDays(3);
         Booking assigned = bookingService.createStaffBooking(
-                new StaffBookingCreateInput(room.getId(), "Guest", checkIn2.toString(), checkOut2.toString()).roomUnitId(unit.getId()));
+                new StaffBookingCreateInput(room.getId(), "Guest", checkIn2.toString(), checkOut2.toString(), BookingChannel.WALK_IN).roomUnitId(unit.getId()));
         BookingSegmentEntity assignedSegment = segmentsOf(assigned.getId()).get(0);
         assertThat(assignedSegment.getRoomUnitId()).isEqualTo(unit.getId());
         Map<LocalDate, BigDecimal> assignedRates = nightlyRatesOf(assignedSegment.getId());
@@ -436,6 +437,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
         LocalDate checkOut = today.plusDays(3); // nights: -2, -1, 0(today), +1, +2 = 5 nights @ 1000 = 5000
 
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setGuestName("Guest");
         booking.setGuestEmail("guest@example.com");
@@ -485,6 +487,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
         LocalDate checkOut = today.minusDays(1); // entirely in the past
 
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setGuestName("Guest");
         booking.setGuestEmail("guest@example.com");

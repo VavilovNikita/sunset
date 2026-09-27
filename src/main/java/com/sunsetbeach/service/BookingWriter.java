@@ -11,6 +11,7 @@ import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentNightlyRateRepository;
@@ -143,7 +144,8 @@ public class BookingWriter {
         }
         Map<LocalDate, BigDecimal> nightlyPrices = priceNightsAtCurrentRate(room, DateRangeUtil.getNights(checkIn, checkOut));
         BookingEntity entity =
-                newBookingEntity(room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.PUBLIC, sumPrices(nightlyPrices));
+                newBookingEntity(
+                        room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.PUBLIC, BookingChannel.DIRECT, sumPrices(nightlyPrices));
         BookingEntity saved = bookingRepository.saveAndFlush(entity);
         saveSegment(saved.getId(), room.getId(), null, checkIn, checkOut, nightlyPrices);
         return saved;
@@ -165,6 +167,7 @@ public class BookingWriter {
             String guestPhone,
             LocalDate checkIn,
             LocalDate checkOut,
+            BookingChannel channel,
             String roomUnitId) {
         int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
         if (!isRangeAvailable(room.getId(), unitCount, checkIn, checkOut, null)) {
@@ -172,7 +175,7 @@ public class BookingWriter {
         }
         Map<LocalDate, BigDecimal> nightlyPrices = priceNightsAtCurrentRate(room, DateRangeUtil.getNights(checkIn, checkOut));
         BookingEntity entity =
-                newBookingEntity(room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.STAFF, sumPrices(nightlyPrices));
+                newBookingEntity(room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.STAFF, channel, sumPrices(nightlyPrices));
 
         String assignedUnitId = null;
         if (roomUnitId != null) {
@@ -196,6 +199,7 @@ public class BookingWriter {
             LocalDate checkIn,
             LocalDate checkOut,
             BookingSource source,
+            BookingChannel channel,
             BigDecimal totalPrice) {
         BookingEntity entity = new BookingEntity();
         entity.setRoomId(room.getId());
@@ -207,6 +211,7 @@ public class BookingWriter {
         entity.setTotalPrice(totalPrice);
         entity.setStatus(BookingStatus.NEW);
         entity.setSource(source);
+        entity.setChannel(channel);
         return entity;
     }
 

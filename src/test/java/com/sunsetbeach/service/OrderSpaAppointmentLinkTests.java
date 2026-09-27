@@ -10,6 +10,7 @@ import com.sunsetbeach.entity.SpaAppointmentEntity;
 import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.Order;
@@ -122,7 +123,7 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
         unit.setActive(true);
         RoomUnitEntity savedUnit = roomUnitRepository.saveAndFlush(unit);
         return bookingService.createStaffBooking(
-                new StaffBookingCreateInput(savedRoom.getId(), "Order Link Guest", checkIn.toString(), checkIn.plusDays(2).toString())
+                new StaffBookingCreateInput(savedRoom.getId(), "Order Link Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN)
                         .roomUnitId(savedUnit.getId()));
     }
 

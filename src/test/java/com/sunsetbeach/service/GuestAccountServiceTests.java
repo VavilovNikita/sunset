@@ -15,6 +15,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ForbiddenException;
 import com.sunsetbeach.error.UnauthorizedException;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.GuestAccountRegisterInput;
 import com.sunsetbeach.model.GuestBookingView;
@@ -288,6 +289,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
 
     private BookingEntity persistBooking(String guestEmail, LocalDateTime createdAt) {
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setGuestName("Guest");
         booking.setGuestEmail(guestEmail);

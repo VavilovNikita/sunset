@@ -236,7 +236,7 @@ class GuestProfileFieldsContractTests extends AbstractIntegrationTest {
                         .header("Authorization", authHeader)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"roomId\":\"" + savedRoom.getId() + "\",\"roomUnitId\":\"" + savedUnit.getId()
-                                + "\",\"guestName\":\"Embedded Guest Booking\",\"checkIn\":\"2098-06-01\",\"checkOut\":\"2098-06-03\"}"))
+                                + "\",\"guestName\":\"Embedded Guest Booking\",\"checkIn\":\"2098-06-01\",\"checkOut\":\"2098-06-03\",\"channel\":\"WALK_IN\"}"))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()

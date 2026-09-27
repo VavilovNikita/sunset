@@ -14,6 +14,7 @@ import com.sunsetbeach.entity.ShiftEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingPosOrder;
 import com.sunsetbeach.model.BookingStatus;
@@ -104,6 +105,7 @@ class BookingRoomChargeTests extends AbstractIntegrationTest {
 
     private BookingEntity persistBooking(LocalDate checkIn, LocalDate checkOut, String guestName) {
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setGuestName(guestName);
         booking.setGuestEmail("guest@example.com");

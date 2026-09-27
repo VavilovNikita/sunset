@@ -91,6 +91,7 @@ public class BookingMapper {
                 entity.getCheckOut().toString(),
                 PriceFormat.asDecimalString(entity.getTotalPrice()),
                 entity.getStatus(),
+                entity.getChannel(),
                 entity.getPaymentNote(),
                 entity.getOccupancyStatus(),
                 entity.getCheckedInAt() != null ? TimestampFormat.toUtc(entity.getCheckedInAt()) : null,

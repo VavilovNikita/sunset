@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -28,6 +29,8 @@ public class BookingStatusInput {
   private BookingStatus status;
 
   private JsonNullable<@Size(max = 500) String> paymentNote = JsonNullable.<String>undefined();
+
+  private BookingChannel channel;
 
   public BookingStatusInput() {
     super();
@@ -78,6 +81,25 @@ public class BookingStatusInput {
     this.paymentNote = paymentNote;
   }
 
+  public BookingStatusInput channel(BookingChannel channel) {
+    this.channel = channel;
+    return this;
+  }
+
+  /**
+   * Get channel
+   * @return channel
+   */
+  @Valid 
+  @JsonProperty("channel")
+  public BookingChannel getChannel() {
+    return channel;
+  }
+
+  public void setChannel(BookingChannel channel) {
+    this.channel = channel;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -88,7 +110,8 @@ public class BookingStatusInput {
     }
     BookingStatusInput bookingStatusInput = (BookingStatusInput) o;
     return Objects.equals(this.status, bookingStatusInput.status) &&
-        equalsNullable(this.paymentNote, bookingStatusInput.paymentNote);
+        equalsNullable(this.paymentNote, bookingStatusInput.paymentNote) &&
+        Objects.equals(this.channel, bookingStatusInput.channel);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -97,7 +120,7 @@ public class BookingStatusInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(status, hashCodeNullable(paymentNote));
+    return Objects.hash(status, hashCodeNullable(paymentNote), channel);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -113,6 +136,7 @@ public class BookingStatusInput {
     sb.append("class BookingStatusInput {\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    paymentNote: ").append("[REDACTED]").append("\n");
+    sb.append("    channel: ").append(toIndentedString(channel)).append("\n");
     sb.append("}");
     return sb.toString();
   }

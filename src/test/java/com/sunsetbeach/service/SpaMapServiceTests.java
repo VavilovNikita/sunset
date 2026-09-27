@@ -13,6 +13,7 @@ import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.Role;
@@ -198,7 +199,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
         RoomUnitEntity savedUnit = roomUnitRepository.saveAndFlush(unit);
         LocalDate checkIn = LocalDate.now();
         return bookingService.createStaffBooking(
-                new StaffBookingCreateInput(savedRoom.getId(), "Spa Map Test Guest", checkIn.toString(), checkIn.plusDays(3).toString())
+                new StaffBookingCreateInput(savedRoom.getId(), "Spa Map Test Guest", checkIn.toString(), checkIn.plusDays(3).toString(), BookingChannel.WALK_IN)
                         .roomUnitId(savedUnit.getId()));
     }
 

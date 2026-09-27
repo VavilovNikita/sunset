@@ -15,6 +15,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
@@ -114,6 +115,7 @@ class BookingFolioPaymentTests extends AbstractIntegrationTest {
 
     private BookingEntity persistBooking(BigDecimal totalPrice) {
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setGuestName("Guest");
         booking.setGuestEmail("guest@example.com");

@@ -9,6 +9,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RoomUnitBlockInput;
@@ -260,7 +261,7 @@ class DateOnlyFieldsContractTests extends AbstractIntegrationTest {
         RoomUnitEntity unitB = roomUnitRepository.findByRoomId(room.getId()).get(1);
 
         Booking booking = bookingService.createStaffBooking(
-                new StaffBookingCreateInput(room.getId(), "Contract Guest", checkIn.toString(), checkOut.toString())
+                new StaffBookingCreateInput(room.getId(), "Contract Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN)
                         .roomUnitId(unitA.getId()));
         bookingService.relocate(booking.getId(), new RelocationInput(splitDate.toString(), room.getId()).roomUnitId(unitB.getId()));
 
@@ -278,7 +279,7 @@ class DateOnlyFieldsContractTests extends AbstractIntegrationTest {
         RoomUnitEntity unitB = roomUnitRepository.findByRoomId(room.getId()).get(1);
 
         bookingService.createStaffBooking(
-                new StaffBookingCreateInput(room.getId(), "Contract Guest", checkIn.toString(), checkOut.toString())
+                new StaffBookingCreateInput(room.getId(), "Contract Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN)
                         .roomUnitId(unitA.getId()));
         roomUnitService.createBlock(
                 unitB.getId(), new RoomUnitBlockInput(checkIn.toString(), checkOut.toString(), "Contract test block"), testUserId);

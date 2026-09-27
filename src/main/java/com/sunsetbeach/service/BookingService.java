@@ -19,6 +19,7 @@ import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingGuestLinkInput;
@@ -193,6 +194,7 @@ public class BookingService {
                     input.getGuestPhone().isPresent() ? input.getGuestPhone().get() : null,
                     checkIn,
                     checkOut,
+                    input.getChannel(),
                     roomUnitId);
         } catch (DataAccessException | TransactionSystemException e) {
             if (isSerializationFailure(e)) {
@@ -233,19 +235,40 @@ public class BookingService {
             paymentNoteChanged = !Objects.equals(oldPaymentNote, trimmed);
             booking.setPaymentNote(trimmed);
         }
+        // channel is optional but not nullable: omitted (null here) leaves it alone, and there is
+        // no "clear" case - a booking always has a channel.
+        BookingChannel oldChannel = booking.getChannel();
+        if (input.getChannel() != null) {
+            booking.setChannel(input.getChannel());
+        }
         // flush so @UpdateTimestamp (regenerated on every save) is on the object before mapping
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
 
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
-        emailService.sendGuestStatusEmail(saved, room);
+        boolean statusChanged = oldStatus != saved.getStatus();
+        // Only on a real status change - otherwise correcting the channel or payment note on a
+        // PAID booking would re-send the guest a "your payment has been received" email.
+        if (statusChanged) {
+            emailService.sendGuestStatusEmail(saved, room);
+        }
 
-        if (oldStatus != saved.getStatus()) {
+        // A channel correction rides on BOOKING_STATUS_CHANGED (this endpoint's own action) rather
+        // than a new AuditAction, but is always named in the summary - never an unremarked update.
+        boolean channelChanged = oldChannel != saved.getChannel();
+        if (statusChanged || channelChanged) {
+            List<String> changes = new ArrayList<>();
+            if (statusChanged) {
+                changes.add("Status changed from " + oldStatus.getValue() + " to " + saved.getStatus().getValue());
+            }
+            if (channelChanged) {
+                changes.add((statusChanged ? "channel" : "Channel") + " changed from "
+                        + (oldChannel != null ? oldChannel.getValue() : "none") + " to " + saved.getChannel().getValue());
+            }
             auditLogService.record(
                     AuditAction.BOOKING_STATUS_CHANGED,
                     AuditEntityType.BOOKING,
                     saved.getId(),
-                    "Status changed from " + oldStatus.getValue() + " to " + saved.getStatus().getValue() + " for "
-                            + saved.getGuestName() + " in " + room.getName());
+                    String.join("; ", changes) + " for " + saved.getGuestName() + " in " + room.getName());
         }
         // Content is deliberately never included in the summary - paymentNote is free text staff
         // may (against guidance) use for something sensitive; recording that it changed is

@@ -14,6 +14,7 @@ import com.sunsetbeach.entity.ShiftEntity;
 import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.Role;
@@ -198,6 +199,7 @@ class ShiftExportTests extends AbstractIntegrationTest {
         room = roomRepository.saveAndFlush(room);
 
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setGuestName("Jane Doe");
         booking.setGuestEmail("jane@example.com");

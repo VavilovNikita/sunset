@@ -10,6 +10,7 @@ import com.sunsetbeach.entity.RoomUnitBlockEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.PropertyMap;
@@ -289,6 +290,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
     void checkedInGuest_showsAsCurrentBooking_withOutstandingBalance() {
         RoomUnitEntity unit = persistUnit("213");
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setRoomUnitId(unit.getId());
         booking.setGuestName("Somchai");

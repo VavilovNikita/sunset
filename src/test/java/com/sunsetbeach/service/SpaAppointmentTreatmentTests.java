@@ -13,6 +13,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.Order;
@@ -155,7 +156,7 @@ class SpaAppointmentTreatmentTests extends AbstractIntegrationTest {
         RoomUnitEntity savedUnit = roomUnitRepository.saveAndFlush(unit);
 
         return bookingService.createStaffBooking(
-                new StaffBookingCreateInput(savedRoom.getId(), "Treatment Test Guest", checkIn.toString(), checkIn.plusDays(2).toString())
+                new StaffBookingCreateInput(savedRoom.getId(), "Treatment Test Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN)
                         .roomUnitId(savedUnit.getId()));
     }
 

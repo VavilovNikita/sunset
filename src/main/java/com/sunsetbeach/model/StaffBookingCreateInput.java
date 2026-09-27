@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.BookingChannel;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.util.NoSuchElementException;
@@ -37,6 +39,8 @@ public class StaffBookingCreateInput {
 
   private JsonNullable<String> roomUnitId = JsonNullable.<String>undefined();
 
+  private BookingChannel channel;
+
   public StaffBookingCreateInput() {
     super();
   }
@@ -44,11 +48,12 @@ public class StaffBookingCreateInput {
   /**
    * Constructor with only required parameters
    */
-  public StaffBookingCreateInput(String roomId, String guestName, String checkIn, String checkOut) {
+  public StaffBookingCreateInput(String roomId, String guestName, String checkIn, String checkOut, BookingChannel channel) {
     this.roomId = roomId;
     this.guestName = guestName;
     this.checkIn = checkIn;
     this.checkOut = checkOut;
+    this.channel = channel;
   }
 
   public StaffBookingCreateInput roomId(String roomId) {
@@ -184,6 +189,25 @@ public class StaffBookingCreateInput {
     this.roomUnitId = roomUnitId;
   }
 
+  public StaffBookingCreateInput channel(BookingChannel channel) {
+    this.channel = channel;
+    return this;
+  }
+
+  /**
+   * Get channel
+   * @return channel
+   */
+  @NotNull @Valid 
+  @JsonProperty("channel")
+  public BookingChannel getChannel() {
+    return channel;
+  }
+
+  public void setChannel(BookingChannel channel) {
+    this.channel = channel;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -199,7 +223,8 @@ public class StaffBookingCreateInput {
         equalsNullable(this.guestPhone, staffBookingCreateInput.guestPhone) &&
         Objects.equals(this.checkIn, staffBookingCreateInput.checkIn) &&
         Objects.equals(this.checkOut, staffBookingCreateInput.checkOut) &&
-        equalsNullable(this.roomUnitId, staffBookingCreateInput.roomUnitId);
+        equalsNullable(this.roomUnitId, staffBookingCreateInput.roomUnitId) &&
+        Objects.equals(this.channel, staffBookingCreateInput.channel);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -208,7 +233,7 @@ public class StaffBookingCreateInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomId, guestName, hashCodeNullable(guestEmail), hashCodeNullable(guestPhone), checkIn, checkOut, hashCodeNullable(roomUnitId));
+    return Objects.hash(roomId, guestName, hashCodeNullable(guestEmail), hashCodeNullable(guestPhone), checkIn, checkOut, hashCodeNullable(roomUnitId), channel);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -229,6 +254,7 @@ public class StaffBookingCreateInput {
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    roomUnitId: ").append(toIndentedString(roomUnitId)).append("\n");
+    sb.append("    channel: ").append(toIndentedString(channel)).append("\n");
     sb.append("}");
     return sb.toString();
   }

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSource;
 import com.sunsetbeach.entity.RoomEntity;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.RoomRepository;
@@ -71,6 +72,7 @@ class BookingExpiryServiceReminderTests extends AbstractIntegrationTest {
 
     private BookingEntity persistNewPublicBooking(String guestName) {
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setGuestName(guestName);
         booking.setGuestEmail("guest@example.com");

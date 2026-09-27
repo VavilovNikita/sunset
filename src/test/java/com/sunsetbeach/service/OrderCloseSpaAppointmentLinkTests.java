@@ -11,6 +11,7 @@ import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.MenuDepartment;
@@ -197,7 +198,7 @@ class OrderCloseSpaAppointmentLinkTests extends AbstractIntegrationTest {
         unit.setActive(true);
         roomUnitRepository.saveAndFlush(unit);
         Booking booking = bookingService.createStaffBooking(
-                new StaffBookingCreateInput(savedRoom.getId(), "Order Close Link Guest", checkIn.toString(), checkIn.plusDays(2).toString())
+                new StaffBookingCreateInput(savedRoom.getId(), "Order Close Link Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN)
                         .roomUnitId(unit.getId()));
         createdBookingIds.add(booking.getId());
         return booking;

@@ -10,6 +10,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.Order;
@@ -198,7 +199,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
         roomUnitRepository.saveAndFlush(unit);
 
         Booking booking = bookingService.createStaffBooking(new StaffBookingCreateInput(
-                savedRoom.getId(), "Guest", LocalDate.now().plusDays(3).toString(), LocalDate.now().plusDays(4).toString()));
+                savedRoom.getId(), "Guest", LocalDate.now().plusDays(3).toString(), LocalDate.now().plusDays(4).toString(), BookingChannel.WALK_IN));
         createdBookingIds.add(booking.getId());
 
         Shift shift = shiftService.open(cashierId, new ShiftOpenInput());

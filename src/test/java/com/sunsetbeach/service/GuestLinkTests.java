@@ -12,6 +12,7 @@ import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingGuestLinkInput;
 import com.sunsetbeach.model.BookingStatus;
@@ -389,7 +390,7 @@ class GuestLinkTests extends AbstractIntegrationTest {
 
     private Booking staffBooking(String name, String email) {
         LocalDate checkIn = LocalDate.of(2031, 3, 1);
-        StaffBookingCreateInput input = new StaffBookingCreateInput(roomWithUnit().getId(), name, checkIn.toString(), checkIn.plusDays(2).toString());
+        StaffBookingCreateInput input = new StaffBookingCreateInput(roomWithUnit().getId(), name, checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN);
         if (email != null) {
             input.guestEmail(email);
         }
@@ -400,6 +401,7 @@ class GuestLinkTests extends AbstractIntegrationTest {
 
     private BookingEntity persistBooking(String guestEmail, String guestId) {
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(roomWithUnit().getId());
         booking.setGuestName("Guest");
         booking.setGuestEmail(guestEmail);

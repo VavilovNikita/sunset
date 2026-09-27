@@ -16,6 +16,7 @@ import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.entity.ShiftEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.GuestLtvRow;
 import com.sunsetbeach.model.MenuDepartment;
@@ -327,6 +328,7 @@ class ReportServiceTests extends AbstractIntegrationTest {
 
     private BookingEntity persistBooking(GuestEntity guest, BookingStatus status, String checkIn, String checkOut, String totalPrice) {
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(room.getId());
         booking.setGuestName(guest != null ? guest.getName() : "Report Guest");
         booking.setGuestEmail("guest@example.com");

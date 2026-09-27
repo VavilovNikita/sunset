@@ -2120,10 +2120,12 @@ paths:
     patch:
       operationId: updateBookingStatus
       tags: [Bookings]
-      summary: Update a booking's status / payment note
+      summary: Update a booking's status / payment note / channel
       description: >
-        Requires CASHIER or above - marking a booking paid/cancelled or adding a payment note is
-        routine front-desk work. Sends a guest-facing status-change email on success.
+        Requires CASHIER or above - marking a booking paid/cancelled, adding a payment note or
+        correcting the booking's channel is routine front-desk work. Sends a guest-facing
+        status-change email when the status actually changes to PAID or CANCELLED - never for a
+        request that only touches the payment note or channel.
       requestBody:
         required: true
         content:
@@ -8308,6 +8310,19 @@ components:
       type: string
       enum: [NEW, CONFIRMED, PAID, CANCELLED]
 
+    BookingChannel:
+      type: string
+      enum: [DIRECT, PHONE, WALK_IN, BOOKING_COM, AIRBNB, AGODA, OTHER]
+      description: >
+        How a booking reached the hotel - a label staff record from what they already know (the
+        guest booked by phone, walked in, said they found the hotel on Airbnb). Not an OTA
+        integration: nothing is synced with any channel. `POST /bookings` (the public form) is
+        always `DIRECT`, set server-side. Unrelated to the internal public-form-vs-front-desk
+        distinction that drives auto-expiry of unconfirmed public inquiries, which is never
+        exposed and never changes when this does. Bookings made before this field existed read
+        `DIRECT` if they came through the public form and `OTHER` if staff entered them (their real
+        channel was never recorded).
+
     OccupancyStatus:
       type: string
       description: >
@@ -9436,7 +9451,7 @@ components:
         `Serializable` transaction as the booking itself: unlike `POST /bookings` followed by
         `PUT /bookings/{id}/room-unit`, there is no window where the booking exists without the
         room that was requested for it - either both succeed or neither does.
-      required: [roomId, guestName, checkIn, checkOut]
+      required: [roomId, guestName, checkIn, checkOut, channel]
       properties:
         roomId:
           type: string
@@ -9466,6 +9481,9 @@ components:
           type: string
           nullable: true
           description: Physical room to assign immediately, or omit/null to leave the booking unassigned (same as a `POST /bookings` booking today).
+        channel:
+          $ref: "#/components/schemas/BookingChannel"
+          description: Required - front desk always knows how a phone/walk-in booking reached them, so there is no default to fall back to silently.
       # Cross-field rule enforced server-side, not expressible in JSON Schema: checkIn must be strictly before checkOut.
 
     BookingScheduleInput:
@@ -9796,6 +9814,7 @@ components:
         - checkOut
         - totalPrice
         - status
+        - channel
         - paymentNote
         - segments
         - occupancyStatus
@@ -9848,6 +9867,8 @@ components:
           description: Decimal(10,2) rendered as a string, e.g. `"4500.00"`. Always server-computed, never taken from the request.
         status:
           $ref: "#/components/schemas/BookingStatus"
+        channel:
+          $ref: "#/components/schemas/BookingChannel"
         paymentNote:
           type: string
           nullable: true
@@ -9917,6 +9938,11 @@ components:
           maxLength: 500
           nullable: true
           x-sensitive: true
+        channel:
+          $ref: "#/components/schemas/BookingChannel"
+          description: >
+            Optional. Omitted leaves the booking's channel as it is; present sets it. Not nullable -
+            a booking always has a channel, so there is no "clear" case (unlike `paymentNote`).
 
     Guest:
       type: object

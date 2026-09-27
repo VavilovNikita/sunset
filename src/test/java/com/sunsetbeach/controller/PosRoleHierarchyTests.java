@@ -21,6 +21,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.model.AvailabilityResponse;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingCalendarResponse;
 import com.sunsetbeach.model.BookingScheduleInput;
@@ -1360,7 +1361,7 @@ class PosRoleHierarchyTests {
         mockMvc.perform(post("/bookings/staff")
                         .header("Authorization", token(Role.WAITER))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new StaffBookingCreateInput("room-1", "Guest", "2031-01-01", "2031-01-02"))))
+                        .content(objectMapper.writeValueAsString(new StaffBookingCreateInput("room-1", "Guest", "2031-01-01", "2031-01-02", BookingChannel.WALK_IN))))
                 .andExpect(status().isForbidden());
     }
 
@@ -1370,7 +1371,7 @@ class PosRoleHierarchyTests {
         mockMvc.perform(post("/bookings/staff")
                         .header("Authorization", token(Role.CASHIER))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new StaffBookingCreateInput("room-1", "Guest", "2031-01-01", "2031-01-02"))))
+                        .content(objectMapper.writeValueAsString(new StaffBookingCreateInput("room-1", "Guest", "2031-01-01", "2031-01-02", BookingChannel.WALK_IN))))
                 .andExpect(status().isCreated());
     }
 
@@ -1565,6 +1566,7 @@ class PosRoleHierarchyTests {
                 "2026-01-02",
                 "1500.00",
                 BookingStatus.NEW,
+                BookingChannel.DIRECT,
                 null,
                 OccupancyStatus.EXPECTED,
                 null,

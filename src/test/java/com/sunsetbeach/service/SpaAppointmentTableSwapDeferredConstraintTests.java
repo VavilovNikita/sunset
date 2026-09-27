@@ -11,6 +11,7 @@ import com.sunsetbeach.entity.SpaAppointmentEntity;
 import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.Role;
@@ -101,7 +102,7 @@ class SpaAppointmentTableSwapDeferredConstraintTests extends AbstractIntegration
         RoomUnitEntity savedUnit = roomUnitRepository.saveAndFlush(unit);
 
         return bookingService.createStaffBooking(new StaffBookingCreateInput(
-                        savedRoom.getId(), "Deferred Swap Test Guest", checkIn.toString(), checkIn.plusDays(2).toString())
+                        savedRoom.getId(), "Deferred Swap Test Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN)
                 .roomUnitId(savedUnit.getId()));
     }
 

@@ -43,6 +43,7 @@ class ToStringRedactsGuestPiiTests {
                 "2026-01-02",
                 "1500.00",
                 BookingStatus.NEW,
+                BookingChannel.DIRECT,
                 REAL_PAYMENT_NOTE,
                 OccupancyStatus.EXPECTED,
                 null,
@@ -68,7 +69,7 @@ class ToStringRedactsGuestPiiTests {
 
     @Test
     void staffBookingCreateInput_toStringDoesNotContainGuestEmailOrPhone() {
-        StaffBookingCreateInput input = new StaffBookingCreateInput("room-1", "Jane Doe", "2031-01-01", "2031-01-02")
+        StaffBookingCreateInput input = new StaffBookingCreateInput("room-1", "Jane Doe", "2031-01-01", "2031-01-02", BookingChannel.WALK_IN)
                 .guestEmail(REAL_EMAIL)
                 .guestPhone(REAL_PHONE);
 

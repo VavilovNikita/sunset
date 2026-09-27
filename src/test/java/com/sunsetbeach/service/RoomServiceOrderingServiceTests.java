@@ -12,6 +12,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.GuestOrderView;
@@ -108,6 +109,7 @@ class RoomServiceOrderingServiceTests extends AbstractIntegrationTest {
 
     private String persistBooking(String guestEmail, OccupancyStatus occupancyStatus) {
         BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
         booking.setRoomId(roomId);
         booking.setGuestName("Somchai");
         booking.setGuestEmail(guestEmail);

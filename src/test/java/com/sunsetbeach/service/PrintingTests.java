@@ -16,6 +16,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.AuditEntityType;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.MenuDepartment;
@@ -472,6 +473,7 @@ class PrintingTests extends AbstractIntegrationTest {
             room = roomRepository.saveAndFlush(room);
 
             BookingEntity booking = new BookingEntity();
+            booking.setChannel(BookingChannel.DIRECT);
             booking.setRoomId(room.getId());
             booking.setGuestName("Jane Doe");
             booking.setGuestEmail("jane@example.com");
@@ -608,6 +610,7 @@ class PrintingTests extends AbstractIntegrationTest {
             room = roomRepository.saveAndFlush(room);
 
             BookingEntity booking = new BookingEntity();
+            booking.setChannel(BookingChannel.DIRECT);
             booking.setRoomId(room.getId());
             booking.setGuestName("Jane Doe");
             booking.setGuestEmail("jane@example.com");

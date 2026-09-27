@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.Guest;
@@ -60,6 +61,8 @@ public class Booking {
 
   private BookingStatus status;
 
+  private BookingChannel channel;
+
   private JsonNullable<String> paymentNote = JsonNullable.<String>undefined();
 
   private OccupancyStatus occupancyStatus;
@@ -86,7 +89,7 @@ public class Booking {
   /**
    * Constructor with only required parameters
    */
-  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String guestId, Guest guest, String checkIn, String checkOut, String totalPrice, BookingStatus status, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String guestId, Guest guest, String checkIn, String checkOut, String totalPrice, BookingStatus status, BookingChannel channel, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.roomId = roomId;
     this.room = room;
@@ -101,6 +104,7 @@ public class Booking {
     this.checkOut = checkOut;
     this.totalPrice = totalPrice;
     this.status = status;
+    this.channel = channel;
     this.paymentNote = JsonNullable.of(paymentNote);
     this.occupancyStatus = occupancyStatus;
     this.checkedInAt = JsonNullable.of(checkedInAt);
@@ -376,6 +380,25 @@ public class Booking {
     this.status = status;
   }
 
+  public Booking channel(BookingChannel channel) {
+    this.channel = channel;
+    return this;
+  }
+
+  /**
+   * Get channel
+   * @return channel
+   */
+  @NotNull @Valid 
+  @JsonProperty("channel")
+  public BookingChannel getChannel() {
+    return channel;
+  }
+
+  public void setChannel(BookingChannel channel) {
+    this.channel = channel;
+  }
+
   public Booking paymentNote(String paymentNote) {
     this.paymentNote = JsonNullable.of(paymentNote);
     return this;
@@ -540,6 +563,7 @@ public class Booking {
         Objects.equals(this.checkOut, booking.checkOut) &&
         Objects.equals(this.totalPrice, booking.totalPrice) &&
         Objects.equals(this.status, booking.status) &&
+        Objects.equals(this.channel, booking.channel) &&
         Objects.equals(this.paymentNote, booking.paymentNote) &&
         Objects.equals(this.occupancyStatus, booking.occupancyStatus) &&
         Objects.equals(this.checkedInAt, booking.checkedInAt) &&
@@ -551,7 +575,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, status, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, segments, createdAt, updatedAt);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, status, channel, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, segments, createdAt, updatedAt);
   }
 
   @Override
@@ -572,6 +596,7 @@ public class Booking {
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
+    sb.append("    channel: ").append(toIndentedString(channel)).append("\n");
     sb.append("    paymentNote: ").append("[REDACTED]").append("\n");
     sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
     sb.append("    checkedInAt: ").append(toIndentedString(checkedInAt)).append("\n");

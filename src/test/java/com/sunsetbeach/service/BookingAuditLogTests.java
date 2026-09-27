@@ -9,6 +9,7 @@ import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
@@ -121,7 +122,7 @@ class BookingAuditLogTests extends AbstractIntegrationTest {
         LocalDate checkOut = LocalDate.now().plusDays(11);
 
         Booking booking = bookingService.createStaffBooking(
-                new StaffBookingCreateInput(room.getId(), "Jane Doe", checkIn.toString(), checkOut.toString()));
+                new StaffBookingCreateInput(room.getId(), "Jane Doe", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN));
         createdBookingIds.add(booking.getId());
 
         List<AuditLogEntity> entries = findEntriesForBooking(booking.getId());
@@ -137,7 +138,7 @@ class BookingAuditLogTests extends AbstractIntegrationTest {
     void updateStatus_toPaid_writesStatusChangedEntry() {
         RoomEntity room = createRoom();
         Booking booking = bookingService.createStaffBooking(new StaffBookingCreateInput(
-                room.getId(), "Guest", LocalDate.now().plusDays(5).toString(), LocalDate.now().plusDays(6).toString()));
+                room.getId(), "Guest", LocalDate.now().plusDays(5).toString(), LocalDate.now().plusDays(6).toString(), BookingChannel.WALK_IN));
         createdBookingIds.add(booking.getId());
 
         bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
@@ -153,7 +154,7 @@ class BookingAuditLogTests extends AbstractIntegrationTest {
     void updateStatus_paymentNoteChanged_writesPaymentNoteEntryWithoutLeakingContent() {
         RoomEntity room = createRoom();
         Booking booking = bookingService.createStaffBooking(new StaffBookingCreateInput(
-                room.getId(), "Guest", LocalDate.now().plusDays(5).toString(), LocalDate.now().plusDays(6).toString()));
+                room.getId(), "Guest", LocalDate.now().plusDays(5).toString(), LocalDate.now().plusDays(6).toString(), BookingChannel.WALK_IN));
         createdBookingIds.add(booking.getId());
 
         bookingService.updateStatus(
@@ -172,7 +173,7 @@ class BookingAuditLogTests extends AbstractIntegrationTest {
         LocalDate originalCheckIn = LocalDate.now().plusDays(5);
         LocalDate originalCheckOut = LocalDate.now().plusDays(6);
         Booking booking = bookingService.createStaffBooking(
-                new StaffBookingCreateInput(room.getId(), "Guest", originalCheckIn.toString(), originalCheckOut.toString()));
+                new StaffBookingCreateInput(room.getId(), "Guest", originalCheckIn.toString(), originalCheckOut.toString(), BookingChannel.WALK_IN));
         createdBookingIds.add(booking.getId());
 
         LocalDate newCheckIn = LocalDate.now().plusDays(7);
@@ -192,7 +193,7 @@ class BookingAuditLogTests extends AbstractIntegrationTest {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
         Booking booking = bookingService.createStaffBooking(new StaffBookingCreateInput(
-                room.getId(), "Guest", LocalDate.now().plusDays(5).toString(), LocalDate.now().plusDays(6).toString()));
+                room.getId(), "Guest", LocalDate.now().plusDays(5).toString(), LocalDate.now().plusDays(6).toString(), BookingChannel.WALK_IN));
         createdBookingIds.add(booking.getId());
 
         bookingService.assignRoomUnit(booking.getId(), new RoomUnitAssignmentInput().roomUnitId(unit.getId()));
