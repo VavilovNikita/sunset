@@ -47,6 +47,16 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
     /** In-house list for {@code GET /bookings/today} - every currently checked-in guest, regardless of checkOut date. */
     List<BookingEntity> findByOccupancyStatusAndStatusNot(OccupancyStatus occupancyStatus, BookingStatus excludedStatus);
 
+    /**
+     * {@code GET /night-audit}'s missed arrivals - on or before the reviewed date, not only on it,
+     * so an unresolved arrival from an earlier day stays listed (see {@code NightAuditService}).
+     */
+    List<BookingEntity> findByOccupancyStatusAndStatusNotAndCheckInLessThanEqualOrderByCheckInAsc(
+            OccupancyStatus occupancyStatus, BookingStatus excludedStatus, LocalDate checkIn);
+
+    /** {@code GET /night-audit}'s missed departures - same on-or-before rule as the arrivals query above. */
+    List<BookingEntity> findByOccupancyStatusAndCheckOutLessThanEqualOrderByCheckOutAsc(OccupancyStatus occupancyStatus, LocalDate checkOut);
+
     /** A guest's stay history for {@code GET /guests/{id}}, newest first - every status, cancelled included, see {@code GuestDetail}. */
     List<BookingEntity> findByGuestIdOrderByCreatedAtDesc(String guestId);
 

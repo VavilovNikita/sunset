@@ -71,6 +71,11 @@ public class SecurityConfig {
                         // bigger blast radius than the MANAGER floor most admin screens use. ADMIN is
                         // the top of the hierarchy, so hasRole(ADMIN) admits nobody else.
                         .requestMatchers("/settings/**").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
+                        // Night audit (checklist read and closing a day): CASHIER+, not the MANAGER+
+                        // of /reports/** - it's routine front-desk work done every day, same reasoning
+                        // as PATCH /room-units/*/housekeeping's lower bar below. The snapshot reuses
+                        // ReportService's occupancy math, but only its property-wide total.
+                        .requestMatchers("/night-audit", "/night-audit/**").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Room *type* management (Rooms/Pricing tags): reads are CASHIER+ - a CASHIER
                         // creating a walk-in booking via POST /bookings/staff needs to be able to name
                         // the room type and quote its price through an authenticated endpoint, rather

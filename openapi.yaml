@@ -108,6 +108,13 @@ tags:
     description: Cross-shift POS payment reporting for a date range (MANAGER or above).
   - name: Reports
     description: Financial exports for the hotel's accountant, and occupancy, sales-mix and guest-value reports (MANAGER or above).
+  - name: NightAudit
+    description: >
+      The front desk's once-a-day review (CASHIER or above): a checklist of bookings that should
+      have arrived or departed and didn't, the day's room figures, and a record that someone
+      looked at them and closed the day. Deliberately not a ledger process - a folio balance is
+      computed live on every read (see `BookingFolio`), so there is nothing to post or batch
+      overnight. Closing a day blocks, locks and changes nothing else.
   - name: Printers
     description: >
       ESC/POS network printer CRUD and connection testing (MANAGER or above), plus the durable
@@ -5661,6 +5668,102 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /night-audit:
+    get:
+      operationId: getNightAudit
+      tags: [NightAudit]
+      summary: The night-audit checklist for one hotel-local date
+      description: >
+        Requires CASHIER or above - routine front-desk work done every day, unlike the strategic
+        `/reports/*` (MANAGER+). Read-only; nothing here acts on the bookings it lists.
+
+
+        **`missedArrivals`**: bookings whose `occupancyStatus` is `EXPECTED`, `status` is not
+        `CANCELLED`, and `checkIn` is on or before `date`. On or before, not only equal: a missed
+        arrival from an earlier day that nobody resolved stays on the list until someone checks
+        the guest in or marks them no-show (`POST /bookings/{id}/no-show`).
+
+
+        **`missedDepartures`**: bookings whose `occupancyStatus` is `CHECKED_IN` and `checkOut` is
+        on or before `date`.
+
+
+        Both lists reflect the bookings' state *now*, not as it was on `date` - reviewing a past
+        date shows what is still unresolved with a date on or before it, not a historical snapshot.
+
+
+        **`snapshot`** is exactly `GET /reports/occupancy?from=date&to=date`'s `total` row - the
+        same computation, called, not reimplemented.
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The date to review (Asia/Bangkok). Defaults to today, hotel-local.
+      responses:
+        "200":
+          description: The checklist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NightAudit"
+        "400":
+          description: '`date` is not a valid date.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+
+  /night-audit/close:
+    post:
+      operationId: closeNightAudit
+      tags: [NightAudit]
+      summary: Record that a date was reviewed and closed
+      description: >
+        Requires CASHIER or above, same as the checklist. Writes one `NightAuditClosure` - a
+        receipt that a person reviewed this date, nothing more. It does not require
+        `missedArrivals`/`missedDepartures` to be empty, and closing a date prevents nothing
+        afterwards: payments, folio settlements and booking edits dated into it stay allowed. One
+        closure per date - a second attempt is a 409, never an overwrite. Recorded in the audit
+        log (`NIGHT_AUDIT_CLOSED`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NightAuditCloseInput"
+      responses:
+        "200":
+          description: The closure just recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NightAuditClosure"
+        "400":
+          description: '`date` missing or not a valid date.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "409":
+          description: This date is already closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: "2026-09-27 is already closed."
 
   /settings/lifecycle-emails:
     get:
@@ -11889,6 +11992,7 @@ components:
         - MENU_ITEM_DELETED
         - REVENUE_EXPORTED
         - LIFECYCLE_EMAIL_SETTINGS_UPDATED
+        - NIGHT_AUDIT_CLOSED
 
     AuditEntityType:
       type: string
@@ -11902,7 +12006,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT]
 
     AuditLogEntry:
       type: object
@@ -13272,6 +13376,94 @@ components:
         effectiveFrom:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
+
+    NightAudit:
+      type: object
+      description: '`GET /night-audit` - see that operation for what each list contains.'
+      required: [date, missedArrivals, missedDepartures, snapshot, closure]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        missedArrivals:
+          type: array
+          description: Sorted by `checkIn`, oldest first.
+          items:
+            $ref: "#/components/schemas/NightAuditBooking"
+        missedDepartures:
+          type: array
+          description: Sorted by `checkOut`, oldest first.
+          items:
+            $ref: "#/components/schemas/NightAuditBooking"
+        snapshot:
+          $ref: "#/components/schemas/OccupancyReportRow"
+        closure:
+          nullable: true
+          description: This date's closure, or null if nobody has closed it yet.
+          allOf:
+            - $ref: "#/components/schemas/NightAuditClosure"
+
+    NightAuditBooking:
+      type: object
+      description: One booking on a night-audit list - just enough to recognise it and open it.
+      required: [id, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus]
+      properties:
+        id:
+          type: string
+        guestName:
+          type: string
+          x-sensitive: true
+        roomName:
+          type: string
+          description: The room type's name.
+        roomUnitLabel:
+          type: string
+          nullable: true
+          description: The assigned physical room's label, or null if none is assigned.
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        status:
+          $ref: "#/components/schemas/BookingStatus"
+        occupancyStatus:
+          $ref: "#/components/schemas/OccupancyStatus"
+
+    NightAuditClosure:
+      type: object
+      description: The record that one hotel-local date was reviewed and closed.
+      required: [date, closedByUserId, closedByName, closedAt, notes]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        closedByUserId:
+          type: string
+        closedByName:
+          type: string
+          description: The closing user's current `User.name`, read live - a rename relabels past closures too.
+        closedAt:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          nullable: true
+
+    NightAuditCloseInput:
+      type: object
+      description: Body of `POST /night-audit/close`.
+      required: [date]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+          description: Optional free text. Blank is stored as null.
 
     OccupancyReport:
       type: object

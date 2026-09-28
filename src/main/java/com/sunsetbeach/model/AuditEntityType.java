@@ -64,7 +64,9 @@ public enum AuditEntityType {
   
   PAYMENT("PAYMENT"),
   
-  SETTINGS("SETTINGS");
+  SETTINGS("SETTINGS"),
+  
+  NIGHT_AUDIT("NIGHT_AUDIT");
 
   private String value;
 

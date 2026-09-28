@@ -138,7 +138,8 @@ import tools.jackson.databind.json.JsonMapper;
             GuestController.class,
             com.sunsetbeach.controller.RosterController.class,
             com.sunsetbeach.controller.AttendanceDeviceController.class,
-            com.sunsetbeach.controller.SettingsController.class
+            com.sunsetbeach.controller.SettingsController.class,
+            com.sunsetbeach.controller.NightAuditController.class
         })
 @Import({SecurityConfig.class, JwtService.class, com.sunsetbeach.security.GuestJwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
         com.sunsetbeach.security.BookingRateLimiter.class})
@@ -254,6 +255,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private com.sunsetbeach.service.LifecycleEmailSettingsService lifecycleEmailSettingsService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.NightAuditService nightAuditService;
 
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
     // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
@@ -377,6 +381,39 @@ class PosRoleHierarchyTests {
                     .andExpect(status().isForbidden());
         }
         verify(lifecycleEmailSettingsService, never()).update(any());
+    }
+
+    // --- /night-audit is CASHIER+, lower than /reports/**' MANAGER+ - routine front-desk work ---
+
+    private static final String NIGHT_AUDIT_CLOSE_BODY = "{\"date\":\"2026-09-27\",\"notes\":null}";
+
+    @Test
+    void nightAudit_withCashierToken_canViewAndClose() throws Exception {
+        when(nightAuditService.get(any())).thenReturn(new com.sunsetbeach.model.NightAudit(
+                "2026-09-27", java.util.List.of(), java.util.List.of(),
+                new com.sunsetbeach.model.OccupancyReportRow(null, null, 0, 0, 0, null, "0.00", null, null), null));
+        when(nightAuditService.close(any())).thenReturn(new com.sunsetbeach.model.NightAuditClosure(
+                "2026-09-27", "user-1", "Cashier", java.time.OffsetDateTime.now(), null));
+
+        mockMvc.perform(get("/night-audit").header("Authorization", token(Role.CASHIER)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/night-audit/close")
+                        .header("Authorization", token(Role.CASHIER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(NIGHT_AUDIT_CLOSE_BODY))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void nightAudit_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(get("/night-audit").header("Authorization", token(Role.WAITER)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/night-audit/close")
+                        .header("Authorization", token(Role.WAITER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(NIGHT_AUDIT_CLOSE_BODY))
+                .andExpect(status().isForbidden());
+        verify(nightAuditService, never()).close(any());
     }
 
     @Test
