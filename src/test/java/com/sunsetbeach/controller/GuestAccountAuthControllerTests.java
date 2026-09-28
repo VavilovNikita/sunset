@@ -3,6 +3,7 @@ package com.sunsetbeach.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -63,6 +64,11 @@ class GuestAccountAuthControllerTests {
     @MockitoBean
     private RoomRepository roomRepository;
 
+    // GuestAccountMapper (imported above) also takes a RoomUnitRepository - without this the
+    // slice's context never starts.
+    @MockitoBean
+    private com.sunsetbeach.repository.RoomUnitRepository roomUnitRepository;
+
     // SecurityConfig's filter chain also wires the staff JwtAuthFilter (see that class) - never
     // exercised by this guest-only suite, but the bean it depends on must still resolve for the
     // context to start.
@@ -116,6 +122,25 @@ class GuestAccountAuthControllerTests {
                 .andExpect(jsonPath("$.message").exists());
 
         verify(guestAccountService).resendVerification("someone@example.com");
+    }
+
+    @Test
+    void unsubscribe_needsNoLogin_andOptsTheTokensAccountOut() throws Exception {
+        mockMvc.perform(get("/guest-auth/unsubscribe").param("token", "stable-unsubscribe-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").exists());
+
+        verify(guestAccountService).unsubscribe("stable-unsubscribe-token");
+    }
+
+    @Test
+    void unsubscribe_unknownToken_isBadRequest() throws Exception {
+        org.mockito.Mockito.doThrow(new BadRequestException("This unsubscribe link isn't valid."))
+                .when(guestAccountService).unsubscribe("bad-token");
+
+        mockMvc.perform(get("/guest-auth/unsubscribe").param("token", "bad-token"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("This unsubscribe link isn't valid."));
     }
 
     @Test

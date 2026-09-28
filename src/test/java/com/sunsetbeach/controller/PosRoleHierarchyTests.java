@@ -137,7 +137,8 @@ import tools.jackson.databind.json.JsonMapper;
             SpaController.class,
             GuestController.class,
             com.sunsetbeach.controller.RosterController.class,
-            com.sunsetbeach.controller.AttendanceDeviceController.class
+            com.sunsetbeach.controller.AttendanceDeviceController.class,
+            com.sunsetbeach.controller.SettingsController.class
         })
 @Import({SecurityConfig.class, JwtService.class, com.sunsetbeach.security.GuestJwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
         com.sunsetbeach.security.BookingRateLimiter.class})
@@ -251,6 +252,9 @@ class PosRoleHierarchyTests {
     @MockitoBean
     private com.sunsetbeach.service.RosterExportService rosterExportService;
 
+    @MockitoBean
+    private com.sunsetbeach.service.LifecycleEmailSettingsService lifecycleEmailSettingsService;
+
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
     // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
     // "user-1" regardless of role, so one stub covers every test.
@@ -354,6 +358,59 @@ class PosRoleHierarchyTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"active\":false}"))
                 .andExpect(status().isOk());
+    }
+
+    // --- /settings/** is ADMIN-only too, reads included - stricter than the MANAGER floor most
+    // admin screens use, so MANAGER is tested specifically ---
+
+    private static final String LIFECYCLE_SETTINGS_BODY = "{\"preArrivalEnabled\":true,\"preArrivalDaysBefore\":3,"
+            + "\"postStayEnabled\":true,\"postStayDaysAfter\":1,\"postStayReviewUrl\":null,"
+            + "\"winBackEnabled\":false,\"winBackMonthsSinceStay\":12}";
+
+    @Test
+    void lifecycleEmailSettings_putBelowAdmin_isForbidden() throws Exception {
+        for (Role role : new Role[] {Role.MANAGER, Role.CASHIER, Role.WAITER}) {
+            mockMvc.perform(put("/settings/lifecycle-emails")
+                            .header("Authorization", token(role))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(LIFECYCLE_SETTINGS_BODY))
+                    .andExpect(status().isForbidden());
+        }
+        verify(lifecycleEmailSettingsService, never()).update(any());
+    }
+
+    @Test
+    void lifecycleEmailSettings_getBelowAdmin_isForbidden() throws Exception {
+        for (Role role : new Role[] {Role.MANAGER, Role.CASHIER, Role.WAITER}) {
+            mockMvc.perform(get("/settings/lifecycle-emails").header("Authorization", token(role)))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
+    void lifecycleEmailSettings_withAdminToken_isOk() throws Exception {
+        com.sunsetbeach.model.LifecycleEmailSettings settings = new com.sunsetbeach.model.LifecycleEmailSettings(
+                true, 3, true, 1, null, false, 12, java.time.OffsetDateTime.now());
+        when(lifecycleEmailSettingsService.get()).thenReturn(settings);
+        when(lifecycleEmailSettingsService.update(any())).thenReturn(settings);
+
+        mockMvc.perform(get("/settings/lifecycle-emails").header("Authorization", token(Role.ADMIN)))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/settings/lifecycle-emails")
+                        .header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(LIFECYCLE_SETTINGS_BODY))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void lifecycleEmailSettings_outOfRangeNumber_isBadRequest() throws Exception {
+        mockMvc.perform(put("/settings/lifecycle-emails")
+                        .header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(LIFECYCLE_SETTINGS_BODY.replace("\"winBackMonthsSinceStay\":12", "\"winBackMonthsSinceStay\":0")))
+                .andExpect(status().isBadRequest());
+        verify(lifecycleEmailSettingsService, never()).update(any());
     }
 
     @Test
@@ -1582,7 +1639,7 @@ class PosRoleHierarchyTests {
 
     private static GuestDetail sampleGuestDetail() {
         return new GuestDetail(
-                "guest-1", "Jane Doe", "jane@example.com", "+66800000000", null, false, null, List.of(), OffsetDateTime.now(), OffsetDateTime.now(), List.of(), null);
+                "guest-1", "Jane Doe", "jane@example.com", "+66800000000", null, false, null, List.of(), OffsetDateTime.now(), OffsetDateTime.now(), List.of(), null, List.of());
     }
 
     private static PrintJob samplePrintJob() {

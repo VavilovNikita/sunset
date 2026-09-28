@@ -107,7 +107,7 @@ class ToStringRedactsGuestPiiTests {
     void guestDetail_toStringDoesNotContainDateOfBirthOrTags() {
         GuestDetail detail = new GuestDetail(
                 "guest-1", "Jane Doe", REAL_EMAIL, REAL_PHONE, REAL_NOTES, true, REAL_DATE_OF_BIRTH, java.util.List.of(REAL_TAG),
-                OffsetDateTime.now(), OffsetDateTime.now(), java.util.List.of(), null);
+                OffsetDateTime.now(), OffsetDateTime.now(), java.util.List.of(), null, java.util.List.of());
 
         String rendered = detail.toString();
 

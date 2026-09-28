@@ -66,6 +66,11 @@ public class SecurityConfig {
                         // never get here even though the hierarchy grants them everything below ADMIN
                         // elsewhere (see PosRoleHierarchyTests for the regression test).
                         .requestMatchers("/users/**").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
+                        // Same ADMIN-only tier, reads included: these settings decide what automated
+                        // email reaches every eligible guest (see LifecycleEmailSettingsService), a
+                        // bigger blast radius than the MANAGER floor most admin screens use. ADMIN is
+                        // the top of the hierarchy, so hasRole(ADMIN) admits nobody else.
+                        .requestMatchers("/settings/**").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
                         // Room *type* management (Rooms/Pricing tags): reads are CASHIER+ - a CASHIER
                         // creating a walk-in booking via POST /bookings/staff needs to be able to name
                         // the room type and quote its price through an authenticated endpoint, rather

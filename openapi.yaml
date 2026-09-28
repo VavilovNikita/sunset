@@ -121,6 +121,11 @@ tags:
       and drops it out of the default list and any failed-job count/indicator built from it.
   - name: Users
     description: Staff account management (ADMIN only).
+  - name: Settings
+    description: >
+      Hotel-wide configuration. ADMIN only, same tier as `Users` and outside the role hierarchy's
+      usual MANAGER floor for admin screens: what lives here changes what goes into every guest's
+      inbox.
   - name: AuditLog
     description: >
       Read-only, append-only record of significant staff actions - money and guest-data
@@ -506,6 +511,57 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Too many failed login attempts. Try again later.
+
+  /guest-auth/unsubscribe:
+    get:
+      operationId: unsubscribeGuestAccount
+      tags: [GuestAccountAuth]
+      summary: Opt a guest account out of lifecycle emails
+      description: >
+        The target of the unsubscribe link in every automated lifecycle email (pre-arrival,
+        post-stay, win-back - see `LifecycleEmailSettings`). No login: a guest clicking a link in
+        an email must not have to sign in first. `token` is the account's own stable
+        `unsubscribeToken` - issued once, never rotated or cleared, so a link in an old email keeps
+        working. Sets `marketingEmailsOptOut` on the matching account, which stops all three email
+        types at once (there is no per-type opt-out). Idempotent: repeating it on an
+        already-opted-out account changes nothing and returns the same response. Transactional
+        emails the guest caused themselves (verification, booking status) are unaffected.
+
+        The email's link points at the site's own `/guest/unsubscribe` page, which calls this -
+        so a mail client's link scanner that fetches the page without running its script
+        doesn't opt anyone out by itself.
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Opted out (or already was).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestAccountMessage"
+              example:
+                message: You've been unsubscribed. You won't receive any more of these emails.
+        "400":
+          description: No account has this token (a mistyped or truncated link).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: This unsubscribe link isn't valid.
+        "429":
+          description: Too many attempts from this IP recently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many requests. Please slow down and try again.
 
   /guest/me:
     get:
@@ -5606,6 +5662,59 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /settings/lifecycle-emails:
+    get:
+      operationId: getLifecycleEmailSettings
+      tags: [Settings]
+      summary: Read the lifecycle email settings
+      description: Requires an authenticated session with role `ADMIN`. See `LifecycleEmailSettings`.
+      responses:
+        "200":
+          description: The current settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleEmailSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: updateLifecycleEmailSettings
+      tags: [Settings]
+      summary: Replace the lifecycle email settings
+      description: >
+        Requires an authenticated session with role `ADMIN` - MANAGER included is a 403. This
+        decides what automated email reaches every eligible guest and, through
+        `postStayReviewUrl`, where they're sent after checkout. Replaces every field (a full `PUT`,
+        not a patch). `postStayReviewUrl` is trimmed; blank means none. Recorded in the audit log
+        (`LIFECYCLE_EMAIL_SETTINGS_UPDATED`) with what changed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LifecycleEmailSettingsUpdateInput"
+      responses:
+        "200":
+          description: The updated settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LifecycleEmailSettings"
+        "400":
+          description: Body failed validation (a missing field, or a number out of range), or `postStayReviewUrl` isn't an http(s) URL.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /users:
     get:
       operationId: listUsers
@@ -10031,7 +10140,11 @@ components:
         embeds, and which carries no computed fields - see its description): whether this card
         has a linked self-service `GuestAccount`, read live from that table on every call, never
         stored on the card.
-      required: [id, name, email, phone, notes, vip, dateOfBirth, tags, createdAt, updatedAt, bookings, account]
+
+        `emailHistory` is the same kind of live read: every automated lifecycle email this guest
+        was actually sent (see `LifecycleEmailSettings`), newest first - a row exists only once a
+        send succeeded, so this is what went out, not what was scheduled.
+      required: [id, name, email, phone, notes, vip, dateOfBirth, tags, createdAt, updatedAt, bookings, account, emailHistory]
       properties:
         id:
           type: string
@@ -10074,6 +10187,107 @@ components:
         account:
           $ref: "#/components/schemas/GuestAccountLinkSummary"
           nullable: true
+        emailHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuestEmailHistoryEntry"
+
+    GuestEmailHistoryEntry:
+      type: object
+      description: One automated lifecycle email sent to a guest - see `GuestDetail.emailHistory`.
+      required: [type, subject, sentAt, bookingId]
+      properties:
+        type:
+          $ref: "#/components/schemas/LifecycleEmailType"
+        subject:
+          type: string
+        sentAt:
+          type: string
+          format: date-time
+        bookingId:
+          type: string
+          nullable: true
+          description: The stay the email was about. Null for `WIN_BACK`, which isn't about one stay.
+
+    LifecycleEmailType:
+      type: string
+      description: >
+        `PRE_ARRIVAL` - a few days before check-in. `POST_STAY` - a few days after checkout, with a
+        review link when one is configured. `WIN_BACK` - a guest who hasn't stayed in a long while.
+      enum: [PRE_ARRIVAL, POST_STAY, WIN_BACK]
+
+    LifecycleEmailSettings:
+      type: object
+      description: >
+        Controls the daily sweep that sends automated lifecycle emails. The settings decide
+        *whether* and *when* each type is sent; the wording is fixed in the backend.
+
+        Who can receive one: only a guest whose `Guest` card is linked to a `GuestAccount` with a
+        verified email that hasn't opted out (`GET /guest-auth/unsubscribe`). A `Guest` card
+        without an account never gets one - staff typing a name at the front desk is not the
+        guest's consent to automated mail. The email goes to the account's verified address.
+
+        - Pre-arrival: bookings not `CANCELLED` whose `checkIn` is exactly `preArrivalDaysBefore`
+          days from today (hotel time), once per booking.
+        - Post-stay: bookings not `CANCELLED` and not marked no-show whose `checkOut` was exactly
+          `postStayDaysAfter` days ago, once per booking. Without a `postStayReviewUrl` the email
+          goes out with no review section.
+        - Win-back: a guest whose most recent non-`CANCELLED` booking checked out more than
+          `winBackMonthsSinceStay` months ago, and who hasn't had a win-back email within that
+          same many months.
+
+        Every type starts disabled. The sweep runs once a day; a day it misses (server down) is
+        not caught up, since "exactly N days before" has passed for those bookings.
+      required: [preArrivalEnabled, preArrivalDaysBefore, postStayEnabled, postStayDaysAfter, postStayReviewUrl, winBackEnabled, winBackMonthsSinceStay, updatedAt]
+      properties:
+        preArrivalEnabled:
+          type: boolean
+        preArrivalDaysBefore:
+          type: integer
+        postStayEnabled:
+          type: boolean
+        postStayDaysAfter:
+          type: integer
+        postStayReviewUrl:
+          type: string
+          nullable: true
+        winBackEnabled:
+          type: boolean
+        winBackMonthsSinceStay:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+
+    LifecycleEmailSettingsUpdateInput:
+      type: object
+      description: >
+        Body of `PUT /settings/lifecycle-emails` - every field, see `LifecycleEmailSettings`.
+        `postStayReviewUrl` may be omitted or null for none.
+      required: [preArrivalEnabled, preArrivalDaysBefore, postStayEnabled, postStayDaysAfter, winBackEnabled, winBackMonthsSinceStay]
+      properties:
+        preArrivalEnabled:
+          type: boolean
+        preArrivalDaysBefore:
+          type: integer
+          minimum: 0
+          maximum: 60
+        postStayEnabled:
+          type: boolean
+        postStayDaysAfter:
+          type: integer
+          minimum: 0
+          maximum: 60
+        postStayReviewUrl:
+          type: string
+          nullable: true
+          maxLength: 2000
+        winBackEnabled:
+          type: boolean
+        winBackMonthsSinceStay:
+          type: integer
+          minimum: 1
+          maximum: 120
 
     GuestAccountLinkSummary:
       type: object
@@ -10082,11 +10296,14 @@ components:
         verification only. Deliberately no id, email, password hash, token version, or
         verification token: staff can see that a guest has an account, never anything that
         would help act as it.
-      required: [emailVerified]
+      required: [emailVerified, marketingEmailsOptOut]
       properties:
         emailVerified:
           type: boolean
           description: False while the guest hasn't confirmed their email yet (they can't log in until they do).
+        marketingEmailsOptOut:
+          type: boolean
+          description: True once the guest has unsubscribed from automated lifecycle emails - see `GET /guest-auth/unsubscribe`.
 
     GuestCreateInput:
       type: object
@@ -11671,6 +11888,7 @@ components:
         - MENU_ITEM_UPDATED
         - MENU_ITEM_DELETED
         - REVENUE_EXPORTED
+        - LIFECYCLE_EMAIL_SETTINGS_UPDATED
 
     AuditEntityType:
       type: string
@@ -11684,7 +11902,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS]
 
     AuditLogEntry:
       type: object

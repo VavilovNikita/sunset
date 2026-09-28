@@ -2,8 +2,11 @@ package com.sunsetbeach.entity;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.UuidGenerator;
@@ -48,6 +51,16 @@ public class GuestAccountEntity {
     // whose tokenVersion claim doesn't match the current value here. Same mechanism as
     // User.tokenVersion.
     private int tokenVersion = 0;
+
+    // One switch for every automated lifecycle email (pre-arrival, post-stay, win-back) - see
+    // LifecycleEmailService. Set by GET /guest-auth/unsubscribe, never cleared by anything.
+    private boolean marketingEmailsOptOut = false;
+
+    // The secret in every lifecycle email's unsubscribe link - see V110's own comment. Unlike
+    // emailVerificationToken it is issued once and never rotated or cleared, so a link in an old
+    // email keeps working. Filled in on first insert (see assignUnsubscribeToken), not by
+    // GuestAccountService, so no creation path can leave it null against the NOT NULL column.
+    private String unsubscribeToken;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
@@ -125,6 +138,27 @@ public class GuestAccountEntity {
 
     public void setTokenVersion(int tokenVersion) {
         this.tokenVersion = tokenVersion;
+    }
+
+    public boolean isMarketingEmailsOptOut() {
+        return marketingEmailsOptOut;
+    }
+
+    public void setMarketingEmailsOptOut(boolean marketingEmailsOptOut) {
+        this.marketingEmailsOptOut = marketingEmailsOptOut;
+    }
+
+    public String getUnsubscribeToken() {
+        return unsubscribeToken;
+    }
+
+    @PrePersist
+    void assignUnsubscribeToken() {
+        if (unsubscribeToken == null) {
+            byte[] bytes = new byte[24];
+            new SecureRandom().nextBytes(bytes);
+            unsubscribeToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        }
     }
 
     public LocalDateTime getCreatedAt() {

@@ -121,6 +121,21 @@ public class GuestAccountService {
     }
 
     /**
+     * {@code GET /guest-auth/unsubscribe} - opts the account out of every lifecycle email (see
+     * {@link LifecycleEmailService}). Idempotent; the token is never consumed, so an old email's
+     * link keeps working.
+     */
+    @Transactional
+    public void unsubscribe(String token) {
+        GuestAccountEntity account = guestAccountRepository.findByUnsubscribeToken(token)
+                .orElseThrow(() -> new BadRequestException("This unsubscribe link isn't valid."));
+        if (!account.isMarketingEmailsOptOut()) {
+            account.setMarketingEmailsOptOut(true);
+            guestAccountRepository.save(account);
+        }
+    }
+
+    /**
      * Wrong email or wrong password both throw the same {@link UnauthorizedException} (see this
      * operation's own openapi.yaml description) - a correct password against an unverified
      * account throws {@link ForbiddenException} instead, since a correct password already proves

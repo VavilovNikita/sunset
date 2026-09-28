@@ -22,6 +22,8 @@ public class GuestAccountLinkSummary {
 
   private Boolean emailVerified;
 
+  private Boolean marketingEmailsOptOut;
+
   public GuestAccountLinkSummary() {
     super();
   }
@@ -29,8 +31,9 @@ public class GuestAccountLinkSummary {
   /**
    * Constructor with only required parameters
    */
-  public GuestAccountLinkSummary(Boolean emailVerified) {
+  public GuestAccountLinkSummary(Boolean emailVerified, Boolean marketingEmailsOptOut) {
     this.emailVerified = emailVerified;
+    this.marketingEmailsOptOut = marketingEmailsOptOut;
   }
 
   public GuestAccountLinkSummary emailVerified(Boolean emailVerified) {
@@ -52,6 +55,25 @@ public class GuestAccountLinkSummary {
     this.emailVerified = emailVerified;
   }
 
+  public GuestAccountLinkSummary marketingEmailsOptOut(Boolean marketingEmailsOptOut) {
+    this.marketingEmailsOptOut = marketingEmailsOptOut;
+    return this;
+  }
+
+  /**
+   * True once the guest has unsubscribed from automated lifecycle emails - see `GET /guest-auth/unsubscribe`.
+   * @return marketingEmailsOptOut
+   */
+  @NotNull 
+  @JsonProperty("marketingEmailsOptOut")
+  public Boolean getMarketingEmailsOptOut() {
+    return marketingEmailsOptOut;
+  }
+
+  public void setMarketingEmailsOptOut(Boolean marketingEmailsOptOut) {
+    this.marketingEmailsOptOut = marketingEmailsOptOut;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -61,12 +83,13 @@ public class GuestAccountLinkSummary {
       return false;
     }
     GuestAccountLinkSummary guestAccountLinkSummary = (GuestAccountLinkSummary) o;
-    return Objects.equals(this.emailVerified, guestAccountLinkSummary.emailVerified);
+    return Objects.equals(this.emailVerified, guestAccountLinkSummary.emailVerified) &&
+        Objects.equals(this.marketingEmailsOptOut, guestAccountLinkSummary.marketingEmailsOptOut);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(emailVerified);
+    return Objects.hash(emailVerified, marketingEmailsOptOut);
   }
 
   @Override
@@ -74,6 +97,7 @@ public class GuestAccountLinkSummary {
     StringBuilder sb = new StringBuilder();
     sb.append("class GuestAccountLinkSummary {\n");
     sb.append("    emailVerified: ").append(toIndentedString(emailVerified)).append("\n");
+    sb.append("    marketingEmailsOptOut: ").append(toIndentedString(marketingEmailsOptOut)).append("\n");
     sb.append("}");
     return sb.toString();
   }

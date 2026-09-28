@@ -6,7 +6,11 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.UserRepository;
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
+import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -15,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.HtmlUtils;
 
 /**
  * Ports lib/email.ts 1:1, including its fail-open contract: any failure here is caught and
@@ -190,6 +195,111 @@ public class EmailService {
         } catch (Exception e) {
             log.error("sendGuestVerificationEmail failed:", e);
         }
+    }
+
+    public static final String PRE_ARRIVAL_SUBJECT = "Your stay is coming up — The Sunset Beach Resort & Spa";
+    public static final String POST_STAY_SUBJECT = "Thank you for staying with us — The Sunset Beach Resort & Spa";
+    public static final String WIN_BACK_SUBJECT = "We'd love to welcome you back — The Sunset Beach Resort & Spa";
+
+    /**
+     * The three lifecycle emails {@link LifecycleEmailService} sends. Unlike every method above,
+     * these are not something the guest just caused, so each carries an unsubscribe link (in the
+     * body and as a {@code List-Unsubscribe} header) - see that class's javadoc. Same fail-open
+     * contract, but each returns whether the email actually went out: the sweep logs a
+     * {@code GuestEmailLog} row only on {@code true}, so the log (and the guest card's email
+     * history) is what was sent, not what was attempted. An unconfigured {@code RESEND_API_KEY}
+     * returns {@code false} for the same reason - nothing went out.
+     *
+     * <p>{@code name} is the guest's own free text - escaped here, unlike the staff-typed values
+     * the older methods above interpolate as-is.
+     */
+    public boolean sendPreArrivalEmail(String email, String name, String roomName, LocalDate checkIn, LocalDate checkOut, String unsubscribeToken) {
+        try {
+            String html = "<p>Hi " + escapeName(name) + ",</p>"
+                    + "<p>We're looking forward to welcoming you on " + checkIn + ".</p>"
+                    + "<ul>"
+                    + "<li>Room: " + HtmlUtils.htmlEscape(roomName) + "</li>"
+                    + "<li>Check-in: " + checkIn + "</li>"
+                    + "<li>Check-out: " + checkOut + "</li>"
+                    + "</ul>"
+                    + "<p>If anything has changed, or there's something we can arrange before you arrive, just reply to this email.</p>"
+                    + unsubscribeFooter(unsubscribeToken);
+            return sendLifecycle(email, PRE_ARRIVAL_SUBJECT, html, unsubscribeToken);
+        } catch (Exception e) {
+            log.error("sendPreArrivalEmail failed:", e);
+            return false;
+        }
+    }
+
+    /** {@code reviewUrl} null or blank leaves the review section out - see {@code LifecycleEmailSettings}. */
+    public boolean sendPostStayEmail(String email, String name, String roomName, LocalDate checkIn, LocalDate checkOut, String reviewUrl, String unsubscribeToken) {
+        try {
+            String review = reviewUrl == null || reviewUrl.isBlank()
+                    ? ""
+                    : "<p>If you have a moment, we'd be grateful for a review:</p>"
+                            + "<p><a href=\"" + HtmlUtils.htmlEscape(reviewUrl) + "\">Leave a review</a></p>";
+            String html = "<p>Hi " + escapeName(name) + ",</p>"
+                    + "<p>Thank you for staying with us in " + HtmlUtils.htmlEscape(roomName) + " (" + checkIn + " → " + checkOut
+                    + "). We hope you had a wonderful time.</p>"
+                    + review
+                    + "<p>If there's anything you'd like to tell us about your stay, just reply to this email.</p>"
+                    + unsubscribeFooter(unsubscribeToken);
+            return sendLifecycle(email, POST_STAY_SUBJECT, html, unsubscribeToken);
+        } catch (Exception e) {
+            log.error("sendPostStayEmail failed:", e);
+            return false;
+        }
+    }
+
+    public boolean sendWinBackEmail(String email, String name, String unsubscribeToken) {
+        try {
+            String html = "<p>Hi " + escapeName(name) + ",</p>"
+                    + "<p>It's been a while since your last stay with us, and we'd love to welcome you back to Koh Samui.</p>"
+                    + "<p><a href=\"" + siteUrl + "/booking\">See our rooms and availability</a></p>"
+                    + unsubscribeFooter(unsubscribeToken);
+            return sendLifecycle(email, WIN_BACK_SUBJECT, html, unsubscribeToken);
+        } catch (Exception e) {
+            log.error("sendWinBackEmail failed:", e);
+            return false;
+        }
+    }
+
+    private String unsubscribeUrl(String unsubscribeToken) {
+        return siteUrl + "/guest/unsubscribe?token=" + URLEncoder.encode(unsubscribeToken, StandardCharsets.UTF_8);
+    }
+
+    private String unsubscribeFooter(String unsubscribeToken) {
+        return "<p style=\"font-size:12px;color:#888\">You're receiving this because you have a guest account with us. "
+                + "<a href=\"" + unsubscribeUrl(unsubscribeToken) + "\">Unsubscribe</a> from these emails.</p>";
+    }
+
+    private static String escapeName(String name) {
+        return name == null || name.isBlank() ? "there" : HtmlUtils.htmlEscape(name);
+    }
+
+    /** Returns false (nothing sent) when RESEND_API_KEY isn't configured - see {@link #send}. */
+    private boolean sendLifecycle(String to, String subject, String html, String unsubscribeToken) {
+        if (resendApiKey == null || resendApiKey.isBlank()) {
+            send(List.of(to), subject, html);
+            return false;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("from", from);
+        body.put("to", List.of(to));
+        body.put("subject", subject);
+        body.put("html", html);
+        // Mail clients show their own "Unsubscribe" control from this - it opens the same page the
+        // body's link does. No List-Unsubscribe-Post (RFC 8058 one-click): that needs a POST
+        // endpoint mail providers call directly, and GET /guest-auth/unsubscribe is behind the
+        // site's own page on purpose (see its openapi.yaml description).
+        body.put("headers", Map.of("List-Unsubscribe", "<" + unsubscribeUrl(unsubscribeToken) + ">"));
+        restClient.post()
+                .uri("/emails")
+                .header("Authorization", "Bearer " + resendApiKey)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity();
+        return true;
     }
 
     private void send(List<String> to, String subject, String html) {

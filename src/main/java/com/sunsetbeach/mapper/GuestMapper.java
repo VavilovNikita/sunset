@@ -1,6 +1,7 @@
 package com.sunsetbeach.mapper;
 
 import com.sunsetbeach.entity.GuestAccountEntity;
+import com.sunsetbeach.entity.GuestEmailLogEntity;
 import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.model.Booking;
@@ -8,7 +9,9 @@ import com.sunsetbeach.model.Guest;
 import com.sunsetbeach.model.GuestAccountLinkSummary;
 import com.sunsetbeach.model.GuestCreateInput;
 import com.sunsetbeach.model.GuestDetail;
+import com.sunsetbeach.model.GuestEmailHistoryEntry;
 import com.sunsetbeach.model.GuestUpdateInput;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
@@ -19,6 +22,12 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class GuestMapper {
+
+    private final Clock clock;
+
+    public GuestMapper(Clock clock) {
+        this.clock = clock;
+    }
 
     public Guest toDto(GuestEntity entity) {
         return new Guest(
@@ -39,7 +48,8 @@ public class GuestMapper {
      * {@code GuestDetail}'s own description. {@code account} is the linked self-service account,
      * or null; only its verification state is exposed, never credentials or tokens.
      */
-    public GuestDetail toDetailDto(GuestEntity entity, List<Booking> bookings, GuestAccountEntity account) {
+    public GuestDetail toDetailDto(
+            GuestEntity entity, List<Booking> bookings, GuestAccountEntity account, List<GuestEmailLogEntity> emailLog) {
         return new GuestDetail(
                 entity.getId(),
                 entity.getName(),
@@ -52,7 +62,12 @@ public class GuestMapper {
                 TimestampFormat.toUtc(entity.getCreatedAt()),
                 TimestampFormat.toUtc(entity.getUpdatedAt()),
                 bookings,
-                account != null ? new GuestAccountLinkSummary(account.getEmailVerifiedAt() != null) : null);
+                account != null ? new GuestAccountLinkSummary(account.getEmailVerifiedAt() != null, account.isMarketingEmailsOptOut()) : null,
+                emailLog.stream()
+                        // sentAt is hotel wall-clock, not UTC - see GuestEmailLogEntity.
+                        .map(e -> new GuestEmailHistoryEntry(
+                                e.getType(), e.getSubject(), e.getSentAt().atZone(clock.getZone()).toOffsetDateTime(), e.getBookingId()))
+                        .toList());
     }
 
     public void applyCreate(GuestEntity entity, GuestCreateInput input) {

@@ -17,8 +17,10 @@ import com.sunsetbeach.security.GuestPrincipal;
 import com.sunsetbeach.service.GuestAccountService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -93,6 +95,19 @@ public class GuestAccountAuthController {
         }
         loginRateLimiter.recordSuccess(ip, email);
         return issueResponse(account);
+    }
+
+    /**
+     * The target of every lifecycle email's unsubscribe link (by way of the site's own
+     * /guest/unsubscribe page) - see the operation's openapi.yaml description. Rate-limited like
+     * {@link #verify}: both look an account up by a secret token alone.
+     */
+    @GetMapping("/guest-auth/unsubscribe")
+    public GuestAccountMessage unsubscribe(@RequestParam("token") String token, HttpServletRequest httpRequest) {
+        String ip = ClientIpResolver.resolve(httpRequest);
+        authRateLimiter.checkAllowedAndRecordForToken(ip);
+        guestAccountService.unsubscribe(token);
+        return new GuestAccountMessage("You've been unsubscribed. You won't receive any more of these emails.");
     }
 
     private GuestAccountAuthResponse issueResponse(GuestAccountEntity account) {

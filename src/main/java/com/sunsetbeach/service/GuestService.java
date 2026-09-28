@@ -12,6 +12,7 @@ import com.sunsetbeach.model.GuestCreateInput;
 import com.sunsetbeach.model.GuestDetail;
 import com.sunsetbeach.model.GuestUpdateInput;
 import com.sunsetbeach.repository.GuestAccountRepository;
+import com.sunsetbeach.repository.GuestEmailLogRepository;
 import com.sunsetbeach.repository.GuestRepository;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -25,6 +26,7 @@ public class GuestService {
 
     private final GuestRepository guestRepository;
     private final GuestAccountRepository guestAccountRepository;
+    private final GuestEmailLogRepository guestEmailLogRepository;
     private final GuestMapper guestMapper;
     private final BookingService bookingService;
     private final AuditLogService auditLogService;
@@ -33,12 +35,14 @@ public class GuestService {
     public GuestService(
             GuestRepository guestRepository,
             GuestAccountRepository guestAccountRepository,
+            GuestEmailLogRepository guestEmailLogRepository,
             GuestMapper guestMapper,
             BookingService bookingService,
             AuditLogService auditLogService,
             Clock clock) {
         this.guestRepository = guestRepository;
         this.guestAccountRepository = guestAccountRepository;
+        this.guestEmailLogRepository = guestEmailLogRepository;
         this.guestMapper = guestMapper;
         this.bookingService = bookingService;
         this.auditLogService = auditLogService;
@@ -55,7 +59,11 @@ public class GuestService {
     @Transactional(readOnly = true)
     public GuestDetail getDetail(String id) {
         GuestEntity entity = findEntity(id);
-        return guestMapper.toDetailDto(entity, bookingService.listByGuestId(id), guestAccountRepository.findByGuestId(id).orElse(null));
+        return guestMapper.toDetailDto(
+                entity,
+                bookingService.listByGuestId(id),
+                guestAccountRepository.findByGuestId(id).orElse(null),
+                guestEmailLogRepository.findByGuestIdOrderBySentAtDesc(id));
     }
 
     @Transactional
