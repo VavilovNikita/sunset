@@ -87,7 +87,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
 
     private Booking createBooking(String roomId, LocalDate checkIn, LocalDate checkOut) {
         return bookingService.createBooking(
-                new BookingCreateInput(roomId, "Guest", "guest@example.com", "+66800000000", checkIn.toString(), checkOut.toString()));
+                new BookingCreateInput(roomId, "Guest", "guest@example.com", "+66800000000", checkIn.toString(), checkOut.toString(), 1));
     }
 
     // POST /bookings/staff's own write path (BookingWriter#insertStaff) - deliberately not
@@ -96,7 +96,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     // field defaults to absent, which BookingService.createStaffBooking treats as null) so this
     // also covers the no-room-unit-yet case for the staff path.
     private Booking createStaffBooking(String roomId, LocalDate checkIn, LocalDate checkOut) {
-        return bookingService.createStaffBooking(new StaffBookingCreateInput(roomId, "Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN));
+        return bookingService.createStaffBooking(new StaffBookingCreateInput(roomId, "Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN, 1));
     }
 
     private List<BookingSegmentEntity> segmentsOf(String bookingId) {
@@ -157,7 +157,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
         LocalDate checkIn2 = checkIn.plusDays(10);
         LocalDate checkOut2 = checkIn2.plusDays(3);
         Booking assigned = bookingService.createStaffBooking(
-                new StaffBookingCreateInput(room.getId(), "Guest", checkIn2.toString(), checkOut2.toString(), BookingChannel.WALK_IN).roomUnitId(unit.getId()));
+                new StaffBookingCreateInput(room.getId(), "Guest", checkIn2.toString(), checkOut2.toString(), BookingChannel.WALK_IN, 1).roomUnitId(unit.getId()));
         BookingSegmentEntity assignedSegment = segmentsOf(assigned.getId()).get(0);
         assertThat(assignedSegment.getRoomUnitId()).isEqualTo(unit.getId());
         Map<LocalDate, BigDecimal> assignedRates = nightlyRatesOf(assignedSegment.getId());

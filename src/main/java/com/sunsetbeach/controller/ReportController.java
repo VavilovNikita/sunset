@@ -2,8 +2,10 @@ package com.sunsetbeach.controller;
 
 import com.sunsetbeach.api.ReportsApi;
 import com.sunsetbeach.model.GuestLtvReport;
+import com.sunsetbeach.model.MarketSegmentReport;
 import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.PosSalesMixReport;
+import com.sunsetbeach.model.TopProductionReport;
 import com.sunsetbeach.service.ReportService;
 import com.sunsetbeach.service.RevenueExportService;
 import org.springframework.core.io.ByteArrayResource;
@@ -48,5 +50,15 @@ public class ReportController implements ReportsApi {
     @Override
     public ResponseEntity<GuestLtvReport> getGuestLtvReport(Integer limit) {
         return ResponseEntity.ok(reportService.guestLtv(limit));
+    }
+
+    @Override
+    public ResponseEntity<TopProductionReport> getTopProductionReport(String from, String to) {
+        return ResponseEntity.ok(reportService.topProduction(from, to));
+    }
+
+    @Override
+    public ResponseEntity<MarketSegmentReport> getMarketSegmentReport(String from, String to) {
+        return ResponseEntity.ok(reportService.marketSegment(from, to));
     }
 }

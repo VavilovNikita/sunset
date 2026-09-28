@@ -261,7 +261,7 @@ class DateOnlyFieldsContractTests extends AbstractIntegrationTest {
         RoomUnitEntity unitB = roomUnitRepository.findByRoomId(room.getId()).get(1);
 
         Booking booking = bookingService.createStaffBooking(
-                new StaffBookingCreateInput(room.getId(), "Contract Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN)
+                new StaffBookingCreateInput(room.getId(), "Contract Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN, 1)
                         .roomUnitId(unitA.getId()));
         bookingService.relocate(booking.getId(), new RelocationInput(splitDate.toString(), room.getId()).roomUnitId(unitB.getId()));
 
@@ -279,7 +279,7 @@ class DateOnlyFieldsContractTests extends AbstractIntegrationTest {
         RoomUnitEntity unitB = roomUnitRepository.findByRoomId(room.getId()).get(1);
 
         bookingService.createStaffBooking(
-                new StaffBookingCreateInput(room.getId(), "Contract Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN)
+                new StaffBookingCreateInput(room.getId(), "Contract Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN, 1)
                         .roomUnitId(unitA.getId()));
         roomUnitService.createBlock(
                 unitB.getId(), new RoomUnitBlockInput(checkIn.toString(), checkOut.toString(), "Contract test block"), testUserId);

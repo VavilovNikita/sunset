@@ -147,7 +147,7 @@ class BookingSegmentSwapTests extends AbstractIntegrationTest {
 
     private Booking createBooking(String roomId, LocalDate checkIn, LocalDate checkOut) {
         return bookingService.createBooking(
-                new BookingCreateInput(roomId, "Guest", "guest@example.com", "+66800000000", checkIn.toString(), checkOut.toString()));
+                new BookingCreateInput(roomId, "Guest", "guest@example.com", "+66800000000", checkIn.toString(), checkOut.toString(), 1));
     }
 
     private List<BookingSegmentEntity> segmentsOf(String bookingId) {

@@ -280,8 +280,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/reports/revenue-export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Same floor again: occupancy/ADR is derived from booking prices a manager
                         // already sees, the sales mix from the same payments as the revenue export,
-                        // and guest LTV from the booking list plus guest cards.
-                        .requestMatchers(HttpMethod.GET, "/reports/occupancy", "/reports/pos-sales-mix", "/reports/guest-ltv")
+                        // and guest LTV from the booking list plus guest cards. Top production and
+                        // market segment are the occupancy figures regrouped by channel/purpose.
+                        .requestMatchers(
+                                        HttpMethod.GET,
+                                        "/reports/occupancy",
+                                        "/reports/pos-sales-mix",
+                                        "/reports/guest-ltv",
+                                        "/reports/top-production",
+                                        "/reports/market-segment")
                                 .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Audit log: read-only, MANAGER+ - the disputes it exists to resolve (a
                         // cash discrepancy, a guest billing question, a suspected misuse of a

@@ -22,6 +22,7 @@ import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.model.AvailabilityResponse;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingChannel;
+import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingCalendarResponse;
 import com.sunsetbeach.model.BookingScheduleInput;
@@ -720,12 +721,14 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isBadRequest());
     }
 
-    // --- GET /reports/occupancy, /reports/pos-sales-mix, /reports/guest-ltv: same MANAGER floor ---
+    // --- GET /reports/occupancy, /reports/pos-sales-mix, /reports/guest-ltv, top-production, market-segment: same MANAGER floor ---
 
     private static final String[] DASHBOARD_REPORTS = {
         "/reports/occupancy?from=2031-01-01&to=2031-01-31",
         "/reports/pos-sales-mix?from=2031-01-01&to=2031-01-31",
         "/reports/guest-ltv",
+        "/reports/top-production?from=2031-01-01&to=2031-01-31",
+        "/reports/market-segment?from=2031-01-01&to=2031-01-31",
     };
 
     @Test
@@ -742,6 +745,8 @@ class PosRoleHierarchyTests {
         when(reportService.occupancy(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.OccupancyReport());
         when(reportService.posSalesMix(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.PosSalesMixReport());
         when(reportService.guestLtv(any())).thenReturn(new com.sunsetbeach.model.GuestLtvReport());
+        when(reportService.topProduction(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.TopProductionReport());
+        when(reportService.marketSegment(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.MarketSegmentReport());
         for (String url : DASHBOARD_REPORTS) {
             mockMvc.perform(get(url).header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
         }
@@ -749,13 +754,15 @@ class PosRoleHierarchyTests {
 
     @Test
     void dashboardReports_missingOrMalformedDate_isBadRequest() throws Exception {
-        for (String path : new String[] {"/reports/occupancy", "/reports/pos-sales-mix"}) {
+        for (String path : new String[] {"/reports/occupancy", "/reports/pos-sales-mix", "/reports/top-production", "/reports/market-segment"}) {
             for (String query : new String[] {"to=2031-01-31", "from=2031-01-01", "from=2031-1-1&to=2031-01-31"}) {
                 mockMvc.perform(get(path + "?" + query).header("Authorization", token(Role.MANAGER))).andExpect(status().isBadRequest());
             }
         }
         verify(reportService, never()).occupancy(any(), any());
         verify(reportService, never()).posSalesMix(any(), any());
+        verify(reportService, never()).topProduction(any(), any());
+        verify(reportService, never()).marketSegment(any(), any());
     }
 
     @Test
@@ -1455,7 +1462,7 @@ class PosRoleHierarchyTests {
         mockMvc.perform(post("/bookings/staff")
                         .header("Authorization", token(Role.WAITER))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new StaffBookingCreateInput("room-1", "Guest", "2031-01-01", "2031-01-02", BookingChannel.WALK_IN))))
+                        .content(objectMapper.writeValueAsString(new StaffBookingCreateInput("room-1", "Guest", "2031-01-01", "2031-01-02", BookingChannel.WALK_IN, 1))))
                 .andExpect(status().isForbidden());
     }
 
@@ -1465,7 +1472,7 @@ class PosRoleHierarchyTests {
         mockMvc.perform(post("/bookings/staff")
                         .header("Authorization", token(Role.CASHIER))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new StaffBookingCreateInput("room-1", "Guest", "2031-01-01", "2031-01-02", BookingChannel.WALK_IN))))
+                        .content(objectMapper.writeValueAsString(new StaffBookingCreateInput("room-1", "Guest", "2031-01-01", "2031-01-02", BookingChannel.WALK_IN, 1))))
                 .andExpect(status().isCreated());
     }
 
@@ -1660,7 +1667,7 @@ class PosRoleHierarchyTests {
                 "2026-01-02",
                 "1500.00",
                 BookingStatus.NEW,
-                BookingChannel.DIRECT,
+                BookingChannel.DIRECT, BookingPurpose.STANDARD, 1, 0,
                 null,
                 OccupancyStatus.EXPECTED,
                 null,

@@ -9,9 +9,14 @@ import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.mapper.PriceFormat;
+import com.sunsetbeach.model.BookingChannel;
+import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.GuestLtvReport;
 import com.sunsetbeach.model.GuestLtvRow;
+import com.sunsetbeach.model.MarketSegment;
+import com.sunsetbeach.model.MarketSegmentReport;
+import com.sunsetbeach.model.MarketSegmentRow;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.OccupancyReportRow;
@@ -21,6 +26,8 @@ import com.sunsetbeach.model.PosSalesMixCategory;
 import com.sunsetbeach.model.PosSalesMixDepartment;
 import com.sunsetbeach.model.PosSalesMixItem;
 import com.sunsetbeach.model.PosSalesMixReport;
+import com.sunsetbeach.model.TopProductionReport;
+import com.sunsetbeach.model.TopProductionRow;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.GuestRepository;
@@ -38,10 +45,13 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
@@ -49,8 +59,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The three read-only dashboard reports under {@code /reports}: occupancy/ADR/RevPAR, POS sales
- * mix, and guest lifetime value. Each operation's own openapi.yaml description is the contract;
+ * The read-only dashboard reports under {@code /reports}: occupancy/ADR/RevPAR, top production,
+ * market segment, POS sales mix, and guest lifetime value. Each operation's own openapi.yaml description is the contract;
  * notes here are only about how the numbers are computed.
  *
  * <p>Money is summed unrounded and rounded to two decimals ({@link RoundingMode#HALF_UP}) exactly
@@ -110,26 +120,15 @@ public class ReportService {
     public OccupancyReport occupancy(String from, String to) {
         ReportDateRange range = ReportDateRange.parse(from, to);
         long nights = range.days();
-        LocalDate rangeEnd = range.to().plusDays(1); // exclusive, like a checkOut
 
         Map<String, Long> activeUnits = roomUnitRepository.countActiveGroupedByRoom().stream()
                 .collect(Collectors.toMap(RoomUnitRepository.RoomActiveUnitCount::getRoomId, RoomUnitRepository.RoomActiveUnitCount::getActiveCount));
 
         Map<String, long[]> soldByRoom = new HashMap<>();
         Map<String, BigDecimal> revenueByRoom = new HashMap<>();
-        for (BookingSegmentEntity segment : segmentRepository.findByBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThan(
-                BookingStatus.CANCELLED, rangeEnd, range.from())) {
-            long segmentNights = ChronoUnit.DAYS.between(segment.getCheckIn(), segment.getCheckOut());
-            LocalDate clippedStart = max(segment.getCheckIn(), range.from());
-            LocalDate clippedEnd = min(segment.getCheckOut(), rangeEnd);
-            long inRange = ChronoUnit.DAYS.between(clippedStart, clippedEnd);
-            if (segmentNights <= 0 || inRange <= 0) continue;
-
-            soldByRoom.computeIfAbsent(segment.getRoomId(), k -> new long[1])[0] += inRange;
-            BigDecimal prorated = inRange == segmentNights
-                    ? segment.getTotalPrice()
-                    : segment.getTotalPrice().multiply(BigDecimal.valueOf(inRange)).divide(BigDecimal.valueOf(segmentNights), MC);
-            revenueByRoom.merge(segment.getRoomId(), prorated, BigDecimal::add);
+        for (SegmentInRange slice : segmentsInRange(range)) {
+            soldByRoom.computeIfAbsent(slice.segment().getRoomId(), k -> new long[1])[0] += slice.nights();
+            revenueByRoom.merge(slice.segment().getRoomId(), slice.revenue(), BigDecimal::add);
         }
 
         List<OccupancyReportRow> rows = new ArrayList<>();
@@ -150,6 +149,34 @@ public class ReportService {
         return new OccupancyReport(
                 range.from().toString(), range.to().toString(), Math.toIntExact(nights), rows,
                 occupancyRow(null, null, totalUnits, nights, totalSold, totalRevenue));
+    }
+
+    /** One segment's share of a report range: the nights of it inside the range and their prorated price. */
+    private record SegmentInRange(BookingSegmentEntity segment, long nights, BigDecimal revenue) {}
+
+    /**
+     * The room-nights population shared by occupancy, top production and market segment: every
+     * segment of a non-{@code CANCELLED} booking, clipped to the range's nights, its
+     * {@code totalPrice} prorated to them unrounded. One definition, so the three reports always
+     * sum to the same totals for the same range.
+     */
+    private List<SegmentInRange> segmentsInRange(ReportDateRange range) {
+        LocalDate rangeEnd = range.to().plusDays(1); // exclusive, like a checkOut
+        List<SegmentInRange> slices = new ArrayList<>();
+        for (BookingSegmentEntity segment : segmentRepository.findByBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThan(
+                BookingStatus.CANCELLED, rangeEnd, range.from())) {
+            long segmentNights = ChronoUnit.DAYS.between(segment.getCheckIn(), segment.getCheckOut());
+            LocalDate clippedStart = max(segment.getCheckIn(), range.from());
+            LocalDate clippedEnd = min(segment.getCheckOut(), rangeEnd);
+            long inRange = ChronoUnit.DAYS.between(clippedStart, clippedEnd);
+            if (segmentNights <= 0 || inRange <= 0) continue;
+
+            BigDecimal prorated = inRange == segmentNights
+                    ? segment.getTotalPrice()
+                    : segment.getTotalPrice().multiply(BigDecimal.valueOf(inRange)).divide(BigDecimal.valueOf(segmentNights), MC);
+            slices.add(new SegmentInRange(segment, inRange, prorated));
+        }
+        return slices;
     }
 
     private static OccupancyReportRow occupancyRow(String roomId, String roomName, long units, long nights, long sold, BigDecimal revenue) {
@@ -249,6 +276,149 @@ public class ReportService {
         }
     }
 
+    // --- GET /reports/top-production and /reports/market-segment -------------------------------
+
+    /**
+     * The occupancy population ({@link #segmentsInRange}) grouped by producer: a comp or
+     * house-use booking under its purpose, whatever its channel; every other booking under its
+     * own channel. Only producers with room-nights in the range get a row.
+     */
+    @Transactional(readOnly = true)
+    public TopProductionReport topProduction(String from, String to) {
+        ReportDateRange range = ReportDateRange.parse(from, to);
+        List<SegmentInRange> slices = segmentsInRange(range);
+        Map<String, BookingEntity> bookings = bookingsOf(slices);
+
+        Map<String, RoomNightTally> byProducer = new HashMap<>();
+        RoomNightTally total = new RoomNightTally();
+        for (SegmentInRange slice : slices) {
+            BookingEntity booking = bookings.get(slice.segment().getBookingId());
+            byProducer.computeIfAbsent(producerOf(booking), k -> new RoomNightTally()).add(slice, booking);
+            total.add(slice, booking);
+        }
+
+        List<TopProductionRow> rows = byProducer.entrySet().stream()
+                .sorted(Comparator.comparingLong((Map.Entry<String, RoomNightTally> e) -> e.getValue().nights).reversed()
+                        .thenComparing((Map.Entry<String, RoomNightTally> e) -> e.getValue().revenue, Comparator.reverseOrder())
+                        .thenComparing(Map.Entry::getKey))
+                .map(e -> topProductionRow(e.getKey(), producerLabel(e.getKey()), e.getValue(), total))
+                .toList();
+        return new TopProductionReport(range.from().toString(), range.to().toString(), rows, topProductionRow(null, null, total, total));
+    }
+
+    private static TopProductionRow topProductionRow(String producer, String label, RoomNightTally tally, RoomNightTally total) {
+        return new TopProductionRow(
+                producer,
+                label,
+                tally.nightsInt(),
+                percent(BigDecimal.valueOf(tally.nights), BigDecimal.valueOf(total.nights)),
+                money(tally.revenue),
+                percent(tally.revenue, total.revenue),
+                tally.nights == 0 ? null : money(tally.revenue.divide(BigDecimal.valueOf(tally.nights), MC)));
+    }
+
+    /** Top production's grouping key: a {@link BookingChannel} value, or the purpose for a comp/house-use stay. */
+    private static String producerOf(BookingEntity booking) {
+        return switch (booking.getPurpose()) {
+            case COMPLIMENTARY, HOUSE_USE -> booking.getPurpose().getValue();
+            case STANDARD -> booking.getChannel().getValue();
+        };
+    }
+
+    private static String producerLabel(String producer) {
+        if (producer.equals(BookingPurpose.COMPLIMENTARY.getValue())) return "Complimentary";
+        if (producer.equals(BookingPurpose.HOUSE_USE.getValue())) return "House Use";
+        return switch (BookingChannel.fromValue(producer)) {
+            case DIRECT -> "Direct";
+            case PHONE -> "Phone";
+            case WALK_IN -> "Walk-in";
+            case BOOKING_COM -> "Booking.com";
+            case AIRBNB -> "Airbnb";
+            case AGODA -> "Agoda";
+            case EXPEDIA -> "Expedia";
+            case OTHER -> "Other";
+        };
+    }
+
+    /**
+     * Same population as {@link #topProduction}, rolled up one level. All five segments are
+     * always returned so the report reads like the legacy Z360 sheet, zero rows included.
+     * {@code guests} counts each booking's {@code adults + children} once, however many of its
+     * nights or segments fall in the range - a head count of parties, not guest-nights.
+     */
+    @Transactional(readOnly = true)
+    public MarketSegmentReport marketSegment(String from, String to) {
+        ReportDateRange range = ReportDateRange.parse(from, to);
+        List<SegmentInRange> slices = segmentsInRange(range);
+        Map<String, BookingEntity> bookings = bookingsOf(slices);
+
+        Map<MarketSegment, RoomNightTally> bySegment = new EnumMap<>(MarketSegment.class);
+        for (MarketSegment segment : MarketSegment.values()) {
+            bySegment.put(segment, new RoomNightTally());
+        }
+        RoomNightTally total = new RoomNightTally();
+        for (SegmentInRange slice : slices) {
+            BookingEntity booking = bookings.get(slice.segment().getBookingId());
+            bySegment.get(marketSegmentOf(booking)).add(slice, booking);
+            total.add(slice, booking);
+        }
+
+        List<MarketSegmentRow> rows = bySegment.entrySet().stream()
+                .map(e -> marketSegmentRow(e.getKey(), e.getValue(), total))
+                .toList();
+        return new MarketSegmentReport(range.from().toString(), range.to().toString(), rows, marketSegmentRow(null, total, total));
+    }
+
+    private static MarketSegmentRow marketSegmentRow(MarketSegment segment, RoomNightTally tally, RoomNightTally total) {
+        return new MarketSegmentRow(
+                segment,
+                tally.nightsInt(),
+                percent(BigDecimal.valueOf(tally.nights), BigDecimal.valueOf(total.nights)),
+                Math.toIntExact(tally.guests),
+                percent(BigDecimal.valueOf(tally.guests), BigDecimal.valueOf(total.guests)),
+                money(tally.revenue),
+                percent(tally.revenue, total.revenue),
+                tally.nights == 0 ? null : money(tally.revenue.divide(BigDecimal.valueOf(tally.nights), MC)));
+    }
+
+    private static MarketSegment marketSegmentOf(BookingEntity booking) {
+        return switch (booking.getPurpose()) {
+            case COMPLIMENTARY -> MarketSegment.COM;
+            case HOUSE_USE -> MarketSegment.HFO;
+            case STANDARD -> switch (booking.getChannel()) {
+                case BOOKING_COM, AIRBNB, AGODA, EXPEDIA, OTHER -> MarketSegment.OTA;
+                case WALK_IN -> MarketSegment.WLK;
+                case DIRECT, PHONE -> MarketSegment.DIR;
+            };
+        };
+    }
+
+    /** The slices' bookings, loaded in one query rather than through each segment's lazy {@code booking}. */
+    private Map<String, BookingEntity> bookingsOf(List<SegmentInRange> slices) {
+        List<String> ids = slices.stream().map(s -> s.segment().getBookingId()).distinct().toList();
+        return ids.isEmpty() ? Map.of() : byId(bookingRepository.findAllById(ids), BookingEntity::getId);
+    }
+
+    /** Room-nights, prorated revenue and party head count; a booking's guests are added once, on its first slice. */
+    private static final class RoomNightTally {
+        long nights;
+        BigDecimal revenue = BigDecimal.ZERO;
+        long guests;
+        final Set<String> bookingIds = new HashSet<>();
+
+        void add(SegmentInRange slice, BookingEntity booking) {
+            nights += slice.nights();
+            revenue = revenue.add(slice.revenue());
+            if (bookingIds.add(booking.getId())) {
+                guests += booking.getAdults() + booking.getChildren();
+            }
+        }
+
+        int nightsInt() {
+            return Math.toIntExact(nights);
+        }
+    }
+
     // --- GET /reports/guest-ltv ---------------------------------------------------------------
 
     /**
@@ -306,6 +476,11 @@ public class ReportService {
 
     private static String money(BigDecimal value) {
         return PriceFormat.asDecimalString(value.setScale(2, RoundingMode.HALF_UP));
+    }
+
+    /** part / whole × 100, two decimals; null when whole is zero. */
+    private static String percent(BigDecimal part, BigDecimal whole) {
+        return whole.signum() == 0 ? null : money(part.multiply(HUNDRED).divide(whole, MC));
     }
 
     private static LocalDate max(LocalDate a, LocalDate b) {

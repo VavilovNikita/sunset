@@ -7,8 +7,10 @@ package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.GuestLtvReport;
+import com.sunsetbeach.model.MarketSegmentReport;
 import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.PosSalesMixReport;
+import com.sunsetbeach.model.TopProductionReport;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -127,6 +129,56 @@ public interface ReportsApi {
 
 
     /**
+     * GET /reports/market-segment : Room-nights, guests and room revenue by market segment for a date range
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as &#x60;GET /reports/revenue-export&#x60;.  **Segment.** &#x60;COM&#x60; - &#x60;purpose&#x60; is &#x60;COMPLIMENTARY&#x60;. &#x60;HFO&#x60; (house folio) - &#x60;purpose&#x60; is &#x60;HOUSE_USE&#x60;. Otherwise by &#x60;channel&#x60;: &#x60;OTA&#x60; for &#x60;BOOKING_COM&#x60;, &#x60;AIRBNB&#x60;, &#x60;AGODA&#x60;, &#x60;EXPEDIA&#x60; and &#x60;OTHER&#x60;; &#x60;WLK&#x60; for &#x60;WALK_IN&#x60;; &#x60;DIR&#x60; for &#x60;DIRECT&#x60; and &#x60;PHONE&#x60;. It is the same grouping as &#x60;GET /reports/top-production&#x60;, one level up.  **What counts** is the same population as &#x60;GET /reports/top-production&#x60; and &#x60;GET /reports/occupancy&#x60;: nights of non-&#x60;CANCELLED&#x60; bookings&#39; segments inside the range, revenue prorated to those nights and rounded once. &#x60;guests&#x60; is &#x60;adults + children&#x60; summed over the distinct bookings with at least one night in the range - a booking counts once however many of its nights (or segments, after a relocation) fall inside it. It is a head count of parties, not guest-nights.  All five segments are always returned, in the order &#x60;COM&#x60;, &#x60;DIR&#x60;, &#x60;HFO&#x60;, &#x60;OTA&#x60;, &#x60;WLK&#x60;, zero rows included. The &#x60;*Percent&#x60; fields are each segment&#39;s share of &#x60;total&#x60;, null when the total is zero. &#x60;averageRate&#x60; is revenue / room-nights, null when no room-night was sold. 
+     *
+     * @param from First night of the range, inclusive (Asia/Bangkok). (required)
+     * @param to Last night of the range, inclusive (Asia/Bangkok). (required)
+     * @return The five segments and their total. (status code 200)
+     *         or &#x60;from&#x60;/&#x60;to&#x60; missing, not a valid date, or &#x60;from&#x60; after &#x60;to&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/market-segment",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<MarketSegmentReport> getMarketSegmentReport(
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = true) String from,
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = true) String to
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"total\" : { \"guestsPercent\" : \"guestsPercent\", \"averageRate\" : \"averageRate\", \"revenue\" : \"revenue\", \"revenuePercent\" : \"revenuePercent\", \"segment\" : \"COM\", \"guests\" : 6, \"roomNights\" : 0, \"roomNightsPercent\" : \"roomNightsPercent\" }, \"from\" : \"from\", \"to\" : \"to\", \"segments\" : [ { \"guestsPercent\" : \"guestsPercent\", \"averageRate\" : \"averageRate\", \"revenue\" : \"revenue\", \"revenuePercent\" : \"revenuePercent\", \"segment\" : \"COM\", \"guests\" : 6, \"roomNights\" : 0, \"roomNightsPercent\" : \"roomNightsPercent\" }, { \"guestsPercent\" : \"guestsPercent\", \"averageRate\" : \"averageRate\", \"revenue\" : \"revenue\", \"revenuePercent\" : \"revenuePercent\", \"segment\" : \"COM\", \"guests\" : 6, \"roomNights\" : 0, \"roomNightsPercent\" : \"roomNightsPercent\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * GET /reports/occupancy : Occupancy, ADR and RevPAR for a date range, per room type and in total
      * Requires role &#x60;MANAGER&#x60; or above, same floor as &#x60;GET /reports/revenue-export&#x60;. One set of figures for the whole requested range (no daily breakdown), per room type and for the property as a whole.  **Nights.** &#x60;from&#x60;/&#x60;to&#x60; are inclusive hotel-local calendar dates, and each date in the range is one night: &#x60;from&#x3D;2026-09-01&amp;to&#x3D;2026-09-30&#x60; is 30 nights. A stay occupies the nights &#x60;checkIn &lt;&#x3D; night &lt; checkOut&#x60;, the same rule availability uses.  **Room-nights sold** counts every night of every &#x60;BookingSegment&#x60; whose booking is not &#x60;CANCELLED&#x60; (any other status counts, &#x60;NEW&#x60; included, same as availability) that falls inside the range. A segment that starts before &#x60;from&#x60; or ends after &#x60;to&#x60; counts only the nights inside it. A segment with no physical room assigned yet still counts for its room type.  **Room revenue** is each such segment&#39;s &#x60;totalPrice&#x60;, prorated to the nights inside the range: &#x60;totalPrice × nightsInRange / segmentNights&#x60;. Rounded to two decimals once, on the final sum, not per segment. It is the agreed room price, not money collected: see &#x60;GET /reports/revenue-export&#x60; for cash actually received.  **Room-nights available is a known simplification.** It is the number of physical units of the room type that are active *today*, times the number of nights in the range. It is not a historical day-by-day count: a unit added or deactivated during the range counts as if it had always been in its current state for the whole range. Nights a unit was blocked out of sale (&#x60;RoomUnitBlock&#x60;) are not subtracted either. Occupancy and RevPAR for a past range are therefore only as accurate as today&#39;s inventory is representative of that period.  &#x60;occupancyPercent&#x60; &#x3D; sold / available × 100. &#x60;adr&#x60; (average daily rate) &#x3D; revenue / sold. &#x60;revpar&#x60; &#x3D; revenue / available. Each is &#x60;null&#x60; when its denominator is zero. All three are computed from the unrounded revenue and rounded to two decimals at the end.  A room type appears if it has at least one active unit today or at least one night sold in the range. &#x60;total&#x60; sums the rows; its ratios are recomputed from those sums, not averaged. 
      *
@@ -201,6 +253,56 @@ public interface ReportsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"totalQuantity\" : 0, \"from\" : \"from\", \"to\" : \"to\", \"totalRevenue\" : \"totalRevenue\", \"categories\" : [ { \"revenue\" : \"revenue\", \"quantity\" : 1, \"category\" : \"category\" }, { \"revenue\" : \"revenue\", \"quantity\" : 1, \"category\" : \"category\" } ], \"departments\" : [ { \"revenue\" : \"revenue\", \"quantity\" : 5 }, { \"revenue\" : \"revenue\", \"quantity\" : 5 } ], \"items\" : [ { \"revenue\" : \"revenue\", \"quantity\" : 6, \"name\" : \"name\", \"category\" : \"category\", \"department\" : \"KITCHEN\", \"menuItemId\" : \"menuItemId\" }, { \"revenue\" : \"revenue\", \"quantity\" : 6, \"name\" : \"name\", \"category\" : \"category\", \"department\" : \"KITCHEN\", \"menuItemId\" : \"menuItemId\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/top-production : Room-nights and room revenue by producer (channel, complimentary, house use) for a date range
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as &#x60;GET /reports/revenue-export&#x60;.  **Producer.** A booking whose &#x60;purpose&#x60; is &#x60;COMPLIMENTARY&#x60; counts under &#x60;COMPLIMENTARY&#x60; and one whose &#x60;purpose&#x60; is &#x60;HOUSE_USE&#x60; under &#x60;HOUSE_USE&#x60;, whatever its &#x60;channel&#x60;. Every other booking counts under its own &#x60;channel&#x60; value (&#x60;DIRECT&#x60;, &#x60;PHONE&#x60;, &#x60;WALK_IN&#x60;, ...), one row per value - no channels are merged. A producer with nothing in the range has no row.  **What counts** is exactly what &#x60;GET /reports/occupancy&#x60; counts: every night of every &#x60;BookingSegment&#x60; whose booking is not &#x60;CANCELLED&#x60; (any other status counts, &#x60;NEW&#x60; included) that falls inside the range, with &#x60;from&#x60;/&#x60;to&#x60; as inclusive nights. &#x60;revenue&#x60; is each such segment&#39;s &#x60;totalPrice&#x60; prorated to the nights inside the range, summed unrounded and rounded to two decimals once. The rows&#39; &#x60;roomNights&#x60;/&#x60;revenue&#x60; therefore sum to &#x60;GET /reports/occupancy&#x60;&#39;s &#x60;total.roomNightsSold&#x60;/&#x60;total.roomRevenue&#x60; for the same range.  Rows are sorted by &#x60;roomNights&#x60;, highest first, then by &#x60;revenue&#x60;, then by &#x60;producer&#x60;. &#x60;roomNightsPercent&#x60;/&#x60;revenuePercent&#x60; are each row&#39;s share of &#x60;total&#x60;, null when the total is zero. &#x60;adr&#x60; is revenue / room-nights. 
+     *
+     * @param from First night of the range, inclusive (Asia/Bangkok). (required)
+     * @param to Last night of the range, inclusive (Asia/Bangkok). (required)
+     * @return The producers, most room-nights first. (status code 200)
+     *         or &#x60;from&#x60;/&#x60;to&#x60; missing, not a valid date, or &#x60;from&#x60; after &#x60;to&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/top-production",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<TopProductionReport> getTopProductionReport(
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = true) String from,
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = true) String to
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"total\" : { \"revenue\" : \"revenue\", \"revenuePercent\" : \"revenuePercent\", \"producer\" : \"producer\", \"roomNights\" : 0, \"label\" : \"label\", \"roomNightsPercent\" : \"roomNightsPercent\", \"adr\" : \"adr\" }, \"from\" : \"from\", \"to\" : \"to\", \"producers\" : [ { \"revenue\" : \"revenue\", \"revenuePercent\" : \"revenuePercent\", \"producer\" : \"producer\", \"roomNights\" : 0, \"label\" : \"label\", \"roomNightsPercent\" : \"roomNightsPercent\", \"adr\" : \"adr\" }, { \"revenue\" : \"revenue\", \"revenuePercent\" : \"revenuePercent\", \"producer\" : \"producer\", \"roomNights\" : 0, \"label\" : \"label\", \"roomNightsPercent\" : \"roomNightsPercent\", \"adr\" : \"adr\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

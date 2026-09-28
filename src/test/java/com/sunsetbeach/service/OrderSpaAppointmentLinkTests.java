@@ -123,7 +123,7 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
         unit.setActive(true);
         RoomUnitEntity savedUnit = roomUnitRepository.saveAndFlush(unit);
         return bookingService.createStaffBooking(
-                new StaffBookingCreateInput(savedRoom.getId(), "Order Link Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN)
+                new StaffBookingCreateInput(savedRoom.getId(), "Order Link Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN, 1)
                         .roomUnitId(savedUnit.getId()));
     }
 

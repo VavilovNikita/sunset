@@ -134,7 +134,7 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
         RoomUnitEntity savedUnit = roomUnitRepository.saveAndFlush(unit);
 
         return bookingService.createStaffBooking(
-                new StaffBookingCreateInput(savedRoom.getId(), "Spa Test Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN)
+                new StaffBookingCreateInput(savedRoom.getId(), "Spa Test Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN, 1)
                         .roomUnitId(savedUnit.getId()));
     }
 

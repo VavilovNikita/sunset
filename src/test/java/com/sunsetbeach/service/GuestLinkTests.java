@@ -383,14 +383,14 @@ class GuestLinkTests extends AbstractIntegrationTest {
     private Booking publicBooking(String name, String email, String phone) {
         LocalDate checkIn = LocalDate.of(2031, 3, 1);
         Booking booking = bookingService.createBooking(new BookingCreateInput(
-                roomWithUnit().getId(), name, email, phone, checkIn.toString(), checkIn.plusDays(2).toString()));
+                roomWithUnit().getId(), name, email, phone, checkIn.toString(), checkIn.plusDays(2).toString(), 1));
         bookingIds.add(booking.getId());
         return booking;
     }
 
     private Booking staffBooking(String name, String email) {
         LocalDate checkIn = LocalDate.of(2031, 3, 1);
-        StaffBookingCreateInput input = new StaffBookingCreateInput(roomWithUnit().getId(), name, checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN);
+        StaffBookingCreateInput input = new StaffBookingCreateInput(roomWithUnit().getId(), name, checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN, 1);
         if (email != null) {
             input.guestEmail(email);
         }

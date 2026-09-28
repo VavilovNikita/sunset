@@ -2183,12 +2183,13 @@ paths:
     patch:
       operationId: updateBookingStatus
       tags: [Bookings]
-      summary: Update a booking's status / payment note / channel
+      summary: Update a booking's status / payment note / channel / purpose / guest counts
       description: >
         Requires CASHIER or above - marking a booking paid/cancelled, adding a payment note or
-        correcting the booking's channel is routine front-desk work. Sends a guest-facing
-        status-change email when the status actually changes to PAID or CANCELLED - never for a
-        request that only touches the payment note or channel.
+        correcting the booking's channel, purpose or party size is routine front-desk work. Each
+        of `channel`/`purpose`/`adults`/`children` is independent: omitted leaves it as it is,
+        present sets it. Sends a guest-facing status-change email when the status actually changes
+        to PAID or CANCELLED - never for a request that only touches the other fields.
       requestBody:
         required: true
         content:
@@ -5583,6 +5584,125 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /reports/top-production:
+    get:
+      operationId: getTopProductionReport
+      tags: [Reports]
+      summary: Room-nights and room revenue by producer (channel, complimentary, house use) for a date range
+      description: >
+        Requires role `MANAGER` or above, same floor as `GET /reports/revenue-export`.
+
+
+        **Producer.** A booking whose `purpose` is `COMPLIMENTARY` counts under `COMPLIMENTARY`
+        and one whose `purpose` is `HOUSE_USE` under `HOUSE_USE`, whatever its `channel`. Every
+        other booking counts under its own `channel` value (`DIRECT`, `PHONE`, `WALK_IN`, ...), one
+        row per value - no channels are merged. A producer with nothing in the range has no row.
+
+
+        **What counts** is exactly what `GET /reports/occupancy` counts: every night of every
+        `BookingSegment` whose booking is not `CANCELLED` (any other status counts, `NEW`
+        included) that falls inside the range, with `from`/`to` as inclusive nights. `revenue` is
+        each such segment's `totalPrice` prorated to the nights inside the range, summed unrounded
+        and rounded to two decimals once. The rows' `roomNights`/`revenue` therefore sum to
+        `GET /reports/occupancy`'s `total.roomNightsSold`/`total.roomRevenue` for the same range.
+
+
+        Rows are sorted by `roomNights`, highest first, then by `revenue`, then by `producer`.
+        `roomNightsPercent`/`revenuePercent` are each row's share of `total`, null when the total
+        is zero. `adr` is revenue / room-nights.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: First night of the range, inclusive (Asia/Bangkok).
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Last night of the range, inclusive (Asia/Bangkok).
+      responses:
+        "200":
+          description: The producers, most room-nights first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopProductionReport"
+        "400":
+          description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /reports/market-segment:
+    get:
+      operationId: getMarketSegmentReport
+      tags: [Reports]
+      summary: Room-nights, guests and room revenue by market segment for a date range
+      description: >
+        Requires role `MANAGER` or above, same floor as `GET /reports/revenue-export`.
+
+
+        **Segment.** `COM` - `purpose` is `COMPLIMENTARY`. `HFO` (house folio) - `purpose` is
+        `HOUSE_USE`. Otherwise by `channel`: `OTA` for `BOOKING_COM`, `AIRBNB`, `AGODA`, `EXPEDIA`
+        and `OTHER`; `WLK` for `WALK_IN`; `DIR` for `DIRECT` and `PHONE`. It is the same grouping
+        as `GET /reports/top-production`, one level up.
+
+
+        **What counts** is the same population as `GET /reports/top-production` and
+        `GET /reports/occupancy`: nights of non-`CANCELLED` bookings' segments inside the range,
+        revenue prorated to those nights and rounded once. `guests` is `adults + children` summed
+        over the distinct bookings with at least one night in the range - a booking counts once
+        however many of its nights (or segments, after a relocation) fall inside it. It is a head
+        count of parties, not guest-nights.
+
+
+        All five segments are always returned, in the order `COM`, `DIR`, `HFO`, `OTA`, `WLK`,
+        zero rows included. The `*Percent` fields are each segment's share of `total`, null when
+        the total is zero. `averageRate` is revenue / room-nights, null when no room-night was
+        sold.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: First night of the range, inclusive (Asia/Bangkok).
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Last night of the range, inclusive (Asia/Bangkok).
+      responses:
+        "200":
+          description: The five segments and their total.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketSegmentReport"
+        "400":
+          description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /audit-log:
     get:
       operationId: listAuditLog
@@ -8524,7 +8644,7 @@ components:
 
     BookingChannel:
       type: string
-      enum: [DIRECT, PHONE, WALK_IN, BOOKING_COM, AIRBNB, AGODA, OTHER]
+      enum: [DIRECT, PHONE, WALK_IN, BOOKING_COM, AIRBNB, AGODA, EXPEDIA, OTHER]
       description: >
         How a booking reached the hotel - a label staff record from what they already know (the
         guest booked by phone, walked in, said they found the hotel on Airbnb). Not an OTA
@@ -8533,7 +8653,21 @@ components:
         distinction that drives auto-expiry of unconfirmed public inquiries, which is never
         exposed and never changes when this does. Bookings made before this field existed read
         `DIRECT` if they came through the public form and `OTHER` if staff entered them (their real
-        channel was never recorded).
+        channel was never recorded). Independent of `BookingPurpose`: a complimentary stay still
+        has the channel it arrived by.
+
+    BookingPurpose:
+      type: string
+      enum: [STANDARD, COMPLIMENTARY, HOUSE_USE]
+      description: >
+        Why the room is occupied: an ordinary paying stay (`STANDARD`), a complimentary stay
+        (`COMPLIMENTARY`), or internal house use (`HOUSE_USE`). A separate question from
+        `BookingChannel` (how the booking reached the hotel) - a comp booked by phone is
+        `COMPLIMENTARY` + `PHONE`. Either way it is still a booking that occupies a room and counts
+        as room-nights sold; a room taken out of sale is a `RoomUnitBlock` instead. Nothing forces
+        `totalPrice` to zero for a comp or house-use stay - it is priced like any other booking.
+        `POST /bookings` (the public form) is always `STANDARD`. Bookings made before this field
+        existed read `STANDARD`.
 
     OccupancyStatus:
       type: string
@@ -9663,7 +9797,7 @@ components:
         `Serializable` transaction as the booking itself: unlike `POST /bookings` followed by
         `PUT /bookings/{id}/room-unit`, there is no window where the booking exists without the
         room that was requested for it - either both succeed or neither does.
-      required: [roomId, guestName, checkIn, checkOut, channel]
+      required: [roomId, guestName, checkIn, checkOut, channel, adults]
       properties:
         roomId:
           type: string
@@ -9696,6 +9830,18 @@ components:
         channel:
           $ref: "#/components/schemas/BookingChannel"
           description: Required - front desk always knows how a phone/walk-in booking reached them, so there is no default to fall back to silently.
+        purpose:
+          $ref: "#/components/schemas/BookingPurpose"
+          description: Optional, defaults to `STANDARD` - most staff bookings are ordinary paying stays.
+        adults:
+          type: integer
+          minimum: 1
+          description: Number of adults in the party - at least one.
+        children:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Number of children in the party. Optional, defaults to 0.
       # Cross-field rule enforced server-side, not expressible in JSON Schema: checkIn must be strictly before checkOut.
 
     BookingScheduleInput:
@@ -10027,6 +10173,9 @@ components:
         - totalPrice
         - status
         - channel
+        - purpose
+        - adults
+        - children
         - paymentNote
         - segments
         - occupancyStatus
@@ -10081,6 +10230,16 @@ components:
           $ref: "#/components/schemas/BookingStatus"
         channel:
           $ref: "#/components/schemas/BookingChannel"
+        purpose:
+          $ref: "#/components/schemas/BookingPurpose"
+        adults:
+          type: integer
+          description: >
+            Adults in the party, at least 1. Bookings made before this field existed read 1 - an
+            assumed default, not a recorded count.
+        children:
+          type: integer
+          description: Children in the party. Bookings made before this field existed read 0.
         paymentNote:
           type: string
           nullable: true
@@ -10111,7 +10270,7 @@ components:
     BookingCreateInput:
       type: object
       description: Body of `bookingCreateSchema`.
-      required: [roomId, guestName, guestEmail, guestPhone, checkIn, checkOut]
+      required: [roomId, guestName, guestEmail, guestPhone, checkIn, checkOut, adults]
       properties:
         roomId:
           type: string
@@ -10135,6 +10294,15 @@ components:
         checkOut:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
+        adults:
+          type: integer
+          minimum: 1
+          description: Number of adults in the party - at least one. The guest knows their own party size, so unlike `channel`/`purpose` this is collected on the public form too.
+        children:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Number of children in the party. Optional, defaults to 0.
       # Cross-field rule enforced by Zod .refine(), not expressible in JSON Schema:
       # checkIn must be strictly before checkOut.
 
@@ -10155,6 +10323,17 @@ components:
           description: >
             Optional. Omitted leaves the booking's channel as it is; present sets it. Not nullable -
             a booking always has a channel, so there is no "clear" case (unlike `paymentNote`).
+        purpose:
+          $ref: "#/components/schemas/BookingPurpose"
+          description: Optional. Omitted leaves the booking's purpose as it is; present sets it. Not nullable.
+        adults:
+          type: integer
+          minimum: 1
+          description: Optional. Omitted leaves the adult count as it is; present sets it. Not nullable.
+        children:
+          type: integer
+          minimum: 0
+          description: Optional. Omitted leaves the child count as it is; present sets it. Not nullable.
 
     Guest:
       type: object
@@ -13588,6 +13767,118 @@ components:
           type: integer
         revenue:
           type: string
+
+    TopProductionReport:
+      type: object
+      description: '`GET /reports/top-production` - see that operation for what counts.'
+      required: [from, to, producers, total]
+      properties:
+        from:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        to:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        producers:
+          type: array
+          description: One row per producer with at least one room-night in the range, most room-nights first.
+          items:
+            $ref: "#/components/schemas/TopProductionRow"
+        total:
+          $ref: "#/components/schemas/TopProductionRow"
+
+    TopProductionRow:
+      type: object
+      description: >
+        One producer's figures, or the total (where `producer`/`label` are null). Money is a
+        decimal string with two decimals.
+      required: [producer, label, roomNights, roomNightsPercent, revenue, revenuePercent, adr]
+      properties:
+        producer:
+          type: string
+          nullable: true
+          description: >
+            A `BookingChannel` value, or `COMPLIMENTARY` / `HOUSE_USE` for a booking with that
+            `purpose` (whatever its channel). Null on the total row.
+        label:
+          type: string
+          nullable: true
+          description: Display name, e.g. "Booking.com", "Complimentary". Null on the total row.
+        roomNights:
+          type: integer
+        roomNightsPercent:
+          type: string
+          nullable: true
+          description: Share of the total's room-nights × 100, two decimals. Null when the total is zero.
+        revenue:
+          type: string
+        revenuePercent:
+          type: string
+          nullable: true
+          description: Share of the total's revenue × 100, two decimals. Null when the total is zero.
+        adr:
+          type: string
+          nullable: true
+          description: Revenue / room-nights. Null when no room-night was sold.
+
+    MarketSegment:
+      type: string
+      enum: [COM, DIR, HFO, OTA, WLK]
+      description: >
+        `COM` complimentary, `DIR` direct (`DIRECT`/`PHONE`), `HFO` house use, `OTA` online
+        travel agents and other third parties, `WLK` walk-in. Derived from a booking's
+        `purpose` and `channel`, never stored - see `GET /reports/market-segment`.
+
+    MarketSegmentReport:
+      type: object
+      description: '`GET /reports/market-segment` - see that operation for what counts.'
+      required: [from, to, segments, total]
+      properties:
+        from:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        to:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        segments:
+          type: array
+          description: Always all five segments, in the order COM, DIR, HFO, OTA, WLK.
+          items:
+            $ref: "#/components/schemas/MarketSegmentRow"
+        total:
+          $ref: "#/components/schemas/MarketSegmentRow"
+
+    MarketSegmentRow:
+      type: object
+      description: One segment's figures, or the total (where `segment` is null). Money is a decimal string with two decimals.
+      required: [segment, roomNights, roomNightsPercent, guests, guestsPercent, revenue, revenuePercent, averageRate]
+      properties:
+        segment:
+          $ref: "#/components/schemas/MarketSegment"
+          nullable: true
+        roomNights:
+          type: integer
+        roomNightsPercent:
+          type: string
+          nullable: true
+          description: Share of the total's room-nights × 100, two decimals. Null when the total is zero.
+        guests:
+          type: integer
+          description: '`adults + children` over the distinct bookings with a night in the range.'
+        guestsPercent:
+          type: string
+          nullable: true
+          description: Share of the total's guests × 100, two decimals. Null when the total is zero.
+        revenue:
+          type: string
+        revenuePercent:
+          type: string
+          nullable: true
+          description: Share of the total's revenue × 100, two decimals. Null when the total is zero.
+        averageRate:
+          type: string
+          nullable: true
+          description: Revenue / room-nights. Null when no room-night was sold.
 
     GuestLtvReport:
       type: object

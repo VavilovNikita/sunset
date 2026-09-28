@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingChannel;
+import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -31,6 +32,12 @@ public class BookingStatusInput {
   private JsonNullable<@Size(max = 500) String> paymentNote = JsonNullable.<String>undefined();
 
   private BookingChannel channel;
+
+  private BookingPurpose purpose;
+
+  private Integer adults;
+
+  private Integer children;
 
   public BookingStatusInput() {
     super();
@@ -100,6 +107,65 @@ public class BookingStatusInput {
     this.channel = channel;
   }
 
+  public BookingStatusInput purpose(BookingPurpose purpose) {
+    this.purpose = purpose;
+    return this;
+  }
+
+  /**
+   * Get purpose
+   * @return purpose
+   */
+  @Valid 
+  @JsonProperty("purpose")
+  public BookingPurpose getPurpose() {
+    return purpose;
+  }
+
+  public void setPurpose(BookingPurpose purpose) {
+    this.purpose = purpose;
+  }
+
+  public BookingStatusInput adults(Integer adults) {
+    this.adults = adults;
+    return this;
+  }
+
+  /**
+   * Optional. Omitted leaves the adult count as it is; present sets it. Not nullable.
+   * minimum: 1
+   * @return adults
+   */
+  @Min(1) 
+  @JsonProperty("adults")
+  public Integer getAdults() {
+    return adults;
+  }
+
+  public void setAdults(Integer adults) {
+    this.adults = adults;
+  }
+
+  public BookingStatusInput children(Integer children) {
+    this.children = children;
+    return this;
+  }
+
+  /**
+   * Optional. Omitted leaves the child count as it is; present sets it. Not nullable.
+   * minimum: 0
+   * @return children
+   */
+  @Min(0) 
+  @JsonProperty("children")
+  public Integer getChildren() {
+    return children;
+  }
+
+  public void setChildren(Integer children) {
+    this.children = children;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -111,7 +177,10 @@ public class BookingStatusInput {
     BookingStatusInput bookingStatusInput = (BookingStatusInput) o;
     return Objects.equals(this.status, bookingStatusInput.status) &&
         equalsNullable(this.paymentNote, bookingStatusInput.paymentNote) &&
-        Objects.equals(this.channel, bookingStatusInput.channel);
+        Objects.equals(this.channel, bookingStatusInput.channel) &&
+        Objects.equals(this.purpose, bookingStatusInput.purpose) &&
+        Objects.equals(this.adults, bookingStatusInput.adults) &&
+        Objects.equals(this.children, bookingStatusInput.children);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -120,7 +189,7 @@ public class BookingStatusInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(status, hashCodeNullable(paymentNote), channel);
+    return Objects.hash(status, hashCodeNullable(paymentNote), channel, purpose, adults, children);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -137,6 +206,9 @@ public class BookingStatusInput {
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    paymentNote: ").append("[REDACTED]").append("\n");
     sb.append("    channel: ").append(toIndentedString(channel)).append("\n");
+    sb.append("    purpose: ").append(toIndentedString(purpose)).append("\n");
+    sb.append("    adults: ").append(toIndentedString(adults)).append("\n");
+    sb.append("    children: ").append(toIndentedString(children)).append("\n");
     sb.append("}");
     return sb.toString();
   }

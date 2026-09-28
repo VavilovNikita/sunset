@@ -32,6 +32,10 @@ public class BookingCreateInput {
 
   private String checkOut;
 
+  private Integer adults;
+
+  private Integer children = 0;
+
   public BookingCreateInput() {
     super();
   }
@@ -39,13 +43,14 @@ public class BookingCreateInput {
   /**
    * Constructor with only required parameters
    */
-  public BookingCreateInput(String roomId, String guestName, String guestEmail, String guestPhone, String checkIn, String checkOut) {
+  public BookingCreateInput(String roomId, String guestName, String guestEmail, String guestPhone, String checkIn, String checkOut, Integer adults) {
     this.roomId = roomId;
     this.guestName = guestName;
     this.guestEmail = guestEmail;
     this.guestPhone = guestPhone;
     this.checkIn = checkIn;
     this.checkOut = checkOut;
+    this.adults = adults;
   }
 
   public BookingCreateInput roomId(String roomId) {
@@ -162,6 +167,46 @@ public class BookingCreateInput {
     this.checkOut = checkOut;
   }
 
+  public BookingCreateInput adults(Integer adults) {
+    this.adults = adults;
+    return this;
+  }
+
+  /**
+   * Number of adults in the party - at least one. The guest knows their own party size, so unlike `channel`/`purpose` this is collected on the public form too.
+   * minimum: 1
+   * @return adults
+   */
+  @NotNull @Min(1) 
+  @JsonProperty("adults")
+  public Integer getAdults() {
+    return adults;
+  }
+
+  public void setAdults(Integer adults) {
+    this.adults = adults;
+  }
+
+  public BookingCreateInput children(Integer children) {
+    this.children = children;
+    return this;
+  }
+
+  /**
+   * Number of children in the party. Optional, defaults to 0.
+   * minimum: 0
+   * @return children
+   */
+  @Min(0) 
+  @JsonProperty("children")
+  public Integer getChildren() {
+    return children;
+  }
+
+  public void setChildren(Integer children) {
+    this.children = children;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -176,12 +221,14 @@ public class BookingCreateInput {
         Objects.equals(this.guestEmail, bookingCreateInput.guestEmail) &&
         Objects.equals(this.guestPhone, bookingCreateInput.guestPhone) &&
         Objects.equals(this.checkIn, bookingCreateInput.checkIn) &&
-        Objects.equals(this.checkOut, bookingCreateInput.checkOut);
+        Objects.equals(this.checkOut, bookingCreateInput.checkOut) &&
+        Objects.equals(this.adults, bookingCreateInput.adults) &&
+        Objects.equals(this.children, bookingCreateInput.children);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomId, guestName, guestEmail, guestPhone, checkIn, checkOut);
+    return Objects.hash(roomId, guestName, guestEmail, guestPhone, checkIn, checkOut, adults, children);
   }
 
   @Override
@@ -194,6 +241,8 @@ public class BookingCreateInput {
     sb.append("    guestPhone: ").append("[REDACTED]").append("\n");
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
+    sb.append("    adults: ").append(toIndentedString(adults)).append("\n");
+    sb.append("    children: ").append(toIndentedString(children)).append("\n");
     sb.append("}");
     return sb.toString();
   }

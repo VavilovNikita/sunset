@@ -97,7 +97,7 @@ class UserAccountSecurityTests extends AbstractIntegrationTest {
         RoomUnitEntity savedUnit = roomUnitRepository.saveAndFlush(unit);
         LocalDate checkIn = LocalDate.now().plusDays(360);
         Booking booking = bookingService.createStaffBooking(new StaffBookingCreateInput(
-                        savedRoom.getId(), "Account Sec Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN)
+                        savedRoom.getId(), "Account Sec Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN, 1)
                 .roomUnitId(savedUnit.getId()));
 
         TableEntity table = new TableEntity();

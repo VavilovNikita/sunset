@@ -187,7 +187,7 @@ class MaintenanceTaskServiceTests extends AbstractIntegrationTest {
         LocalDate checkIn = LocalDate.now().plusDays(10);
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = bookingService.createStaffBooking(
-                new StaffBookingCreateInput(unit.getRoomId(), "Blocked Room Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN).roomUnitId(unit.getId()));
+                new StaffBookingCreateInput(unit.getRoomId(), "Blocked Room Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN, 1).roomUnitId(unit.getId()));
 
         MaintenanceTaskBlockResult result =
                 maintenanceTaskService.addBlock(task.getId(), new RoomUnitBlockInput(checkIn.toString(), checkOut.toString(), "AC repair"), reporterId);

@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * How a booking reached the hotel - a label staff record from what they already know (the guest booked by phone, walked in, said they found the hotel on Airbnb). Not an OTA integration: nothing is synced with any channel. `POST /bookings` (the public form) is always `DIRECT`, set server-side. Unrelated to the internal public-form-vs-front-desk distinction that drives auto-expiry of unconfirmed public inquiries, which is never exposed and never changes when this does. Bookings made before this field existed read `DIRECT` if they came through the public form and `OTHER` if staff entered them (their real channel was never recorded). 
+ * How a booking reached the hotel - a label staff record from what they already know (the guest booked by phone, walked in, said they found the hotel on Airbnb). Not an OTA integration: nothing is synced with any channel. `POST /bookings` (the public form) is always `DIRECT`, set server-side. Unrelated to the internal public-form-vs-front-desk distinction that drives auto-expiry of unconfirmed public inquiries, which is never exposed and never changes when this does. Bookings made before this field existed read `DIRECT` if they came through the public form and `OTHER` if staff entered them (their real channel was never recorded). Independent of `BookingPurpose`: a complimentary stay still has the channel it arrived by. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -33,6 +33,8 @@ public enum BookingChannel {
   AIRBNB("AIRBNB"),
   
   AGODA("AGODA"),
+  
+  EXPEDIA("EXPEDIA"),
   
   OTHER("OTHER");
 

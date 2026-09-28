@@ -118,7 +118,7 @@ class BookingAvailabilityEngineTests extends AbstractIntegrationTest {
     }
 
     private static BookingCreateInput bookingInput(String roomId, LocalDate checkIn, LocalDate checkOut) {
-        return new BookingCreateInput(roomId, "Guest", "guest@example.com", "+66800000000", checkIn.toString(), checkOut.toString());
+        return new BookingCreateInput(roomId, "Guest", "guest@example.com", "+66800000000", checkIn.toString(), checkOut.toString(), 1);
     }
 
     private Booking assign(String bookingId, String roomUnitId) {

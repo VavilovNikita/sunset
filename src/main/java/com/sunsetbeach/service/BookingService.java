@@ -20,6 +20,7 @@ import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingChannel;
+import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingGuestLinkInput;
@@ -137,7 +138,14 @@ public class BookingService {
         BookingEntity saved;
         try {
             saved = bookingWriter.insert(
-                    room, input.getGuestName(), input.getGuestEmail(), input.getGuestPhone(), checkIn, checkOut);
+                    room,
+                    input.getGuestName(),
+                    input.getGuestEmail(),
+                    input.getGuestPhone(),
+                    checkIn,
+                    checkOut,
+                    input.getAdults(),
+                    childrenOrZero(input.getChildren()));
         } catch (DataAccessException | TransactionSystemException e) {
             if (isSerializationFailure(e)) {
                 throw new ConflictException("Someone just booked these dates — please try again.");
@@ -195,6 +203,9 @@ public class BookingService {
                     checkIn,
                     checkOut,
                     input.getChannel(),
+                    input.getPurpose() != null ? input.getPurpose() : BookingPurpose.STANDARD,
+                    input.getAdults(),
+                    childrenOrZero(input.getChildren()),
                     roomUnitId);
         } catch (DataAccessException | TransactionSystemException e) {
             if (isSerializationFailure(e)) {
@@ -212,6 +223,14 @@ public class BookingService {
                 "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + checkIn + " to " + checkOut + ")"
                         + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : ""));
         return bookingMapper.toDto(saved, room, assignedUnit, guest, loadSegments(saved.getId()));
+    }
+
+    /**
+     * {@code children} is optional with a default of 0 in openapi.yaml, but an explicit JSON
+     * {@code null} still arrives as null - it means the same thing as leaving it out.
+     */
+    private static int childrenOrZero(Integer children) {
+        return children != null ? children : 0;
     }
 
     @Transactional
@@ -241,6 +260,19 @@ public class BookingService {
         if (input.getChannel() != null) {
             booking.setChannel(input.getChannel());
         }
+        // purpose/adults/children: same shape as channel - omitted leaves it alone, no clear case.
+        BookingPurpose oldPurpose = booking.getPurpose();
+        if (input.getPurpose() != null) {
+            booking.setPurpose(input.getPurpose());
+        }
+        int oldAdults = booking.getAdults();
+        int oldChildren = booking.getChildren();
+        if (input.getAdults() != null) {
+            booking.setAdults(input.getAdults());
+        }
+        if (input.getChildren() != null) {
+            booking.setChildren(input.getChildren());
+        }
         // flush so @UpdateTimestamp (regenerated on every save) is on the object before mapping
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
 
@@ -252,23 +284,32 @@ public class BookingService {
             emailService.sendGuestStatusEmail(saved, room);
         }
 
-        // A channel correction rides on BOOKING_STATUS_CHANGED (this endpoint's own action) rather
-        // than a new AuditAction, but is always named in the summary - never an unremarked update.
+        // A channel/purpose/party-size correction rides on BOOKING_STATUS_CHANGED (this endpoint's
+        // own action) rather than a new AuditAction, but is always named in the summary - never an
+        // unremarked update.
         boolean channelChanged = oldChannel != saved.getChannel();
-        if (statusChanged || channelChanged) {
+        boolean purposeChanged = oldPurpose != saved.getPurpose();
+        boolean guestsChanged = oldAdults != saved.getAdults() || oldChildren != saved.getChildren();
+        if (statusChanged || channelChanged || purposeChanged || guestsChanged) {
             List<String> changes = new ArrayList<>();
             if (statusChanged) {
-                changes.add("Status changed from " + oldStatus.getValue() + " to " + saved.getStatus().getValue());
+                changes.add("status changed from " + oldStatus.getValue() + " to " + saved.getStatus().getValue());
             }
             if (channelChanged) {
-                changes.add((statusChanged ? "channel" : "Channel") + " changed from "
-                        + (oldChannel != null ? oldChannel.getValue() : "none") + " to " + saved.getChannel().getValue());
+                changes.add("channel changed from " + (oldChannel != null ? oldChannel.getValue() : "none") + " to " + saved.getChannel().getValue());
             }
+            if (purposeChanged) {
+                changes.add("purpose changed from " + oldPurpose.getValue() + " to " + saved.getPurpose().getValue());
+            }
+            if (guestsChanged) {
+                changes.add("guests changed from " + partySize(oldAdults, oldChildren) + " to " + partySize(saved.getAdults(), saved.getChildren()));
+            }
+            String summary = String.join("; ", changes);
             auditLogService.record(
                     AuditAction.BOOKING_STATUS_CHANGED,
                     AuditEntityType.BOOKING,
                     saved.getId(),
-                    String.join("; ", changes) + " for " + saved.getGuestName() + " in " + room.getName());
+                    Character.toUpperCase(summary.charAt(0)) + summary.substring(1) + " for " + saved.getGuestName() + " in " + room.getName());
         }
         // Content is deliberately never included in the summary - paymentNote is free text staff
         // may (against guidance) use for something sensitive; recording that it changed is
@@ -283,6 +324,10 @@ public class BookingService {
         }
 
         return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
+    }
+
+    private static String partySize(int adults, int children) {
+        return adults + (adults == 1 ? " adult" : " adults") + ", " + children + (children == 1 ? " child" : " children");
     }
 
     @Transactional(readOnly = true)

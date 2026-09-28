@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingChannel;
+import com.sunsetbeach.model.BookingPurpose;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.util.NoSuchElementException;
@@ -41,6 +42,12 @@ public class StaffBookingCreateInput {
 
   private BookingChannel channel;
 
+  private BookingPurpose purpose;
+
+  private Integer adults;
+
+  private Integer children = 0;
+
   public StaffBookingCreateInput() {
     super();
   }
@@ -48,12 +55,13 @@ public class StaffBookingCreateInput {
   /**
    * Constructor with only required parameters
    */
-  public StaffBookingCreateInput(String roomId, String guestName, String checkIn, String checkOut, BookingChannel channel) {
+  public StaffBookingCreateInput(String roomId, String guestName, String checkIn, String checkOut, BookingChannel channel, Integer adults) {
     this.roomId = roomId;
     this.guestName = guestName;
     this.checkIn = checkIn;
     this.checkOut = checkOut;
     this.channel = channel;
+    this.adults = adults;
   }
 
   public StaffBookingCreateInput roomId(String roomId) {
@@ -208,6 +216,65 @@ public class StaffBookingCreateInput {
     this.channel = channel;
   }
 
+  public StaffBookingCreateInput purpose(BookingPurpose purpose) {
+    this.purpose = purpose;
+    return this;
+  }
+
+  /**
+   * Get purpose
+   * @return purpose
+   */
+  @Valid 
+  @JsonProperty("purpose")
+  public BookingPurpose getPurpose() {
+    return purpose;
+  }
+
+  public void setPurpose(BookingPurpose purpose) {
+    this.purpose = purpose;
+  }
+
+  public StaffBookingCreateInput adults(Integer adults) {
+    this.adults = adults;
+    return this;
+  }
+
+  /**
+   * Number of adults in the party - at least one.
+   * minimum: 1
+   * @return adults
+   */
+  @NotNull @Min(1) 
+  @JsonProperty("adults")
+  public Integer getAdults() {
+    return adults;
+  }
+
+  public void setAdults(Integer adults) {
+    this.adults = adults;
+  }
+
+  public StaffBookingCreateInput children(Integer children) {
+    this.children = children;
+    return this;
+  }
+
+  /**
+   * Number of children in the party. Optional, defaults to 0.
+   * minimum: 0
+   * @return children
+   */
+  @Min(0) 
+  @JsonProperty("children")
+  public Integer getChildren() {
+    return children;
+  }
+
+  public void setChildren(Integer children) {
+    this.children = children;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -224,7 +291,10 @@ public class StaffBookingCreateInput {
         Objects.equals(this.checkIn, staffBookingCreateInput.checkIn) &&
         Objects.equals(this.checkOut, staffBookingCreateInput.checkOut) &&
         equalsNullable(this.roomUnitId, staffBookingCreateInput.roomUnitId) &&
-        Objects.equals(this.channel, staffBookingCreateInput.channel);
+        Objects.equals(this.channel, staffBookingCreateInput.channel) &&
+        Objects.equals(this.purpose, staffBookingCreateInput.purpose) &&
+        Objects.equals(this.adults, staffBookingCreateInput.adults) &&
+        Objects.equals(this.children, staffBookingCreateInput.children);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -233,7 +303,7 @@ public class StaffBookingCreateInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomId, guestName, hashCodeNullable(guestEmail), hashCodeNullable(guestPhone), checkIn, checkOut, hashCodeNullable(roomUnitId), channel);
+    return Objects.hash(roomId, guestName, hashCodeNullable(guestEmail), hashCodeNullable(guestPhone), checkIn, checkOut, hashCodeNullable(roomUnitId), channel, purpose, adults, children);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -255,6 +325,9 @@ public class StaffBookingCreateInput {
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    roomUnitId: ").append(toIndentedString(roomUnitId)).append("\n");
     sb.append("    channel: ").append(toIndentedString(channel)).append("\n");
+    sb.append("    purpose: ").append(toIndentedString(purpose)).append("\n");
+    sb.append("    adults: ").append(toIndentedString(adults)).append("\n");
+    sb.append("    children: ").append(toIndentedString(children)).append("\n");
     sb.append("}");
     return sb.toString();
   }

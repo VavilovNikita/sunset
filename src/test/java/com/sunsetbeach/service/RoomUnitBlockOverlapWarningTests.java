@@ -77,13 +77,13 @@ class RoomUnitBlockOverlapWarningTests extends AbstractIntegrationTest {
     }
 
     private Booking bookUnit(RoomUnitEntity unit, LocalDate checkIn, LocalDate checkOut) {
-        return bookingService.createStaffBooking(new StaffBookingCreateInput(unit.getRoomId(), "Overlap Test Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN)
+        return bookingService.createStaffBooking(new StaffBookingCreateInput(unit.getRoomId(), "Overlap Test Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN, 1)
                 .roomUnitId(unit.getId()));
     }
 
     /** No {@code roomUnitId} - occupies the type's pool without pinning a specific physical room. */
     private Booking bookUnassigned(String roomId, LocalDate checkIn, LocalDate checkOut) {
-        return bookingService.createStaffBooking(new StaffBookingCreateInput(roomId, "Unassigned Overlap Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN));
+        return bookingService.createStaffBooking(new StaffBookingCreateInput(roomId, "Unassigned Overlap Guest", checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN, 1));
     }
 
     @Test

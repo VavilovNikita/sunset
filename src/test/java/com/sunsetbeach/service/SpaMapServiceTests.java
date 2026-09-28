@@ -199,7 +199,7 @@ class SpaMapServiceTests extends AbstractIntegrationTest {
         RoomUnitEntity savedUnit = roomUnitRepository.saveAndFlush(unit);
         LocalDate checkIn = LocalDate.now();
         return bookingService.createStaffBooking(
-                new StaffBookingCreateInput(savedRoom.getId(), "Spa Map Test Guest", checkIn.toString(), checkIn.plusDays(3).toString(), BookingChannel.WALK_IN)
+                new StaffBookingCreateInput(savedRoom.getId(), "Spa Map Test Guest", checkIn.toString(), checkIn.plusDays(3).toString(), BookingChannel.WALK_IN, 1)
                         .roomUnitId(savedUnit.getId()));
     }
 

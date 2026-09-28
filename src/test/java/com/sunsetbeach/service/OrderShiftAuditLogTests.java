@@ -199,7 +199,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
         roomUnitRepository.saveAndFlush(unit);
 
         Booking booking = bookingService.createStaffBooking(new StaffBookingCreateInput(
-                savedRoom.getId(), "Guest", LocalDate.now().plusDays(3).toString(), LocalDate.now().plusDays(4).toString(), BookingChannel.WALK_IN));
+                savedRoom.getId(), "Guest", LocalDate.now().plusDays(3).toString(), LocalDate.now().plusDays(4).toString(), BookingChannel.WALK_IN, 1));
         createdBookingIds.add(booking.getId());
 
         Shift shift = shiftService.open(cashierId, new ShiftOpenInput());

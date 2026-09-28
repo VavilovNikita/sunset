@@ -18,6 +18,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
 import com.sunsetbeach.model.BookingChannel;
+import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 
@@ -74,6 +75,17 @@ public class BookingEntity {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private BookingChannel channel;
+
+    // Why the room is occupied (paying stay / comp / house use) - independent of channel above.
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private BookingPurpose purpose = BookingPurpose.STANDARD;
+
+    // Party size. Both create paths set adults explicitly; the 1 here only matches V117's backfill
+    // for code (mostly tests) that builds an entity by hand.
+    private int adults = 1;
+
+    private int children;
 
     private String paymentNote;
 
@@ -220,6 +232,30 @@ public class BookingEntity {
 
     public void setChannel(BookingChannel channel) {
         this.channel = channel;
+    }
+
+    public BookingPurpose getPurpose() {
+        return purpose;
+    }
+
+    public void setPurpose(BookingPurpose purpose) {
+        this.purpose = purpose;
+    }
+
+    public int getAdults() {
+        return adults;
+    }
+
+    public void setAdults(int adults) {
+        this.adults = adults;
+    }
+
+    public int getChildren() {
+        return children;
+    }
+
+    public void setChildren(int children) {
+        this.children = children;
     }
 
     public boolean isExpiryReminderSent() {

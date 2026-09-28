@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingChannel;
+import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.Guest;
@@ -63,6 +64,12 @@ public class Booking {
 
   private BookingChannel channel;
 
+  private BookingPurpose purpose;
+
+  private Integer adults;
+
+  private Integer children;
+
   private JsonNullable<String> paymentNote = JsonNullable.<String>undefined();
 
   private OccupancyStatus occupancyStatus;
@@ -89,7 +96,7 @@ public class Booking {
   /**
    * Constructor with only required parameters
    */
-  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String guestId, Guest guest, String checkIn, String checkOut, String totalPrice, BookingStatus status, BookingChannel channel, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String guestId, Guest guest, String checkIn, String checkOut, String totalPrice, BookingStatus status, BookingChannel channel, BookingPurpose purpose, Integer adults, Integer children, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.roomId = roomId;
     this.room = room;
@@ -105,6 +112,9 @@ public class Booking {
     this.totalPrice = totalPrice;
     this.status = status;
     this.channel = channel;
+    this.purpose = purpose;
+    this.adults = adults;
+    this.children = children;
     this.paymentNote = JsonNullable.of(paymentNote);
     this.occupancyStatus = occupancyStatus;
     this.checkedInAt = JsonNullable.of(checkedInAt);
@@ -399,6 +409,63 @@ public class Booking {
     this.channel = channel;
   }
 
+  public Booking purpose(BookingPurpose purpose) {
+    this.purpose = purpose;
+    return this;
+  }
+
+  /**
+   * Get purpose
+   * @return purpose
+   */
+  @NotNull @Valid 
+  @JsonProperty("purpose")
+  public BookingPurpose getPurpose() {
+    return purpose;
+  }
+
+  public void setPurpose(BookingPurpose purpose) {
+    this.purpose = purpose;
+  }
+
+  public Booking adults(Integer adults) {
+    this.adults = adults;
+    return this;
+  }
+
+  /**
+   * Adults in the party, at least 1. Bookings made before this field existed read 1 - an assumed default, not a recorded count. 
+   * @return adults
+   */
+  @NotNull 
+  @JsonProperty("adults")
+  public Integer getAdults() {
+    return adults;
+  }
+
+  public void setAdults(Integer adults) {
+    this.adults = adults;
+  }
+
+  public Booking children(Integer children) {
+    this.children = children;
+    return this;
+  }
+
+  /**
+   * Children in the party. Bookings made before this field existed read 0.
+   * @return children
+   */
+  @NotNull 
+  @JsonProperty("children")
+  public Integer getChildren() {
+    return children;
+  }
+
+  public void setChildren(Integer children) {
+    this.children = children;
+  }
+
   public Booking paymentNote(String paymentNote) {
     this.paymentNote = JsonNullable.of(paymentNote);
     return this;
@@ -564,6 +631,9 @@ public class Booking {
         Objects.equals(this.totalPrice, booking.totalPrice) &&
         Objects.equals(this.status, booking.status) &&
         Objects.equals(this.channel, booking.channel) &&
+        Objects.equals(this.purpose, booking.purpose) &&
+        Objects.equals(this.adults, booking.adults) &&
+        Objects.equals(this.children, booking.children) &&
         Objects.equals(this.paymentNote, booking.paymentNote) &&
         Objects.equals(this.occupancyStatus, booking.occupancyStatus) &&
         Objects.equals(this.checkedInAt, booking.checkedInAt) &&
@@ -575,7 +645,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, status, channel, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, segments, createdAt, updatedAt);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, segments, createdAt, updatedAt);
   }
 
   @Override
@@ -597,6 +667,9 @@ public class Booking {
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    channel: ").append(toIndentedString(channel)).append("\n");
+    sb.append("    purpose: ").append(toIndentedString(purpose)).append("\n");
+    sb.append("    adults: ").append(toIndentedString(adults)).append("\n");
+    sb.append("    children: ").append(toIndentedString(children)).append("\n");
     sb.append("    paymentNote: ").append("[REDACTED]").append("\n");
     sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
     sb.append("    checkedInAt: ").append(toIndentedString(checkedInAt)).append("\n");

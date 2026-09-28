@@ -17,8 +17,12 @@ import com.sunsetbeach.entity.ShiftEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.model.BookingChannel;
+import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.GuestLtvRow;
+import com.sunsetbeach.model.MarketSegment;
+import com.sunsetbeach.model.MarketSegmentReport;
+import com.sunsetbeach.model.MarketSegmentRow;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.OccupancyReportRow;
@@ -30,6 +34,8 @@ import com.sunsetbeach.model.PosSalesMixItem;
 import com.sunsetbeach.model.PosSalesMixReport;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.ShiftStatus;
+import com.sunsetbeach.model.TopProductionReport;
+import com.sunsetbeach.model.TopProductionRow;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.GuestRepository;
@@ -206,6 +212,163 @@ class ReportServiceTests extends AbstractIntegrationTest {
     void occupancy_fromAfterTo_isRejected() {
         assertThatThrownBy(() -> reportService.occupancy("2033-07-12", "2033-07-10")).isInstanceOf(ValidationException.class);
         assertThatThrownBy(() -> reportService.occupancy("2033-02-30", "2033-03-01")).isInstanceOf(ValidationException.class);
+    }
+
+    // --- Top production / market segment --------------------------------------------------------
+
+    /**
+     * Range 2034-03-10..12 (3 nights). Nothing else in the database is booked in 2034.
+     * <ul>
+     *   <li>A: EXPEDIA, standard, 2+1 guests, 03-10 -> 03-12, ฿3000. 2 nights, ฿3000.
+     *   <li>B: PHONE, COMPLIMENTARY, 1+0, 03-10 -> 03-11, ฿0. 1 night.
+     *   <li>C: BOOKING_COM, COMPLIMENTARY, 2+2, 03-11 -> 03-12, ฿500. 1 night, ฿500.
+     *   <li>D: WALK_IN, HOUSE_USE, 1+0, 03-12 -> 03-13, ฿0. 1 night.
+     *   <li>E: PHONE, standard, 2+0, 03-09 -> 03-11, ฿2000. In range: 03-10 only -> 1 night, ฿1000.
+     *   <li>G: WALK_IN, standard, 3+0, relocated: 03-10 -> 03-11 ฿700 and 03-11 -> 03-12 ฿900. 2 nights, ฿1600, 3 guests once.
+     *   <li>F: EXPEDIA, standard, 5+0, CANCELLED. Nothing.
+     * </ul>
+     * Total: 8 room-nights, ฿6100, 14 guests.
+     */
+    private void persistProducerFixture() {
+        persistProducerStay(BookingChannel.EXPEDIA, BookingPurpose.STANDARD, 2, 1, BookingStatus.CONFIRMED, "2034-03-10", "2034-03-12", "3000.00");
+        persistProducerStay(BookingChannel.PHONE, BookingPurpose.COMPLIMENTARY, 1, 0, BookingStatus.CONFIRMED, "2034-03-10", "2034-03-11", "0.00");
+        persistProducerStay(BookingChannel.BOOKING_COM, BookingPurpose.COMPLIMENTARY, 2, 2, BookingStatus.NEW, "2034-03-11", "2034-03-12", "500.00");
+        persistProducerStay(BookingChannel.WALK_IN, BookingPurpose.HOUSE_USE, 1, 0, BookingStatus.CONFIRMED, "2034-03-12", "2034-03-13", "0.00");
+        persistProducerStay(BookingChannel.PHONE, BookingPurpose.STANDARD, 2, 0, BookingStatus.PAID, "2034-03-09", "2034-03-11", "2000.00");
+        persistProducerStay(BookingChannel.EXPEDIA, BookingPurpose.STANDARD, 5, 0, BookingStatus.CANCELLED, "2034-03-10", "2034-03-12", "4000.00");
+
+        BookingEntity relocated = persistBooking(null, BookingStatus.CONFIRMED, "2034-03-10", "2034-03-12", "1600.00");
+        relocated.setChannel(BookingChannel.WALK_IN);
+        relocated.setAdults(3);
+        bookingRepository.saveAndFlush(relocated);
+        persistSegment(relocated, units.get(0), "2034-03-10", "2034-03-11", "700.00");
+        persistSegment(relocated, units.get(1), "2034-03-11", "2034-03-12", "900.00");
+    }
+
+    @Test
+    void topProduction_groupsByChannel_compAndHouseUseOverrideChannel_rankedByRoomNights() {
+        persistProducerFixture();
+
+        TopProductionReport report = reportService.topProduction("2034-03-10", "2034-03-12");
+
+        // Room-nights desc, then revenue desc: EXPEDIA(2, 3000), WALK_IN(2, 1600), COMPLIMENTARY(2, 500), PHONE(1, 1000), HOUSE_USE(1, 0).
+        assertThat(report.getProducers()).extracting(r -> r.getProducer().get())
+                .containsExactly("EXPEDIA", "WALK_IN", "COMPLIMENTARY", "PHONE", "HOUSE_USE");
+        TopProductionRow expedia = report.getProducers().get(0);
+        assertThat(expedia.getLabel().get()).isEqualTo("Expedia");
+        assertThat(expedia.getRoomNights()).isEqualTo(2);
+        assertThat(expedia.getRevenue()).isEqualTo("3000.00");
+        assertThat(expedia.getRoomNightsPercent().get()).isEqualTo("25.00");
+        assertThat(expedia.getRevenuePercent().get()).isEqualTo("49.18"); // 3000 / 6100
+        assertThat(expedia.getAdr().get()).isEqualTo("1500.00");
+
+        // B (phone) and C (Booking.com) are both comps: one row, neither under its channel.
+        TopProductionRow comp = report.getProducers().get(2);
+        assertThat(comp.getLabel().get()).isEqualTo("Complimentary");
+        assertThat(comp.getRoomNights()).isEqualTo(2);
+        assertThat(comp.getRevenue()).isEqualTo("500.00");
+        assertThat(report.getProducers()).extracting(r -> r.getProducer().get()).doesNotContain("BOOKING_COM");
+        assertThat(report.getProducers().get(3).getRoomNights()).isEqualTo(1); // PHONE: E only, B went to Complimentary
+        assertThat(report.getProducers().get(3).getRevenue()).isEqualTo("1000.00");
+
+        assertThat(report.getTotal().getProducer().get()).isNull();
+        assertThat(report.getTotal().getRoomNights()).isEqualTo(8);
+        assertThat(report.getTotal().getRevenue()).isEqualTo("6100.00");
+        assertThat(report.getTotal().getRoomNightsPercent().get()).isEqualTo("100.00");
+
+        // Same population as the occupancy report for the same range.
+        OccupancyReport occupancy = reportService.occupancy("2034-03-10", "2034-03-12");
+        assertThat(occupancy.getTotal().getRoomNightsSold()).isEqualTo(report.getTotal().getRoomNights());
+        assertThat(occupancy.getTotal().getRoomRevenue()).isEqualTo(report.getTotal().getRevenue());
+    }
+
+    @Test
+    void marketSegment_rollsProducersUp_andCountsEachBookingsGuestsOnce() {
+        persistProducerFixture();
+
+        MarketSegmentReport report = reportService.marketSegment("2034-03-10", "2034-03-12");
+
+        assertThat(report.getSegments()).extracting(MarketSegmentRow::getSegment)
+                .containsExactly(MarketSegment.COM, MarketSegment.DIR, MarketSegment.HFO, MarketSegment.OTA, MarketSegment.WLK);
+        // segment: room-nights, guests, revenue, average rate
+        assertSegment(report.getSegments().get(0), 2, 5, "500.00", "250.00"); // B + C
+        assertSegment(report.getSegments().get(1), 1, 2, "1000.00", "1000.00"); // E
+        assertSegment(report.getSegments().get(2), 1, 1, "0.00", "0.00"); // D
+        assertSegment(report.getSegments().get(3), 2, 3, "3000.00", "1500.00"); // A - EXPEDIA rolls into OTA
+        assertSegment(report.getSegments().get(4), 2, 3, "1600.00", "800.00"); // G - two segments, 3 guests counted once
+
+        MarketSegmentRow ota = report.getSegments().get(3);
+        assertThat(ota.getRoomNightsPercent().get()).isEqualTo("25.00");
+        assertThat(ota.getGuestsPercent().get()).isEqualTo("21.43"); // 3 / 14
+        assertThat(ota.getRevenuePercent().get()).isEqualTo("49.18");
+
+        assertThat(report.getTotal().getSegment()).isNull();
+        assertSegment(report.getTotal(), 8, 14, "6100.00", "762.50");
+
+        // Guests equal adults + children summed by hand over the distinct non-cancelled bookings
+        // with a segment night in the range - the same population the segments query returns.
+        int handSum = segmentRepository
+                .findByBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThan(
+                        BookingStatus.CANCELLED, LocalDate.parse("2034-03-13"), LocalDate.parse("2034-03-10"))
+                .stream().map(BookingSegmentEntity::getBookingId).distinct()
+                .map(id -> bookingRepository.findById(id).orElseThrow())
+                .mapToInt(b -> b.getAdults() + b.getChildren())
+                .sum();
+        assertThat(report.getTotal().getGuests()).isEqualTo(handSum);
+    }
+
+    @Test
+    void marketSegment_emptyRange_returnsAllFiveSegmentsWithZerosAndNullRatios() {
+        MarketSegmentReport report = reportService.marketSegment("2034-11-01", "2034-11-02");
+
+        assertThat(report.getSegments()).hasSize(5);
+        for (MarketSegmentRow row : concatSegments(report.getSegments(), report.getTotal())) {
+            assertThat(row.getRoomNights()).isZero();
+            assertThat(row.getGuests()).isZero();
+            assertThat(row.getRevenue()).isEqualTo("0.00");
+            assertThat(row.getRoomNightsPercent().get()).isNull();
+            assertThat(row.getGuestsPercent().get()).isNull();
+            assertThat(row.getRevenuePercent().get()).isNull();
+            assertThat(row.getAverageRate().get()).isNull();
+        }
+        assertThat(reportService.topProduction("2034-11-01", "2034-11-02").getProducers()).isEmpty();
+    }
+
+    @Test
+    void topProductionAndMarketSegment_fromAfterTo_isRejected() {
+        assertThatThrownBy(() -> reportService.topProduction("2034-03-12", "2034-03-10")).isInstanceOf(ValidationException.class);
+        assertThatThrownBy(() -> reportService.marketSegment("2034-03-12", "2034-03-10")).isInstanceOf(ValidationException.class);
+    }
+
+    private static void assertSegment(MarketSegmentRow row, int roomNights, int guests, String revenue, String averageRate) {
+        assertThat(row.getRoomNights()).isEqualTo(roomNights);
+        assertThat(row.getGuests()).isEqualTo(guests);
+        assertThat(row.getRevenue()).isEqualTo(revenue);
+        assertThat(row.getAverageRate().get()).isEqualTo(averageRate);
+    }
+
+    private static List<MarketSegmentRow> concatSegments(List<MarketSegmentRow> rows, MarketSegmentRow total) {
+        List<MarketSegmentRow> all = new java.util.ArrayList<>(rows);
+        all.add(total);
+        return all;
+    }
+
+    private void persistProducerStay(
+            BookingChannel channel,
+            BookingPurpose purpose,
+            int adults,
+            int children,
+            BookingStatus status,
+            String checkIn,
+            String checkOut,
+            String totalPrice) {
+        BookingEntity booking = persistBooking(null, status, checkIn, checkOut, totalPrice);
+        booking.setChannel(channel);
+        booking.setPurpose(purpose);
+        booking.setAdults(adults);
+        booking.setChildren(children);
+        bookingRepository.saveAndFlush(booking);
+        persistSegment(booking, units.get(0), checkIn, checkOut, totalPrice);
     }
 
     // --- POS sales mix ------------------------------------------------------------------------

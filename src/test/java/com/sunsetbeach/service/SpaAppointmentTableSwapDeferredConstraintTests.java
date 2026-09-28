@@ -102,7 +102,7 @@ class SpaAppointmentTableSwapDeferredConstraintTests extends AbstractIntegration
         RoomUnitEntity savedUnit = roomUnitRepository.saveAndFlush(unit);
 
         return bookingService.createStaffBooking(new StaffBookingCreateInput(
-                        savedRoom.getId(), "Deferred Swap Test Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN)
+                        savedRoom.getId(), "Deferred Swap Test Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN, 1)
                 .roomUnitId(savedUnit.getId()));
     }
 

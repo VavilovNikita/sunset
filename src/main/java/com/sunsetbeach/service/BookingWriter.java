@@ -12,6 +12,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.BookingChannel;
+import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentNightlyRateRepository;
@@ -137,7 +138,14 @@ public class BookingWriter {
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public BookingEntity insert(
-            RoomEntity room, String guestName, String guestEmail, String guestPhone, LocalDate checkIn, LocalDate checkOut) {
+            RoomEntity room,
+            String guestName,
+            String guestEmail,
+            String guestPhone,
+            LocalDate checkIn,
+            LocalDate checkOut,
+            int adults,
+            int children) {
         int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
         if (!isRangeAvailable(room.getId(), unitCount, checkIn, checkOut, null)) {
             throw new ConflictException("Selected dates are no longer available");
@@ -145,7 +153,18 @@ public class BookingWriter {
         Map<LocalDate, BigDecimal> nightlyPrices = priceNightsAtCurrentRate(room, DateRangeUtil.getNights(checkIn, checkOut));
         BookingEntity entity =
                 newBookingEntity(
-                        room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.PUBLIC, BookingChannel.DIRECT, sumPrices(nightlyPrices));
+                        room,
+                        guestName,
+                        guestEmail,
+                        guestPhone,
+                        checkIn,
+                        checkOut,
+                        BookingSource.PUBLIC,
+                        BookingChannel.DIRECT,
+                        BookingPurpose.STANDARD,
+                        adults,
+                        children,
+                        sumPrices(nightlyPrices));
         BookingEntity saved = bookingRepository.saveAndFlush(entity);
         saveSegment(saved.getId(), room.getId(), null, checkIn, checkOut, nightlyPrices);
         return saved;
@@ -168,6 +187,9 @@ public class BookingWriter {
             LocalDate checkIn,
             LocalDate checkOut,
             BookingChannel channel,
+            BookingPurpose purpose,
+            int adults,
+            int children,
             String roomUnitId) {
         int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
         if (!isRangeAvailable(room.getId(), unitCount, checkIn, checkOut, null)) {
@@ -175,7 +197,9 @@ public class BookingWriter {
         }
         Map<LocalDate, BigDecimal> nightlyPrices = priceNightsAtCurrentRate(room, DateRangeUtil.getNights(checkIn, checkOut));
         BookingEntity entity =
-                newBookingEntity(room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.STAFF, channel, sumPrices(nightlyPrices));
+                newBookingEntity(
+                        room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.STAFF, channel, purpose, adults, children,
+                        sumPrices(nightlyPrices));
 
         String assignedUnitId = null;
         if (roomUnitId != null) {
@@ -200,6 +224,9 @@ public class BookingWriter {
             LocalDate checkOut,
             BookingSource source,
             BookingChannel channel,
+            BookingPurpose purpose,
+            int adults,
+            int children,
             BigDecimal totalPrice) {
         BookingEntity entity = new BookingEntity();
         entity.setRoomId(room.getId());
@@ -212,6 +239,9 @@ public class BookingWriter {
         entity.setStatus(BookingStatus.NEW);
         entity.setSource(source);
         entity.setChannel(channel);
+        entity.setPurpose(purpose);
+        entity.setAdults(adults);
+        entity.setChildren(children);
         return entity;
     }
 

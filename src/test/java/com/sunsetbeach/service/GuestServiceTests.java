@@ -142,7 +142,7 @@ class GuestServiceTests extends AbstractIntegrationTest {
         LocalDate checkIn = LocalDate.now().plusDays(30);
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = bookingService.createStaffBooking(
-                new StaffBookingCreateInput(room.getId(), guestName, checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN).roomUnitId(unit.getId()));
+                new StaffBookingCreateInput(room.getId(), guestName, checkIn.toString(), checkOut.toString(), BookingChannel.WALK_IN, 1).roomUnitId(unit.getId()));
         createdBookingIds.add(booking.getId());
         return booking;
     }

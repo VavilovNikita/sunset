@@ -149,7 +149,7 @@ class BookingChannelContractTests extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"roomId\":\"" + roomId + "\",\"guestName\":\"Public Channel Guest\","
                                 + "\"guestEmail\":\"channel-" + UUID.randomUUID() + "@test.local\",\"guestPhone\":\"+66 1234 5678\","
-                                + "\"checkIn\":\"2097-03-01\",\"checkOut\":\"2097-03-03\"}"))
+                                + "\"checkIn\":\"2097-03-01\",\"checkOut\":\"2097-03-03\",\"adults\":1}"))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         JsonNode booking = objectMapper.readTree(body);
@@ -168,7 +168,7 @@ class BookingChannelContractTests extends AbstractIntegrationTest {
                         .header("Authorization", authHeader)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"roomId\":\"" + roomId + "\",\"guestName\":\"No Channel Guest\","
-                                + "\"checkIn\":\"2097-04-01\",\"checkOut\":\"2097-04-03\"}"))
+                                + "\"checkIn\":\"2097-04-01\",\"checkOut\":\"2097-04-03\",\"adults\":1}"))
                 .andExpect(status().isBadRequest());
 
         assertThat(bookingRepository.findAll().stream().filter(b -> roomId.equals(b.getRoomId()))).isEmpty();
@@ -269,7 +269,7 @@ class BookingChannelContractTests extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"roomId\":\"" + roomId + "\",\"guestName\":\"Channel Staff Guest\","
                                 + "\"guestEmail\":\"channel-" + UUID.randomUUID() + "@test.local\","
-                                + "\"checkIn\":\"2097-05-01\",\"checkOut\":\"2097-05-03\",\"channel\":\"" + channel + "\"}"))
+                                + "\"checkIn\":\"2097-05-01\",\"checkOut\":\"2097-05-03\",\"adults\":1,\"channel\":\"" + channel + "\"}"))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         JsonNode booking = objectMapper.readTree(body);
