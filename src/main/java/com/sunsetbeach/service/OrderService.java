@@ -83,6 +83,7 @@ public class OrderService {
     private final GuestOrderMapper guestOrderMapper;
     private final OrderPrintingService orderPrintingService;
     private final AuditLogService auditLogService;
+    private final LedgerService ledgerService;
     private final long spaOrderLinkGraceMinutes;
     private final SecureRandom guestAccessTokenRandom = new SecureRandom();
 
@@ -100,6 +101,7 @@ public class OrderService {
             GuestOrderMapper guestOrderMapper,
             OrderPrintingService orderPrintingService,
             AuditLogService auditLogService,
+            LedgerService ledgerService,
             @Value("${app.spa.order-link-grace-minutes}") long spaOrderLinkGraceMinutes) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -115,6 +117,7 @@ public class OrderService {
         this.guestOrderMapper = guestOrderMapper;
         this.orderPrintingService = orderPrintingService;
         this.auditLogService = auditLogService;
+        this.ledgerService = ledgerService;
     }
 
     @Transactional(readOnly = true)
@@ -490,6 +493,8 @@ public class OrderService {
         order.setStatus(OrderStatus.PAID);
         OrderEntity saved = orderRepository.saveAndFlush(order);
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
+        // Same transaction, not best-effort like the printing/audit around it - see LedgerService.
+        ledgerService.postPosOrderClose(saved, items, input.getMethod(), cashierUserId);
         orderPrintingService.printGuestReceipt(saved, items, payment, booking);
 
         // Best-effort, same fail-open contract as printing/audit above and below - closing an

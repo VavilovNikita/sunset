@@ -38,6 +38,12 @@ Some migrations are destructive (dropped columns, deleted rows) — V4 and V11 a
 
 Undoing a relocation restores the preserved original rates. It is not a new agreement.
 
+## Ledger
+
+**Double-entry, immutable, no backfill.** `LedgerService` is the only writer of `JournalEntry`/`JournalLine` (V120) and refuses any entry whose debits and credits differ. Posted entries are never edited or deleted; a mistake is corrected by a reversing entry (`reversesEntryId`, unique, so at most once). Only activity from V120 forward is in the ledger - Z120 (trial balance) won't reconcile with Z410/occupancy for earlier periods, and that is expected.
+
+**Automatic postings run inside the business operation's own transaction - the one exception to "accompanying writes never break the operation" below.** A close or settlement the ledger silently missed leaves a trial balance that still balances but no longer matches reality, which is worse than the operation failing. The hooks: `BookingService#updateStatus` (into `PAID` posts the room settlement at `totalPrice`, out of `PAID` mirrors every unreversed settlement; the booking row is locked `FOR UPDATE` so two concurrent "mark PAID" requests can't both post - `LedgerBookingSettlementRaceTests`), `OrderService#close` (Dr Cash, or Guest Ledger for `ROOM_CHARGE`), `BookingService#recordFolioPayment` (Dr Cash, Cr Guest Ledger). `PAID` is the only record this system has of the room being collected, so a price change on an already-`PAID` booking posts nothing - same gap `PAID` has everywhere else. POS revenue splits FNB/SPA via `RevenueClassification`, shared with Z410 so the two can't drift.
+
 ## Spa billing
 
 **What links a POS order to a spa appointment is presence, not a status.** `SpaAppointment.orderId` is set once — explicitly by the spa billing door (`POST /orders` with `spaAppointmentId`) or by `OrderService`'s own auto-link (by table, then by booking, tried at different moments — see `OrderService#autoLinkSpaAppointment`'s own javadoc) — and answers exactly one question: is this the order that bills this appointment's treatment. `Order.bookingId` is not the same fact and never was — see that field's own openapi.yaml description; the record of what a *closed* order was actually charged to is `Payment.bookingId`, set independently at `POST /orders/{id}/close`.

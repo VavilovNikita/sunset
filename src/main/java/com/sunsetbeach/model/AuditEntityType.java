@@ -66,7 +66,11 @@ public enum AuditEntityType {
   
   SETTINGS("SETTINGS"),
   
-  NIGHT_AUDIT("NIGHT_AUDIT");
+  NIGHT_AUDIT("NIGHT_AUDIT"),
+  
+  LEDGER_ENTRY("LEDGER_ENTRY"),
+  
+  LEDGER_ACCOUNT("LEDGER_ACCOUNT");
 
   private String value;
 

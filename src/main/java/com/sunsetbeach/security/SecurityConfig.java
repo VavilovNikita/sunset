@@ -301,8 +301,18 @@ public class SecurityConfig {
                                         "/reports/market-segment",
                                         "/reports/manager",
                                         "/reports/forecast",
-                                        "/reports/revenue-statistic")
+                                        "/reports/revenue-statistic",
+                                        "/reports/trial-balance")
                                 .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Ledger: reads MANAGER+, the same floor as the trial balance and every other
+                        // financial report above. Writes (a manual entry, a reversal, a new account)
+                        // are ADMIN-only - hasRole(ADMIN) admits nobody else - because a manual entry
+                        // can claim any revenue, expense or cash movement: the same "changes what the
+                        // hotel's own figures say" blast radius /settings/vat is ADMIN-only for.
+                        .requestMatchers(HttpMethod.GET, "/ledger/accounts", "/ledger/entries")
+                        .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/ledger/accounts", "/ledger/entries", "/ledger/entries/*/reverse")
+                        .hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
                         // Audit log: read-only, MANAGER+ - the disputes it exists to resolve (a
                         // cash discrepancy, a guest billing question, a suspected misuse of a
                         // role) are exactly what a manager needs to investigate without

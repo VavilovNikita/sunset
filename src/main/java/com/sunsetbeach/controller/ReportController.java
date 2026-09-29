@@ -10,6 +10,8 @@ import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.PosSalesMixReport;
 import com.sunsetbeach.model.RevenueStatisticReport;
 import com.sunsetbeach.model.TopProductionReport;
+import com.sunsetbeach.model.TrialBalanceReport;
+import com.sunsetbeach.service.LedgerService;
 import com.sunsetbeach.service.ReportService;
 import com.sunsetbeach.service.RevenueExportService;
 import org.springframework.core.io.ByteArrayResource;
@@ -25,10 +27,17 @@ public class ReportController implements ReportsApi {
 
     private final RevenueExportService revenueExportService;
     private final ReportService reportService;
+    private final LedgerService ledgerService;
 
-    public ReportController(RevenueExportService revenueExportService, ReportService reportService) {
+    public ReportController(RevenueExportService revenueExportService, ReportService reportService, LedgerService ledgerService) {
         this.revenueExportService = revenueExportService;
         this.reportService = reportService;
+        this.ledgerService = ledgerService;
+    }
+
+    @Override
+    public ResponseEntity<TrialBalanceReport> getTrialBalanceReport(String asOf) {
+        return ResponseEntity.ok(ledgerService.trialBalance(asOf));
     }
 
     @Override

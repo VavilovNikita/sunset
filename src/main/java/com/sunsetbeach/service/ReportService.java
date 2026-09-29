@@ -844,28 +844,20 @@ public class ReportService {
         PosLines pos = posLinesInRange(range);
         for (OrderItemEntity line : pos.lines()) {
             MenuItemEntity menuItem = pos.menuItems().get(line.getMenuItemId()); // FK on OrderItem.menuItemId - always present
-            gross.merge(revenueCodeOf(menuItem.getDepartment()), line.getUnitPrice().multiply(BigDecimal.valueOf(line.getQuantity())), BigDecimal::add);
+            gross.merge(RevenueClassification.of(menuItem.getDepartment()), line.getUnitPrice().multiply(BigDecimal.valueOf(line.getQuantity())), BigDecimal::add);
         }
 
-        BigDecimal divisor = HUNDRED.add(vatRate);
         List<RevenueStatisticRow> rows = new ArrayList<>();
         BigDecimal totalGross = BigDecimal.ZERO, totalVat = BigDecimal.ZERO;
         for (Map.Entry<RevenueCode, BigDecimal> entry : gross.entrySet()) {
             BigDecimal rowGross = entry.getValue().setScale(2, RoundingMode.HALF_UP);
-            BigDecimal rowVat = rowGross.multiply(vatRate).divide(divisor, 2, RoundingMode.HALF_UP);
+            BigDecimal rowVat = RevenueClassification.vatInside(rowGross, vatRate);
             rows.add(revenueStatisticRow(entry.getKey(), rowGross, rowVat));
             totalGross = totalGross.add(rowGross);
             totalVat = totalVat.add(rowVat);
         }
         return new RevenueStatisticReport(
                 range.from().toString(), range.to().toString(), money(vatRate), rows, revenueStatisticRow(null, totalGross, totalVat));
-    }
-
-    private static RevenueCode revenueCodeOf(MenuDepartment department) {
-        return switch (department) {
-            case KITCHEN, BAR -> RevenueCode.FNB;
-            case SPA -> RevenueCode.SPA;
-        };
     }
 
     private static RevenueStatisticRow revenueStatisticRow(RevenueCode code, BigDecimal gross, BigDecimal vat) {

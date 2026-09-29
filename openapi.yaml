@@ -133,6 +133,13 @@ tags:
       Hotel-wide configuration. ADMIN only, same tier as `Users` and outside the role hierarchy's
       usual MANAGER floor for admin screens: what lives here changes what goes into every guest's
       inbox, or what the hotel's own VAT figures are computed with.
+  - name: Ledger
+    description: >
+      Double-entry general ledger: a chart of accounts and immutable, balanced journal entries.
+      Bookings becoming (or leaving) `PAID`, POS order closes and folio payments post
+      automatically; everything else (expenses, vendor bills, owner draws, corrections) is a
+      manual entry. Reads MANAGER+, writes ADMIN only. Holds activity from its go-live forward
+      only - nothing earlier was backfilled; see `GET /reports/trial-balance`.
   - name: AuditLog
     description: >
       Read-only, append-only record of significant staff actions - money and guest-data
@@ -6046,6 +6053,291 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /reports/trial-balance:
+    get:
+      operationId: getTrialBalanceReport
+      tags: [Reports]
+      summary: Debit/credit totals and balance of every ledger account as of a date (legacy Z120)
+      description: >
+        Requires role `MANAGER` or above, same floor as the rest of `/reports/*`.
+
+
+        **Ledger go-live: no backfill.** This report reads the double-entry ledger
+        (`GET /ledger/entries`), and the ledger only holds transactions posted from the moment it
+        shipped. Bookings settled and POS orders closed before then were never posted and never
+        will be. For any date range that includes pre-ledger activity, these figures will **not**
+        reconcile with `GET /reports/revenue-statistic` (Z410), `GET /reports/occupancy` or
+        `GET /reports/pos-sales-mix` - that is expected, not a bug. Two visible side effects of
+        the cut-over: a folio payment collected after go-live against a room charge closed
+        before it credits `Guest Ledger` with no matching earlier debit, so that account can show
+        a credit (negative) balance; and a booking marked `PAID` before go-live that later leaves
+        `PAID` has nothing in the ledger to reverse, so nothing is posted.
+
+
+        **Even for post-go-live activity it is not the same number as Z410**, by design:
+
+        - Room revenue is posted when a booking becomes `PAID` (the only record this system has
+          of the room portion being collected), at the booking's `totalPrice` at that moment -
+          Z410 counts room revenue per night stayed, whatever the status. A booking whose price
+          changes while it is already `PAID` (an extension, a reprice) posts nothing for the
+          difference - the same gap `PAID` already has everywhere else (its outstanding balance
+          also reads zero); moving it out of `PAID` and back re-posts it at the new price.
+
+        - VAT is extracted per transaction (same formula as Z410:
+          `gross × vatRate / (100 + vatRate)`, half-up to two decimals) at the rate stored at the
+          moment of posting, so the ledger's VAT is a historical record per transaction; Z410
+          recomputes a whole range at today's rate from rounded per-code totals. Totals can
+          differ by cents even when the populations match.
+
+
+        **What posts automatically** (see `JournalSourceType`): a booking becoming `PAID`
+        (Dr Cash/Bank, Cr Room Revenue + VAT Payable) and leaving `PAID` (the exact mirror of what
+        was posted); a POS order closed (Dr Cash/Bank, or Guest Ledger for `ROOM_CHARGE`; Cr F&B
+        and/or SPA Revenue by each line's menu department - the same classification as Z410 - plus
+        VAT Payable); a folio payment (Dr Cash/Bank, Cr Guest Ledger). Everything else is a manual
+        entry (`POST /ledger/entries`).
+
+
+        **One row per account in the chart**, ordered by `code`, zero-activity accounts included.
+        `balance` is on the account's normal side (`debit - credit` for `DEBIT`-normal accounts,
+        `credit - debit` for `CREDIT`-normal ones), so a negative balance is an abnormal one.
+        `totalDebit` and `totalCredit` are the sums over every row and must be equal - every
+        entry is rejected at posting time unless its own lines balance - so `balanced: false`
+        means a bug in the posting logic and should be reported, not worked around.
+      parameters:
+        - name: asOf
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Include every journal entry whose `entryDate` is on or before this date (Asia/Bangkok).
+      responses:
+        "200":
+          description: Every account's totals and balance, plus the grand totals.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialBalanceReport"
+        "400":
+          description: '`asOf` missing or not a valid date.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /ledger/accounts:
+    get:
+      operationId: listLedgerAccounts
+      tags: [Ledger]
+      summary: The chart of accounts
+      description: >
+        Requires role `MANAGER` or above. Every account, ordered by `code`. The seven automatic
+        posting accounts plus two starter accounts for manual entries (`3000` Owner Equity, `6000`
+        General Expense) are seeded; anything else an ADMIN adds with `POST /ledger/accounts`.
+      responses:
+        "200":
+          description: Every account.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LedgerAccount"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+    post:
+      operationId: createLedgerAccount
+      tags: [Ledger]
+      summary: Add an account to the chart
+      description: >
+        Requires role `ADMIN` (MANAGER included is a 403) - same tier as posting a manual entry,
+        since a new account exists only to be posted to. Accounts are never renamed, retyped or
+        deleted: an account's type decides which side its balance sits on, and changing it under
+        existing entries would silently flip every figure already reported against it. Recorded in
+        the audit log (`LEDGER_ACCOUNT_CREATED`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LedgerAccountCreateInput"
+      responses:
+        "201":
+          description: The new account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerAccount"
+        "400":
+          description: A field is missing or malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: An account with this `code` already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /ledger/entries:
+    get:
+      operationId: listJournalEntries
+      tags: [Ledger]
+      summary: Journal entries dated within a range
+      description: >
+        Requires role `MANAGER` or above, same floor as `/reports/*`. Every entry - automatic and
+        manual, reversals included - whose `entryDate` falls inside the inclusive range, oldest
+        first. Only activity from ledger go-live forward exists; see
+        `GET /reports/trial-balance`.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: First entry date, inclusive (Asia/Bangkok).
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Last entry date, inclusive (Asia/Bangkok).
+      responses:
+        "200":
+          description: The entries, with their lines.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/JournalEntry"
+        "400":
+          description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+    post:
+      operationId: createJournalEntry
+      tags: [Ledger]
+      summary: Post a manual journal entry
+      description: >
+        Requires role `ADMIN` - MANAGER included is a 403. A manual entry can claim any revenue,
+        expense or cash movement against any account, which is the same "changes what the hotel's
+        own financial figures say" blast radius `PUT /settings/vat` is ADMIN-only for.
+
+
+        For anything the system does not model itself: expenses, vendor bills, owner draws,
+        corrections. At least two lines; each line has exactly one of `debit`/`credit`, greater
+        than zero; debits must equal credits, checked here on the server - an unbalanced entry is a
+        400, never saved. `entryDate` may not be in the future. Posted entries are immutable: there
+        is no edit or delete, a mistake is corrected with `POST /ledger/entries/{id}/reverse` and,
+        if needed, a new correct entry. Recorded in the audit log (`LEDGER_ENTRY_POSTED`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalEntryCreateInput"
+      responses:
+        "201":
+          description: The posted entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalEntry"
+        "400":
+          description: >
+            Fewer than two lines, a line with both/neither of debit and credit, a non-positive or
+            malformed amount, an unknown `accountCode`, a future `entryDate`, a blank
+            `description`, or debits not equal to credits.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /ledger/entries/{id}/reverse:
+    post:
+      operationId: reverseJournalEntry
+      tags: [Ledger]
+      summary: Post the exact mirror of an entry to cancel it out
+      description: >
+        Requires role `ADMIN`, same as posting a manual entry. Posts a new entry, dated today
+        (Asia/Bangkok), with every line of the original and debit and credit swapped, so the two
+        net to zero on every account; the original is left exactly as it was. Works on automatic
+        and manual entries alike. An entry can be reversed once (a second attempt is a 409), and a
+        reversal itself cannot be reversed (400) - to undo a reversal, post the correct entry
+        again as a new manual entry. Recorded in the audit log (`LEDGER_ENTRY_REVERSED`).
+
+
+        Reversing an automatic entry by hand does not change the booking or order behind it. If a
+        booking whose settlement was reversed by hand later leaves `PAID`, the system finds
+        nothing left to reverse and posts nothing, so the two paths never double-reverse.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalEntryReverseInput"
+      responses:
+        "201":
+          description: The reversing entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalEntry"
+        "400":
+          description: Blank `description`, or the entry is itself a reversal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No such entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The entry has already been reversed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /audit-log:
     get:
@@ -12600,6 +12892,9 @@ components:
         - LIFECYCLE_EMAIL_SETTINGS_UPDATED
         - NIGHT_AUDIT_CLOSED
         - VAT_SETTINGS_UPDATED
+        - LEDGER_ENTRY_POSTED
+        - LEDGER_ENTRY_REVERSED
+        - LEDGER_ACCOUNT_CREATED
 
     AuditEntityType:
       type: string
@@ -12613,7 +12908,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT]
 
     AuditLogEntry:
       type: object
@@ -14573,6 +14868,203 @@ components:
         net:
           type: string
           description: '`gross - vat`.'
+
+    TrialBalanceReport:
+      type: object
+      description: '`GET /reports/trial-balance` - see that operation, including why it does not reconcile with Z410 for pre-ledger periods.'
+      required: [asOf, rows, totalDebit, totalCredit, balanced]
+      properties:
+        asOf:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        rows:
+          type: array
+          description: One row per account in the chart, ordered by code.
+          items:
+            $ref: "#/components/schemas/TrialBalanceRow"
+        totalDebit:
+          type: string
+          description: Sum of every row's `totalDebit`.
+        totalCredit:
+          type: string
+          description: Sum of every row's `totalCredit`. Equal to `totalDebit` unless the posting logic has a bug.
+        balanced:
+          type: boolean
+          description: '`totalDebit == totalCredit`.'
+
+    TrialBalanceRow:
+      type: object
+      description: One account's totals up to and including `asOf`. Money is a decimal string with two decimals.
+      required: [accountCode, accountName, accountType, normalBalance, totalDebit, totalCredit, balance]
+      properties:
+        accountCode:
+          type: string
+        accountName:
+          type: string
+        accountType:
+          $ref: "#/components/schemas/LedgerAccountType"
+        normalBalance:
+          $ref: "#/components/schemas/LedgerNormalBalance"
+        totalDebit:
+          type: string
+        totalCredit:
+          type: string
+        balance:
+          type: string
+          description: On the normal side - `totalDebit - totalCredit` for DEBIT-normal accounts, the reverse for CREDIT-normal ones. Negative is an abnormal balance.
+
+    LedgerAccountType:
+      type: string
+      enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+      description: Decides the account's normal balance side (`LedgerNormalBalance`) - ASSET and EXPENSE are DEBIT-normal, the rest CREDIT-normal.
+
+    LedgerNormalBalance:
+      type: string
+      enum: [DEBIT, CREDIT]
+      description: Derived from `LedgerAccountType`, never stored.
+
+    LedgerAccount:
+      type: object
+      description: >
+        One account in the chart. Seeded: `1000` Cash/Bank, `1100` Guest Ledger (room charges not
+        yet collected), `2100` VAT Payable, `3000` Owner Equity, `4000` Room Revenue, `4100` F&B
+        Revenue, `4200` SPA Revenue, `6000` General Expense. Cash/Bank is one account, not split by
+        method: POS and folio payments record CASH/CARD/OTHER, but a booking's room settlement
+        (`status = PAID`) records no method at all, so a split could not be kept for room revenue.
+      required: [code, name, type, normalBalance]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: "#/components/schemas/LedgerAccountType"
+        normalBalance:
+          $ref: "#/components/schemas/LedgerNormalBalance"
+
+    LedgerAccountCreateInput:
+      type: object
+      description: Body of `POST /ledger/accounts`.
+      required: [code, name, type]
+      properties:
+        code:
+          type: string
+          pattern: '^[0-9A-Z][0-9A-Z-]{0,19}$'
+          description: Unique; digits, capital letters and hyphens, at most 20 characters (e.g. "6100").
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        type:
+          $ref: "#/components/schemas/LedgerAccountType"
+
+    JournalSourceType:
+      type: string
+      enum: [BOOKING, POS_ORDER, FOLIO_PAYMENT, MANUAL]
+      description: >
+        What posted an entry. `BOOKING` - a booking became `PAID`, or left it (the mirror);
+        `sourceId` is the booking id. `POS_ORDER` - a POS order was closed; `sourceId` is the
+        order id. `FOLIO_PAYMENT` - money collected against a booking's room charges; `sourceId`
+        is the folio payment id. `MANUAL` - `POST /ledger/entries` or
+        `POST /ledger/entries/{id}/reverse`; `sourceId` is null.
+
+    JournalEntry:
+      type: object
+      description: >
+        One balanced, immutable posting. `totalDebit` always equals `totalCredit` - the server
+        rejects anything else before saving.
+      required: [id, entryDate, description, sourceType, sourceId, reversesEntryId, reversedByEntryId, createdByUserId, createdAt, lines, totalDebit, totalCredit]
+      properties:
+        id:
+          type: string
+        entryDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The accounting date (Asia/Bangkok). Automatic entries are dated the day they were posted.
+        description:
+          type: string
+        sourceType:
+          $ref: "#/components/schemas/JournalSourceType"
+        sourceId:
+          type: string
+          nullable: true
+        reversesEntryId:
+          type: string
+          nullable: true
+          description: Set on a reversing entry - the entry it mirrors.
+        reversedByEntryId:
+          type: string
+          nullable: true
+          description: Set once this entry has been reversed - the reversing entry.
+        createdByUserId:
+          type: string
+          nullable: true
+          description: The staff member whose action posted it; null only if none was signed in.
+        createdAt:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/JournalLine"
+        totalDebit:
+          type: string
+        totalCredit:
+          type: string
+
+    JournalLine:
+      type: object
+      description: One side of an entry - exactly one of `debit`/`credit` is non-zero. Money is a decimal string with two decimals.
+      required: [accountCode, accountName, debit, credit]
+      properties:
+        accountCode:
+          type: string
+        accountName:
+          type: string
+        debit:
+          type: string
+        credit:
+          type: string
+
+    JournalEntryCreateInput:
+      type: object
+      description: Body of `POST /ledger/entries`.
+      required: [entryDate, description, lines]
+      properties:
+        entryDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The accounting date, not in the future.
+        description:
+          type: string
+          maxLength: 500
+        lines:
+          type: array
+          minItems: 2
+          items:
+            $ref: "#/components/schemas/JournalLineInput"
+
+    JournalLineInput:
+      type: object
+      description: Give exactly one of `debit`/`credit`, a decimal string greater than zero with at most two decimals.
+      required: [accountCode]
+      properties:
+        accountCode:
+          type: string
+        debit:
+          type: string
+        credit:
+          type: string
+
+    JournalEntryReverseInput:
+      type: object
+      description: Body of `POST /ledger/entries/{id}/reverse`.
+      required: [description]
+      properties:
+        description:
+          type: string
+          maxLength: 500
+          description: Why it is being reversed - becomes the reversing entry's description.
 
     ForecastReport:
       type: object

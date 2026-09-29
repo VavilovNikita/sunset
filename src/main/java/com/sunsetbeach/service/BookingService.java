@@ -90,6 +90,7 @@ public class BookingService {
     private final MenuItemRepository menuItemRepository;
     private final AuditLogService auditLogService;
     private final GuestLinkService guestLinkService;
+    private final LedgerService ledgerService;
 
     public BookingService(
             RoomRepository roomRepository,
@@ -105,7 +106,8 @@ public class BookingService {
             OrderItemRepository orderItemRepository,
             MenuItemRepository menuItemRepository,
             AuditLogService auditLogService,
-            GuestLinkService guestLinkService) {
+            GuestLinkService guestLinkService,
+            LedgerService ledgerService) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.guestRepository = guestRepository;
@@ -120,6 +122,7 @@ public class BookingService {
         this.menuItemRepository = menuItemRepository;
         this.auditLogService = auditLogService;
         this.guestLinkService = guestLinkService;
+        this.ledgerService = ledgerService;
     }
 
     private List<BookingSegmentEntity> loadSegments(String bookingId) {
@@ -235,7 +238,9 @@ public class BookingService {
 
     @Transactional
     public Booking updateStatus(String id, BookingStatusInput input) {
-        BookingEntity booking = bookingRepository.findById(id).orElseThrow(() -> new NotFoundException("Booking not found"));
+        // Row-locked: two concurrent "mark PAID" requests must not both see the old status and
+        // both post a room settlement to the ledger below.
+        BookingEntity booking = bookingRepository.findByIdForUpdate(id).orElseThrow(() -> new NotFoundException("Booking not found"));
         BookingStatus oldStatus = booking.getStatus();
         String oldPaymentNote = booking.getPaymentNote();
         booking.setStatus(input.getStatus());
@@ -275,6 +280,14 @@ public class BookingService {
         }
         // flush so @UpdateTimestamp (regenerated on every save) is on the object before mapping
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
+
+        // PAID is the only record of the room portion being collected - see LedgerService's
+        // class javadoc. Same transaction: a status change the ledger missed is worse than none.
+        if (oldStatus != BookingStatus.PAID && saved.getStatus() == BookingStatus.PAID) {
+            ledgerService.postBookingSettlement(saved);
+        } else if (oldStatus == BookingStatus.PAID && saved.getStatus() != BookingStatus.PAID) {
+            ledgerService.reverseBookingSettlement(saved);
+        }
 
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         boolean statusChanged = oldStatus != saved.getStatus();
@@ -833,6 +846,7 @@ public class BookingService {
         FolioPaymentEntity saved = folioPaymentRepository.saveAndFlush(entity);
 
         BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        ledgerService.postFolioPayment(saved, booking.getGuestName());
         auditLogService.record(
                 AuditAction.BOOKING_FOLIO_PAYMENT_RECORDED,
                 AuditEntityType.BOOKING,

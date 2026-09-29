@@ -140,7 +140,8 @@ import tools.jackson.databind.json.JsonMapper;
             com.sunsetbeach.controller.RosterController.class,
             com.sunsetbeach.controller.AttendanceDeviceController.class,
             com.sunsetbeach.controller.SettingsController.class,
-            com.sunsetbeach.controller.NightAuditController.class
+            com.sunsetbeach.controller.NightAuditController.class,
+            com.sunsetbeach.controller.LedgerController.class
         })
 @Import({SecurityConfig.class, JwtService.class, com.sunsetbeach.security.GuestJwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, JacksonConfig.class,
         com.sunsetbeach.security.BookingRateLimiter.class})
@@ -262,6 +263,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private com.sunsetbeach.service.NightAuditService nightAuditService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.LedgerService ledgerService;
 
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
     // request (see JwtAuthFilter/JwtService.ParsedToken) - every token this class issues uses id
@@ -430,6 +434,72 @@ class PosRoleHierarchyTests {
                     .andExpect(status().isBadRequest());
         }
         verify(vatSettingsService, never()).update(any());
+    }
+
+    // --- Ledger: reads (and the trial balance, Z120) MANAGER+, writes ADMIN-only ---
+
+    private static final String MANUAL_ENTRY_BODY =
+            "{\"entryDate\":\"2031-01-01\",\"description\":\"Supplies\",\"lines\":["
+                    + "{\"accountCode\":\"6000\",\"debit\":\"10.00\"},{\"accountCode\":\"1000\",\"credit\":\"10.00\"}]}";
+    private static final String ACCOUNT_BODY = "{\"code\":\"6100\",\"name\":\"Utilities\",\"type\":\"EXPENSE\"}";
+    private static final String REVERSE_BODY = "{\"description\":\"Wrong account\"}";
+
+    @Test
+    void ledgerReads_managerOk_belowManagerForbidden() throws Exception {
+        when(ledgerService.trialBalance(anyString())).thenReturn(new com.sunsetbeach.model.TrialBalanceReport());
+        when(ledgerService.listEntries(anyString(), anyString())).thenReturn(List.of());
+        when(ledgerService.listAccounts()).thenReturn(List.of());
+        String[] urls = {"/reports/trial-balance?asOf=2031-01-31", "/ledger/entries?from=2031-01-01&to=2031-01-31", "/ledger/accounts"};
+        for (String url : urls) {
+            mockMvc.perform(get(url).header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+            for (Role role : new Role[] {Role.CASHIER, Role.WAITER}) {
+                mockMvc.perform(get(url).header("Authorization", token(role))).andExpect(status().isForbidden());
+            }
+        }
+    }
+
+    @Test
+    void trialBalance_missingOrMalformedAsOf_isBadRequest() throws Exception {
+        for (String query : new String[] {"", "?asOf=2031-1-31"}) {
+            mockMvc.perform(get("/reports/trial-balance" + query).header("Authorization", token(Role.MANAGER)))
+                    .andExpect(status().isBadRequest());
+        }
+        verify(ledgerService, never()).trialBalance(any());
+    }
+
+    @Test
+    void ledgerWrites_belowAdmin_areForbidden() throws Exception {
+        for (Role role : new Role[] {Role.MANAGER, Role.CASHIER, Role.WAITER}) {
+            mockMvc.perform(post("/ledger/entries").header("Authorization", token(role))
+                            .contentType(MediaType.APPLICATION_JSON).content(MANUAL_ENTRY_BODY))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(post("/ledger/entries/entry-1/reverse").header("Authorization", token(role))
+                            .contentType(MediaType.APPLICATION_JSON).content(REVERSE_BODY))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(post("/ledger/accounts").header("Authorization", token(role))
+                            .contentType(MediaType.APPLICATION_JSON).content(ACCOUNT_BODY))
+                    .andExpect(status().isForbidden());
+        }
+        verify(ledgerService, never()).createManualEntry(any());
+        verify(ledgerService, never()).reverse(any(), any());
+        verify(ledgerService, never()).createAccount(any());
+    }
+
+    @Test
+    void ledgerWrites_withAdminToken_areCreated() throws Exception {
+        when(ledgerService.createManualEntry(any())).thenReturn(new com.sunsetbeach.model.JournalEntry());
+        when(ledgerService.reverse(anyString(), any())).thenReturn(new com.sunsetbeach.model.JournalEntry());
+        when(ledgerService.createAccount(any())).thenReturn(new com.sunsetbeach.model.LedgerAccount());
+
+        mockMvc.perform(post("/ledger/entries").header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON).content(MANUAL_ENTRY_BODY))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/ledger/entries/entry-1/reverse").header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON).content(REVERSE_BODY))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/ledger/accounts").header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON).content(ACCOUNT_BODY))
+                .andExpect(status().isCreated());
     }
 
     // --- /night-audit is CASHIER+, lower than /reports/**' MANAGER+ - routine front-desk work ---

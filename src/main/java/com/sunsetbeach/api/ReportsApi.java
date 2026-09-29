@@ -15,6 +15,7 @@ import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.PosSalesMixReport;
 import com.sunsetbeach.model.RevenueStatisticReport;
 import com.sunsetbeach.model.TopProductionReport;
+import com.sunsetbeach.model.TrialBalanceReport;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -503,6 +504,54 @@ public interface ReportsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"total\" : { \"revenue\" : \"revenue\", \"revenuePercent\" : \"revenuePercent\", \"producer\" : \"producer\", \"roomNights\" : 0, \"label\" : \"label\", \"roomNightsPercent\" : \"roomNightsPercent\", \"adr\" : \"adr\" }, \"from\" : \"from\", \"to\" : \"to\", \"producers\" : [ { \"revenue\" : \"revenue\", \"revenuePercent\" : \"revenuePercent\", \"producer\" : \"producer\", \"roomNights\" : 0, \"label\" : \"label\", \"roomNightsPercent\" : \"roomNightsPercent\", \"adr\" : \"adr\" }, { \"revenue\" : \"revenue\", \"revenuePercent\" : \"revenuePercent\", \"producer\" : \"producer\", \"roomNights\" : 0, \"label\" : \"label\", \"roomNightsPercent\" : \"roomNightsPercent\", \"adr\" : \"adr\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/trial-balance : Debit/credit totals and balance of every ledger account as of a date (legacy Z120)
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as the rest of &#x60;/reports/_*&#x60;.  **Ledger go-live: no backfill.** This report reads the double-entry ledger (&#x60;GET /ledger/entries&#x60;), and the ledger only holds transactions posted from the moment it shipped. Bookings settled and POS orders closed before then were never posted and never will be. For any date range that includes pre-ledger activity, these figures will **not** reconcile with &#x60;GET /reports/revenue-statistic&#x60; (Z410), &#x60;GET /reports/occupancy&#x60; or &#x60;GET /reports/pos-sales-mix&#x60; - that is expected, not a bug. Two visible side effects of the cut-over: a folio payment collected after go-live against a room charge closed before it credits &#x60;Guest Ledger&#x60; with no matching earlier debit, so that account can show a credit (negative) balance; and a booking marked &#x60;PAID&#x60; before go-live that later leaves &#x60;PAID&#x60; has nothing in the ledger to reverse, so nothing is posted.  **Even for post-go-live activity it is not the same number as Z410**, by design: - Room revenue is posted when a booking becomes &#x60;PAID&#x60; (the only record this system has   of the room portion being collected), at the booking&#39;s &#x60;totalPrice&#x60; at that moment -   Z410 counts room revenue per night stayed, whatever the status. A booking whose price   changes while it is already &#x60;PAID&#x60; (an extension, a reprice) posts nothing for the   difference - the same gap &#x60;PAID&#x60; already has everywhere else (its outstanding balance   also reads zero); moving it out of &#x60;PAID&#x60; and back re-posts it at the new price.  - VAT is extracted per transaction (same formula as Z410:   &#x60;gross × vatRate / (100 + vatRate)&#x60;, half-up to two decimals) at the rate stored at the   moment of posting, so the ledger&#39;s VAT is a historical record per transaction; Z410   recomputes a whole range at today&#39;s rate from rounded per-code totals. Totals can   differ by cents even when the populations match.   **What posts automatically** (see &#x60;JournalSourceType&#x60;): a booking becoming &#x60;PAID&#x60; (Dr Cash/Bank, Cr Room Revenue + VAT Payable) and leaving &#x60;PAID&#x60; (the exact mirror of what was posted); a POS order closed (Dr Cash/Bank, or Guest Ledger for &#x60;ROOM_CHARGE&#x60;; Cr F&amp;B and/or SPA Revenue by each line&#39;s menu department - the same classification as Z410 - plus VAT Payable); a folio payment (Dr Cash/Bank, Cr Guest Ledger). Everything else is a manual entry (&#x60;POST /ledger/entries&#x60;).  **One row per account in the chart**, ordered by &#x60;code&#x60;, zero-activity accounts included. &#x60;balance&#x60; is on the account&#39;s normal side (&#x60;debit - credit&#x60; for &#x60;DEBIT&#x60;-normal accounts, &#x60;credit - debit&#x60; for &#x60;CREDIT&#x60;-normal ones), so a negative balance is an abnormal one. &#x60;totalDebit&#x60; and &#x60;totalCredit&#x60; are the sums over every row and must be equal - every entry is rejected at posting time unless its own lines balance - so &#x60;balanced: false&#x60; means a bug in the posting logic and should be reported, not worked around. 
+     *
+     * @param asOf Include every journal entry whose &#x60;entryDate&#x60; is on or before this date (Asia/Bangkok). (required)
+     * @return Every account&#39;s totals and balance, plus the grand totals. (status code 200)
+     *         or &#x60;asOf&#x60; missing or not a valid date. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/trial-balance",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<TrialBalanceReport> getTrialBalanceReport(
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "asOf", required = true) String asOf
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"asOf\" : \"asOf\", \"totalCredit\" : \"totalCredit\", \"totalDebit\" : \"totalDebit\", \"rows\" : [ { \"accountCode\" : \"accountCode\", \"balance\" : \"balance\", \"accountName\" : \"accountName\", \"totalCredit\" : \"totalCredit\", \"accountType\" : \"ASSET\", \"totalDebit\" : \"totalDebit\", \"normalBalance\" : \"DEBIT\" }, { \"accountCode\" : \"accountCode\", \"balance\" : \"balance\", \"accountName\" : \"accountName\", \"totalCredit\" : \"totalCredit\", \"accountType\" : \"ASSET\", \"totalDebit\" : \"totalDebit\", \"normalBalance\" : \"DEBIT\" } ], \"balanced\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
