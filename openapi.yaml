@@ -140,6 +140,15 @@ tags:
       automatically; everything else (expenses, vendor bills, owner draws, corrections) is a
       manual entry. Reads MANAGER+, writes ADMIN only. Holds activity from its go-live forward
       only - nothing earlier was backfilled; see `GET /reports/trial-balance`.
+  - name: SiteMinder
+    description: >
+      One-way import of reservations from SiteMinder (the channel manager) into this system. Our
+      own polling script reads SiteMinder's reservation screens and posts each reservation it
+      finds to `POST /integrations/siteminder/reservations`. Nothing is ever pushed back to
+      SiteMinder. Guest email and phone aren't available yet (SiteMinder masks them until
+      trusted-device access is set up), so an imported booking and its guest card carry a name
+      only. SiteMinder's room type names are translated to this system's room types through a
+      MANAGER-maintained mapping table (`/integrations/siteminder/room-type-mappings`).
   - name: AuditLog
     description: >
       Read-only, append-only record of significant staff actions - money and guest-data
@@ -9025,6 +9034,242 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
 
+  /integrations/siteminder/reservations:
+    post:
+      operationId: importSiteMinderReservation
+      tags: [SiteMinder]
+      summary: Import one SiteMinder reservation (create, update or cancel)
+      security:
+        - siteMinderIntegrationKey: []
+      description: >
+        Called by our own polling script, once per reservation it reads - not by staff (a staff
+        token gets 403). Idempotent on `reference`: posting the same reservation again never
+        creates a second booking.
+
+
+        - `BOOKED`, reference not seen before: creates a `CONFIRMED` booking (channel mapped from
+          `channel`, see `SiteMinderReservationInput.channel`) through the same availability
+          check as every other booking. `totalPrice` is SiteMinder's agreed total and becomes the
+          booking's price, frozen per night (spread evenly, any rounding remainder on the last
+          night). This is the one place a price arrives from outside instead of being computed
+          from this system's rates, because the guest already agreed it on the OTA. A new
+          name-only `Guest` card is created for it every time. It is never matched to an existing
+          card by name, because a wrong match would show this stay in someone else's guest
+          account. Duplicate cards are the known cost until contacts are available.
+        - `BOOKED` or `MODIFIED`, reference seen before: applies whatever differs - dates (through
+          the same path as `PATCH /bookings/{id}/schedule`, keeping the assigned room unless it
+          isn't free for the new dates), then the agreed total (re-spread over the nights), then
+          `adults`/`children`. Guest name and channel are not updated. A room type that differs
+          from the one originally booked is rejected with 409 (there's no path that changes a
+          whole stay's room type - staff have to handle it). A booking cancelled in this system is
+          never reinstated by an import (`SKIPPED`).
+        - `CANCELLED`, reference seen before: cancels the booking through the same path as a
+          staff cancellation (`PATCH /bookings/{id}/status`), with the same effects - the room is
+          released, and a `PAID` booking's settlement is reversed in the ledger.
+        - `MODIFIED` or `CANCELLED` for a reference never imported: nothing is created; the result
+          is `SKIPPED` with a message, and the server logs a warning.
+
+
+        An import whose SiteMinder timestamp (the latest of `bookedAt`/`modifiedAt`/`cancelledAt`)
+        is older than the last one applied to this booking is `SKIPPED` as stale.
+
+
+        Each step of an update is its own write, like the staff endpoints it reuses: if one step
+        fails (say, the new dates aren't available), the steps before it stay applied and the next
+        poll retries the rest. Every change is audited under the booking's usual actions with the
+        actor `SITEMINDER`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SiteMinderReservationInput"
+      responses:
+        "200":
+          description: What the import did.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteMinderImportResult"
+        "400":
+          description: >
+            Body failed validation - including a `roomTypeName` with no mapping, reported under
+            `fieldErrors.roomTypeName` with the exact unmapped name, so it can be added via
+            `POST /integrations/siteminder/room-type-mappings`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Missing or wrong `X-Integration-Key`, or the integration isn't configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "403":
+          description: A staff token - this route only accepts the integration key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            The change can't be applied as-is: the dates aren't available, the room type changed,
+            the booking has been split by a relocation in a way the change can't follow, or a
+            concurrent import of the same reservation is in progress. Needs a person, or a retry on
+            the next poll.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Selected dates are no longer available
+
+  /integrations/siteminder/room-type-mappings:
+    get:
+      operationId: listSiteMinderRoomTypeMappings
+      tags: [SiteMinder]
+      summary: List SiteMinder room type mappings
+      description: Requires MANAGER or above.
+      responses:
+        "200":
+          description: Every mapping, ordered by SiteMinder room type name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SiteMinderRoomTypeMapping"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+    post:
+      operationId: createSiteMinderRoomTypeMapping
+      tags: [SiteMinder]
+      summary: Map a SiteMinder room type name to a room type
+      description: >
+        Requires MANAGER or above. Names are matched case-insensitively, with surrounding and
+        repeated whitespace ignored. Mapping a name that's already mapped is rejected with 409 -
+        change the existing mapping instead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SiteMinderRoomTypeMappingInput"
+      responses:
+        "201":
+          description: Mapping created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteMinderRoomTypeMapping"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Room type not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Room not found
+        "409":
+          description: This SiteMinder room type is already mapped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: This SiteMinder room type is already mapped
+
+  /integrations/siteminder/room-type-mappings/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: updateSiteMinderRoomTypeMapping
+      tags: [SiteMinder]
+      summary: Change a SiteMinder room type mapping
+      description: >
+        Requires MANAGER or above. Full replacement. Affects future imports only - bookings
+        already imported keep the room type they were created with.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SiteMinderRoomTypeMappingInput"
+      responses:
+        "200":
+          description: Updated mapping.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteMinderRoomTypeMapping"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Mapping or room type not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Mapping not found
+        "409":
+          description: Another mapping already has this SiteMinder room type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: This SiteMinder room type is already mapped
+    delete:
+      operationId: deleteSiteMinderRoomTypeMapping
+      tags: [SiteMinder]
+      summary: Delete a SiteMinder room type mapping
+      description: Requires MANAGER or above. Imports naming this room type are rejected as unmapped from then on.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Mapping not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Mapping not found
+
 components:
   securitySchemes:
     bearerAuth:
@@ -9049,6 +9294,17 @@ components:
         secret and verified by a separate filter - see the `GuestAccountAuth` tag. A staff
         `bearerAuth` token never satisfies this scheme and vice versa. Required by every
         `GuestAccount`-tagged operation; 401 if missing/invalid/expired.
+    siteMinderIntegrationKey:
+      type: apiKey
+      in: header
+      name: X-Integration-Key
+      description: >
+        Shared secret for the SiteMinder polling script, configured on the server as
+        `SITEMINDER_INTEGRATION_KEY` (unset = the integration is off and every call is 401). Honored
+        on `POST /integrations/siteminder/reservations` only - on any other route it
+        authenticates nothing - and grants no staff role, so the script can't reach anything else
+        with it. A staff `bearerAuth` token on the import route gets 403: imports come from the
+        script, not a person.
 
   responses:
     Unauthorized:
@@ -10871,6 +11127,8 @@ components:
         - occupancyStatus
         - checkedInAt
         - checkedOutAt
+        - externalReference
+        - externalChannel
         - createdAt
         - updatedAt
       properties:
@@ -10915,7 +11173,11 @@ components:
           description: Plain date, same format as `BookingSegment.checkOut`/`CalendarBooking.checkOut` - see this schema's own description.
         totalPrice:
           type: string
-          description: Decimal(10,2) rendered as a string, e.g. `"4500.00"`. Always server-computed, never taken from the request.
+          description: >
+            Decimal(10,2) rendered as a string, e.g. `"4500.00"`. Server-computed from this
+            system's rates, never taken from a staff or public request. The one exception is a
+            booking imported from SiteMinder (`externalReference` set), whose price is the total
+            the guest agreed on the OTA - see `POST /integrations/siteminder/reservations`.
         status:
           $ref: "#/components/schemas/BookingStatus"
         channel:
@@ -10944,6 +11206,17 @@ components:
           type: string
           format: date-time
           nullable: true
+        externalReference:
+          type: string
+          nullable: true
+          description: SiteMinder's booking reference for a booking imported from SiteMinder; null for every other booking.
+        externalChannel:
+          type: string
+          nullable: true
+          description: >
+            For a SiteMinder import, the channel name exactly as SiteMinder showed it - what `channel`
+            was mapped from, and the only record of which OTA an `OTHER` booking came through. Null
+            for every other booking.
         segments:
           type: array
           minItems: 1
@@ -12895,6 +13168,9 @@ components:
         - LEDGER_ENTRY_POSTED
         - LEDGER_ENTRY_REVERSED
         - LEDGER_ACCOUNT_CREATED
+        - SITEMINDER_ROOM_TYPE_MAPPING_CREATED
+        - SITEMINDER_ROOM_TYPE_MAPPING_UPDATED
+        - SITEMINDER_ROOM_TYPE_MAPPING_DELETED
 
     AuditEntityType:
       type: string
@@ -12908,7 +13184,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING]
 
     AuditLogEntry:
       type: object
@@ -12931,7 +13207,8 @@ components:
             The acting user's id at the time of the action. Not guaranteed to still resolve via
             `GET /users/{id}` - see `actorEmail`. For a system-initiated action with no
             authenticated staff principal (e.g. `BookingExpiryService`'s scheduled sweep), this is
-            the fixed literal `"SYSTEM"`, not a real user id - see `actorRole`.
+            the fixed literal `"SYSTEM"`, not a real user id - see `actorRole`. For a change made by
+            the SiteMinder reservation import it is `"SITEMINDER"`.
         actorEmail:
           type: string
           description: >
@@ -12940,7 +13217,8 @@ components:
             may since have had its email changed, or (if account deletion is ever added - today
             accounts are only disabled, never deleted) no longer exist at all, and this row must
             still say who did it. For a system-initiated action (see `actorUserId`), this is the
-            fixed literal `"system@sunsetbeach.internal"`, not a real address.
+            fixed literal `"system@sunsetbeach.internal"`, not a real address (for the SiteMinder
+            import, `"siteminder@sunsetbeach.internal"`).
         actorRole:
           allOf:
             - $ref: "#/components/schemas/Role"
@@ -12948,7 +13226,8 @@ components:
           description: >
             The acting user's role at the time of the action - also a snapshot, for the same
             reason as `actorEmail`. Null only for a system-initiated action with no authenticated
-            staff principal (see `actorUserId`) - never null for anything a real staff member did.
+            staff principal (see `actorUserId` - the scheduled sweeps and the SiteMinder import) -
+            never null for anything a real staff member did.
         action:
           $ref: "#/components/schemas/AuditAction"
         entityType:
@@ -12980,6 +13259,159 @@ components:
         totalCount:
           type: integer
           description: Total number of matching entries across all pages, for rendering pagination controls - not just `items.length`.
+
+    SiteMinderReservationStatus:
+      type: string
+      enum: [BOOKED, MODIFIED, CANCELLED]
+      description: The reservation's status as SiteMinder shows it (Booked / Modified / Cancelled).
+
+    SiteMinderReservationInput:
+      type: object
+      description: >
+        One reservation as read off SiteMinder's reservation list/card, sent by the polling
+        script. No guest email or phone - SiteMinder masks them until trusted-device access is set
+        up; a later enrichment pass will find the booking by `reference` and fill them in on its
+        `Guest` card.
+      required: [reference, status, lastName, checkIn, checkOut, roomTypeName, adults, totalPrice, channel, bookedAt]
+      properties:
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: >
+            SiteMinder's own booking reference - the one shown on both the list and the card view,
+            not the per-OTA reference. The idempotency key.
+        status:
+          $ref: "#/components/schemas/SiteMinderReservationStatus"
+        firstName:
+          type: string
+          maxLength: 120
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        roomTypeName:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: SiteMinder's room type name exactly as displayed, e.g. "Garden Jacuzzi Villa ABF". Must be mapped - see `SiteMinderRoomTypeMapping`.
+        adults:
+          type: integer
+          minimum: 1
+        children:
+          type: integer
+          minimum: 0
+          default: 0
+        infants:
+          type: integer
+          minimum: 0
+          default: 0
+          description: >
+            Accepted but not stored - `Booking` has no infants count, and folding infants into
+            `children` would change the party size every report counts. Named in the creation
+            audit entry so it isn't lost entirely.
+        totalPrice:
+          type: string
+          pattern: '^\d{1,8}(\.\d{1,2})?$'
+          description: SiteMinder's total for the stay as a decimal string in THB, e.g. `"12500.00"`. Becomes the booking's agreed price - see the operation description.
+        currency:
+          type: string
+          description: Optional. If sent, must be `THB` - anything else is rejected, so a price in another currency can't be booked as baht.
+        channel:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: >
+            The channel name as SiteMinder displays it. Mapped to `BookingChannel`: names starting
+            with Booking.com, Expedia, Agoda or Airbnb map to those values; "Direct" and
+            SiteMinder's own booking engine (the hotel's website) map to `DIRECT`; anything else
+            maps to `OTHER`. The raw name is kept as `Booking.externalChannel` either way.
+        bookedAt:
+          type: string
+          format: date-time
+          description: SiteMinder's "Booked on" time, with its UTC offset.
+        modifiedAt:
+          type: string
+          format: date-time
+          description: SiteMinder's "Modified on" time, if shown.
+        cancelledAt:
+          type: string
+          format: date-time
+          description: SiteMinder's "Cancelled on" time, if shown.
+
+    SiteMinderImportAction:
+      type: string
+      enum: [CREATED, UPDATED, CANCELLED, UNCHANGED, SKIPPED]
+      description: >
+        What an import did. `UNCHANGED` - already up to date, nothing written. `SKIPPED` - nothing
+        written on purpose (a stale update, a modification or cancellation of a reservation never
+        imported, or a booking already cancelled in this system); `message` says which.
+
+    SiteMinderImportResult:
+      type: object
+      required: [action, bookingId, changes, warnings, message]
+      properties:
+        action:
+          $ref: "#/components/schemas/SiteMinderImportAction"
+        bookingId:
+          type: string
+          nullable: true
+          description: The booking created or matched. Null only for a `SKIPPED` reservation that was never imported.
+        changes:
+          type: array
+          items:
+            type: string
+          description: What was changed, one entry per change, for the script's log. Empty unless `UPDATED`.
+        warnings:
+          type: array
+          items:
+            type: string
+          description: >
+            Changes applied with a caveat a person should know about - e.g. the assigned room
+            wasn't free for the new dates and was unassigned, or the price of a `PAID` booking
+            changed (which posts nothing to the ledger).
+        message:
+          type: string
+          nullable: true
+          description: Why a reservation was `SKIPPED`. Null otherwise.
+
+    SiteMinderRoomTypeMapping:
+      type: object
+      required: [id, siteMinderRoomType, roomId, roomName, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        siteMinderRoomType:
+          type: string
+        roomId:
+          type: string
+        roomName:
+          type: string
+          description: The mapped room type's current name, for display.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SiteMinderRoomTypeMappingInput:
+      type: object
+      required: [siteMinderRoomType, roomId]
+      properties:
+        siteMinderRoomType:
+          type: string
+          minLength: 1
+          maxLength: 200
+        roomId:
+          type: string
+          minLength: 1
 
     StaffArea:
       type: string

@@ -10,6 +10,7 @@ import com.sunsetbeach.model.AuditLogEntry;
 import com.sunsetbeach.model.AuditLogPage;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.AuditLogRepository;
+import com.sunsetbeach.security.IntegrationPrincipal;
 import com.sunsetbeach.security.StaffPrincipal;
 import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDate;
@@ -96,6 +97,14 @@ import org.springframework.transaction.annotation.Transactional;
  * authorization hierarchy and user-creation UI, and a sentinel there would need excluding from
  * every exhaustive switch/dropdown over it. A null {@code actorRole} is reserved for this path
  * only; nothing a real staff member does should ever produce one.
+ *
+ * <h2>Integrations</h2>
+ * A request authenticated as an {@link IntegrationPrincipal} (the SiteMinder import - see
+ * {@code IntegrationKeyAuthFilter}) goes through the ordinary {@link #record}, which writes that
+ * principal's own fixed actor ({@code "SITEMINDER"} / {@code "siteminder@sunsetbeach.internal"},
+ * null role - it isn't staff either). This is what lets the import reuse the staff booking paths
+ * unchanged: {@code BookingService#updateStatus} cancelling an imported booking writes the same
+ * {@code BOOKING_STATUS_CHANGED} row it writes for a person, attributed to SiteMinder.
  */
 @Service
 public class AuditLogService {
@@ -116,7 +125,12 @@ public class AuditLogService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(AuditAction action, AuditEntityType entityType, String entityId, String summary) {
         try {
-            StaffPrincipal actor = (StaffPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+            if (principal instanceof IntegrationPrincipal integration) {
+                persist(integration.auditActorId(), integration.auditActorEmail(), null, action, entityType, entityId, summary);
+                return;
+            }
+            StaffPrincipal actor = (StaffPrincipal) principal;
             persist(actor.id(), actor.email(), actor.role(), action, entityType, entityId, summary);
         } catch (Exception e) {
             log.error(

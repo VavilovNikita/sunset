@@ -2,6 +2,7 @@ package com.sunsetbeach.security;
 
 import com.sunsetbeach.repository.GuestAccountRepository;
 import com.sunsetbeach.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -37,7 +38,8 @@ public class SecurityConfig {
             GuestJwtService guestJwtService,
             GuestAccountRepository guestAccountRepository,
             RestAuthEntryPoint authEntryPoint,
-            RestAccessDeniedHandler accessDeniedHandler) throws Exception {
+            RestAccessDeniedHandler accessDeniedHandler,
+            @Value("${app.integrations.siteminder.api-key:}") String siteMinderIntegrationKey) throws Exception {
         http
                 .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
@@ -379,6 +381,13 @@ public class SecurityConfig {
                         .requestMatchers("/staff-area-coverage-rules", "/staff-area-coverage-rules/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/attendance", "/attendance/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/employee-pay-rates", "/employee-pay-rates/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // SiteMinder import: the polling script's own credential only (see
+                        // IntegrationKeyAuthFilter) - hasAuthority, not hasRole, so no staff role
+                        // reaches it through the hierarchy. The mapping table it reads is room-type
+                        // configuration, MANAGER+ like /rooms/** writes.
+                        .requestMatchers(HttpMethod.POST, "/integrations/siteminder/reservations").hasAuthority(IntegrationPrincipal.SITEMINDER_AUTHORITY)
+                        .requestMatchers("/integrations/siteminder/room-type-mappings", "/integrations/siteminder/room-type-mappings/*")
+                                .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // GET /auth/me is the one endpoint outside all the tag groups above - any
                         // valid JWT, no role check (it just echoes back who the token belongs to).
                         .requestMatchers(HttpMethod.GET, "/auth/me").authenticated()
@@ -395,7 +404,9 @@ public class SecurityConfig {
                 // Same position as JwtAuthFilter, not before/after it - the two verify against
                 // different secrets and populate the same SecurityContext independently, so
                 // there's no ordering dependency between them (see this filter's own javadoc).
-                .addFilterBefore(new GuestJwtAuthFilter(guestJwtService, guestAccountRepository), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new GuestJwtAuthFilter(guestJwtService, guestAccountRepository), UsernamePasswordAuthenticationFilter.class)
+                // Also independent of the two JWT filters: it only ever acts on the one import path.
+                .addFilterBefore(new IntegrationKeyAuthFilter(siteMinderIntegrationKey), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

@@ -90,7 +90,7 @@ public class AuditLogEntry {
   }
 
   /**
-   * The acting user's id at the time of the action. Not guaranteed to still resolve via `GET /users/{id}` - see `actorEmail`. For a system-initiated action with no authenticated staff principal (e.g. `BookingExpiryService`'s scheduled sweep), this is the fixed literal `\"SYSTEM\"`, not a real user id - see `actorRole`. 
+   * The acting user's id at the time of the action. Not guaranteed to still resolve via `GET /users/{id}` - see `actorEmail`. For a system-initiated action with no authenticated staff principal (e.g. `BookingExpiryService`'s scheduled sweep), this is the fixed literal `\"SYSTEM\"`, not a real user id - see `actorRole`. For a change made by the SiteMinder reservation import it is `\"SITEMINDER\"`. 
    * @return actorUserId
    */
   @NotNull 
@@ -109,7 +109,7 @@ public class AuditLogEntry {
   }
 
   /**
-   * The acting user's email *as it was at the time of the action* - a snapshot, not a live join to the current `User` row. This is deliberate: the acting user's account may since have had its email changed, or (if account deletion is ever added - today accounts are only disabled, never deleted) no longer exist at all, and this row must still say who did it. For a system-initiated action (see `actorUserId`), this is the fixed literal `\"system@sunsetbeach.internal\"`, not a real address. 
+   * The acting user's email *as it was at the time of the action* - a snapshot, not a live join to the current `User` row. This is deliberate: the acting user's account may since have had its email changed, or (if account deletion is ever added - today accounts are only disabled, never deleted) no longer exist at all, and this row must still say who did it. For a system-initiated action (see `actorUserId`), this is the fixed literal `\"system@sunsetbeach.internal\"`, not a real address (for the SiteMinder import, `\"siteminder@sunsetbeach.internal\"`). 
    * @return actorEmail
    */
   @NotNull 
@@ -128,7 +128,7 @@ public class AuditLogEntry {
   }
 
   /**
-   * The acting user's role at the time of the action - also a snapshot, for the same reason as `actorEmail`. Null only for a system-initiated action with no authenticated staff principal (see `actorUserId`) - never null for anything a real staff member did. 
+   * The acting user's role at the time of the action - also a snapshot, for the same reason as `actorEmail`. Null only for a system-initiated action with no authenticated staff principal (see `actorUserId` - the scheduled sweeps and the SiteMinder import) - never null for anything a real staff member did. 
    * @return actorRole
    */
   @Valid 

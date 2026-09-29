@@ -9,6 +9,7 @@ import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.GuestAccountRepository;
 import com.sunsetbeach.repository.GuestRepository;
+import com.sunsetbeach.security.IntegrationPrincipal;
 import com.sunsetbeach.security.StaffPrincipal;
 import java.util.List;
 import java.util.Locale;
@@ -72,6 +73,31 @@ public class GuestLinkService {
     }
 
     /**
+     * The SiteMinder import's guest card: always a new card, named after the booking, with no
+     * email or phone (SiteMinder doesn't give us any yet), linked to that booking. Never a lookup
+     * by name - a name identifies nobody, and linking to the wrong existing card would show this
+     * stay in that person's own guest account ({@code GET /guest/bookings}). The cost is duplicate
+     * cards for repeat guests until contacts are available; staff can relink by hand. A later
+     * enrichment pass reaches this card through the booking's {@code externalReference} and fills
+     * in email/phone - both columns are nullable, so that's a plain update. Same after-commit,
+     * never-breaks-the-booking contract as {@link #linkNewBooking}.
+     */
+    @Transactional
+    public GuestEntity createNameOnlyCardForBooking(String bookingId) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        if (booking.getGuestId() != null) {
+            return guestRepository.findById(booking.getGuestId()).orElse(null);
+        }
+        GuestEntity guest = new GuestEntity();
+        guest.setName(booking.getGuestName().trim());
+        GuestEntity saved = guestRepository.saveAndFlush(guest);
+        recordCreated(saved);
+        booking.setGuestId(saved.getId());
+        bookingRepository.saveAndFlush(booking);
+        return saved;
+    }
+
+    /**
      * Links an account to its Guest card if it isn't linked yet. Joins the caller's transaction,
      * so the link is atomic with the registration/verification that triggered it.
      *
@@ -127,7 +153,8 @@ public class GuestLinkService {
     private void recordCreated(GuestEntity guest) {
         String summary = "Guest " + guest.getName() + " created automatically";
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof StaffPrincipal) {
+        if (authentication != null
+                && (authentication.getPrincipal() instanceof StaffPrincipal || authentication.getPrincipal() instanceof IntegrationPrincipal)) {
             auditLogService.record(AuditAction.GUEST_CREATED, AuditEntityType.GUEST, guest.getId(), summary);
         } else {
             auditLogService.recordSystemAction(AuditAction.GUEST_CREATED, AuditEntityType.GUEST, guest.getId(), summary);

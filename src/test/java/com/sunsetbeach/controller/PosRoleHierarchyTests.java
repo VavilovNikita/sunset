@@ -1825,6 +1825,8 @@ class PosRoleHierarchyTests {
                 OccupancyStatus.EXPECTED,
                 null,
                 null,
+                null,
+                null,
                 List.of(sampleBookingSegment()),
                 OffsetDateTime.now(),
                 OffsetDateTime.now());

@@ -80,6 +80,10 @@ public class Booking {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private JsonNullable<OffsetDateTime> checkedOutAt = JsonNullable.<OffsetDateTime>undefined();
 
+  private JsonNullable<String> externalReference = JsonNullable.<String>undefined();
+
+  private JsonNullable<String> externalChannel = JsonNullable.<String>undefined();
+
   @Valid
   private List<@Valid BookingSegment> segments = new ArrayList<>();
 
@@ -96,7 +100,7 @@ public class Booking {
   /**
    * Constructor with only required parameters
    */
-  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String guestId, Guest guest, String checkIn, String checkOut, String totalPrice, BookingStatus status, BookingChannel channel, BookingPurpose purpose, Integer adults, Integer children, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String guestId, Guest guest, String checkIn, String checkOut, String totalPrice, BookingStatus status, BookingChannel channel, BookingPurpose purpose, Integer adults, Integer children, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, String externalReference, String externalChannel, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.roomId = roomId;
     this.room = room;
@@ -119,6 +123,8 @@ public class Booking {
     this.occupancyStatus = occupancyStatus;
     this.checkedInAt = JsonNullable.of(checkedInAt);
     this.checkedOutAt = JsonNullable.of(checkedOutAt);
+    this.externalReference = JsonNullable.of(externalReference);
+    this.externalChannel = JsonNullable.of(externalChannel);
     this.segments = segments;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
@@ -358,7 +364,7 @@ public class Booking {
   }
 
   /**
-   * Decimal(10,2) rendered as a string, e.g. `\"4500.00\"`. Always server-computed, never taken from the request.
+   * Decimal(10,2) rendered as a string, e.g. `\"4500.00\"`. Server-computed from this system's rates, never taken from a staff or public request. The one exception is a booking imported from SiteMinder (`externalReference` set), whose price is the total the guest agreed on the OTA - see `POST /integrations/siteminder/reservations`. 
    * @return totalPrice
    */
   @NotNull 
@@ -542,6 +548,44 @@ public class Booking {
     this.checkedOutAt = checkedOutAt;
   }
 
+  public Booking externalReference(String externalReference) {
+    this.externalReference = JsonNullable.of(externalReference);
+    return this;
+  }
+
+  /**
+   * SiteMinder's booking reference for a booking imported from SiteMinder; null for every other booking.
+   * @return externalReference
+   */
+  @NotNull 
+  @JsonProperty("externalReference")
+  public JsonNullable<String> getExternalReference() {
+    return externalReference;
+  }
+
+  public void setExternalReference(JsonNullable<String> externalReference) {
+    this.externalReference = externalReference;
+  }
+
+  public Booking externalChannel(String externalChannel) {
+    this.externalChannel = JsonNullable.of(externalChannel);
+    return this;
+  }
+
+  /**
+   * For a SiteMinder import, the channel name exactly as SiteMinder showed it - what `channel` was mapped from, and the only record of which OTA an `OTHER` booking came through. Null for every other booking. 
+   * @return externalChannel
+   */
+  @NotNull 
+  @JsonProperty("externalChannel")
+  public JsonNullable<String> getExternalChannel() {
+    return externalChannel;
+  }
+
+  public void setExternalChannel(JsonNullable<String> externalChannel) {
+    this.externalChannel = externalChannel;
+  }
+
   public Booking segments(List<@Valid BookingSegment> segments) {
     this.segments = segments;
     return this;
@@ -638,6 +682,8 @@ public class Booking {
         Objects.equals(this.occupancyStatus, booking.occupancyStatus) &&
         Objects.equals(this.checkedInAt, booking.checkedInAt) &&
         Objects.equals(this.checkedOutAt, booking.checkedOutAt) &&
+        Objects.equals(this.externalReference, booking.externalReference) &&
+        Objects.equals(this.externalChannel, booking.externalChannel) &&
         Objects.equals(this.segments, booking.segments) &&
         Objects.equals(this.createdAt, booking.createdAt) &&
         Objects.equals(this.updatedAt, booking.updatedAt);
@@ -645,7 +691,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, segments, createdAt, updatedAt);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, segments, createdAt, updatedAt);
   }
 
   @Override
@@ -674,6 +720,8 @@ public class Booking {
     sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
     sb.append("    checkedInAt: ").append(toIndentedString(checkedInAt)).append("\n");
     sb.append("    checkedOutAt: ").append(toIndentedString(checkedOutAt)).append("\n");
+    sb.append("    externalReference: ").append(toIndentedString(externalReference)).append("\n");
+    sb.append("    externalChannel: ").append(toIndentedString(externalChannel)).append("\n");
     sb.append("    segments: ").append(toIndentedString(segments)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");

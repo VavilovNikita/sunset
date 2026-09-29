@@ -22,7 +22,9 @@ import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -213,6 +215,87 @@ public class BookingWriter {
         BookingEntity saved = bookingRepository.saveAndFlush(entity);
         saveSegment(saved.getId(), room.getId(), assignedUnitId, checkIn, checkOut, nightlyPrices);
         return saved;
+    }
+
+    /**
+     * SiteMinder-import counterpart of {@link #insertStaff} - same availability check in the same
+     * SERIALIZABLE transaction, but the nights are frozen at {@code agreedTotal} (the price the
+     * guest already agreed on the OTA, spread by {@link #spreadEvenly}) instead of this system's
+     * current rates. This is the one insert that takes a price from outside: see
+     * {@code SiteMinderImportService}'s class javadoc for why. {@code (source, externalReference)}
+     * is unique (V123), so two concurrent imports of the same new reservation can't both land -
+     * the loser fails here with a unique violation or a serialization failure.
+     */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public BookingEntity insertExternal(
+            RoomEntity room,
+            String guestName,
+            LocalDate checkIn,
+            LocalDate checkOut,
+            BookingChannel channel,
+            int adults,
+            int children,
+            BigDecimal agreedTotal,
+            String externalReference,
+            String externalChannel,
+            LocalDateTime externalModifiedAt) {
+        int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
+        if (!isRangeAvailable(room.getId(), unitCount, checkIn, checkOut, null)) {
+            throw new ConflictException("Selected dates are no longer available");
+        }
+        Map<LocalDate, BigDecimal> nightlyPrices = spreadEvenly(agreedTotal, DateRangeUtil.getNights(checkIn, checkOut));
+        BookingEntity entity = newBookingEntity(
+                room, guestName, null, null, checkIn, checkOut, BookingSource.SITEMINDER, channel, BookingPurpose.STANDARD, adults, children,
+                sumPrices(nightlyPrices));
+        entity.setStatus(BookingStatus.CONFIRMED);
+        entity.setExternalReference(externalReference);
+        entity.setExternalChannel(externalChannel);
+        entity.setExternalModifiedAt(externalModifiedAt);
+        BookingEntity saved = bookingRepository.saveAndFlush(entity);
+        saveSegment(saved.getId(), room.getId(), null, checkIn, checkOut, nightlyPrices);
+        return saved;
+    }
+
+    /**
+     * Replaces every night's frozen price on a single-segment booking with {@code agreedTotal}
+     * spread evenly - the SiteMinder import applying a total the guest re-agreed on the OTA. Not
+     * a general reprice: unlike {@link #reprice} it rewrites past nights too, because the new
+     * total is for the whole stay, not for what's left of it. Refuses a booking split by a
+     * relocation, where there is no honest way to say which leg the change belongs to.
+     */
+    @Transactional
+    public BookingEntity applyAgreedTotal(String bookingId, BigDecimal agreedTotal) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        BookingSegmentEntity segment = requireSoleSegment(bookingId);
+        Map<LocalDate, BigDecimal> prices = spreadEvenly(agreedTotal, DateRangeUtil.getNights(segment.getCheckIn(), segment.getCheckOut()));
+        // Every row for the segment, including any left outside its range by an earlier
+        // relocation that was since undone - none of them is the agreed price any more. Flushed
+        // before the insert for the same unique (segmentId, date) reason as reprice.
+        nightlyRateRepository.deleteAll(nightlyRateRepository.findBySegmentIdOrderByDateAsc(segment.getId()));
+        nightlyRateRepository.flush();
+        saveNightlyRates(segment.getId(), prices);
+        segment.setTotalPrice(sumPrices(prices));
+        segmentRepository.saveAndFlush(segment);
+        syncBookingFromSegments(booking, List.of(segment));
+        return bookingRepository.saveAndFlush(booking);
+    }
+
+    /**
+     * {@code total} split over {@code nights}: each night gets the total divided evenly, rounded
+     * down to the satang, and the last night also takes the rounding remainder - so the nights
+     * always sum to exactly {@code total}.
+     */
+    static Map<LocalDate, BigDecimal> spreadEvenly(BigDecimal total, List<LocalDate> nights) {
+        if (nights.isEmpty()) {
+            throw new BadRequestException("A stay needs at least one night");
+        }
+        BigDecimal perNight = total.divide(BigDecimal.valueOf(nights.size()), 2, RoundingMode.DOWN);
+        BigDecimal remainder = total.subtract(perNight.multiply(BigDecimal.valueOf(nights.size())));
+        Map<LocalDate, BigDecimal> prices = new LinkedHashMap<>();
+        for (int i = 0; i < nights.size(); i++) {
+            prices.put(nights.get(i), i == nights.size() - 1 ? perNight.add(remainder) : perNight);
+        }
+        return prices;
     }
 
     private BookingEntity newBookingEntity(

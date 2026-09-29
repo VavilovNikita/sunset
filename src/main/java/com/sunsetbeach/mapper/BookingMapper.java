@@ -99,6 +99,8 @@ public class BookingMapper {
                 entity.getOccupancyStatus(),
                 entity.getCheckedInAt() != null ? TimestampFormat.toUtc(entity.getCheckedInAt()) : null,
                 entity.getCheckedOutAt() != null ? TimestampFormat.toUtc(entity.getCheckedOutAt()) : null,
+                entity.getExternalReference(),
+                entity.getExternalChannel(),
                 sorted.stream()
                         .map(s -> segmentMapper.toDto(
                                 s, roomsById.get(s.getRoomId()), s.getRoomUnitId() != null ? roomUnitsById.get(s.getRoomUnitId()) : null))

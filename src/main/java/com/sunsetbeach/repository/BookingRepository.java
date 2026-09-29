@@ -122,4 +122,7 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from BookingEntity b where b.id = :id")
     Optional<BookingEntity> findByIdForUpdate(@Param("id") String id);
+
+    /** The SiteMinder import's idempotency lookup - backed by V123's unique (source, externalReference) index. */
+    Optional<BookingEntity> findBySourceAndExternalReference(BookingSource source, String externalReference);
 }

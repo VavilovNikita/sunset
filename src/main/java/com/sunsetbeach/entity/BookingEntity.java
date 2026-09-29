@@ -104,6 +104,14 @@ public class BookingEntity {
 
     private LocalDateTime checkedOutAt;
 
+    // SiteMinder import only (source = SITEMINDER) - see V123__siteminder_import.sql.
+    private String externalReference;
+
+    private String externalChannel;
+
+    // UTC, like @CreationTimestamp - SiteMinder's own last-changed time, for skipping stale imports.
+    private LocalDateTime externalModifiedAt;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -288,6 +296,30 @@ public class BookingEntity {
 
     public void setCheckedOutAt(LocalDateTime checkedOutAt) {
         this.checkedOutAt = checkedOutAt;
+    }
+
+    public String getExternalReference() {
+        return externalReference;
+    }
+
+    public void setExternalReference(String externalReference) {
+        this.externalReference = externalReference;
+    }
+
+    public String getExternalChannel() {
+        return externalChannel;
+    }
+
+    public void setExternalChannel(String externalChannel) {
+        this.externalChannel = externalChannel;
+    }
+
+    public LocalDateTime getExternalModifiedAt() {
+        return externalModifiedAt;
+    }
+
+    public void setExternalModifiedAt(LocalDateTime externalModifiedAt) {
+        this.externalModifiedAt = externalModifiedAt;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -34,6 +34,8 @@ Some migrations are destructive (dropped columns, deleted rows) — V4 and V11 a
 
 **The server computes every amount. A client-supplied price or total is never trusted, ever.** This holds for room rates, order totals, payments, and folio balances.
 
+The one deliberate exception is a booking imported from SiteMinder (see its own section below): its price is SiteMinder's total, because the guest already agreed it on the OTA. It is still frozen per night like any other agreed price, and only `BookingWriter#insertExternal`/`#applyAgreedTotal` accept it. Don't widen this to any staff or public request.
+
 **Agreed prices are frozen per night** (`BookingSegmentNightlyRate`). Extending a stay prices only the new nights; already-agreed nights keep their original rate. Repricing an existing night happens only through the explicit reprice action, and only for nights from today forward. This exists because the system used to recompute the whole stay from current rates, so extending a booking by one night silently repriced the entire stay.
 
 Undoing a relocation restores the preserved original rates. It is not a new agreement.
@@ -43,6 +45,18 @@ Undoing a relocation restores the preserved original rates. It is not a new agre
 **Double-entry, immutable, no backfill.** `LedgerService` is the only writer of `JournalEntry`/`JournalLine` (V120) and refuses any entry whose debits and credits differ. Posted entries are never edited or deleted; a mistake is corrected by a reversing entry (`reversesEntryId`, unique, so at most once). Only activity from V120 forward is in the ledger - Z120 (trial balance) won't reconcile with Z410/occupancy for earlier periods, and that is expected.
 
 **Automatic postings run inside the business operation's own transaction - the one exception to "accompanying writes never break the operation" below.** A close or settlement the ledger silently missed leaves a trial balance that still balances but no longer matches reality, which is worse than the operation failing. The hooks: `BookingService#updateStatus` (into `PAID` posts the room settlement at `totalPrice`, out of `PAID` mirrors every unreversed settlement; the booking row is locked `FOR UPDATE` so two concurrent "mark PAID" requests can't both post - `LedgerBookingSettlementRaceTests`), `OrderService#close` (Dr Cash, or Guest Ledger for `ROOM_CHARGE`), `BookingService#recordFolioPayment` (Dr Cash, Cr Guest Ledger). `PAID` is the only record this system has of the room being collected, so a price change on an already-`PAID` booking posts nothing - same gap `PAID` has everywhere else. POS revenue splits FNB/SPA via `RevenueClassification`, shared with Z410 so the two can't drift.
+
+## SiteMinder import
+
+One-way, SiteMinder → us: our own polling script (not in this repo) scrapes SiteMinder's reservation screens and posts each reservation to `POST /integrations/siteminder/reservations`. `SiteMinderImportService` decides whether that's a create, an update, a cancel, or nothing. Nothing is ever pushed back.
+
+- **Idempotency key:** `Booking.source = SITEMINDER` plus `Booking.externalReference` (SiteMinder's own reference), unique together (V123). There's no separate `externalSource` column, because `source` already says how a booking got in.
+- **It reuses the staff paths and doesn't write around them.** A date change goes through `BookingService#updateSchedule`; a party-size change and a cancellation go through `BookingService#updateStatus`. So a SiteMinder cancellation releases the room, reverses a `PAID` booking's ledger settlement, and is counted by the manager report, exactly like a staff one. Creation is `BookingWriter#insertExternal`, which runs the same availability check. No availability means 409; an overbooking is resolved by a person.
+- **Auth:** the first system-to-system caller this API has. `IntegrationKeyAuthFilter` checks `X-Integration-Key` against `SITEMINDER_INTEGRATION_KEY` (unset means off). It only acts on the import path and grants `INTEGRATION_SITEMINDER`, never a `ROLE_`. That path-scoping is what stops the key from satisfying the `authenticated()` rules on other routes, so keep it.
+- **Audit:** `AuditLogService.record` writes an `IntegrationPrincipal` as actor `SITEMINDER` with a null role. The reused staff paths therefore audit themselves, and there are no SiteMinder-specific booking actions.
+- **Guests are never matched by name.** Every new reservation gets a new name-only `Guest` card (`GuestLinkService#createNameOnlyCardForBooking`). A wrong name match would show the stay in a stranger's guest account. Contacts will come later through a separate enrichment pass keyed on `externalReference`.
+- **Room type names** go through `SiteMinderRoomTypeMapping` (MANAGER+ CRUD, case- and space-insensitive). An unmapped name is a 400 on `roomTypeName`, never a guess. A room-type change on an existing reservation is a 409, because no path changes a whole stay's type.
+- **An already-cancelled booking is never written to again** by a re-poll. The manager report dates cancellations by `updatedAt`, so even a timestamp touch would move the cancellation to another day.
 
 ## Spa billing
 
@@ -106,6 +120,8 @@ Hierarchy: `ADMIN > MANAGER > CASHIER > WAITER`. `/users/**` is `ADMIN` only and
 **If a role may perform an action, it must be able to read the data that action requires.** This asymmetry has been introduced and fixed three times — a cashier allowed to assign a room but not to list rooms, and so on.
 
 **Job functions are a second, independent authorization axis — not a fifth role.** `JobFunction` (`User.jobFunctions`, a set — see the Migrations section for why it's `TEXT[]`, not a native enum array) marks what a person can be assigned as (ENGINEER, HOUSEKEEPER, THERAPIST), not how much they can authorize. A role is one value on a strict ladder where each tier inherits everything below it; a function is a set a user can hold none, one, or several of, unrelated to seniority — a WAITER can also hold ENGINEER without that granting anything role-hierarchy-wide, and conversely a MANAGER can stand in for an engineer-gated action without ever holding the function (`SecurityConfig#engineerOrManagerPlus`). Folding a function into the role ladder would either grant privilege it shouldn't (inheriting up the hierarchy along with it) or force one skill per role tier, neither of which matches how a small hotel actually staffs. `JwtAuthFilter` grants each held function as its own `FUNCTION_<NAME>` authority; gate a path on one with `hasAuthority("FUNCTION_...")`, never `hasRole()`/`hasAnyRole()`, which would route it through the hierarchy and let it inherit along the role ladder. Most functions gate nothing at all today — THERAPIST and HOUSEKEEPER are pure domain-eligibility tags (who can be assigned as a spa therapist; nothing about permission) — ENGINEER is the one exception so far, and even there a MANAGER is an explicit fallback, not an implied one.
+
+**A machine caller authenticates with its own scoped credential, never a staff login** — see `IntegrationKeyAuthFilter` (SiteMinder import section above).
 
 Tokens carry a version. Changing a role, resetting a password, or disabling an account invalidates existing tokens immediately; `JwtAuthFilter` re-reads the user on every request. This is deliberate: without it a departing employee keeps access for a week.
 
