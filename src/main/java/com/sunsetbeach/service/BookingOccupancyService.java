@@ -26,8 +26,10 @@ import com.sunsetbeach.repository.GuestRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,6 +64,7 @@ public class BookingOccupancyService {
     private final BookingMapper bookingMapper;
     private final BookingService bookingService;
     private final AuditLogService auditLogService;
+    private final Clock clock;
 
     public BookingOccupancyService(
             BookingRepository bookingRepository,
@@ -71,7 +74,8 @@ public class BookingOccupancyService {
             GuestRepository guestRepository,
             BookingMapper bookingMapper,
             BookingService bookingService,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            Clock clock) {
         this.bookingRepository = bookingRepository;
         this.segmentRepository = segmentRepository;
         this.roomRepository = roomRepository;
@@ -80,6 +84,7 @@ public class BookingOccupancyService {
         this.bookingMapper = bookingMapper;
         this.bookingService = bookingService;
         this.auditLogService = auditLogService;
+        this.clock = clock;
     }
 
     /**
@@ -107,7 +112,7 @@ public class BookingOccupancyService {
         boolean wasDirty = unit.getHousekeepingStatus() == HousekeepingStatus.DIRTY;
 
         booking.setOccupancyStatus(OccupancyStatus.CHECKED_IN);
-        booking.setCheckedInAt(LocalDateTime.now());
+        booking.setCheckedInAt(nowUtc());
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
 
         auditLogService.record(
@@ -134,7 +139,7 @@ public class BookingOccupancyService {
         }
 
         booking.setOccupancyStatus(OccupancyStatus.CHECKED_OUT);
-        booking.setCheckedOutAt(LocalDateTime.now());
+        booking.setCheckedOutAt(nowUtc());
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
 
         String roomLabel = null;
@@ -202,6 +207,18 @@ public class BookingOccupancyService {
                 .map(this::toEntry)
                 .toList();
         return new TodayBoard(arriving, departing, inHouse);
+    }
+
+    /**
+     * {@code checkedInAt}/{@code checkedOutAt} are UTC wall-clock, like the {@code
+     * @CreationTimestamp}/{@code @UpdateTimestamp} columns beside them: {@code BookingMapper} labels
+     * them {@code Z} via {@code TimestampFormat.toUtc}, and {@code ReportService}'s in-house test
+     * compares {@code checkedOutAt} against {@link ReportDateRange}'s UTC bounds. The shared clock is
+     * Bangkok-zoned, so {@code LocalDateTime.now(clock)} would store the hotel's wall-clock, seven
+     * hours ahead of what every reader assumes - take the clock's instant, rendered in UTC.
+     */
+    private LocalDateTime nowUtc() {
+        return LocalDateTime.now(clock.withZone(ZoneOffset.UTC));
     }
 
     private TodayBoardEntry toEntry(BookingEntity entity) {

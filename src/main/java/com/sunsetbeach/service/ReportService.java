@@ -495,9 +495,9 @@ public class ReportService {
     /**
      * {@code CHECKED_IN}, or {@code CHECKED_OUT} on a later day than the night (only possible
      * for a past night) - so a past night's list still shows who was here then. {@code
-     * checkedOutAt} is a JVM-clock stamp, compared as UTC wall-clock like every
-     * {@code @CreationTimestamp} in {@link ReportDateRange}; check-out is its only writer and
-     * always sets it.
+     * checkedOutAt} is the shared clock's instant as UTC wall-clock ({@code
+     * BookingOccupancyService#nowUtc}), compared like every {@code @CreationTimestamp} in {@link
+     * ReportDateRange}; check-out is its only writer and always sets it.
      */
     private static boolean wasInHouse(BookingEntity booking, LocalDateTime nextMorningUtc) {
         return switch (booking.getOccupancyStatus()) {
