@@ -8,18 +8,31 @@ import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.RoomEntity;
+import com.sunsetbeach.entity.RoomUnitBlockEntity;
+import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.GuestLtvReport;
 import com.sunsetbeach.model.GuestLtvRow;
+import com.sunsetbeach.model.InHouseReport;
+import com.sunsetbeach.model.InHouseRow;
+import com.sunsetbeach.model.InHouseTotal;
+import com.sunsetbeach.model.ManagerAccountCount;
+import com.sunsetbeach.model.ManagerForecast;
+import com.sunsetbeach.model.ManagerGuestStatistic;
+import com.sunsetbeach.model.ManagerReport;
+import com.sunsetbeach.model.ManagerReportDay;
+import com.sunsetbeach.model.ManagerRevenue;
+import com.sunsetbeach.model.ManagerRoomStatistic;
 import com.sunsetbeach.model.MarketSegment;
 import com.sunsetbeach.model.MarketSegmentReport;
 import com.sunsetbeach.model.MarketSegmentRow;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.OccupancyReportRow;
+import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.PosSalesMixCategory;
@@ -36,12 +49,14 @@ import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.OrderRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.RoomRepository;
+import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -51,6 +66,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -60,7 +76,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The read-only dashboard reports under {@code /reports}: occupancy/ADR/RevPAR, top production,
- * market segment, POS sales mix, and guest lifetime value. Each operation's own openapi.yaml description is the contract;
+ * market segment, POS sales mix, guest lifetime value, the in-house list and the manager report. Each operation's own openapi.yaml description is the contract;
  * notes here are only about how the numbers are computed.
  *
  * <p>Money is summed unrounded and rounded to two decimals ({@link RoundingMode#HALF_UP}) exactly
@@ -77,6 +93,7 @@ public class ReportService {
     private final BookingSegmentRepository segmentRepository;
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
+    private final RoomUnitBlockRepository blockRepository;
     private final PaymentRepository paymentRepository;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -89,6 +106,7 @@ public class ReportService {
             BookingSegmentRepository segmentRepository,
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
+            RoomUnitBlockRepository blockRepository,
             PaymentRepository paymentRepository,
             OrderRepository orderRepository,
             OrderItemRepository orderItemRepository,
@@ -99,6 +117,7 @@ public class ReportService {
         this.segmentRepository = segmentRepository;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
+        this.blockRepository = blockRepository;
         this.paymentRepository = paymentRepository;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
@@ -419,6 +438,216 @@ public class ReportService {
         }
     }
 
+    // --- GET /reports/in-house ----------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    public InHouseReport inHouse(String date) {
+        LocalDate night = ReportDateRange.parseDateOrToday(date, clock);
+        ReportDateRange range = ReportDateRange.night(night);
+        List<SegmentInRange> slices = segmentsInRange(range);
+        List<InHouseStay> stays = inHouseStays(range, slices, bookingsOf(slices));
+
+        Map<String, String> roomNames = roomRepository.findAllById(stays.stream().map(s -> s.segment().getRoomId()).distinct().toList())
+                .stream().collect(Collectors.toMap(RoomEntity::getId, RoomEntity::getName));
+        Map<String, String> unitLabels = roomUnitRepository.findAllById(
+                        stays.stream().map(s -> s.segment().getRoomUnitId()).filter(Objects::nonNull).distinct().toList())
+                .stream().collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
+
+        List<InHouseRow> rows = stays.stream()
+                .map(s -> new InHouseRow(
+                        s.booking().getId(),
+                        roomNames.get(s.segment().getRoomId()),
+                        unitLabels.get(s.segment().getRoomUnitId()),
+                        s.booking().getAdults(),
+                        s.booking().getChildren(),
+                        s.booking().getGuestName(),
+                        marketSegmentOf(s.booking()),
+                        s.booking().getCheckIn().toString(),
+                        s.booking().getCheckOut().toString()))
+                .sorted(Comparator.comparing((InHouseRow r) -> r.getRoomUnitLabel().orElse(null), Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
+                        .thenComparing(InHouseRow::getRoomName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+        InHouseTally total = InHouseTally.of(stays);
+        return new InHouseReport(night.toString(), rows, new InHouseTotal(total.roomsInt(), total.adultsInt(), total.childrenInt()));
+    }
+
+    /** One in-house room for a night: that night's slice of a segment, and its booking. */
+    private record InHouseStay(SegmentInRange slice, BookingEntity booking) {
+        BookingSegmentEntity segment() {
+            return slice.segment();
+        }
+    }
+
+    /**
+     * The one-night occupancy population narrowed to guests physically present that night.
+     * {@code BookingWriter#assertContinuity} keeps a booking's segments from overlapping, so each
+     * booking contributes at most one slice - one room - to a single night: a booking's
+     * {@code adults}/{@code children} never need splitting across rooms.
+     */
+    private List<InHouseStay> inHouseStays(ReportDateRange night, List<SegmentInRange> slices, Map<String, BookingEntity> bookings) {
+        LocalDateTime nextMorningUtc = night.endUtcExclusive(clock.getZone());
+        return slices.stream()
+                .map(slice -> new InHouseStay(slice, bookings.get(slice.segment().getBookingId())))
+                .filter(stay -> wasInHouse(stay.booking(), nextMorningUtc))
+                .toList();
+    }
+
+    /**
+     * {@code CHECKED_IN}, or {@code CHECKED_OUT} on a later day than the night (only possible
+     * for a past night) - so a past night's list still shows who was here then. {@code
+     * checkedOutAt} is a JVM-clock stamp, compared as UTC wall-clock like every
+     * {@code @CreationTimestamp} in {@link ReportDateRange}; check-out is its only writer and
+     * always sets it.
+     */
+    private static boolean wasInHouse(BookingEntity booking, LocalDateTime nextMorningUtc) {
+        return switch (booking.getOccupancyStatus()) {
+            case CHECKED_IN -> true;
+            case CHECKED_OUT -> booking.getCheckedOutAt() != null && !booking.getCheckedOutAt().isBefore(nextMorningUtc);
+            case EXPECTED, NO_SHOW -> false;
+        };
+    }
+
+    /** The in-house list's totals - the manager report's guest statistic reads the same tally. */
+    private static final class InHouseTally {
+        long rooms;
+        long adults;
+        long children;
+        long complimentaryGuests;
+        long houseUseGuests;
+        long stayNights;
+        BigDecimal revenue = BigDecimal.ZERO;
+
+        static InHouseTally of(List<InHouseStay> stays) {
+            InHouseTally tally = new InHouseTally();
+            for (InHouseStay stay : stays) {
+                BookingEntity booking = stay.booking();
+                long guests = booking.getAdults() + booking.getChildren();
+                tally.rooms++;
+                tally.adults += booking.getAdults();
+                tally.children += booking.getChildren();
+                if (booking.getPurpose() == BookingPurpose.COMPLIMENTARY) tally.complimentaryGuests += guests;
+                if (booking.getPurpose() == BookingPurpose.HOUSE_USE) tally.houseUseGuests += guests;
+                tally.stayNights += ChronoUnit.DAYS.between(booking.getCheckIn(), booking.getCheckOut());
+                tally.revenue = tally.revenue.add(stay.slice().revenue());
+            }
+            return tally;
+        }
+
+        long guests() {
+            return adults + children;
+        }
+
+        int roomsInt() {
+            return Math.toIntExact(rooms);
+        }
+
+        int adultsInt() {
+            return Math.toIntExact(adults);
+        }
+
+        int childrenInt() {
+            return Math.toIntExact(children);
+        }
+    }
+
+    // --- GET /reports/manager -----------------------------------------------------------------
+
+    /** The same {@link #managerDay} twice: the night, and the same calendar date a year earlier. */
+    @Transactional(readOnly = true)
+    public ManagerReport manager(String date) {
+        LocalDate night = ReportDateRange.parseDateOrToday(date, clock);
+        LocalDate lastYear = night.minusYears(1);
+        Set<String> activeUnitIds = roomUnitRepository.findAll().stream()
+                .filter(RoomUnitEntity::isActive)
+                .map(RoomUnitEntity::getId)
+                .collect(Collectors.toSet());
+        return new ManagerReport(night.toString(), lastYear.toString(), managerDay(night, activeUnitIds), managerDay(lastYear, activeUnitIds));
+    }
+
+    /**
+     * Occupied rooms and revenue come from {@link #segmentsInRange} - the occupancy report's own
+     * population, so {@code occupied} is its {@code roomNightsSold} for the night by
+     * construction. The guest statistic is {@link #inHouseStays} over those same slices.
+     */
+    private ManagerReportDay managerDay(LocalDate night, Set<String> activeUnitIds) {
+        ReportDateRange range = ReportDateRange.night(night);
+        List<SegmentInRange> slices = segmentsInRange(range);
+        Map<String, BookingEntity> bookings = bookingsOf(slices);
+
+        long occupied = 0, complimentary = 0, houseUse = 0;
+        BigDecimal revenue = BigDecimal.ZERO;
+        for (SegmentInRange slice : slices) {
+            occupied += slice.nights();
+            revenue = revenue.add(slice.revenue());
+            switch (bookings.get(slice.segment().getBookingId()).getPurpose()) {
+                case COMPLIMENTARY -> complimentary += slice.nights();
+                case HOUSE_USE -> houseUse += slice.nights();
+                case STANDARD -> {}
+            }
+        }
+        long outOfOrder = outOfOrderUnits(night, activeUnitIds);
+        long availableForSale = activeUnitIds.size() - outOfOrder;
+        BigDecimal occupiedDec = BigDecimal.valueOf(occupied);
+        BigDecimal availableDec = BigDecimal.valueOf(availableForSale);
+        ManagerRoomStatistic rooms = new ManagerRoomStatistic(
+                activeUnitIds.size(),
+                Math.toIntExact(outOfOrder),
+                Math.toIntExact(availableForSale),
+                Math.toIntExact(occupied),
+                Math.toIntExact(complimentary),
+                Math.toIntExact(houseUse),
+                Math.toIntExact(occupied - complimentary - houseUse),
+                percent(occupiedDec, availableDec),
+                ratio(revenue, occupiedDec),
+                ratio(revenue, availableDec));
+
+        InHouseTally inHouse = InHouseTally.of(inHouseStays(range, slices, bookings));
+        BigDecimal guests = BigDecimal.valueOf(inHouse.guests());
+        ManagerGuestStatistic guestStatistic = new ManagerGuestStatistic(
+                inHouse.adultsInt(),
+                inHouse.childrenInt(),
+                Math.toIntExact(inHouse.guests()),
+                ratio(guests, BigDecimal.valueOf(inHouse.rooms)),
+                ratio(inHouse.revenue, guests),
+                ratio(BigDecimal.valueOf(inHouse.stayNights), BigDecimal.valueOf(inHouse.rooms)),
+                Math.toIntExact(inHouse.complimentaryGuests),
+                Math.toIntExact(inHouse.houseUseGuests));
+
+        List<BookingEntity> arrivals = bookingRepository.findByStatusNotAndCheckInIs(BookingStatus.CANCELLED, night);
+        ManagerAccountCount accounts = new ManagerAccountCount(
+                arrivals.size(),
+                bookingRepository.findByStatusNotAndCheckOut(BookingStatus.CANCELLED, night).size(),
+                Math.toIntExact(bookingRepository.countByStatusAndUpdatedAtGreaterThanEqualAndUpdatedAtLessThan(
+                        BookingStatus.CANCELLED, range.startUtc(clock.getZone()), range.endUtcExclusive(clock.getZone()))),
+                Math.toIntExact(bookingRepository.countByOccupancyStatusAndUpdatedAtGreaterThanEqualAndUpdatedAtLessThan(
+                        OccupancyStatus.NO_SHOW, range.startUtc(clock.getZone()), range.endUtcExclusive(clock.getZone()))),
+                Math.toIntExact(arrivals.stream().filter(b -> b.getChannel() == BookingChannel.WALK_IN).count()));
+
+        return new ManagerReportDay(
+                rooms, guestStatistic, accounts, new ManagerRevenue(money(revenue), ratio(revenue, guests)), forecast(night.plusDays(1), activeUnitIds));
+    }
+
+    private ManagerForecast forecast(LocalDate night, Set<String> activeUnitIds) {
+        long occupied = segmentsInRange(ReportDateRange.night(night)).stream().mapToLong(SegmentInRange::nights).sum();
+        long availableForSale = activeUnitIds.size() - outOfOrderUnits(night, activeUnitIds);
+        return new ManagerForecast(
+                night.toString(),
+                bookingRepository.findByStatusNotAndCheckInIs(BookingStatus.CANCELLED, night).size(),
+                bookingRepository.findByStatusNotAndCheckOut(BookingStatus.CANCELLED, night).size(),
+                Math.toIntExact(occupied),
+                Math.toIntExact(availableForSale),
+                percent(BigDecimal.valueOf(occupied), BigDecimal.valueOf(availableForSale)));
+    }
+
+    /** Active units with a block covering the night; a unit under two overlapping blocks counts once. */
+    private long outOfOrderUnits(LocalDate night, Set<String> activeUnitIds) {
+        return blockRepository.findByFromDateLessThanEqualAndToDateGreaterThanEqual(night, night).stream()
+                .map(RoomUnitBlockEntity::getRoomUnitId)
+                .filter(activeUnitIds::contains)
+                .distinct()
+                .count();
+    }
+
     // --- GET /reports/guest-ltv ---------------------------------------------------------------
 
     /**
@@ -481,6 +710,11 @@ public class ReportService {
     /** part / whole × 100, two decimals; null when whole is zero. */
     private static String percent(BigDecimal part, BigDecimal whole) {
         return whole.signum() == 0 ? null : money(part.multiply(HUNDRED).divide(whole, MC));
+    }
+
+    /** part / whole, two decimals; null when whole is zero. */
+    private static String ratio(BigDecimal part, BigDecimal whole) {
+        return whole.signum() == 0 ? null : money(part.divide(whole, MC));
     }
 
     private static LocalDate max(LocalDate a, LocalDate b) {

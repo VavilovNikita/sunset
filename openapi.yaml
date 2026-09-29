@@ -107,7 +107,7 @@ tags:
   - name: Payments
     description: Cross-shift POS payment reporting for a date range (MANAGER or above).
   - name: Reports
-    description: Financial exports for the hotel's accountant, and occupancy, sales-mix and guest-value reports (MANAGER or above).
+    description: Financial exports for the hotel's accountant, and occupancy, sales-mix, guest-value and manager reports (MANAGER or above); the in-house list (CASHIER or above).
   - name: NightAudit
     description: >
       The front desk's once-a-day review (CASHIER or above): a checklist of bookings that should
@@ -5694,6 +5694,168 @@ paths:
                 $ref: "#/components/schemas/MarketSegmentReport"
         "400":
           description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /reports/in-house:
+    get:
+      operationId: getInHouseReport
+      tags: [Reports]
+      summary: Guests in house on one night, one row per occupied room (legacy Z180)
+      description: >
+        Requires role `CASHIER` or above - lower than the rest of `/reports/*` (MANAGER+), the same
+        tier as `GET /night-audit`: this is the front desk's routine daily list, not a strategic
+        report.
+
+
+        **Who is in house.** One row per `BookingSegment` covering the night `date`
+        (`checkIn <= date < checkOut`) whose booking is not `CANCELLED` and whose guest was
+        physically present that night: `occupancyStatus` is `CHECKED_IN`, or `CHECKED_OUT` with a
+        `checkedOutAt` after `date` (a guest who has since left but was here that night - only
+        possible for a past `date`; for today this is exactly "`CHECKED_IN`"). An `EXPECTED`
+        arrival is not in house yet, and neither is a `NO_SHOW` - see `GET /night-audit` for
+        arrivals still awaited. A guest still here past their `checkOut` is not listed either;
+        they are a missed departure on the night-audit checklist.
+
+
+        **One row per room, not per booking - and these are the same thing.** A booking's segments
+        are contiguous and never overlap in time (enforced after every segment write), so a
+        booking covers any one night with exactly one segment, in exactly one room. `adults` and
+        `children` are the booking's own counts; there is no multi-room booking whose party would
+        need splitting across rows.
+
+
+        **Columns.** `arrival`/`departure` are the whole booking's `checkIn`/`checkOut`, not the
+        current segment's (after a relocation they differ). `marketSegment` is the same
+        `COM`/`DIR`/`HFO`/`OTA`/`WLK` rollup as `GET /reports/market-segment`. The booking id is
+        the reservation reference - there is no separate reservation number.
+
+
+        **Left out of the legacy Z180 layout:** nationality, company and remark. None of them is
+        recorded on `Guest` or `Booking` (`Guest.notes` and tags are guest-level, not a per-stay
+        remark), so they are omitted rather than filled from an unrelated field.
+
+
+        Rows are sorted by physical room label; rows with no room assigned come last, by room type
+        name.
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The night to list (Asia/Bangkok). Defaults to tonight, hotel-local.
+      responses:
+        "200":
+          description: The in-house list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InHouseReport"
+        "400":
+          description: '`date` is not a valid date.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+
+  /reports/manager:
+    get:
+      operationId: getManagerReport
+      tags: [Reports]
+      summary: One night's room, guest, booking and room-revenue summary, with the same night last year (scoped legacy Z370)
+      description: >
+        Requires role `MANAGER` or above, same floor as the rest of `/reports/*`.
+
+
+        `today` is computed for `date`, `lastYear` by the identical computation for the same
+        calendar date one year earlier (29 February falls back to 28 February). No month-to-date
+        or year-to-date columns.
+
+
+        **Left out of the legacy Z370 layout, deliberately:**
+        F&B and miscellaneous revenue lines (there is no revenue-code taxonomy to group POS sales
+        into those lines yet - revenue here is room revenue only);
+        Group vs. F.I.T. occupied rooms (no concept links several bookings into a group);
+        and Day-Use rooms (no day-use / no-overnight concept exists).
+
+
+        **Room statistic.** `totalRooms` - physical units active today (the same known
+        simplification as `GET /reports/occupancy`: today's inventory, not a historical count,
+        also for `lastYear`). `outOfOrder` - active units with a `RoomUnitBlock` covering the
+        night (`fromDate <= date <= toDate`). `availableForSale` = `totalRooms - outOfOrder`.
+        `occupied` - room-nights sold for this one night, exactly
+        `GET /reports/occupancy?from=date&to=date`'s `total.roomNightsSold` (every non-`CANCELLED`
+        booking's segment covering the night, checked in or not). `complimentary` / `houseUse` -
+        the occupied rooms whose booking `purpose` is `COMPLIMENTARY` / `HOUSE_USE`;
+        `occupiedExcludingCompAndHouseUse` = `occupied - complimentary - houseUse`.
+        `occupancyPercent` = `occupied / availableForSale × 100` - out-of-order rooms are taken
+        out of the denominator here, unlike `GET /reports/occupancy`, which does not subtract
+        blocks. `averageRatePerOccupiedRoom` = room revenue / `occupied` (ADR-like).
+        `averageRevenuePerAvailableRoom` = room revenue / `availableForSale` (RevPAR-like).
+
+
+        **Guest statistic** - over the guests in house that night, exactly the rows
+        `GET /reports/in-house?date=` returns (checked-in guests only, so it can be lower than
+        `occupied`, which also counts rooms whose guests have not arrived yet).
+        `adultsInHouse`/`childrenInHouse`/`guestsInHouse` are that report's totals.
+        `averageGuestsPerRoom` = in-house guests / in-house rooms. `averageRatePerGuest` = the
+        room revenue of the in-house rooms only / in-house guests. `averageLengthOfStay` - the
+        in-house bookings' `checkOut - checkIn` in nights, averaged. `complimentaryGuests` /
+        `houseUseGuests` - in-house guests on `COMPLIMENTARY` / `HOUSE_USE` bookings.
+
+
+        **Account count.** `arrivals` / `departures` - non-`CANCELLED` bookings whose `checkIn` /
+        `checkOut` is `date`, whatever their `occupancyStatus`. `walkInRooms` - those arrivals
+        with `channel` `WALK_IN`. `cancellations` / `noShows` are approximations: no booking
+        records *when* it was cancelled or marked no-show, so they count bookings that are `CANCELLED`
+        / `NO_SHOW` *now* and whose `updatedAt` falls on `date` (hotel-local). Any later edit to
+        the booking moves its `updatedAt` - a cancelled booking edited the next day stops
+        counting for the day it was cancelled - and a booking cancelled and later reinstated no
+        longer counts at all. Treat both as exact only for today.
+
+
+        **Revenue.** `roomRevenue` - the occupancy report's room revenue for the night (segment
+        `totalPrice` prorated to the night; comp and house-use bookings count at whatever price
+        they carry, same as every other report). `averageRevenuePerInHouseGuest` = `roomRevenue`
+        / in-house guests - unlike `averageRatePerGuest`, the numerator includes rooms sold but not
+        yet checked into.
+
+
+        **Tomorrow** (`date + 1`): arrivals, departures, room-nights sold and occupancy %, by the
+        same rules as above.
+
+
+        Every ratio is `null` when its denominator is zero; money and ratios are decimal strings
+        with two decimals, rounded once from unrounded sums.
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The night to report (Asia/Bangkok). Defaults to tonight, hotel-local.
+      responses:
+        "200":
+          description: The manager report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagerReport"
+        "400":
+          description: '`date` is not a valid date.'
           content:
             application/json:
               schema:
@@ -13879,6 +14041,224 @@ components:
           type: string
           nullable: true
           description: Revenue / room-nights. Null when no room-night was sold.
+
+    InHouseReport:
+      type: object
+      description: '`GET /reports/in-house` - see that operation for who is listed.'
+      required: [date, rooms, total]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        rooms:
+          type: array
+          description: One row per occupied room, sorted by room label, unassigned last.
+          items:
+            $ref: "#/components/schemas/InHouseRow"
+        total:
+          $ref: "#/components/schemas/InHouseTotal"
+
+    InHouseRow:
+      type: object
+      description: One occupied room on the in-house list.
+      required: [bookingId, roomName, roomUnitLabel, adults, children, guestName, marketSegment, arrival, departure]
+      properties:
+        bookingId:
+          type: string
+          description: The reservation reference.
+        roomName:
+          type: string
+          description: The room type's name.
+        roomUnitLabel:
+          type: string
+          nullable: true
+          description: The physical room's label, or null if none is assigned to tonight's segment.
+        adults:
+          type: integer
+        children:
+          type: integer
+        guestName:
+          type: string
+          x-sensitive: true
+        marketSegment:
+          $ref: "#/components/schemas/MarketSegment"
+        arrival:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The booking's `checkIn`.
+        departure:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The booking's `checkOut`.
+
+    InHouseTotal:
+      type: object
+      required: [rooms, adults, children]
+      properties:
+        rooms:
+          type: integer
+        adults:
+          type: integer
+        children:
+          type: integer
+
+    ManagerReport:
+      type: object
+      description: '`GET /reports/manager` - see that operation for how each figure is computed.'
+      required: [date, lastYearDate, today, lastYear]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        lastYearDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        today:
+          $ref: "#/components/schemas/ManagerReportDay"
+        lastYear:
+          $ref: "#/components/schemas/ManagerReportDay"
+
+    ManagerReportDay:
+      type: object
+      description: Every figure of the manager report for one night.
+      required: [rooms, guests, accounts, revenue, tomorrow]
+      properties:
+        rooms:
+          $ref: "#/components/schemas/ManagerRoomStatistic"
+        guests:
+          $ref: "#/components/schemas/ManagerGuestStatistic"
+        accounts:
+          $ref: "#/components/schemas/ManagerAccountCount"
+        revenue:
+          $ref: "#/components/schemas/ManagerRevenue"
+        tomorrow:
+          $ref: "#/components/schemas/ManagerForecast"
+
+    ManagerRoomStatistic:
+      type: object
+      required:
+        - totalRooms
+        - outOfOrder
+        - availableForSale
+        - occupied
+        - complimentary
+        - houseUse
+        - occupiedExcludingCompAndHouseUse
+        - occupancyPercent
+        - averageRatePerOccupiedRoom
+        - averageRevenuePerAvailableRoom
+      properties:
+        totalRooms:
+          type: integer
+        outOfOrder:
+          type: integer
+        availableForSale:
+          type: integer
+        occupied:
+          type: integer
+        complimentary:
+          type: integer
+        houseUse:
+          type: integer
+        occupiedExcludingCompAndHouseUse:
+          type: integer
+        occupancyPercent:
+          type: string
+          nullable: true
+          description: occupied / availableForSale × 100.
+        averageRatePerOccupiedRoom:
+          type: string
+          nullable: true
+          description: Room revenue / occupied (ADR-like).
+        averageRevenuePerAvailableRoom:
+          type: string
+          nullable: true
+          description: Room revenue / availableForSale (RevPAR-like).
+
+    ManagerGuestStatistic:
+      type: object
+      required:
+        - adultsInHouse
+        - childrenInHouse
+        - guestsInHouse
+        - averageGuestsPerRoom
+        - averageRatePerGuest
+        - averageLengthOfStay
+        - complimentaryGuests
+        - houseUseGuests
+      properties:
+        adultsInHouse:
+          type: integer
+        childrenInHouse:
+          type: integer
+        guestsInHouse:
+          type: integer
+        averageGuestsPerRoom:
+          type: string
+          nullable: true
+          description: In-house guests / in-house rooms.
+        averageRatePerGuest:
+          type: string
+          nullable: true
+          description: Room revenue of the in-house rooms / in-house guests.
+        averageLengthOfStay:
+          type: string
+          nullable: true
+          description: Nights, averaged over the in-house bookings' whole stays.
+        complimentaryGuests:
+          type: integer
+        houseUseGuests:
+          type: integer
+
+    ManagerAccountCount:
+      type: object
+      required: [arrivals, departures, cancellations, noShows, walkInRooms]
+      properties:
+        arrivals:
+          type: integer
+        departures:
+          type: integer
+        cancellations:
+          type: integer
+          description: Approximate - see the operation's note on `updatedAt`.
+        noShows:
+          type: integer
+          description: Approximate - see the operation's note on `updatedAt`.
+        walkInRooms:
+          type: integer
+
+    ManagerRevenue:
+      type: object
+      description: Room revenue only - see the operation for what is left out.
+      required: [roomRevenue, averageRevenuePerInHouseGuest]
+      properties:
+        roomRevenue:
+          type: string
+        averageRevenuePerInHouseGuest:
+          type: string
+          nullable: true
+          description: roomRevenue / in-house guests.
+
+    ManagerForecast:
+      type: object
+      description: The next night's figures.
+      required: [date, arrivals, departures, occupied, availableForSale, occupancyPercent]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        arrivals:
+          type: integer
+        departures:
+          type: integer
+        occupied:
+          type: integer
+        availableForSale:
+          type: integer
+        occupancyPercent:
+          type: string
+          nullable: true
+          description: occupied / availableForSale × 100.
 
     GuestLtvReport:
       type: object

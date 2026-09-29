@@ -6,6 +6,7 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
@@ -56,6 +57,22 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
 
     /** {@code GET /night-audit}'s missed departures - same on-or-before rule as the arrivals query above. */
     List<BookingEntity> findByOccupancyStatusAndCheckOutLessThanEqualOrderByCheckOutAsc(OccupancyStatus occupancyStatus, LocalDate checkOut);
+
+    /** {@code GET /reports/manager}'s arrivals - every occupancy status. {@code Is} for the same derivation reason as above. */
+    List<BookingEntity> findByStatusNotAndCheckInIs(BookingStatus excludedStatus, LocalDate checkIn);
+
+    /** {@code GET /reports/manager}'s departures - every occupancy status. */
+    List<BookingEntity> findByStatusNotAndCheckOut(BookingStatus excludedStatus, LocalDate checkOut);
+
+    /**
+     * {@code GET /reports/manager}'s cancellations - {@code updatedAt} is the only timestamp a
+     * status change leaves, so this is "cancelled now, last touched in the window."
+     */
+    long countByStatusAndUpdatedAtGreaterThanEqualAndUpdatedAtLessThan(BookingStatus status, LocalDateTime from, LocalDateTime toExclusive);
+
+    /** {@code GET /reports/manager}'s no-shows - same {@code updatedAt} approximation as the cancellations count above. */
+    long countByOccupancyStatusAndUpdatedAtGreaterThanEqualAndUpdatedAtLessThan(
+            OccupancyStatus occupancyStatus, LocalDateTime from, LocalDateTime toExclusive);
 
     /** A guest's stay history for {@code GET /guests/{id}}, newest first - every status, cancelled included, see {@code GuestDetail}. */
     List<BookingEntity> findByGuestIdOrderByCreatedAtDesc(String guestId);

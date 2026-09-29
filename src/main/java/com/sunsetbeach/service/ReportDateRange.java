@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.error.ValidationException;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -21,6 +22,19 @@ record ReportDateRange(LocalDate from, LocalDate to) {
             throw ValidationException.field("to", "must be on or after from");
         }
         return new ReportDateRange(fromDate, toDate);
+    }
+
+    /**
+     * The single-night reports' optional {@code date} parameter: that date, or today hotel-local
+     * when omitted - same default and same 400 as {@code GET /night-audit}.
+     */
+    static LocalDate parseDateOrToday(String value, Clock clock) {
+        return value == null ? LocalDate.now(clock) : parseDate("date", value);
+    }
+
+    /** A one-night range, {@code from == to}. */
+    static ReportDateRange night(LocalDate date) {
+        return new ReportDateRange(date, date);
     }
 
     /**

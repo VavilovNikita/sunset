@@ -7,6 +7,8 @@ package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.GuestLtvReport;
+import com.sunsetbeach.model.InHouseReport;
+import com.sunsetbeach.model.ManagerReport;
 import com.sunsetbeach.model.MarketSegmentReport;
 import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.PosSalesMixReport;
@@ -103,6 +105,102 @@ public interface ReportsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"guests\" : [ { \"roomRevenue\" : \"roomRevenue\", \"name\" : \"name\", \"firstCheckIn\" : \"firstCheckIn\", \"bookingCount\" : 0, \"lastCheckIn\" : \"lastCheckIn\", \"guestId\" : \"guestId\", \"email\" : \"email\", \"totalNights\" : 6, \"roomChargesTotal\" : \"roomChargesTotal\" }, { \"roomRevenue\" : \"roomRevenue\", \"name\" : \"name\", \"firstCheckIn\" : \"firstCheckIn\", \"bookingCount\" : 0, \"lastCheckIn\" : \"lastCheckIn\", \"guestId\" : \"guestId\", \"email\" : \"email\", \"totalNights\" : 6, \"roomChargesTotal\" : \"roomChargesTotal\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/in-house : Guests in house on one night, one row per occupied room (legacy Z180)
+     * Requires role &#x60;CASHIER&#x60; or above - lower than the rest of &#x60;/reports/_*&#x60; (MANAGER+), the same tier as &#x60;GET /night-audit&#x60;: this is the front desk&#39;s routine daily list, not a strategic report.  **Who is in house.** One row per &#x60;BookingSegment&#x60; covering the night &#x60;date&#x60; (&#x60;checkIn &lt;&#x3D; date &lt; checkOut&#x60;) whose booking is not &#x60;CANCELLED&#x60; and whose guest was physically present that night: &#x60;occupancyStatus&#x60; is &#x60;CHECKED_IN&#x60;, or &#x60;CHECKED_OUT&#x60; with a &#x60;checkedOutAt&#x60; after &#x60;date&#x60; (a guest who has since left but was here that night - only possible for a past &#x60;date&#x60;; for today this is exactly \&quot;&#x60;CHECKED_IN&#x60;\&quot;). An &#x60;EXPECTED&#x60; arrival is not in house yet, and neither is a &#x60;NO_SHOW&#x60; - see &#x60;GET /night-audit&#x60; for arrivals still awaited. A guest still here past their &#x60;checkOut&#x60; is not listed either; they are a missed departure on the night-audit checklist.  **One row per room, not per booking - and these are the same thing.** A booking&#39;s segments are contiguous and never overlap in time (enforced after every segment write), so a booking covers any one night with exactly one segment, in exactly one room. &#x60;adults&#x60; and &#x60;children&#x60; are the booking&#39;s own counts; there is no multi-room booking whose party would need splitting across rows.  **Columns.** &#x60;arrival&#x60;/&#x60;departure&#x60; are the whole booking&#39;s &#x60;checkIn&#x60;/&#x60;checkOut&#x60;, not the current segment&#39;s (after a relocation they differ). &#x60;marketSegment&#x60; is the same &#x60;COM&#x60;/&#x60;DIR&#x60;/&#x60;HFO&#x60;/&#x60;OTA&#x60;/&#x60;WLK&#x60; rollup as &#x60;GET /reports/market-segment&#x60;. The booking id is the reservation reference - there is no separate reservation number.  **Left out of the legacy Z180 layout:** nationality, company and remark. None of them is recorded on &#x60;Guest&#x60; or &#x60;Booking&#x60; (&#x60;Guest.notes&#x60; and tags are guest-level, not a per-stay remark), so they are omitted rather than filled from an unrelated field.  Rows are sorted by physical room label; rows with no room assigned come last, by room type name. 
+     *
+     * @param date The night to list (Asia/Bangkok). Defaults to tonight, hotel-local. (optional)
+     * @return The in-house list. (status code 200)
+     *         or &#x60;date&#x60; is not a valid date. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/in-house",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<InHouseReport> getInHouseReport(
+        @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "date", required = false) String date
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"date\" : \"date\", \"rooms\" : [ { \"roomUnitLabel\" : \"roomUnitLabel\", \"children\" : 6, \"arrival\" : \"arrival\", \"adults\" : 0, \"departure\" : \"departure\", \"bookingId\" : \"bookingId\", \"roomName\" : \"roomName\", \"guestName\" : \"guestName\", \"marketSegment\" : \"COM\" }, { \"roomUnitLabel\" : \"roomUnitLabel\", \"children\" : 6, \"arrival\" : \"arrival\", \"adults\" : 0, \"departure\" : \"departure\", \"bookingId\" : \"bookingId\", \"roomName\" : \"roomName\", \"guestName\" : \"guestName\", \"marketSegment\" : \"COM\" } ], \"total\" : { \"rooms\" : 1, \"children\" : 5, \"adults\" : 5 } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/manager : One night&#39;s room, guest, booking and room-revenue summary, with the same night last year (scoped legacy Z370)
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as the rest of &#x60;/reports/_*&#x60;.  &#x60;today&#x60; is computed for &#x60;date&#x60;, &#x60;lastYear&#x60; by the identical computation for the same calendar date one year earlier (29 February falls back to 28 February). No month-to-date or year-to-date columns.  **Left out of the legacy Z370 layout, deliberately:** F&amp;B and miscellaneous revenue lines (there is no revenue-code taxonomy to group POS sales into those lines yet - revenue here is room revenue only); Group vs. F.I.T. occupied rooms (no concept links several bookings into a group); and Day-Use rooms (no day-use / no-overnight concept exists).  **Room statistic.** &#x60;totalRooms&#x60; - physical units active today (the same known simplification as &#x60;GET /reports/occupancy&#x60;: today&#39;s inventory, not a historical count, also for &#x60;lastYear&#x60;). &#x60;outOfOrder&#x60; - active units with a &#x60;RoomUnitBlock&#x60; covering the night (&#x60;fromDate &lt;&#x3D; date &lt;&#x3D; toDate&#x60;). &#x60;availableForSale&#x60; &#x3D; &#x60;totalRooms - outOfOrder&#x60;. &#x60;occupied&#x60; - room-nights sold for this one night, exactly &#x60;GET /reports/occupancy?from&#x3D;date&amp;to&#x3D;date&#x60;&#39;s &#x60;total.roomNightsSold&#x60; (every non-&#x60;CANCELLED&#x60; booking&#39;s segment covering the night, checked in or not). &#x60;complimentary&#x60; / &#x60;houseUse&#x60; - the occupied rooms whose booking &#x60;purpose&#x60; is &#x60;COMPLIMENTARY&#x60; / &#x60;HOUSE_USE&#x60;; &#x60;occupiedExcludingCompAndHouseUse&#x60; &#x3D; &#x60;occupied - complimentary - houseUse&#x60;. &#x60;occupancyPercent&#x60; &#x3D; &#x60;occupied / availableForSale × 100&#x60; - out-of-order rooms are taken out of the denominator here, unlike &#x60;GET /reports/occupancy&#x60;, which does not subtract blocks. &#x60;averageRatePerOccupiedRoom&#x60; &#x3D; room revenue / &#x60;occupied&#x60; (ADR-like). &#x60;averageRevenuePerAvailableRoom&#x60; &#x3D; room revenue / &#x60;availableForSale&#x60; (RevPAR-like).  **Guest statistic** - over the guests in house that night, exactly the rows &#x60;GET /reports/in-house?date&#x3D;&#x60; returns (checked-in guests only, so it can be lower than &#x60;occupied&#x60;, which also counts rooms whose guests have not arrived yet). &#x60;adultsInHouse&#x60;/&#x60;childrenInHouse&#x60;/&#x60;guestsInHouse&#x60; are that report&#39;s totals. &#x60;averageGuestsPerRoom&#x60; &#x3D; in-house guests / in-house rooms. &#x60;averageRatePerGuest&#x60; &#x3D; the room revenue of the in-house rooms only / in-house guests. &#x60;averageLengthOfStay&#x60; - the in-house bookings&#39; &#x60;checkOut - checkIn&#x60; in nights, averaged. &#x60;complimentaryGuests&#x60; / &#x60;houseUseGuests&#x60; - in-house guests on &#x60;COMPLIMENTARY&#x60; / &#x60;HOUSE_USE&#x60; bookings.  **Account count.** &#x60;arrivals&#x60; / &#x60;departures&#x60; - non-&#x60;CANCELLED&#x60; bookings whose &#x60;checkIn&#x60; / &#x60;checkOut&#x60; is &#x60;date&#x60;, whatever their &#x60;occupancyStatus&#x60;. &#x60;walkInRooms&#x60; - those arrivals with &#x60;channel&#x60; &#x60;WALK_IN&#x60;. &#x60;cancellations&#x60; / &#x60;noShows&#x60; are approximations: no booking records *when* it was cancelled or marked no-show, so they count bookings that are &#x60;CANCELLED&#x60; / &#x60;NO_SHOW&#x60; *now* and whose &#x60;updatedAt&#x60; falls on &#x60;date&#x60; (hotel-local). Any later edit to the booking moves its &#x60;updatedAt&#x60; - a cancelled booking edited the next day stops counting for the day it was cancelled - and a booking cancelled and later reinstated no longer counts at all. Treat both as exact only for today.  **Revenue.** &#x60;roomRevenue&#x60; - the occupancy report&#39;s room revenue for the night (segment &#x60;totalPrice&#x60; prorated to the night; comp and house-use bookings count at whatever price they carry, same as every other report). &#x60;averageRevenuePerInHouseGuest&#x60; &#x3D; &#x60;roomRevenue&#x60; / in-house guests - unlike &#x60;averageRatePerGuest&#x60;, the numerator includes rooms sold but not yet checked into.  **Tomorrow** (&#x60;date + 1&#x60;): arrivals, departures, room-nights sold and occupancy %, by the same rules as above.  Every ratio is &#x60;null&#x60; when its denominator is zero; money and ratios are decimal strings with two decimals, rounded once from unrounded sums. 
+     *
+     * @param date The night to report (Asia/Bangkok). Defaults to tonight, hotel-local. (optional)
+     * @return The manager report. (status code 200)
+     *         or &#x60;date&#x60; is not a valid date. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/manager",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<ManagerReport> getManagerReport(
+        @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "date", required = false) String date
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"date\" : \"date\", \"lastYearDate\" : \"lastYearDate\", \"lastYear\" : { \"rooms\" : { \"availableForSale\" : 1, \"occupiedExcludingCompAndHouseUse\" : 7, \"averageRatePerOccupiedRoom\" : \"averageRatePerOccupiedRoom\", \"outOfOrder\" : 6, \"complimentary\" : 5, \"occupancyPercent\" : \"occupancyPercent\", \"averageRevenuePerAvailableRoom\" : \"averageRevenuePerAvailableRoom\", \"occupied\" : 5, \"totalRooms\" : 0, \"houseUse\" : 2 }, \"revenue\" : { \"averageRevenuePerInHouseGuest\" : \"averageRevenuePerInHouseGuest\", \"roomRevenue\" : \"roomRevenue\" }, \"guests\" : { \"guestsInHouse\" : 2, \"averageRatePerGuest\" : \"averageRatePerGuest\", \"complimentaryGuests\" : 4, \"adultsInHouse\" : 9, \"childrenInHouse\" : 3, \"averageLengthOfStay\" : \"averageLengthOfStay\", \"houseUseGuests\" : 7, \"averageGuestsPerRoom\" : \"averageGuestsPerRoom\" }, \"tomorrow\" : { \"date\" : \"date\", \"availableForSale\" : 9, \"arrivals\" : 1, \"departures\" : 4, \"occupancyPercent\" : \"occupancyPercent\", \"occupied\" : 5 }, \"accounts\" : { \"cancellations\" : 1, \"arrivals\" : 1, \"walkInRooms\" : 7, \"noShows\" : 6, \"departures\" : 1 } }, \"today\" : { \"rooms\" : { \"availableForSale\" : 1, \"occupiedExcludingCompAndHouseUse\" : 7, \"averageRatePerOccupiedRoom\" : \"averageRatePerOccupiedRoom\", \"outOfOrder\" : 6, \"complimentary\" : 5, \"occupancyPercent\" : \"occupancyPercent\", \"averageRevenuePerAvailableRoom\" : \"averageRevenuePerAvailableRoom\", \"occupied\" : 5, \"totalRooms\" : 0, \"houseUse\" : 2 }, \"revenue\" : { \"averageRevenuePerInHouseGuest\" : \"averageRevenuePerInHouseGuest\", \"roomRevenue\" : \"roomRevenue\" }, \"guests\" : { \"guestsInHouse\" : 2, \"averageRatePerGuest\" : \"averageRatePerGuest\", \"complimentaryGuests\" : 4, \"adultsInHouse\" : 9, \"childrenInHouse\" : 3, \"averageLengthOfStay\" : \"averageLengthOfStay\", \"houseUseGuests\" : 7, \"averageGuestsPerRoom\" : \"averageGuestsPerRoom\" }, \"tomorrow\" : { \"date\" : \"date\", \"availableForSale\" : 9, \"arrivals\" : 1, \"departures\" : 4, \"occupancyPercent\" : \"occupancyPercent\", \"occupied\" : 5 }, \"accounts\" : { \"cancellations\" : 1, \"arrivals\" : 1, \"walkInRooms\" : 7, \"noShows\" : 6, \"departures\" : 1 } } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

@@ -2,6 +2,8 @@ package com.sunsetbeach.controller;
 
 import com.sunsetbeach.api.ReportsApi;
 import com.sunsetbeach.model.GuestLtvReport;
+import com.sunsetbeach.model.InHouseReport;
+import com.sunsetbeach.model.ManagerReport;
 import com.sunsetbeach.model.MarketSegmentReport;
 import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.PosSalesMixReport;
@@ -60,5 +62,15 @@ public class ReportController implements ReportsApi {
     @Override
     public ResponseEntity<MarketSegmentReport> getMarketSegmentReport(String from, String to) {
         return ResponseEntity.ok(reportService.marketSegment(from, to));
+    }
+
+    @Override
+    public ResponseEntity<InHouseReport> getInHouseReport(String date) {
+        return ResponseEntity.ok(reportService.inHouse(date));
+    }
+
+    @Override
+    public ResponseEntity<ManagerReport> getManagerReport(String date) {
+        return ResponseEntity.ok(reportService.manager(date));
     }
 }

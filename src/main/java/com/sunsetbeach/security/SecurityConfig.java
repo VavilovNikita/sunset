@@ -278,17 +278,23 @@ public class SecurityConfig {
                         // Same floor as /payments/summary and /bookings/export - the accountant's
                         // revenue workbook exposes nothing either of those doesn't already.
                         .requestMatchers(HttpMethod.GET, "/reports/revenue-export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // The in-house list (Z180) is the one CASHIER+ report: the front desk's
+                        // routine daily list of who is in which room, same tier and reasoning as
+                        // /night-audit above - not a strategic figure like the rest of /reports.
+                        .requestMatchers(HttpMethod.GET, "/reports/in-house").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Same floor again: occupancy/ADR is derived from booking prices a manager
                         // already sees, the sales mix from the same payments as the revenue export,
                         // and guest LTV from the booking list plus guest cards. Top production and
-                        // market segment are the occupancy figures regrouped by channel/purpose.
+                        // market segment are the occupancy figures regrouped by channel/purpose; the
+                        // manager report (Z370) is the same figures for one night.
                         .requestMatchers(
                                         HttpMethod.GET,
                                         "/reports/occupancy",
                                         "/reports/pos-sales-mix",
                                         "/reports/guest-ltv",
                                         "/reports/top-production",
-                                        "/reports/market-segment")
+                                        "/reports/market-segment",
+                                        "/reports/manager")
                                 .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Audit log: read-only, MANAGER+ - the disputes it exists to resolve (a
                         // cash discrepancy, a guest billing question, a suspected misuse of a

@@ -765,6 +765,35 @@ class PosRoleHierarchyTests {
         verify(reportService, never()).marketSegment(any(), any());
     }
 
+    // --- GET /reports/manager: MANAGER floor like the rest; GET /reports/in-house: the one CASHIER+ report ---
+
+    @Test
+    void managerReport_managerOk_cashierForbidden() throws Exception {
+        when(reportService.manager(any())).thenReturn(new com.sunsetbeach.model.ManagerReport());
+        mockMvc.perform(get("/reports/manager?date=2031-01-31").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
+        for (Role role : new Role[] {Role.CASHIER, Role.WAITER}) {
+            mockMvc.perform(get("/reports/manager").header("Authorization", token(role))).andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
+    void inHouseReport_cashierOk_waiterForbidden() throws Exception {
+        when(reportService.inHouse(any())).thenReturn(new com.sunsetbeach.model.InHouseReport());
+        for (Role role : new Role[] {Role.CASHIER, Role.MANAGER}) {
+            mockMvc.perform(get("/reports/in-house?date=2031-01-31").header("Authorization", token(role))).andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/reports/in-house").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void singleNightReports_malformedDate_isBadRequest() throws Exception {
+        for (String path : new String[] {"/reports/in-house", "/reports/manager"}) {
+            mockMvc.perform(get(path + "?date=2031-1-1").header("Authorization", token(Role.MANAGER))).andExpect(status().isBadRequest());
+        }
+        verify(reportService, never()).inHouse(any());
+        verify(reportService, never()).manager(any());
+    }
+
     @Test
     void guestLtv_limitOutOfRange_isBadRequest() throws Exception {
         for (String limit : new String[] {"0", "201", "abc"}) {
