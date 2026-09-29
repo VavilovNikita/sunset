@@ -721,7 +721,7 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isBadRequest());
     }
 
-    // --- GET /reports/occupancy, /reports/pos-sales-mix, /reports/guest-ltv, top-production, market-segment: same MANAGER floor ---
+    // --- GET /reports/occupancy, /reports/pos-sales-mix, /reports/guest-ltv, top-production, market-segment, forecast: same MANAGER floor ---
 
     private static final String[] DASHBOARD_REPORTS = {
         "/reports/occupancy?from=2031-01-01&to=2031-01-31",
@@ -729,6 +729,7 @@ class PosRoleHierarchyTests {
         "/reports/guest-ltv",
         "/reports/top-production?from=2031-01-01&to=2031-01-31",
         "/reports/market-segment?from=2031-01-01&to=2031-01-31",
+        "/reports/forecast?from=2031-01-01&to=2031-01-31",
     };
 
     @Test
@@ -747,6 +748,7 @@ class PosRoleHierarchyTests {
         when(reportService.guestLtv(any())).thenReturn(new com.sunsetbeach.model.GuestLtvReport());
         when(reportService.topProduction(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.TopProductionReport());
         when(reportService.marketSegment(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.MarketSegmentReport());
+        when(reportService.forecast(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.ForecastReport());
         for (String url : DASHBOARD_REPORTS) {
             mockMvc.perform(get(url).header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
         }
@@ -754,7 +756,7 @@ class PosRoleHierarchyTests {
 
     @Test
     void dashboardReports_missingOrMalformedDate_isBadRequest() throws Exception {
-        for (String path : new String[] {"/reports/occupancy", "/reports/pos-sales-mix", "/reports/top-production", "/reports/market-segment"}) {
+        for (String path : new String[] {"/reports/occupancy", "/reports/pos-sales-mix", "/reports/top-production", "/reports/market-segment", "/reports/forecast"}) {
             for (String query : new String[] {"to=2031-01-31", "from=2031-01-01", "from=2031-1-1&to=2031-01-31"}) {
                 mockMvc.perform(get(path + "?" + query).header("Authorization", token(Role.MANAGER))).andExpect(status().isBadRequest());
             }
@@ -763,6 +765,7 @@ class PosRoleHierarchyTests {
         verify(reportService, never()).posSalesMix(any(), any());
         verify(reportService, never()).topProduction(any(), any());
         verify(reportService, never()).marketSegment(any(), any());
+        verify(reportService, never()).forecast(any(), any());
     }
 
     // --- GET /reports/manager: MANAGER floor like the rest; GET /reports/in-house: the one CASHIER+ report ---

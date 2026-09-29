@@ -5865,6 +5865,96 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /reports/forecast:
+    get:
+      operationId: getForecastReport
+      tags: [Reports]
+      summary: Day-by-day arrivals, departures, occupancy and vacant rooms, per room type and in total (scoped legacy Z440)
+      description: >
+        Requires role `MANAGER` or above, same floor as the rest of `/reports/*` - forward
+        planning, not routine front-desk lookup.
+
+
+        **Meant for a future range.** Same `from`/`to` shape and validation as
+        `GET /reports/occupancy` (inclusive hotel-local dates, `from` on or before `to`), and,
+        unlike how the other reports are normally used, a `from` in the future is the ordinary
+        case, not an error. A past range is accepted too and computed by the same rules.
+
+
+        **One entry per date** in `[from, to]`, in date order. Each has one row per room type and
+        a `total` row for the property, the same `rooms` + `total` layout as
+        `GET /reports/occupancy`; the total's ratio is recomputed from its sums, not averaged.
+
+
+        **Arrivals** / **departures** - non-`CANCELLED` bookings whose `checkIn` / `checkOut` is
+        the date, whatever their `occupancyStatus`: exactly the manager report's own
+        `accounts.arrivals` / `accounts.departures` for that date. Per room type, an arrival
+        counts under the room type of its first night (where the guest actually arrives, even if
+        the stay is later relocated) and a departure under the room type of its last night.
+
+
+        **Occupied** - room-nights sold for that one night, exactly
+        `GET /reports/occupancy?from=date&to=date`'s `roomNightsSold` (per room type, and `total`
+        for the property): every non-`CANCELLED` booking's segment covering the night, checked in
+        or not, a segment with no physical room assigned yet included.
+
+
+        **Total rooms** / **out of order** - the manager report's room statistic, per room type:
+        physical units active today (the same known simplification as the occupancy and manager
+        reports - today's inventory, not a count as of that date), and active units with a
+        `RoomUnitBlock` covering the date. **Vacant** = `totalRooms - occupied - outOfOrder`,
+        exactly as the legacy report defines it. It is not clamped at zero: a negative value means
+        more rooms are sold than are sellable that night (an overbooking, or a booked room that
+        has since been blocked) - exactly what a forecast exists to surface.
+        **occupancyPercent** = `occupied / (totalRooms - outOfOrder) × 100`, the manager report's
+        denominator (its `tomorrow` block is this same computation for one date), so out-of-order
+        rooms are taken out of it - unlike `GET /reports/occupancy`, which does not subtract
+        blocks. `null` when nothing is sellable.
+
+
+        A room type appears on a date if it has at least one active unit today, or any arrival,
+        departure or occupied room that date. Rows are sorted by room type name.
+
+
+        **Left out of the legacy Z440 layout, deliberately:**
+        Allotment (no channel-allotment concept exists - rooms are not held back per channel or
+        agent anywhere in this system);
+        Wait / waitlist (no waitlist concept exists - a booking is either made or not);
+        and Min-Max Availability (not defined clearly enough in the legacy sample to reproduce
+        without guessing). They are omitted rather than filled with a stand-in figure.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: First date of the forecast, inclusive (Asia/Bangkok). Usually today or later.
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Last date of the forecast, inclusive (Asia/Bangkok).
+      responses:
+        "200":
+          description: The forecast.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForecastReport"
+        "400":
+          description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /audit-log:
     get:
       operationId: listAuditLog
@@ -14259,6 +14349,71 @@ components:
           type: string
           nullable: true
           description: occupied / availableForSale × 100.
+
+    ForecastReport:
+      type: object
+      description: '`GET /reports/forecast` - see that operation for how each figure is computed.'
+      required: [from, to, days]
+      properties:
+        from:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        to:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        days:
+          type: array
+          description: One entry per date in the range, in date order.
+          items:
+            $ref: "#/components/schemas/ForecastDay"
+
+    ForecastDay:
+      type: object
+      description: One date of the forecast.
+      required: [date, rooms, total]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        rooms:
+          type: array
+          description: One row per room type, sorted by name.
+          items:
+            $ref: "#/components/schemas/ForecastRow"
+        total:
+          $ref: "#/components/schemas/ForecastRow"
+
+    ForecastRow:
+      type: object
+      description: >
+        One room type's figures for a date, or the property total (where `roomId`/`roomName` are
+        null).
+      required: [roomId, roomName, arrivals, departures, totalRooms, outOfOrder, occupied, vacant, occupancyPercent]
+      properties:
+        roomId:
+          type: string
+          nullable: true
+        roomName:
+          type: string
+          nullable: true
+        arrivals:
+          type: integer
+        departures:
+          type: integer
+        totalRooms:
+          type: integer
+          description: Physical units active today - see the operation's note on why this is today's count.
+        outOfOrder:
+          type: integer
+        occupied:
+          type: integer
+        vacant:
+          type: integer
+          description: totalRooms - occupied - outOfOrder. Can be negative (overbooked).
+        occupancyPercent:
+          type: string
+          nullable: true
+          description: occupied / (totalRooms - outOfOrder) × 100. Null when nothing is sellable.
 
     GuestLtvReport:
       type: object

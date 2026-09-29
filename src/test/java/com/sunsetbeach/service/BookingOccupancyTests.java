@@ -17,7 +17,6 @@ import com.sunsetbeach.model.CheckOutResult;
 import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
-import com.sunsetbeach.model.TodayBoard;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -29,8 +28,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Physical occupancy (check-in/check-out/no-show) and the front desk's "today" board - see
- * {@link BookingOccupancyService}'s class javadoc for the design this exercises. Every test that
+ * Physical occupancy (check-in/check-out/no-show) - see {@link BookingOccupancyService}'s class
+ * javadoc for the design this exercises. The "today" board's tests live in {@link
+ * TodayBoardClockTests}, which pins the clock "today" is read from. Every test that
  * needs a room-unit assignment uses dates far enough in the future to avoid colliding with any
  * other test's room (rooms are created fresh per test, so this is mostly precautionary).
  *
@@ -301,59 +301,5 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
                 .filter(d -> d.getDate().equals(date.toString()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("No availability row for " + roomId + " on " + date));
-    }
-
-    // --- The today board groups bookings into exactly the right list -------------------------------
-
-    @Test
-    void todayBoard_groupsArrivingDepartingAndInHouseCorrectly() {
-        RoomEntity room = createRoom();
-        RoomUnitEntity arrivingUnit = createUnit(room);
-        RoomUnitEntity departingUnit = createUnit(room);
-        RoomUnitEntity inHouseUnit = createUnit(room);
-        LocalDate today = LocalDate.now();
-
-        // Arriving today: EXPECTED, checkIn = today.
-        Booking arriving = createBooking(room.getId(), today, today.plusDays(3));
-        assignUnit(arriving.getId(), arrivingUnit.getId());
-
-        // Departing today: CHECKED_IN, checkOut = today (backdate checkIn so checkOut can be today).
-        Booking departing = createBooking(room.getId(), today.minusDays(2), today);
-        assignUnit(departing.getId(), departingUnit.getId());
-        occupancyService.checkIn(departing.getId());
-
-        // In-house: CHECKED_IN, but not departing today.
-        Booking inHouse = createBooking(room.getId(), today.minusDays(1), today.plusDays(4));
-        assignUnit(inHouse.getId(), inHouseUnit.getId());
-        occupancyService.checkIn(inHouse.getId());
-
-        TodayBoard board = occupancyService.getTodayBoard();
-
-        assertThat(board.getArrivingToday().stream().map(e -> e.getBooking().getId())).contains(arriving.getId());
-        assertThat(board.getArrivingToday().stream().map(e -> e.getBooking().getId()))
-                .doesNotContain(departing.getId(), inHouse.getId());
-
-        assertThat(board.getDepartingToday().stream().map(e -> e.getBooking().getId())).contains(departing.getId());
-        assertThat(board.getDepartingToday().stream().map(e -> e.getBooking().getId()))
-                .doesNotContain(arriving.getId(), inHouse.getId());
-
-        assertThat(board.getInHouse().stream().map(e -> e.getBooking().getId())).contains(departing.getId(), inHouse.getId());
-        assertThat(board.getInHouse().stream().map(e -> e.getBooking().getId())).doesNotContain(arriving.getId());
-    }
-
-    @Test
-    void todayBoard_excludesANoShowBooking_fromAllThreeLists() {
-        RoomEntity room = createRoom();
-        RoomUnitEntity unit = createUnit(room);
-        LocalDate today = LocalDate.now();
-        Booking booking = createBooking(room.getId(), today, today.plusDays(2));
-        assignUnit(booking.getId(), unit.getId());
-        occupancyService.markNoShow(booking.getId());
-
-        TodayBoard board = occupancyService.getTodayBoard();
-
-        assertThat(board.getArrivingToday().stream().map(e -> e.getBooking().getId())).doesNotContain(booking.getId());
-        assertThat(board.getDepartingToday().stream().map(e -> e.getBooking().getId())).doesNotContain(booking.getId());
-        assertThat(board.getInHouse().stream().map(e -> e.getBooking().getId())).doesNotContain(booking.getId());
     }
 }

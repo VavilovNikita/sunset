@@ -186,11 +186,13 @@ public class BookingOccupancyService {
     /**
      * The front desk's daily working set - see the generated {@code TodayBoard} schema's own
      * description for exactly which bookings land in which of the three lists. Computed fresh on
-     * every call, not a stored snapshot.
+     * every call, not a stored snapshot. "Today" is the hotel's date from the shared {@link
+     * Clock}: a bare {@code LocalDate.now()} on the UTC server showed yesterday's board until
+     * 07:00 Bangkok.
      */
     @Transactional(readOnly = true)
     public TodayBoard getTodayBoard() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         List<TodayBoardEntry> arriving = bookingRepository
                 .findByOccupancyStatusAndStatusNotAndCheckInIs(OccupancyStatus.EXPECTED, BookingStatus.CANCELLED, today)
                 .stream()

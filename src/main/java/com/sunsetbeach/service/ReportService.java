@@ -14,6 +14,9 @@ import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.ForecastDay;
+import com.sunsetbeach.model.ForecastReport;
+import com.sunsetbeach.model.ForecastRow;
 import com.sunsetbeach.model.GuestLtvReport;
 import com.sunsetbeach.model.GuestLtvRow;
 import com.sunsetbeach.model.InHouseReport;
@@ -76,7 +79,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The read-only dashboard reports under {@code /reports}: occupancy/ADR/RevPAR, top production,
- * market segment, POS sales mix, guest lifetime value, the in-house list and the manager report. Each operation's own openapi.yaml description is the contract;
+ * market segment, POS sales mix, guest lifetime value, the in-house list, the manager report and the forecast. Each operation's own openapi.yaml description is the contract;
  * notes here are only about how the numbers are computed.
  *
  * <p>Money is summed unrounded and rounded to two decimals ({@link RoundingMode#HALF_UP}) exactly
@@ -557,10 +560,7 @@ public class ReportService {
     public ManagerReport manager(String date) {
         LocalDate night = ReportDateRange.parseDateOrToday(date, clock);
         LocalDate lastYear = night.minusYears(1);
-        Set<String> activeUnitIds = roomUnitRepository.findAll().stream()
-                .filter(RoomUnitEntity::isActive)
-                .map(RoomUnitEntity::getId)
-                .collect(Collectors.toSet());
+        Set<String> activeUnitIds = activeUnitsByRoom().keySet();
         return new ManagerReport(night.toString(), lastYear.toString(), managerDay(night, activeUnitIds), managerDay(lastYear, activeUnitIds));
     }
 
@@ -641,11 +641,107 @@ public class ReportService {
 
     /** Active units with a block covering the night; a unit under two overlapping blocks counts once. */
     private long outOfOrderUnits(LocalDate night, Set<String> activeUnitIds) {
+        return outOfOrderUnitIds(night, activeUnitIds).size();
+    }
+
+    private Set<String> outOfOrderUnitIds(LocalDate night, Set<String> activeUnitIds) {
         return blockRepository.findByFromDateLessThanEqualAndToDateGreaterThanEqual(night, night).stream()
                 .map(RoomUnitBlockEntity::getRoomUnitId)
                 .filter(activeUnitIds::contains)
-                .distinct()
-                .count();
+                .collect(Collectors.toSet());
+    }
+
+    /** Physical units active today, unit id to room type id - the manager report's {@code totalRooms}. */
+    private Map<String, String> activeUnitsByRoom() {
+        return roomUnitRepository.findAll().stream()
+                .filter(RoomUnitEntity::isActive)
+                .collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getRoomId));
+    }
+
+    // --- GET /reports/forecast ----------------------------------------------------------------
+
+    /**
+     * The manager report's per-night figures, one date at a time and split by room type:
+     * occupied from {@link #segmentsInRange} over that one night, arrivals/departures from the
+     * manager report's own two booking queries, out-of-order from {@link #outOfOrderUnitIds}. A
+     * few queries per date - the per-night reuse is what keeps every date's {@code total} equal to
+     * the occupancy and manager reports for that night by construction.
+     */
+    @Transactional(readOnly = true)
+    public ForecastReport forecast(String from, String to) {
+        ReportDateRange range = ReportDateRange.parse(from, to);
+        Map<String, String> roomOfUnit = activeUnitsByRoom();
+        Map<String, Long> unitsByRoom = roomOfUnit.values().stream().collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+        Map<String, String> roomNames = roomRepository.findAll().stream().collect(Collectors.toMap(RoomEntity::getId, RoomEntity::getName));
+
+        List<ForecastDay> days = new ArrayList<>();
+        for (LocalDate date = range.from(); !date.isAfter(range.to()); date = date.plusDays(1)) {
+            days.add(forecastDay(date, roomOfUnit, unitsByRoom, roomNames));
+        }
+        return new ForecastReport(range.from().toString(), range.to().toString(), days);
+    }
+
+    private ForecastDay forecastDay(LocalDate date, Map<String, String> roomOfUnit, Map<String, Long> unitsByRoom, Map<String, String> roomNames) {
+        Map<String, ForecastTally> byRoom = new HashMap<>();
+        unitsByRoom.forEach((roomId, units) -> byRoom.computeIfAbsent(roomId, k -> new ForecastTally()).totalRooms = units);
+
+        List<SegmentInRange> slices = segmentsInRange(ReportDateRange.night(date));
+        Map<String, String> roomOfArrivalNight = new HashMap<>();
+        for (SegmentInRange slice : slices) {
+            byRoom.computeIfAbsent(slice.segment().getRoomId(), k -> new ForecastTally()).occupied += slice.nights();
+            if (slice.segment().getCheckIn().equals(date)) {
+                roomOfArrivalNight.put(slice.segment().getBookingId(), slice.segment().getRoomId());
+            }
+        }
+        // An arrival's own first night is always one of tonight's slices (checkOut > checkIn), so
+        // falling back to the booking's roomId - its last segment's room - is only a safety net.
+        for (BookingEntity arrival : bookingRepository.findByStatusNotAndCheckInIs(BookingStatus.CANCELLED, date)) {
+            byRoom.computeIfAbsent(roomOfArrivalNight.getOrDefault(arrival.getId(), arrival.getRoomId()), k -> new ForecastTally()).arrivals++;
+        }
+        for (BookingEntity departure : bookingRepository.findByStatusNotAndCheckOut(BookingStatus.CANCELLED, date)) {
+            byRoom.computeIfAbsent(departure.getRoomId(), k -> new ForecastTally()).departures++;
+        }
+        for (String unitId : outOfOrderUnitIds(date, roomOfUnit.keySet())) {
+            byRoom.get(roomOfUnit.get(unitId)).outOfOrder++;
+        }
+
+        ForecastTally total = new ForecastTally();
+        byRoom.values().forEach(total::add);
+        List<ForecastRow> rows = byRoom.entrySet().stream()
+                .map(e -> e.getValue().row(e.getKey(), roomNames.get(e.getKey())))
+                .sorted(Comparator.comparing(r -> r.getRoomName().orElse(""), String.CASE_INSENSITIVE_ORDER))
+                .toList();
+        return new ForecastDay(date.toString(), rows, total.row(null, null));
+    }
+
+    /** One room type's (or the property's) forecast counts for a date; vacant and occupancy % are derived. */
+    private static final class ForecastTally {
+        long arrivals;
+        long departures;
+        long totalRooms;
+        long outOfOrder;
+        long occupied;
+
+        void add(ForecastTally other) {
+            arrivals += other.arrivals;
+            departures += other.departures;
+            totalRooms += other.totalRooms;
+            outOfOrder += other.outOfOrder;
+            occupied += other.occupied;
+        }
+
+        ForecastRow row(String roomId, String roomName) {
+            return new ForecastRow(
+                    roomId,
+                    roomName,
+                    Math.toIntExact(arrivals),
+                    Math.toIntExact(departures),
+                    Math.toIntExact(totalRooms),
+                    Math.toIntExact(outOfOrder),
+                    Math.toIntExact(occupied),
+                    Math.toIntExact(totalRooms - occupied - outOfOrder),
+                    percent(BigDecimal.valueOf(occupied), BigDecimal.valueOf(totalRooms - outOfOrder)));
+        }
     }
 
     // --- GET /reports/guest-ltv ---------------------------------------------------------------

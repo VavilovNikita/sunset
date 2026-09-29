@@ -286,7 +286,8 @@ public class SecurityConfig {
                         // already sees, the sales mix from the same payments as the revenue export,
                         // and guest LTV from the booking list plus guest cards. Top production and
                         // market segment are the occupancy figures regrouped by channel/purpose; the
-                        // manager report (Z370) is the same figures for one night.
+                        // manager report (Z370) is the same figures for one night, and the forecast
+                        // (Z440) the manager report's per-night figures across a range.
                         .requestMatchers(
                                         HttpMethod.GET,
                                         "/reports/occupancy",
@@ -294,7 +295,8 @@ public class SecurityConfig {
                                         "/reports/guest-ltv",
                                         "/reports/top-production",
                                         "/reports/market-segment",
-                                        "/reports/manager")
+                                        "/reports/manager",
+                                        "/reports/forecast")
                                 .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Audit log: read-only, MANAGER+ - the disputes it exists to resolve (a
                         // cash discrepancy, a guest billing question, a suspected misuse of a

@@ -6,6 +6,7 @@
 package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.ErrorMessage;
+import com.sunsetbeach.model.ForecastReport;
 import com.sunsetbeach.model.GuestLtvReport;
 import com.sunsetbeach.model.InHouseReport;
 import com.sunsetbeach.model.ManagerReport;
@@ -60,6 +61,56 @@ public interface ReportsApi {
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/forecast : Day-by-day arrivals, departures, occupancy and vacant rooms, per room type and in total (scoped legacy Z440)
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as the rest of &#x60;/reports/_*&#x60; - forward planning, not routine front-desk lookup.  **Meant for a future range.** Same &#x60;from&#x60;/&#x60;to&#x60; shape and validation as &#x60;GET /reports/occupancy&#x60; (inclusive hotel-local dates, &#x60;from&#x60; on or before &#x60;to&#x60;), and, unlike how the other reports are normally used, a &#x60;from&#x60; in the future is the ordinary case, not an error. A past range is accepted too and computed by the same rules.  **One entry per date** in &#x60;[from, to]&#x60;, in date order. Each has one row per room type and a &#x60;total&#x60; row for the property, the same &#x60;rooms&#x60; + &#x60;total&#x60; layout as &#x60;GET /reports/occupancy&#x60;; the total&#39;s ratio is recomputed from its sums, not averaged.  **Arrivals** / **departures** - non-&#x60;CANCELLED&#x60; bookings whose &#x60;checkIn&#x60; / &#x60;checkOut&#x60; is the date, whatever their &#x60;occupancyStatus&#x60;: exactly the manager report&#39;s own &#x60;accounts.arrivals&#x60; / &#x60;accounts.departures&#x60; for that date. Per room type, an arrival counts under the room type of its first night (where the guest actually arrives, even if the stay is later relocated) and a departure under the room type of its last night.  **Occupied** - room-nights sold for that one night, exactly &#x60;GET /reports/occupancy?from&#x3D;date&amp;to&#x3D;date&#x60;&#39;s &#x60;roomNightsSold&#x60; (per room type, and &#x60;total&#x60; for the property): every non-&#x60;CANCELLED&#x60; booking&#39;s segment covering the night, checked in or not, a segment with no physical room assigned yet included.  **Total rooms** / **out of order** - the manager report&#39;s room statistic, per room type: physical units active today (the same known simplification as the occupancy and manager reports - today&#39;s inventory, not a count as of that date), and active units with a &#x60;RoomUnitBlock&#x60; covering the date. **Vacant** &#x3D; &#x60;totalRooms - occupied - outOfOrder&#x60;, exactly as the legacy report defines it. It is not clamped at zero: a negative value means more rooms are sold than are sellable that night (an overbooking, or a booked room that has since been blocked) - exactly what a forecast exists to surface. **occupancyPercent** &#x3D; &#x60;occupied / (totalRooms - outOfOrder) × 100&#x60;, the manager report&#39;s denominator (its &#x60;tomorrow&#x60; block is this same computation for one date), so out-of-order rooms are taken out of it - unlike &#x60;GET /reports/occupancy&#x60;, which does not subtract blocks. &#x60;null&#x60; when nothing is sellable.  A room type appears on a date if it has at least one active unit today, or any arrival, departure or occupied room that date. Rows are sorted by room type name.  **Left out of the legacy Z440 layout, deliberately:** Allotment (no channel-allotment concept exists - rooms are not held back per channel or agent anywhere in this system); Wait / waitlist (no waitlist concept exists - a booking is either made or not); and Min-Max Availability (not defined clearly enough in the legacy sample to reproduce without guessing). They are omitted rather than filled with a stand-in figure. 
+     *
+     * @param from First date of the forecast, inclusive (Asia/Bangkok). Usually today or later. (required)
+     * @param to Last date of the forecast, inclusive (Asia/Bangkok). (required)
+     * @return The forecast. (status code 200)
+     *         or &#x60;from&#x60;/&#x60;to&#x60; missing, not a valid date, or &#x60;from&#x60; after &#x60;to&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/forecast",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<ForecastReport> getForecastReport(
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = true) String from,
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = true) String to
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"days\" : [ { \"date\" : \"date\", \"rooms\" : [ { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 }, { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 } ], \"total\" : { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 } }, { \"date\" : \"date\", \"rooms\" : [ { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 }, { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 } ], \"total\" : { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 } } ], \"from\" : \"from\", \"to\" : \"to\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
