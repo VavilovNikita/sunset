@@ -258,6 +258,9 @@ class PosRoleHierarchyTests {
     private com.sunsetbeach.service.LifecycleEmailSettingsService lifecycleEmailSettingsService;
 
     @MockitoBean
+    private com.sunsetbeach.service.VatSettingsService vatSettingsService;
+
+    @MockitoBean
     private com.sunsetbeach.service.NightAuditService nightAuditService;
 
     // JwtAuthFilter now re-checks the issuing user's active/tokenVersion against the DB on every
@@ -382,6 +385,51 @@ class PosRoleHierarchyTests {
                     .andExpect(status().isForbidden());
         }
         verify(lifecycleEmailSettingsService, never()).update(any());
+    }
+
+    // --- /settings/vat: the same ADMIN-only tier, reads included. A MANAGER sees the rate only as
+    // the one GET /reports/revenue-statistic computed with ---
+
+    @Test
+    void vatSettings_belowAdmin_isForbidden() throws Exception {
+        for (Role role : new Role[] {Role.MANAGER, Role.CASHIER, Role.WAITER}) {
+            mockMvc.perform(get("/settings/vat").header("Authorization", token(role)))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(put("/settings/vat")
+                            .header("Authorization", token(role))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"vatRate\":10}"))
+                    .andExpect(status().isForbidden());
+        }
+        verify(vatSettingsService, never()).get();
+        verify(vatSettingsService, never()).update(any());
+    }
+
+    @Test
+    void vatSettings_withAdminToken_isOk() throws Exception {
+        com.sunsetbeach.model.VatSettings settings = new com.sunsetbeach.model.VatSettings("7.00", java.time.OffsetDateTime.now());
+        when(vatSettingsService.get()).thenReturn(settings);
+        when(vatSettingsService.update(any())).thenReturn(settings);
+
+        mockMvc.perform(get("/settings/vat").header("Authorization", token(Role.ADMIN)))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/settings/vat")
+                        .header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"vatRate\":7.5}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void vatSettings_missingOrOutOfRangeRate_isBadRequest() throws Exception {
+        for (String body : new String[] {"{}", "{\"vatRate\":-1}", "{\"vatRate\":100}"}) {
+            mockMvc.perform(put("/settings/vat")
+                            .header("Authorization", token(Role.ADMIN))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        verify(vatSettingsService, never()).update(any());
     }
 
     // --- /night-audit is CASHIER+, lower than /reports/**' MANAGER+ - routine front-desk work ---
@@ -721,7 +769,7 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isBadRequest());
     }
 
-    // --- GET /reports/occupancy, /reports/pos-sales-mix, /reports/guest-ltv, top-production, market-segment, forecast: same MANAGER floor ---
+    // --- GET /reports/occupancy, /reports/pos-sales-mix, /reports/guest-ltv, top-production, market-segment, forecast, revenue-statistic: same MANAGER floor ---
 
     private static final String[] DASHBOARD_REPORTS = {
         "/reports/occupancy?from=2031-01-01&to=2031-01-31",
@@ -730,6 +778,7 @@ class PosRoleHierarchyTests {
         "/reports/top-production?from=2031-01-01&to=2031-01-31",
         "/reports/market-segment?from=2031-01-01&to=2031-01-31",
         "/reports/forecast?from=2031-01-01&to=2031-01-31",
+        "/reports/revenue-statistic?from=2031-01-01&to=2031-01-31",
     };
 
     @Test
@@ -749,6 +798,7 @@ class PosRoleHierarchyTests {
         when(reportService.topProduction(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.TopProductionReport());
         when(reportService.marketSegment(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.MarketSegmentReport());
         when(reportService.forecast(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.ForecastReport());
+        when(reportService.revenueStatistic(anyString(), anyString())).thenReturn(new com.sunsetbeach.model.RevenueStatisticReport());
         for (String url : DASHBOARD_REPORTS) {
             mockMvc.perform(get(url).header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
         }
@@ -756,7 +806,7 @@ class PosRoleHierarchyTests {
 
     @Test
     void dashboardReports_missingOrMalformedDate_isBadRequest() throws Exception {
-        for (String path : new String[] {"/reports/occupancy", "/reports/pos-sales-mix", "/reports/top-production", "/reports/market-segment", "/reports/forecast"}) {
+        for (String path : new String[] {"/reports/occupancy", "/reports/pos-sales-mix", "/reports/top-production", "/reports/market-segment", "/reports/forecast", "/reports/revenue-statistic"}) {
             for (String query : new String[] {"to=2031-01-31", "from=2031-01-01", "from=2031-1-1&to=2031-01-31"}) {
                 mockMvc.perform(get(path + "?" + query).header("Authorization", token(Role.MANAGER))).andExpect(status().isBadRequest());
             }
@@ -766,6 +816,7 @@ class PosRoleHierarchyTests {
         verify(reportService, never()).topProduction(any(), any());
         verify(reportService, never()).marketSegment(any(), any());
         verify(reportService, never()).forecast(any(), any());
+        verify(reportService, never()).revenueStatistic(any(), any());
     }
 
     // --- GET /reports/manager: MANAGER floor like the rest; GET /reports/in-house: the one CASHIER+ report ---

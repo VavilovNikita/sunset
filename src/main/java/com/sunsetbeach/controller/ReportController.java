@@ -8,6 +8,7 @@ import com.sunsetbeach.model.ManagerReport;
 import com.sunsetbeach.model.MarketSegmentReport;
 import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.PosSalesMixReport;
+import com.sunsetbeach.model.RevenueStatisticReport;
 import com.sunsetbeach.model.TopProductionReport;
 import com.sunsetbeach.service.ReportService;
 import com.sunsetbeach.service.RevenueExportService;
@@ -78,5 +79,10 @@ public class ReportController implements ReportsApi {
     @Override
     public ResponseEntity<ForecastReport> getForecastReport(String from, String to) {
         return ResponseEntity.ok(reportService.forecast(from, to));
+    }
+
+    @Override
+    public ResponseEntity<RevenueStatisticReport> getRevenueStatisticReport(String from, String to) {
+        return ResponseEntity.ok(reportService.revenueStatistic(from, to));
     }
 }

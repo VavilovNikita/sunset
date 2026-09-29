@@ -9,6 +9,9 @@ import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.LifecycleEmailSettings;
 import com.sunsetbeach.model.LifecycleEmailSettingsUpdateInput;
 import com.sunsetbeach.model.SetRoomPricing400Response;
+import com.sunsetbeach.model.ValidationError;
+import com.sunsetbeach.model.VatSettings;
+import com.sunsetbeach.model.VatSettingsUpdateInput;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -74,6 +77,47 @@ public interface SettingsApi {
 
 
     /**
+     * GET /settings/vat : Read the VAT rate
+     * Requires an authenticated session with role &#x60;ADMIN&#x60;, same as every &#x60;/settings/_*&#x60; route. A MANAGER doesn&#39;t need this to read the rate: &#x60;GET /reports/revenue-statistic&#x60; returns the rate it computed with. See &#x60;VatSettings&#x60;. 
+     *
+     * @return The current VAT rate. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/settings/vat",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<VatSettings> getVatSettings(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"vatRate\" : \"vatRate\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * PUT /settings/lifecycle-emails : Replace the lifecycle email settings
      * Requires an authenticated session with role &#x60;ADMIN&#x60; - MANAGER included is a 403. This decides what automated email reaches every eligible guest and, through &#x60;postStayReviewUrl&#x60;, where they&#39;re sent after checkout. Replaces every field (a full &#x60;PUT&#x60;, not a patch). &#x60;postStayReviewUrl&#x60; is trimmed; blank means none. Recorded in the audit log (&#x60;LIFECYCLE_EMAIL_SETTINGS_UPDATED&#x60;) with what changed. 
      *
@@ -97,6 +141,55 @@ public interface SettingsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"preArrivalEnabled\" : true, \"postStayReviewUrl\" : \"postStayReviewUrl\", \"preArrivalDaysBefore\" : 0, \"postStayDaysAfter\" : 6, \"winBackMonthsSinceStay\" : 1, \"winBackEnabled\" : true, \"postStayEnabled\" : true, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PUT /settings/vat : Change the VAT rate
+     * Requires an authenticated session with role &#x60;ADMIN&#x60; - MANAGER included is a 403. Takes effect on the next report request; nothing is cached and no deploy or restart is needed. The rate is not versioned: every report computes with the rate stored at the moment it is requested, for its whole range. Recorded in the audit log (&#x60;VAT_SETTINGS_UPDATED&#x60;) with the old and new rate; an unchanged value records nothing. 
+     *
+     * @param vatSettingsUpdateInput  (required)
+     * @return The updated VAT rate. (status code 200)
+     *         or &#x60;vatRate&#x60; missing, below 0, above 99.99, or with more than two decimals. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.PUT,
+        value = "/settings/vat",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<VatSettings> updateVatSettings(
+         @Valid @RequestBody VatSettingsUpdateInput vatSettingsUpdateInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"vatRate\" : \"vatRate\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

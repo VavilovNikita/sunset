@@ -13,6 +13,7 @@ import com.sunsetbeach.model.ManagerReport;
 import com.sunsetbeach.model.MarketSegmentReport;
 import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.PosSalesMixReport;
+import com.sunsetbeach.model.RevenueStatisticReport;
 import com.sunsetbeach.model.TopProductionReport;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
@@ -402,6 +403,56 @@ public interface ReportsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"totalQuantity\" : 0, \"from\" : \"from\", \"to\" : \"to\", \"totalRevenue\" : \"totalRevenue\", \"categories\" : [ { \"revenue\" : \"revenue\", \"quantity\" : 1, \"category\" : \"category\" }, { \"revenue\" : \"revenue\", \"quantity\" : 1, \"category\" : \"category\" } ], \"departments\" : [ { \"revenue\" : \"revenue\", \"quantity\" : 5 }, { \"revenue\" : \"revenue\", \"quantity\" : 5 } ], \"items\" : [ { \"revenue\" : \"revenue\", \"quantity\" : 6, \"name\" : \"name\", \"category\" : \"category\", \"department\" : \"KITCHEN\", \"menuItemId\" : \"menuItemId\" }, { \"revenue\" : \"revenue\", \"quantity\" : 6, \"name\" : \"name\", \"category\" : \"category\", \"department\" : \"KITCHEN\", \"menuItemId\" : \"menuItemId\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/revenue-statistic : Gross revenue, VAT and net revenue by revenue code for a date range (legacy Z410)
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as the rest of &#x60;/reports/_*&#x60;.  **Revenue codes.** A reporting-time classification by *where a figure comes from*, not a code stored on any transaction. These three are every revenue source this system records: - &#x60;ROOM&#x60; - exactly &#x60;GET /reports/occupancy&#x60;&#39;s &#x60;total.roomRevenue&#x60; for the same range: every   night inside the range of every non-&#x60;CANCELLED&#x60; booking&#39;s segments (&#x60;NEW&#x60; included), each   segment&#39;s &#x60;totalPrice&#x60; prorated to those nights. The agreed room price, not money   collected.  - &#x60;FNB&#x60; - POS lines whose menu item&#39;s &#x60;department&#x60; is &#x60;KITCHEN&#x60; or &#x60;BAR&#x60;: exactly   &#x60;GET /reports/pos-sales-mix&#x60;&#39;s &#x60;departments&#x60; revenue for those two, for the same range   (lines of &#x60;PAID&#x60; orders whose &#x60;Payment&#x60; falls inside the range, at the price frozen on   each line, &#x60;ROOM_CHARGE&#x60; included).  - &#x60;SPA&#x60; - the same POS population, &#x60;department&#x60; &#x60;SPA&#x60;: treatments bill through the POS as   ordinary order lines. &#x60;FNB&#x60; + &#x60;SPA&#x60; is &#x60;GET /reports/pos-sales-mix&#x60;&#39;s &#x60;totalRevenue&#x60;.  Folio payments (money collected against room-charged POS orders) are not a separate source: they settle revenue already counted under &#x60;FNB&#x60;/&#x60;SPA&#x60; when the order was closed. There is no discount, allowance or adjustment concept anywhere in this system, so gross is simply the prices as charged.  **Days.** Same as the two source reports: &#x60;ROOM&#x60; counts nights (&#x60;from&#x60;/&#x60;to&#x60; are inclusive nights), &#x60;FNB&#x60;/&#x60;SPA&#x60; count the Asia/Bangkok calendar day each order was paid. A stay and the dinner charged to it can therefore land on different days near the edges of a range.  **VAT basis: prices are VAT-inclusive.** Nothing in this system adds tax to anything: a guest is charged exactly &#x60;Booking.totalPrice&#x60; for a stay and exactly an order&#39;s &#x60;total&#x60; (Σ &#x60;quantity × unitPrice&#x60;) for a POS order, and the printed receipt&#39;s &#x60;TOTAL&#x60; is that same sum with no tax line. Whatever VAT the hotel owes is therefore already inside those figures, and is extracted from them, never added on top: - &#x60;gross&#x60; - the figure as charged, rounded to two decimals once (as the source report shows it). - &#x60;vat&#x60; &#x3D; &#x60;gross × vatRate / (100 + vatRate)&#x60;, rounded half-up to two decimals. - &#x60;net&#x60; &#x3D; &#x60;gross - vat&#x60;, so &#x60;net + vat&#x60; is always exactly &#x60;gross&#x60;.  **One rate for the whole range.** &#x60;vatRate&#x60; is the rate stored in &#x60;GET /settings/vat&#x60; at the moment this report is requested, applied uniformly to every code and every day in the range, and returned in the response so the figures explain themselves. The rate is not versioned: if it was changed during the range, the whole range is still computed at today&#39;s rate. This is a known simplification, not a historical VAT record.  &#x60;rows&#x60; is always &#x60;ROOM&#x60;, &#x60;FNB&#x60;, &#x60;SPA&#x60;, in that order, zero rows included. &#x60;total&#x60; (whose &#x60;code&#x60; is null) is the sum of the three rows&#39; &#x60;gross&#x60;, &#x60;vat&#x60; and &#x60;net&#x60; - the rows&#39; own rounded figures added up, so it can differ by a cent from VAT computed on the total gross. 
+     *
+     * @param from First date of the range, inclusive (Asia/Bangkok). (required)
+     * @param to Last date of the range, inclusive (Asia/Bangkok). (required)
+     * @return The three revenue codes and their total. (status code 200)
+     *         or &#x60;from&#x60;/&#x60;to&#x60; missing, not a valid date, or &#x60;from&#x60; after &#x60;to&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/revenue-statistic",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<RevenueStatisticReport> getRevenueStatisticReport(
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = true) String from,
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = true) String to
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"total\" : { \"code\" : \"ROOM\", \"gross\" : \"gross\", \"vat\" : \"vat\", \"net\" : \"net\" }, \"vatRate\" : \"vatRate\", \"from\" : \"from\", \"to\" : \"to\", \"rows\" : [ { \"code\" : \"ROOM\", \"gross\" : \"gross\", \"vat\" : \"vat\", \"net\" : \"net\" }, { \"code\" : \"ROOM\", \"gross\" : \"gross\", \"vat\" : \"vat\", \"net\" : \"net\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

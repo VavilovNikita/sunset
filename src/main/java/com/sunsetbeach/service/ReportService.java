@@ -42,6 +42,9 @@ import com.sunsetbeach.model.PosSalesMixCategory;
 import com.sunsetbeach.model.PosSalesMixDepartment;
 import com.sunsetbeach.model.PosSalesMixItem;
 import com.sunsetbeach.model.PosSalesMixReport;
+import com.sunsetbeach.model.RevenueCode;
+import com.sunsetbeach.model.RevenueStatisticReport;
+import com.sunsetbeach.model.RevenueStatisticRow;
 import com.sunsetbeach.model.TopProductionReport;
 import com.sunsetbeach.model.TopProductionRow;
 import com.sunsetbeach.repository.BookingRepository;
@@ -79,7 +82,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The read-only dashboard reports under {@code /reports}: occupancy/ADR/RevPAR, top production,
- * market segment, POS sales mix, guest lifetime value, the in-house list, the manager report and the forecast. Each operation's own openapi.yaml description is the contract;
+ * market segment, POS sales mix, guest lifetime value, the in-house list, the manager report, the forecast and the revenue statistic. Each operation's own openapi.yaml description is the contract;
  * notes here are only about how the numbers are computed.
  *
  * <p>Money is summed unrounded and rounded to two decimals ({@link RoundingMode#HALF_UP}) exactly
@@ -103,6 +106,7 @@ public class ReportService {
     private final MenuItemRepository menuItemRepository;
     private final BookingRepository bookingRepository;
     private final GuestRepository guestRepository;
+    private final VatSettingsService vatSettingsService;
     private final Clock clock;
 
     public ReportService(
@@ -116,6 +120,7 @@ public class ReportService {
             MenuItemRepository menuItemRepository,
             BookingRepository bookingRepository,
             GuestRepository guestRepository,
+            VatSettingsService vatSettingsService,
             Clock clock) {
         this.segmentRepository = segmentRepository;
         this.roomRepository = roomRepository;
@@ -127,6 +132,7 @@ public class ReportService {
         this.menuItemRepository = menuItemRepository;
         this.bookingRepository = bookingRepository;
         this.guestRepository = guestRepository;
+        this.vatSettingsService = vatSettingsService;
         this.clock = clock;
     }
 
@@ -228,16 +234,9 @@ public class ReportService {
     @Transactional(readOnly = true)
     public PosSalesMixReport posSalesMix(String from, String to) {
         ReportDateRange range = ReportDateRange.parse(from, to);
-        List<String> orderIds = paymentRepository
-                .findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(range.startUtc(clock.getZone()), range.endUtcExclusive(clock.getZone()))
-                .stream().map(PaymentEntity::getOrderId).distinct().toList();
-        List<String> paidOrderIds = orderRepository.findAllById(orderIds).stream()
-                .filter(o -> o.getStatus() == OrderStatus.PAID)
-                .map(OrderEntity::getId)
-                .toList();
-        List<OrderItemEntity> lines = paidOrderIds.isEmpty() ? List.of() : orderItemRepository.findByOrderIdIn(paidOrderIds);
-        Map<String, MenuItemEntity> menuItems = byId(
-                menuItemRepository.findAllById(lines.stream().map(OrderItemEntity::getMenuItemId).distinct().toList()), MenuItemEntity::getId);
+        PosLines pos = posLinesInRange(range);
+        List<OrderItemEntity> lines = pos.lines();
+        Map<String, MenuItemEntity> menuItems = pos.menuItems();
 
         Map<String, Tally> byItem = new LinkedHashMap<>();
         for (OrderItemEntity line : lines) {
@@ -271,6 +270,28 @@ public class ReportService {
 
         return new PosSalesMixReport(
                 range.from().toString(), range.to().toString(), total.quantityInt(), money(total.revenue), items, categories, departments);
+    }
+
+    /** The order lines of a range's POS population, with the menu item each one refers to. */
+    private record PosLines(List<OrderItemEntity> lines, Map<String, MenuItemEntity> menuItems) {}
+
+    /**
+     * The POS population shared by the sales mix and the revenue statistic: every line of every
+     * {@code PAID} order whose {@code Payment} falls inside the range's Bangkok days. One
+     * definition, so the revenue statistic's FNB/SPA always sum to the sales mix's total.
+     */
+    private PosLines posLinesInRange(ReportDateRange range) {
+        List<String> orderIds = paymentRepository
+                .findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(range.startUtc(clock.getZone()), range.endUtcExclusive(clock.getZone()))
+                .stream().map(PaymentEntity::getOrderId).distinct().toList();
+        List<String> paidOrderIds = orderRepository.findAllById(orderIds).stream()
+                .filter(o -> o.getStatus() == OrderStatus.PAID)
+                .map(OrderEntity::getId)
+                .toList();
+        List<OrderItemEntity> lines = paidOrderIds.isEmpty() ? List.of() : orderItemRepository.findByOrderIdIn(paidOrderIds);
+        Map<String, MenuItemEntity> menuItems = byId(
+                menuItemRepository.findAllById(lines.stream().map(OrderItemEntity::getMenuItemId).distinct().toList()), MenuItemEntity::getId);
+        return new PosLines(lines, menuItems);
     }
 
     /** Revenue descending, then key ascending so equal-revenue rows come back in a stable order. */
@@ -795,6 +816,60 @@ public class ReportService {
                 })
                 .toList();
         return new GuestLtvReport(rows);
+    }
+
+    // --- GET /reports/revenue-statistic ---------------------------------------------------------
+
+    /**
+     * ROOM is {@link #segmentsInRange} (occupancy's own population), FNB/SPA are
+     * {@link #posLinesInRange} (the sales mix's) split by menu department - the classification
+     * lives here, at report time, not on any stored row. Every price in this system is
+     * VAT-inclusive (nothing ever adds tax on top of one), so VAT is extracted from gross, never
+     * added to it. Each code's gross is rounded first, exactly as its source report renders it;
+     * VAT is computed from that rounded gross, and net is the remainder, so net + vat = gross to
+     * the cent and the total row is a plain sum of the rows.
+     */
+    @Transactional(readOnly = true)
+    public RevenueStatisticReport revenueStatistic(String from, String to) {
+        ReportDateRange range = ReportDateRange.parse(from, to);
+        BigDecimal vatRate = vatSettingsService.currentRate();
+
+        Map<RevenueCode, BigDecimal> gross = new EnumMap<>(RevenueCode.class);
+        for (RevenueCode code : RevenueCode.values()) {
+            gross.put(code, BigDecimal.ZERO);
+        }
+        for (SegmentInRange slice : segmentsInRange(range)) {
+            gross.merge(RevenueCode.ROOM, slice.revenue(), BigDecimal::add);
+        }
+        PosLines pos = posLinesInRange(range);
+        for (OrderItemEntity line : pos.lines()) {
+            MenuItemEntity menuItem = pos.menuItems().get(line.getMenuItemId()); // FK on OrderItem.menuItemId - always present
+            gross.merge(revenueCodeOf(menuItem.getDepartment()), line.getUnitPrice().multiply(BigDecimal.valueOf(line.getQuantity())), BigDecimal::add);
+        }
+
+        BigDecimal divisor = HUNDRED.add(vatRate);
+        List<RevenueStatisticRow> rows = new ArrayList<>();
+        BigDecimal totalGross = BigDecimal.ZERO, totalVat = BigDecimal.ZERO;
+        for (Map.Entry<RevenueCode, BigDecimal> entry : gross.entrySet()) {
+            BigDecimal rowGross = entry.getValue().setScale(2, RoundingMode.HALF_UP);
+            BigDecimal rowVat = rowGross.multiply(vatRate).divide(divisor, 2, RoundingMode.HALF_UP);
+            rows.add(revenueStatisticRow(entry.getKey(), rowGross, rowVat));
+            totalGross = totalGross.add(rowGross);
+            totalVat = totalVat.add(rowVat);
+        }
+        return new RevenueStatisticReport(
+                range.from().toString(), range.to().toString(), money(vatRate), rows, revenueStatisticRow(null, totalGross, totalVat));
+    }
+
+    private static RevenueCode revenueCodeOf(MenuDepartment department) {
+        return switch (department) {
+            case KITCHEN, BAR -> RevenueCode.FNB;
+            case SPA -> RevenueCode.SPA;
+        };
+    }
+
+    private static RevenueStatisticRow revenueStatisticRow(RevenueCode code, BigDecimal gross, BigDecimal vat) {
+        return new RevenueStatisticRow(code, money(gross), money(vat), money(gross.subtract(vat)));
     }
 
     // --- Shared -------------------------------------------------------------------------------

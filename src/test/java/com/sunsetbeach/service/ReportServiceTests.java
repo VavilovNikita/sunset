@@ -15,6 +15,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.entity.ShiftEntity;
 import com.sunsetbeach.entity.UserEntity;
+import com.sunsetbeach.entity.VatSettingsEntity;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
@@ -32,6 +33,9 @@ import com.sunsetbeach.model.PosSalesMixCategory;
 import com.sunsetbeach.model.PosSalesMixDepartment;
 import com.sunsetbeach.model.PosSalesMixItem;
 import com.sunsetbeach.model.PosSalesMixReport;
+import com.sunsetbeach.model.RevenueCode;
+import com.sunsetbeach.model.RevenueStatisticReport;
+import com.sunsetbeach.model.RevenueStatisticRow;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.ShiftStatus;
 import com.sunsetbeach.model.TopProductionReport;
@@ -47,6 +51,7 @@ import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.repository.ShiftRepository;
 import com.sunsetbeach.repository.UserRepository;
+import com.sunsetbeach.repository.VatSettingsRepository;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -82,6 +87,7 @@ class ReportServiceTests extends AbstractIntegrationTest {
     @Autowired private PaymentRepository paymentRepository;
     @Autowired private ShiftRepository shiftRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private VatSettingsRepository vatSettingsRepository;
     @Autowired private EntityManager entityManager;
 
     private RoomEntity room;
@@ -425,6 +431,142 @@ class ReportServiceTests extends AbstractIntegrationTest {
         assertThat(sum(report.getCategories().stream().map(PosSalesMixCategory::getRevenue).toList())).isEqualByComparingTo(report.getTotalRevenue());
         assertThat(sum(report.getDepartments().stream().map(PosSalesMixDepartment::getRevenue).toList())).isEqualByComparingTo(report.getTotalRevenue());
         assertThat(sum(report.getItems().stream().map(PosSalesMixItem::getRevenue).toList())).isEqualByComparingTo(report.getTotalRevenue());
+    }
+
+    // --- Revenue statistic (Z410) --------------------------------------------------------------
+
+    /**
+     * Range 2033-10-01..02, VAT 7%. Prices are VAT-inclusive, so VAT = gross × 7 / 107.
+     * <ul>
+     *   <li>ROOM: 10-01 -> 10-03, ฿2140 (both nights in range) + 10-02 -> 10-05, ฿1000 (1 of 3
+     *       nights: ฿333.333...). Gross 2473.33, VAT 161.81 (161.8066...), net 2311.52.
+     *   <li>FNB: Curry 2 × ฿107 (KITCHEN, cash) + Beer 1 × ฿53.50 (BAR, room charge) = 267.50,
+     *       VAT 17.50, net 250.00.
+     *   <li>SPA: Massage 1 × ฿1070 = 1070.00, VAT 70.00, net 1000.00.
+     *   <li>Not counted: a CANCELLED booking, an order that is still SENT, and an order paid on
+     *       10-03 Bangkok time.
+     * </ul>
+     * Total: gross 3810.83, VAT 249.31, net 3561.52.
+     */
+    @Test
+    void revenueStatistic_splitsRoomFnbSpa_andExtractsInclusiveVat() {
+        setVatRate("7.00");
+        persistRevenueStatisticFixture();
+
+        RevenueStatisticReport report = reportService.revenueStatistic("2033-10-01", "2033-10-02");
+
+        assertThat(report.getVatRate()).isEqualTo("7.00");
+        assertThat(report.getRows()).extracting(r -> r.getCode(), RevenueStatisticRow::getGross, RevenueStatisticRow::getVat, RevenueStatisticRow::getNet)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(RevenueCode.ROOM, "2473.33", "161.81", "2311.52"),
+                        org.assertj.core.groups.Tuple.tuple(RevenueCode.FNB, "267.50", "17.50", "250.00"),
+                        org.assertj.core.groups.Tuple.tuple(RevenueCode.SPA, "1070.00", "70.00", "1000.00"));
+        RevenueStatisticRow total = report.getTotal();
+        assertThat(total.getCode()).isNull();
+        assertThat(total.getGross()).isEqualTo("3810.83");
+        assertThat(total.getVat()).isEqualTo("249.31");
+        assertThat(total.getNet()).isEqualTo("3561.52");
+    }
+
+    /** The cross-report contract: ROOM is occupancy's room revenue, FNB/SPA are the sales mix's departments. */
+    @Test
+    void revenueStatistic_matchesOccupancyAndPosSalesMix_andTotalSumsTheRows() {
+        setVatRate("7.00");
+        persistRevenueStatisticFixture();
+
+        RevenueStatisticReport report = reportService.revenueStatistic("2033-10-01", "2033-10-02");
+        OccupancyReport occupancy = reportService.occupancy("2033-10-01", "2033-10-02");
+        PosSalesMixReport salesMix = reportService.posSalesMix("2033-10-01", "2033-10-02");
+
+        assertThat(revenueRow(report, RevenueCode.ROOM).getGross()).isEqualTo(occupancy.getTotal().getRoomRevenue());
+        BigDecimal kitchenAndBar = sum(salesMix.getDepartments().stream()
+                .filter(d -> d.getDepartment() != MenuDepartment.SPA)
+                .map(PosSalesMixDepartment::getRevenue)
+                .toList());
+        BigDecimal fnb = new BigDecimal(revenueRow(report, RevenueCode.FNB).getGross());
+        BigDecimal spa = new BigDecimal(revenueRow(report, RevenueCode.SPA).getGross());
+        assertThat(fnb).isEqualByComparingTo(kitchenAndBar);
+        assertThat(fnb.add(spa)).isEqualByComparingTo(salesMix.getTotalRevenue());
+
+        for (RevenueStatisticRow row : report.getRows()) {
+            assertThat(new BigDecimal(row.getNet()).add(new BigDecimal(row.getVat()))).isEqualByComparingTo(row.getGross());
+        }
+        assertThat(sum(report.getRows().stream().map(RevenueStatisticRow::getGross).toList())).isEqualByComparingTo(report.getTotal().getGross());
+        assertThat(sum(report.getRows().stream().map(RevenueStatisticRow::getVat).toList())).isEqualByComparingTo(report.getTotal().getVat());
+        assertThat(sum(report.getRows().stream().map(RevenueStatisticRow::getNet).toList())).isEqualByComparingTo(report.getTotal().getNet());
+    }
+
+    @Test
+    void revenueStatistic_emptyRange_returnsAllThreeCodesAsZeros() {
+        setVatRate("7.00");
+
+        RevenueStatisticReport report = reportService.revenueStatistic("2033-11-01", "2033-11-30");
+
+        assertThat(report.getRows()).extracting(r -> r.getCode()).containsExactly(RevenueCode.ROOM, RevenueCode.FNB, RevenueCode.SPA);
+        assertThat(report.getRows()).allSatisfy(r -> {
+            assertThat(r.getGross()).isEqualTo("0.00");
+            assertThat(r.getVat()).isEqualTo("0.00");
+            assertThat(r.getNet()).isEqualTo("0.00");
+        });
+    }
+
+    /** FNB gross 267.50: VAT 17.50 at 7% (× 7/107), then 24.32 at 10% (× 10/110 = 24.318...) on the very next call. */
+    @Test
+    void revenueStatistic_readsTheStoredRateOnEveryCall() {
+        setVatRate("7.00");
+        persistRevenueStatisticFixture();
+        assertThat(revenueRow(reportService.revenueStatistic("2033-10-01", "2033-10-02"), RevenueCode.FNB).getVat()).isEqualTo("17.50");
+
+        setVatRate("10.00");
+        RevenueStatisticReport report = reportService.revenueStatistic("2033-10-01", "2033-10-02");
+
+        assertThat(report.getVatRate()).isEqualTo("10.00");
+        assertThat(revenueRow(report, RevenueCode.FNB).getVat()).isEqualTo("24.32");
+        assertThat(revenueRow(report, RevenueCode.FNB).getNet()).isEqualTo("243.18");
+    }
+
+    @Test
+    void revenueStatistic_zeroRate_hasNoVat() {
+        setVatRate("0.00");
+        persistRevenueStatisticFixture();
+
+        RevenueStatisticReport report = reportService.revenueStatistic("2033-10-01", "2033-10-02");
+
+        assertThat(report.getVatRate()).isEqualTo("0.00");
+        assertThat(report.getTotal().getVat()).isEqualTo("0.00");
+        assertThat(report.getTotal().getNet()).isEqualTo(report.getTotal().getGross());
+    }
+
+    @Test
+    void revenueStatistic_fromAfterTo_isRejected() {
+        assertThatThrownBy(() -> reportService.revenueStatistic("2033-10-02", "2033-10-01")).isInstanceOf(ValidationException.class);
+    }
+
+    private void persistRevenueStatisticFixture() {
+        persistStay(BookingStatus.CONFIRMED, units.get(0), "2033-10-01", "2033-10-03", "2140.00");
+        persistStay(BookingStatus.NEW, units.get(1), "2033-10-02", "2033-10-05", "1000.00");
+        persistStay(BookingStatus.CANCELLED, null, "2033-10-01", "2033-10-02", "9999.00");
+
+        MenuItemEntity curry = persistMenuItem("Curry", "Mains " + UUID.randomUUID(), MenuDepartment.KITCHEN, "107.00");
+        MenuItemEntity beer = persistMenuItem("Beer", "Drinks " + UUID.randomUUID(), MenuDepartment.BAR, "53.50");
+        MenuItemEntity massage = persistMenuItem("Massage", "Treatments " + UUID.randomUUID(), MenuDepartment.SPA, "1070.00");
+
+        // Bangkok is UTC+7: 05:00 UTC on 10-01 is noon on 10-01; 17:00 UTC on 10-02 is midnight starting 10-03.
+        persistPayment(persistOrder(OrderStatus.PAID, line(curry, 2, "107.00")), PaymentMethod.CASH, LocalDateTime.of(2033, 10, 1, 5, 0));
+        persistPayment(persistOrder(OrderStatus.PAID, line(beer, 1, "53.50")), PaymentMethod.ROOM_CHARGE, LocalDateTime.of(2033, 10, 2, 10, 0));
+        persistPayment(persistOrder(OrderStatus.PAID, line(massage, 1, "1070.00")), PaymentMethod.CARD, LocalDateTime.of(2033, 10, 2, 16, 59));
+        persistPayment(persistOrder(OrderStatus.PAID, line(curry, 5, "107.00")), PaymentMethod.CASH, LocalDateTime.of(2033, 10, 2, 17, 0));
+        persistOrder(OrderStatus.SENT, line(beer, 10, "53.50"));
+    }
+
+    private void setVatRate(String rate) {
+        VatSettingsEntity settings = vatSettingsRepository.findById(VatSettingsEntity.SINGLETON_ID).orElseThrow();
+        settings.setVatRate(new BigDecimal(rate));
+        vatSettingsRepository.saveAndFlush(settings);
+    }
+
+    private static RevenueStatisticRow revenueRow(RevenueStatisticReport report, RevenueCode code) {
+        return report.getRows().stream().filter(r -> r.getCode() == code).findFirst().orElseThrow();
     }
 
     // --- Guest LTV ----------------------------------------------------------------------------

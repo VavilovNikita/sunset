@@ -132,7 +132,7 @@ tags:
     description: >
       Hotel-wide configuration. ADMIN only, same tier as `Users` and outside the role hierarchy's
       usual MANAGER floor for admin screens: what lives here changes what goes into every guest's
-      inbox.
+      inbox, or what the hotel's own VAT figures are computed with.
   - name: AuditLog
     description: >
       Read-only, append-only record of significant staff actions - money and guest-data
@@ -5955,6 +5955,98 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /reports/revenue-statistic:
+    get:
+      operationId: getRevenueStatisticReport
+      tags: [Reports]
+      summary: Gross revenue, VAT and net revenue by revenue code for a date range (legacy Z410)
+      description: >
+        Requires role `MANAGER` or above, same floor as the rest of `/reports/*`.
+
+
+        **Revenue codes.** A reporting-time classification by *where a figure comes from*, not a
+        code stored on any transaction. These three are every revenue source this system records:
+
+        - `ROOM` - exactly `GET /reports/occupancy`'s `total.roomRevenue` for the same range: every
+          night inside the range of every non-`CANCELLED` booking's segments (`NEW` included), each
+          segment's `totalPrice` prorated to those nights. The agreed room price, not money
+          collected.
+
+        - `FNB` - POS lines whose menu item's `department` is `KITCHEN` or `BAR`: exactly
+          `GET /reports/pos-sales-mix`'s `departments` revenue for those two, for the same range
+          (lines of `PAID` orders whose `Payment` falls inside the range, at the price frozen on
+          each line, `ROOM_CHARGE` included).
+
+        - `SPA` - the same POS population, `department` `SPA`: treatments bill through the POS as
+          ordinary order lines. `FNB` + `SPA` is `GET /reports/pos-sales-mix`'s `totalRevenue`.
+
+        Folio payments (money collected against room-charged POS orders) are not a separate
+        source: they settle revenue already counted under `FNB`/`SPA` when the order was closed.
+        There is no discount, allowance or adjustment concept anywhere in this system, so gross is
+        simply the prices as charged.
+
+
+        **Days.** Same as the two source reports: `ROOM` counts nights (`from`/`to` are inclusive
+        nights), `FNB`/`SPA` count the Asia/Bangkok calendar day each order was paid. A stay and
+        the dinner charged to it can therefore land on different days near the edges of a range.
+
+
+        **VAT basis: prices are VAT-inclusive.** Nothing in this system adds tax to anything: a
+        guest is charged exactly `Booking.totalPrice` for a stay and exactly an order's `total`
+        (Σ `quantity × unitPrice`) for a POS order, and the printed receipt's `TOTAL` is that same
+        sum with no tax line. Whatever VAT the hotel owes is therefore already inside those
+        figures, and is extracted from them, never added on top:
+
+        - `gross` - the figure as charged, rounded to two decimals once (as the source report shows it).
+
+        - `vat` = `gross × vatRate / (100 + vatRate)`, rounded half-up to two decimals.
+
+        - `net` = `gross - vat`, so `net + vat` is always exactly `gross`.
+
+
+        **One rate for the whole range.** `vatRate` is the rate stored in `GET /settings/vat` at the
+        moment this report is requested, applied uniformly to every code and every day in the
+        range, and returned in the response so the figures explain themselves. The rate is not
+        versioned: if it was changed during the range, the whole range is still computed at
+        today's rate. This is a known simplification, not a historical VAT record.
+
+
+        `rows` is always `ROOM`, `FNB`, `SPA`, in that order, zero rows included. `total` (whose
+        `code` is null) is the sum of the three rows' `gross`, `vat` and `net` - the rows' own
+        rounded figures added up, so it can differ by a cent from VAT computed on the total gross.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: First date of the range, inclusive (Asia/Bangkok).
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Last date of the range, inclusive (Asia/Bangkok).
+      responses:
+        "200":
+          description: The three revenue codes and their total.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevenueStatisticReport"
+        "400":
+          description: '`from`/`to` missing, not a valid date, or `from` after `to`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /audit-log:
     get:
       operationId: listAuditLog
@@ -6185,6 +6277,60 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/ValidationError"
                   - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /settings/vat:
+    get:
+      operationId: getVatSettings
+      tags: [Settings]
+      summary: Read the VAT rate
+      description: >
+        Requires an authenticated session with role `ADMIN`, same as every `/settings/*` route. A
+        MANAGER doesn't need this to read the rate: `GET /reports/revenue-statistic` returns the
+        rate it computed with. See `VatSettings`.
+      responses:
+        "200":
+          description: The current VAT rate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VatSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: updateVatSettings
+      tags: [Settings]
+      summary: Change the VAT rate
+      description: >
+        Requires an authenticated session with role `ADMIN` - MANAGER included is a 403. Takes
+        effect on the next report request; nothing is cached and no deploy or restart is needed.
+        The rate is not versioned: every report computes with the rate stored at the moment it is
+        requested, for its whole range. Recorded in the audit log (`VAT_SETTINGS_UPDATED`) with
+        the old and new rate; an unchanged value records nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VatSettingsUpdateInput"
+      responses:
+        "200":
+          description: The updated VAT rate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VatSettings"
+        "400":
+          description: '`vatRate` missing, below 0, above 99.99, or with more than two decimals.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -10823,6 +10969,35 @@ components:
           minimum: 1
           maximum: 120
 
+    VatSettings:
+      type: object
+      description: >
+        The one VAT rate applied to all revenue, room and POS alike, by
+        `GET /reports/revenue-statistic`. Stored, not hardcoded, so it can change without a
+        deploy; seeded at 7.00 (Thailand's standard rate) as an editable default. All prices in
+        this system are VAT-inclusive - see that report for why - so the rate is used to extract
+        VAT from a figure, never to add it on top. Nothing else in the system reads it: no price,
+        order total or receipt changes when it does.
+      required: [vatRate, updatedAt]
+      properties:
+        vatRate:
+          type: string
+          description: Percent, two decimals, e.g. "7.00".
+        updatedAt:
+          type: string
+          format: date-time
+
+    VatSettingsUpdateInput:
+      type: object
+      description: Body of `PUT /settings/vat`.
+      required: [vatRate]
+      properties:
+        vatRate:
+          type: number
+          minimum: 0
+          maximum: 99.99
+          description: Percent, at most two decimals. 0 is allowed (VAT not charged).
+
     GuestAccountLinkSummary:
       type: object
       description: >
@@ -12424,6 +12599,7 @@ components:
         - REVENUE_EXPORTED
         - LIFECYCLE_EMAIL_SETTINGS_UPDATED
         - NIGHT_AUDIT_CLOSED
+        - VAT_SETTINGS_UPDATED
 
     AuditEntityType:
       type: string
@@ -14349,6 +14525,54 @@ components:
           type: string
           nullable: true
           description: occupied / availableForSale × 100.
+
+    RevenueCode:
+      type: string
+      enum: [ROOM, FNB, SPA]
+      description: >
+        Which revenue source a `GET /reports/revenue-statistic` figure comes from - see that
+        operation. Derived at report time from the source (booking segments vs. POS lines by menu
+        department), never stored on a transaction.
+
+    RevenueStatisticReport:
+      type: object
+      description: '`GET /reports/revenue-statistic` - see that operation for what counts and how VAT is computed.'
+      required: [from, to, vatRate, rows, total]
+      properties:
+        from:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        to:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        vatRate:
+          type: string
+          description: The VAT rate (percent, two decimals, e.g. "7.00") every figure in this response was computed with - the stored rate at the moment of the request.
+        rows:
+          type: array
+          description: Always ROOM, FNB, SPA, in that order.
+          items:
+            $ref: "#/components/schemas/RevenueStatisticRow"
+        total:
+          $ref: "#/components/schemas/RevenueStatisticRow"
+
+    RevenueStatisticRow:
+      type: object
+      description: One revenue code's figures, or the total (where `code` is null). Money is a decimal string with two decimals; `net + vat = gross` exactly.
+      required: [code, gross, vat, net]
+      properties:
+        code:
+          $ref: "#/components/schemas/RevenueCode"
+          nullable: true
+        gross:
+          type: string
+          description: Revenue as charged, VAT included.
+        vat:
+          type: string
+          description: The VAT inside `gross` - `gross × vatRate / (100 + vatRate)`.
+        net:
+          type: string
+          description: '`gross - vat`.'
 
     ForecastReport:
       type: object
