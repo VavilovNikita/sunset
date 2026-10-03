@@ -18,6 +18,7 @@ import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.rosterimport.RosterGridImportFormat;
 import java.io.ByteArrayInputStream;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -34,6 +35,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
@@ -49,6 +53,20 @@ import org.springframework.security.crypto.password.PasswordEncoder;
  */
 @SpringBootTest
 class RosterExportServiceTests extends AbstractIntegrationTest {
+
+    /**
+     * Pinned well past every date these tests record a punch on: {@code recordPunch} rejects a
+     * punch later than the shared Clock's "now", and these tests use 2027 dates that only stay
+     * in the past against a fixed clock, never against the real one.
+     */
+    @TestConfiguration
+    static class FixedClockConfig {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(LocalDate.of(2028, 1, 1).atStartOfDay(ZoneId.of("Asia/Bangkok")).toInstant(), ZoneId.of("Asia/Bangkok"));
+        }
+    }
 
     @Autowired
     private RosterExportService rosterExportService;

@@ -2,10 +2,12 @@ package com.sunsetbeach.service;
 import com.sunsetbeach.AbstractIntegrationTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sunsetbeach.entity.AttendanceDeviceEntity;
 import com.sunsetbeach.entity.AttendancePunchEntity;
 import com.sunsetbeach.entity.UserEntity;
+import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.model.AttendanceDaySummary;
 import com.sunsetbeach.model.AttendancePunch;
 import com.sunsetbeach.model.AttendancePunchCreateInput;
@@ -26,10 +28,12 @@ import com.sunsetbeach.repository.UserRepository;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -39,6 +43,9 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
@@ -48,6 +55,20 @@ import org.springframework.security.crypto.password.PasswordEncoder;
  */
 @SpringBootTest
 class AttendanceServiceTests extends AbstractIntegrationTest {
+
+    /**
+     * Pinned well past every date these tests record a punch on: {@code recordPunch} rejects a
+     * punch later than the shared Clock's "now", and these tests use 2027 dates that only stay
+     * in the past against a fixed clock, never against the real one.
+     */
+    @TestConfiguration
+    static class FixedClockConfig {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(LocalDate.of(2028, 1, 1).atStartOfDay(ZoneId.of("Asia/Bangkok")).toInstant(), ZoneId.of("Asia/Bangkok"));
+        }
+    }
 
     @Autowired
     private AttendanceService attendanceService;
@@ -178,6 +199,31 @@ class AttendanceServiceTests extends AbstractIntegrationTest {
         assertThat(day.getPunches()).hasSize(1);
         assertThat(day.getPunches().get(0).getEmployeeName()).isEqualTo(employee.getName());
         assertThat(day.getPunches().get(0).getEmployeeEmail()).isNull();
+    }
+
+    /**
+     * Reproduces the report: at ~15:30 Bangkok, a manual punch for 19:00 the same day saved
+     * without error. "Now" is the fixed clock's 2028-01-01 00:00 Bangkok; an input in UTC ("Z",
+     * what the frontend sends) for one minute later is still rejected, the same instant is not.
+     */
+    @Test
+    void recordPunch_laterThanNow_isRejectedAndNothingIsWritten() {
+        UserEntity mgr = createUser(Role.MANAGER);
+        UserEntity employee = createUser(Role.WAITER);
+        OffsetDateTime now = LocalDate.of(2028, 1, 1).atStartOfDay(ZoneId.of("Asia/Bangkok")).toOffsetDateTime();
+
+        assertThatThrownBy(() -> attendanceService.recordPunch(
+                        new AttendancePunchCreateInput(employee.getId(), now.plusMinutes(1).withOffsetSameInstant(ZoneOffset.UTC), PunchDirection.IN),
+                        mgr.getId()))
+                .isInstanceOf(ValidationException.class);
+        assertThatThrownBy(() -> attendanceService.recordPunch(
+                        new AttendancePunchCreateInput(employee.getId(), now.minusHours(5).plusDays(1), PunchDirection.IN), mgr.getId()))
+                .isInstanceOf(ValidationException.class);
+        assertThat(attendanceService.list(employee.getId(), LocalDate.of(2027, 12, 31), LocalDate.of(2028, 1, 2))).isEmpty();
+
+        attendanceService.recordPunch(new AttendancePunchCreateInput(employee.getId(), now, PunchDirection.IN), mgr.getId());
+        attendanceService.recordPunch(new AttendancePunchCreateInput(employee.getId(), now.minusHours(3), PunchDirection.IN), mgr.getId());
+        assertThat(attendanceService.list(employee.getId(), LocalDate.of(2027, 12, 31), LocalDate.of(2028, 1, 2))).hasSize(2);
     }
 
     @Test

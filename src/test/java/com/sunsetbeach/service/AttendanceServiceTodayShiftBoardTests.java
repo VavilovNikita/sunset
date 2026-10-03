@@ -270,6 +270,62 @@ class AttendanceServiceTodayShiftBoardTests extends AbstractIntegrationTest {
         assertThat(status.getReferenceTime().get()).isEqualTo(at(15, 0));
     }
 
+    /**
+     * Someone who clocks in with no roster entry today is working - shown under the area's active
+     * "OP" code, flagged unscheduled, and nothing is written into the roster for them. A real
+     * "OP" may already exist for this area in the shared database (it's a production code); it's
+     * reused rather than replaced, since creating another would retire it for every other test.
+     */
+    @Test
+    void unrosteredButPunched_showsAsUnscheduledOp_withoutWritingARosterEntry() {
+        UserEntity mgr = createUser();
+        StaffArea area = StaffArea.MAINTENANCE;
+        String opId = shiftCodeRepository.findByStaffAreaAndCodeAndActiveTrue(area, "OP")
+                .or(() -> shiftCodeRepository.findByStaffAreaAndCodeAndActiveTrue(null, "OP"))
+                .map(e -> e.getId())
+                .orElseGet(() -> createShiftCode(
+                        new ShiftCodeCreateInput("OP", ShiftCodeKind.OPEN_SCHEDULE, true, true, "2020-01-01").staffArea(area), mgr.getId()).getId());
+
+        UserEntity walkIn = createUser();
+        walkIn.setStaffArea(area);
+        userRepository.saveAndFlush(walkIn);
+        punch(walkIn, 8, 0, PunchDirection.IN, mgr.getId());
+
+        UserEntity rostered = createUser();
+        ShiftCode morning = createShiftCode(
+                new ShiftCodeCreateInput("M" + UUID.randomUUID().toString().substring(0, 6), ShiftCodeKind.MORNING, true, true, "2020-01-01")
+                        .staffArea(area)
+                        .startTime1("07:00")
+                        .endTime1("15:00"),
+                mgr.getId());
+        assignEntry(rostered, morning, mgr.getId());
+        punch(rostered, 7, 0, PunchDirection.IN, mgr.getId());
+
+        // An ABSENCE entry is still a plan - punching on it doesn't turn it into an unscheduled OP.
+        UserEntity onHoliday = createUser();
+        ShiftCode ph = createShiftCode(
+                new ShiftCodeCreateInput("PH" + UUID.randomUUID().toString().substring(0, 6), ShiftCodeKind.ABSENCE, false, true, "2020-01-01")
+                        .staffArea(area),
+                mgr.getId());
+        assignEntry(onHoliday, ph, mgr.getId());
+        punch(onHoliday, 8, 30, PunchDirection.IN, mgr.getId());
+
+        List<TodayShiftStatus> board = attendanceService.getTodayShiftBoard();
+
+        TodayShiftStatus walkInStatus = statusOf(board, walkIn);
+        assertThat(walkInStatus.getShiftCode().getId()).isEqualTo(opId);
+        assertThat(walkInStatus.getShiftCode().getCode()).isEqualTo("OP");
+        assertThat(walkInStatus.getUnscheduled()).isTrue();
+        assertThat(walkInStatus.getState()).isEqualTo(TodayShiftState.ON_SHIFT);
+        assertThat(walkInStatus.getReferenceTime().get()).isEqualTo(at(8, 0));
+        assertThat(rosterEntryRepository.findByDateBetween(FIXED_DATE, FIXED_DATE).stream()
+                        .noneMatch(e -> e.getEmployeeUserId().equals(walkIn.getId())))
+                .isTrue();
+
+        assertThat(statusOf(board, rostered).getUnscheduled()).isFalse();
+        assertThat(board.stream().noneMatch(s -> s.getEmployeeUserId().equals(onHoliday.getId()))).isTrue();
+    }
+
     /** An ABSENCE-kind entry (PH) is not shift-relevant duty - not on this board at all. */
     @Test
     void absenceEntry_isNotOnTheBoard() {

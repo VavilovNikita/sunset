@@ -241,6 +241,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/tables/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.DELETE, "/tables/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.GET, "/tables").authenticated()
+                        // Restaurant floor map: read by anyone who can read /tables (a waiter
+                        // finding a table); replacing the image is MANAGER+, same as the spa map.
+                        // Placing tables is PATCH /tables/positions, already MANAGER+ above.
+                        .requestMatchers(HttpMethod.GET, "/restaurant-map", "/restaurant-map/image").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/restaurant-map/image").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Spa: booking/reading the half-hour grid is CASHIER+, same floor as the
                         // rest of front-desk reservation work (GET /bookings, POST /bookings/staff
                         // above) - reception is the only surface in v1, no therapist self-service

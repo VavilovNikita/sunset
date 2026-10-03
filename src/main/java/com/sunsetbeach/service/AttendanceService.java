@@ -6,6 +6,7 @@ import com.sunsetbeach.entity.RosterEntryEntity;
 import com.sunsetbeach.entity.ShiftCodeEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AttendanceDaySummary;
 import com.sunsetbeach.model.AttendancePunch;
@@ -33,6 +34,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,11 +55,15 @@ public class AttendanceService {
 
     private static final Logger log = LoggerFactory.getLogger(AttendanceService.class);
 
+    /** The open-schedule code an unrostered-but-punched employee is shown under on the today board. */
+    private static final String OPEN_SCHEDULE_CODE = "OP";
+
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
 
     private final AttendancePunchRepository attendancePunchRepository;
     private final RosterEntryRepository rosterEntryRepository;
     private final ShiftCodeRepository shiftCodeRepository;
+    private final ShiftCodeService shiftCodeService;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final Clock clock;
@@ -67,6 +74,7 @@ public class AttendanceService {
             AttendancePunchRepository attendancePunchRepository,
             RosterEntryRepository rosterEntryRepository,
             ShiftCodeRepository shiftCodeRepository,
+            ShiftCodeService shiftCodeService,
             UserRepository userRepository,
             AuditLogService auditLogService,
             Clock clock,
@@ -75,6 +83,7 @@ public class AttendanceService {
         this.attendancePunchRepository = attendancePunchRepository;
         this.rosterEntryRepository = rosterEntryRepository;
         this.shiftCodeRepository = shiftCodeRepository;
+        this.shiftCodeService = shiftCodeService;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
         this.clock = clock;
@@ -109,6 +118,12 @@ public class AttendanceService {
         // input's real instant into that zone rather than keeping whatever offset's digits it
         // arrived with (the frontend sends a UTC "Z" instant).
         LocalDateTime punchAt = input.getPunchAt().atZoneSameInstant(clock.getZone()).toLocalDateTime();
+        // A hand-recorded punch records something that already happened - one later than right now
+        // would count hours nobody has worked yet. Same "now" as every other read here: the shared
+        // Clock, so a +07:00 and a UTC "Z" input for the same instant get the same answer.
+        if (punchAt.isAfter(LocalDateTime.now(clock))) {
+            throw ValidationException.field("punchAt", "A punch can't be recorded in the future");
+        }
         LocalDate day = punchAt.toLocalDate();
         long priorCountToday = attendancePunchRepository
                 .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), day.atStartOfDay(), day.plusDays(1).atStartOfDay())
@@ -295,6 +310,13 @@ public class AttendanceService {
      * method (and {@link #toTodayShiftStatus}) is the one place that logic lives, matching today's
      * punches to the shift code's own interval(s) positionally, the same rule {@code
      * RosterExportService#writeLateAndLeftEarlyRows} already uses for its "Late & anomalies" sheet.
+     *
+     * <p>Plus one display-time fallback: someone with no {@code RosterEntry} at all today who has
+     * punched today is shown as if rostered on {@code OP} ({@code unscheduled: true}) - see {@code
+     * TodayShiftStatus}'s own openapi.yaml description. Nothing is written for them: the roster,
+     * its coverage counts and every report's planned side stay what a manager actually planned,
+     * while the punches themselves already count toward actuals on their own. An {@code ABSENCE}
+     * entry still keeps someone off the board, punched or not - that is a plan, not a gap in one.
      */
     @Transactional(readOnly = true)
     public List<TodayShiftStatus> getTodayShiftBoard() {
@@ -307,24 +329,38 @@ public class AttendanceService {
                         .collect(Collectors.toMap(ShiftCodeEntity::getId, s -> s));
 
         List<RosterEntryEntity> workingEntries = entries.stream().filter(e -> shiftCodesById.get(e.getShiftCodeId()).isCountsAsWorked()).toList();
-        if (workingEntries.isEmpty()) {
-            return List.of();
-        }
-
-        Map<String, UserEntity> employees = userRepository
-                .findAllById(workingEntries.stream().map(RosterEntryEntity::getEmployeeUserId).toList()).stream()
-                .collect(Collectors.toMap(UserEntity::getId, u -> u));
 
         List<AttendancePunchEntity> punches = attendancePunchRepository
                 .findByPunchAtBetweenOrderByEmployeeUserIdAscPunchAtAsc(today.atStartOfDay(), today.plusDays(1).atStartOfDay());
         Map<String, List<AttendancePunchEntity>> punchesByEmployee = punches.stream().collect(Collectors.groupingBy(AttendancePunchEntity::getEmployeeUserId));
+
+        Set<String> rosteredToday = entries.stream().map(RosterEntryEntity::getEmployeeUserId).collect(Collectors.toSet());
+        List<String> unscheduledIds = punchesByEmployee.keySet().stream().filter(id -> !rosteredToday.contains(id)).toList();
+        if (workingEntries.isEmpty() && unscheduledIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<String> employeeIds = new ArrayList<>(workingEntries.stream().map(RosterEntryEntity::getEmployeeUserId).toList());
+        employeeIds.addAll(unscheduledIds);
+        Map<String, UserEntity> employees =
+                userRepository.findAllById(employeeIds).stream().collect(Collectors.toMap(UserEntity::getId, u -> u));
 
         List<TodayShiftStatus> board = new ArrayList<>();
         for (RosterEntryEntity entry : workingEntries) {
             UserEntity employee = employees.get(entry.getEmployeeUserId());
             ShiftCodeEntity shiftCode = shiftCodesById.get(entry.getShiftCodeId());
             List<AttendancePunchEntity> dayPunches = punchesByEmployee.getOrDefault(employee.getId(), List.of());
-            board.add(toTodayShiftStatus(employee, shiftCode, dayPunches, today, now));
+            board.add(toTodayShiftStatus(employee, shiftCode, dayPunches, today, now).unscheduled(false));
+        }
+        for (String employeeId : unscheduledIds) {
+            UserEntity employee = employees.get(employeeId);
+            if (employee == null) continue;
+            Optional<ShiftCodeEntity> op = shiftCodeService.resolveActive(employee.getStaffArea(), OPEN_SCHEDULE_CODE);
+            if (op.isEmpty()) {
+                log.warn("{} punched today with no roster entry, but no active {} shift code exists to show them under", employee.getName(), OPEN_SCHEDULE_CODE);
+                continue;
+            }
+            board.add(toTodayShiftStatus(employee, op.get(), punchesByEmployee.get(employeeId), today, now).unscheduled(true));
         }
         return board;
     }

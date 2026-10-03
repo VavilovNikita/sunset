@@ -315,16 +315,19 @@ public class RosterService {
         List<RosterEntry> entryDtos = entities.stream().map(e -> toDto(e, employees.get(e.getEmployeeUserId()), shiftCodes.get(e.getShiftCodeId()), null)).toList();
         List<RosterEmployee> employeeDtos = listEmployees();
 
-        // Coverage: only countsAsWorked entries count toward a day's working total for that
-        // area - and only when the code itself names one. A shared code (see ShiftCode's own
-        // description) carries no area information at all, so an entry using one can't be
-        // attributed to any area's minimum without guessing; it's excluded from every area's
-        // count rather than assigned to one arbitrarily.
+        // Coverage: a countsAsWorked entry counts toward the area of the *employee* it belongs to
+        // (User.staffArea), the same department the grid groups that person's row under - and,
+        // like the grid's own Working total, only for active employees. It used to read the area
+        // off the shift code instead, which a shared code (OP, PH, 7, 12, ... - staffArea null,
+        // see ShiftCode's own description) doesn't have: every entry using one was excluded from
+        // every area, so a roster built on shared codes showed 0/N coverage on every day. A code's
+        // area only says where that code is defined; the person is who's actually working where.
         Map<String, Integer> workingCountByAreaDate = new HashMap<>();
         for (RosterEntryEntity e : entities) {
             ShiftCodeEntity shiftCode = shiftCodes.get(e.getShiftCodeId());
-            if (shiftCode != null && shiftCode.isCountsAsWorked() && shiftCode.getStaffArea() != null) {
-                String key = shiftCode.getStaffArea().name() + "|" + e.getDate();
+            UserEntity employee = employees.get(e.getEmployeeUserId());
+            if (shiftCode != null && shiftCode.isCountsAsWorked() && employee != null && employee.isActive() && employee.getStaffArea() != null) {
+                String key = employee.getStaffArea().name() + "|" + e.getDate();
                 workingCountByAreaDate.merge(key, 1, Integer::sum);
             }
         }

@@ -16,7 +16,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * One &#x60;(staffArea, date)&#x60; below its &#x60;StaffAreaCoverageRule.minimumWorking&#x60; - a warning, never a reason a roster can&#39;t be saved.
+ * One &#x60;(staffArea, date)&#x60; below its &#x60;StaffAreaCoverageRule.minimumWorking&#x60; - a warning, never a reason a roster can&#39;t be saved. &#x60;workingCount&#x60; counts active employees whose own &#x60;User.staffArea&#x60; is this area and who have a &#x60;countsAsWorked&#x60; entry that day - the area of the person, not of the shift code (a shared code has none). 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

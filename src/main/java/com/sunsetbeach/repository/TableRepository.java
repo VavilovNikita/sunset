@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface TableRepository extends JpaRepository<TableEntity, String> {
 
     List<TableEntity> findByZone(Zone zone);
+
+    List<TableEntity> findByZoneNot(Zone zone);
 }

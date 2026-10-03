@@ -7,9 +7,9 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.Zone;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Arrays;
-import org.openapitools.jackson.nullable.JsonNullable;
-import java.util.NoSuchElementException;
+import java.util.List;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -20,17 +20,17 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A physical POS table/spot a guest tab can be opened against. Mapped to a &#x60;PosTable&#x60; database table (not &#x60;Table&#x60;) to sidestep the SQL keyword collision — the API schema name is unaffected. 
+ * One non-SPA table on the restaurant map (&#x60;GET /restaurant-map&#x60;). &#x60;openOrderIds&#x60; are the table&#39;s &#x60;OPEN&#x60;/&#x60;SENT&#x60; orders - the same set the POS board treats as \&quot;occupied\&quot;, and more than one is possible (&#x60;POST /orders&#x60; doesn&#39;t enforce one order per table). &#x60;isActive&#x60; is an independent fact, as on &#x60;SpaMapTable&#x60;: a deactivated table is still listed, never excluded. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
-public class Table {
+public class RestaurantMapTable {
 
-  private String id;
-
-  private Zone zone;
+  private String tableId;
 
   private String label;
+
+  private Zone zone;
 
   private Integer capacity;
 
@@ -40,60 +40,47 @@ public class Table {
 
   private JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> positionY = JsonNullable.<BigDecimal>undefined();
 
-  public Table() {
+  @Valid
+  private List<String> openOrderIds = new ArrayList<>();
+
+  public RestaurantMapTable() {
     super();
   }
 
   /**
    * Constructor with only required parameters
    */
-  public Table(String id, Zone zone, String label, Integer capacity, Boolean isActive) {
-    this.id = id;
-    this.zone = zone;
+  public RestaurantMapTable(String tableId, String label, Zone zone, Integer capacity, Boolean isActive, BigDecimal positionX, BigDecimal positionY, List<String> openOrderIds) {
+    this.tableId = tableId;
     this.label = label;
+    this.zone = zone;
     this.capacity = capacity;
     this.isActive = isActive;
+    this.positionX = JsonNullable.of(positionX);
+    this.positionY = JsonNullable.of(positionY);
+    this.openOrderIds = openOrderIds;
   }
 
-  public Table id(String id) {
-    this.id = id;
+  public RestaurantMapTable tableId(String tableId) {
+    this.tableId = tableId;
     return this;
   }
 
   /**
-   * Get id
-   * @return id
+   * Get tableId
+   * @return tableId
    */
   @NotNull 
-  @JsonProperty("id")
-  public String getId() {
-    return id;
+  @JsonProperty("tableId")
+  public String getTableId() {
+    return tableId;
   }
 
-  public void setId(String id) {
-    this.id = id;
+  public void setTableId(String tableId) {
+    this.tableId = tableId;
   }
 
-  public Table zone(Zone zone) {
-    this.zone = zone;
-    return this;
-  }
-
-  /**
-   * Get zone
-   * @return zone
-   */
-  @NotNull @Valid 
-  @JsonProperty("zone")
-  public Zone getZone() {
-    return zone;
-  }
-
-  public void setZone(Zone zone) {
-    this.zone = zone;
-  }
-
-  public Table label(String label) {
+  public RestaurantMapTable label(String label) {
     this.label = label;
     return this;
   }
@@ -112,7 +99,26 @@ public class Table {
     this.label = label;
   }
 
-  public Table capacity(Integer capacity) {
+  public RestaurantMapTable zone(Zone zone) {
+    this.zone = zone;
+    return this;
+  }
+
+  /**
+   * Get zone
+   * @return zone
+   */
+  @NotNull @Valid 
+  @JsonProperty("zone")
+  public Zone getZone() {
+    return zone;
+  }
+
+  public void setZone(Zone zone) {
+    this.zone = zone;
+  }
+
+  public RestaurantMapTable capacity(Integer capacity) {
     this.capacity = capacity;
     return this;
   }
@@ -131,7 +137,7 @@ public class Table {
     this.capacity = capacity;
   }
 
-  public Table isActive(Boolean isActive) {
+  public RestaurantMapTable isActive(Boolean isActive) {
     this.isActive = isActive;
     return this;
   }
@@ -150,18 +156,18 @@ public class Table {
     this.isActive = isActive;
   }
 
-  public Table positionX(BigDecimal positionX) {
+  public RestaurantMapTable positionX(BigDecimal positionX) {
     this.positionX = JsonNullable.of(positionX);
     return this;
   }
 
   /**
-   * Normalized (0..1) horizontal position on a floor-plan image, set via `PATCH /tables/positions` - same convention as `RoomUnit.positionX`. Null (always paired with a null `positionY`) means this table hasn't been placed yet. Which floor plan it is a position on follows from `zone`: a SPA-zone table is placed on the spa map (`GET /spa-map`), every other zone on the restaurant map (`GET /restaurant-map`). One table is only ever on one of the two, so one pair of columns serves both. Not tied to the front desk's property map, which only places `RoomUnit`s. 
+   * Get positionX
    * minimum: 0
    * maximum: 1
    * @return positionX
    */
-  @Valid @DecimalMin("0") @DecimalMax("1") 
+  @NotNull @Valid @DecimalMin("0") @DecimalMax("1") 
   @JsonProperty("positionX")
   public JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> getPositionX() {
     return positionX;
@@ -171,18 +177,18 @@ public class Table {
     this.positionX = positionX;
   }
 
-  public Table positionY(BigDecimal positionY) {
+  public RestaurantMapTable positionY(BigDecimal positionY) {
     this.positionY = JsonNullable.of(positionY);
     return this;
   }
 
   /**
-   * Normalized (0..1) vertical position - see `positionX`.
+   * Get positionY
    * minimum: 0
    * maximum: 1
    * @return positionY
    */
-  @Valid @DecimalMin("0") @DecimalMax("1") 
+  @NotNull @Valid @DecimalMin("0") @DecimalMax("1") 
   @JsonProperty("positionY")
   public JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> getPositionY() {
     return positionY;
@@ -190,6 +196,33 @@ public class Table {
 
   public void setPositionY(JsonNullable<BigDecimal> positionY) {
     this.positionY = positionY;
+  }
+
+  public RestaurantMapTable openOrderIds(List<String> openOrderIds) {
+    this.openOrderIds = openOrderIds;
+    return this;
+  }
+
+  public RestaurantMapTable addOpenOrderIdsItem(String openOrderIdsItem) {
+    if (this.openOrderIds == null) {
+      this.openOrderIds = new ArrayList<>();
+    }
+    this.openOrderIds.add(openOrderIdsItem);
+    return this;
+  }
+
+  /**
+   * Get openOrderIds
+   * @return openOrderIds
+   */
+  @NotNull 
+  @JsonProperty("openOrderIds")
+  public List<String> getOpenOrderIds() {
+    return openOrderIds;
+  }
+
+  public void setOpenOrderIds(List<String> openOrderIds) {
+    this.openOrderIds = openOrderIds;
   }
 
   @Override
@@ -200,43 +233,34 @@ public class Table {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    Table table = (Table) o;
-    return Objects.equals(this.id, table.id) &&
-        Objects.equals(this.zone, table.zone) &&
-        Objects.equals(this.label, table.label) &&
-        Objects.equals(this.capacity, table.capacity) &&
-        Objects.equals(this.isActive, table.isActive) &&
-        equalsNullable(this.positionX, table.positionX) &&
-        equalsNullable(this.positionY, table.positionY);
-  }
-
-  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
-    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
+    RestaurantMapTable restaurantMapTable = (RestaurantMapTable) o;
+    return Objects.equals(this.tableId, restaurantMapTable.tableId) &&
+        Objects.equals(this.label, restaurantMapTable.label) &&
+        Objects.equals(this.zone, restaurantMapTable.zone) &&
+        Objects.equals(this.capacity, restaurantMapTable.capacity) &&
+        Objects.equals(this.isActive, restaurantMapTable.isActive) &&
+        Objects.equals(this.positionX, restaurantMapTable.positionX) &&
+        Objects.equals(this.positionY, restaurantMapTable.positionY) &&
+        Objects.equals(this.openOrderIds, restaurantMapTable.openOrderIds);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, zone, label, capacity, isActive, hashCodeNullable(positionX), hashCodeNullable(positionY));
-  }
-
-  private static <T> int hashCodeNullable(JsonNullable<T> a) {
-    if (a == null) {
-      return 1;
-    }
-    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
+    return Objects.hash(tableId, label, zone, capacity, isActive, positionX, positionY, openOrderIds);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class Table {\n");
-    sb.append("    id: ").append(toIndentedString(id)).append("\n");
-    sb.append("    zone: ").append(toIndentedString(zone)).append("\n");
+    sb.append("class RestaurantMapTable {\n");
+    sb.append("    tableId: ").append(toIndentedString(tableId)).append("\n");
     sb.append("    label: ").append(toIndentedString(label)).append("\n");
+    sb.append("    zone: ").append(toIndentedString(zone)).append("\n");
     sb.append("    capacity: ").append(toIndentedString(capacity)).append("\n");
     sb.append("    isActive: ").append(toIndentedString(isActive)).append("\n");
     sb.append("    positionX: ").append(toIndentedString(positionX)).append("\n");
     sb.append("    positionY: ").append(toIndentedString(positionY)).append("\n");
+    sb.append("    openOrderIds: ").append(toIndentedString(openOrderIds)).append("\n");
     sb.append("}");
     return sb.toString();
   }

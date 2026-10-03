@@ -136,6 +136,7 @@ import tools.jackson.databind.json.JsonMapper;
             com.sunsetbeach.controller.MaintenanceTaskController.class,
             TableController.class,
             SpaController.class,
+            RestaurantMapController.class,
             GuestController.class,
             com.sunsetbeach.controller.RosterController.class,
             com.sunsetbeach.controller.AttendanceDeviceController.class,
@@ -221,6 +222,9 @@ class PosRoleHierarchyTests {
 
     @MockitoBean
     private SpaMapService spaMapService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.RestaurantMapService restaurantMapService;
 
     @MockitoBean
     private GuestService guestService;
@@ -1300,6 +1304,30 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isCreated());
     }
 
+    // --- Restaurant map: any staff reads it (a waiter finding a table, same floor as GET
+    // /tables), only MANAGER+ replaces the image - unlike the spa map's CASHIER read floor. ---
+
+    @Test
+    void getRestaurantMap_withWaiterToken_isOk() throws Exception {
+        when(restaurantMapService.get()).thenReturn(sampleRestaurantMap());
+        mockMvc.perform(get("/restaurant-map").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void uploadRestaurantMapImage_withCashierToken_isForbidden() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "plan.jpg", "image/jpeg", new byte[] {1, 2, 3});
+        mockMvc.perform(multipart("/restaurant-map/image").file(file).header("Authorization", token(Role.CASHIER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void uploadRestaurantMapImage_withManagerToken_isCreated() throws Exception {
+        when(restaurantMapService.uploadImage(any())).thenReturn(sampleRestaurantMap());
+        MockMultipartFile file = new MockMultipartFile("file", "plan.jpg", "image/jpeg", new byte[] {1, 2, 3});
+        mockMvc.perform(multipart("/restaurant-map/image").file(file).header("Authorization", token(Role.MANAGER)))
+                .andExpect(status().isCreated());
+    }
+
     // --- PUT /bookings/{id}/room-unit requires CASHIER or above - and now that GET /room-units
     // is WAITER+, a CASHIER can actually list candidates before calling it. This is the
     // asymmetry (action allowed, prerequisite read blocked) this test class was missing
@@ -1782,6 +1810,10 @@ class PosRoleHierarchyTests {
 
     private static PropertyMap samplePropertyMap() {
         return new PropertyMap(null, null, List.of());
+    }
+
+    private static com.sunsetbeach.model.RestaurantMap sampleRestaurantMap() {
+        return new com.sunsetbeach.model.RestaurantMap(null, null, List.of());
     }
 
     private static com.sunsetbeach.model.SpaMap sampleSpaMap() {

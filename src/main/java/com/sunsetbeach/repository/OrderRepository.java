@@ -3,6 +3,7 @@ package com.sunsetbeach.repository;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.model.OrderStatus;
 import java.util.Collection;
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
@@ -11,4 +12,6 @@ public interface OrderRepository extends JpaRepository<OrderEntity, String>, Jpa
     boolean existsByTableIdAndStatusIn(String tableId, Collection<OrderStatus> statuses);
 
     boolean existsByStatusIn(Collection<OrderStatus> statuses);
+
+    List<OrderEntity> findByTableIdIsNotNullAndStatusIn(Collection<OrderStatus> statuses);
 }

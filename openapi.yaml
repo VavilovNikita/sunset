@@ -98,6 +98,11 @@ tags:
     description: POS menu item catalog (staff reads, MANAGER or above manages).
   - name: Tables
     description: POS restaurant/bar/spa/pool tables (staff reads, MANAGER or above manages).
+  - name: RestaurantMap
+    description: >
+      The restaurant floor plan - a background image with every non-SPA table placed on it. The
+      third copy of the `PropertyMap`/`SpaMap` mechanism (any staff reads, MANAGER or above
+      replaces the image; tables are placed via `PATCH /tables/positions`).
   - name: Orders
     description: >
       POS orders and their line items (WAITER or above opens/edits; CASHIER or above closes
@@ -4226,6 +4231,88 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SpaMap"
+        "400":
+          description: No file provided, an unsupported MIME type, or a file over 8MB.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /restaurant-map:
+    get:
+      operationId: getRestaurantMap
+      tags: [RestaurantMap]
+      summary: Get the restaurant map's background image and its tables' open orders
+      description: >
+        Requires any authenticated staff session, same floor as `GET /tables` and the POS board
+        it sits next to - a waiter finding a table is exactly who reads this. Only replacing the
+        image is MANAGER+ (`POST /restaurant-map/image`), and placing tables stays the existing
+        MANAGER+ `PATCH /tables/positions`. Mirrors `GET /spa-map` in shape: every non-SPA table
+        (placed or not, active or not), each with the ids of its open (`OPEN`/`SENT`) orders - one
+        query for those orders across all tables, never one per table.
+      responses:
+        "200":
+          description: The restaurant map.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestaurantMap"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /restaurant-map/image:
+    get:
+      operationId: getRestaurantMapImage
+      tags: [RestaurantMap]
+      summary: Serve the restaurant map's background image
+      description: >
+        Requires any authenticated staff session. Mirrors `GET /spa-map/image` exactly -
+        staff-only, not under the public `/uploads/**`, no filename in the path.
+      responses:
+        "200":
+          description: The image file.
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No restaurant map image has been uploaded yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    post:
+      operationId: uploadRestaurantMapImage
+      tags: [RestaurantMap]
+      summary: Upload (or replace) the restaurant map's background image
+      description: >
+        Requires MANAGER or above. Same validation as `POST /spa-map/image` (content-sniffed
+        type, 8MB cap, randomized filename - see `ImageUploadValidator`). Replacing the image
+        does not touch any `Table.positionX`/`positionY`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        "201":
+          description: The updated restaurant map.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestaurantMap"
         "400":
           description: No file provided, an unsupported MIME type, or a file over 8MB.
           content:
@@ -10569,6 +10656,63 @@ components:
             $ref: "#/components/schemas/SpaMapTable"
           description: Every SPA-zone table (placed on the map or not, active or not), enriched with today's occupancy - see `SpaMapTable`.
 
+    RestaurantMapTable:
+      type: object
+      description: >
+        One non-SPA table on the restaurant map (`GET /restaurant-map`). `openOrderIds` are the
+        table's `OPEN`/`SENT` orders - the same set the POS board treats as "occupied", and more
+        than one is possible (`POST /orders` doesn't enforce one order per table). `isActive` is
+        an independent fact, as on `SpaMapTable`: a deactivated table is still listed, never
+        excluded.
+      required: [tableId, label, zone, capacity, isActive, positionX, positionY, openOrderIds]
+      properties:
+        tableId:
+          type: string
+        label:
+          type: string
+        zone:
+          $ref: "#/components/schemas/Zone"
+        capacity:
+          type: integer
+        isActive:
+          type: boolean
+        positionX:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+        positionY:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+        openOrderIds:
+          type: array
+          items:
+            type: string
+
+    RestaurantMap:
+      type: object
+      description: >
+        The restaurant's own floor-plan background image and its tables - `GET /restaurant-map`,
+        with the image bytes served from `GET /restaurant-map/image`, same split as `SpaMap`. Its
+        own image, not the spa's or the property map's: a different room, and replacing one must
+        never be mistaken for replacing another.
+      required: [imagePath, imageUpdatedAt, tables]
+      properties:
+        imagePath:
+          type: string
+          nullable: true
+          description: Null until a manager uploads one via `POST /restaurant-map/image`.
+        imageUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        tables:
+          type: array
+          items:
+            $ref: "#/components/schemas/RestaurantMapTable"
+
     PropertyMapMaintenanceTask:
       type: object
       description: >
@@ -12368,9 +12512,11 @@ components:
           description: >
             Normalized (0..1) horizontal position on a floor-plan image, set via
             `PATCH /tables/positions` - same convention as `RoomUnit.positionX`. Null (always
-            paired with a null `positionY`) means this table hasn't been placed yet. Used by the
-            spa's own grid (rows = SPA-zone tables) to place them on its floor plan; not tied to
-            the front desk's property map, which only places `RoomUnit`s.
+            paired with a null `positionY`) means this table hasn't been placed yet. Which floor
+            plan it is a position on follows from `zone`: a SPA-zone table is placed on the spa
+            map (`GET /spa-map`), every other zone on the restaurant map (`GET /restaurant-map`).
+            One table is only ever on one of the two, so one pair of columns serves both. Not tied
+            to the front desk's property map, which only places `RoomUnit`s.
         positionY:
           type: number
           nullable: true
@@ -13171,6 +13317,7 @@ components:
         - SITEMINDER_ROOM_TYPE_MAPPING_CREATED
         - SITEMINDER_ROOM_TYPE_MAPPING_UPDATED
         - SITEMINDER_ROOM_TYPE_MAPPING_DELETED
+        - RESTAURANT_MAP_IMAGE_UPDATED
 
     AuditEntityType:
       type: string
@@ -13184,7 +13331,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING, RESTAURANT_MAP]
 
     AuditLogEntry:
       type: object
@@ -13808,7 +13955,11 @@ components:
 
     RosterCoverageWarning:
       type: object
-      description: One `(staffArea, date)` below its `StaffAreaCoverageRule.minimumWorking` - a warning, never a reason a roster can't be saved.
+      description: >
+        One `(staffArea, date)` below its `StaffAreaCoverageRule.minimumWorking` - a warning, never a
+        reason a roster can't be saved. `workingCount` counts active employees whose own
+        `User.staffArea` is this area and who have a `countsAsWorked` entry that day - the area of
+        the person, not of the shift code (a shared code has none).
       required: [staffArea, date, workingCount, minimumWorking]
       properties:
         staffArea:
@@ -14623,10 +14774,16 @@ components:
       description: >
         One employee's live status on `GET /attendance/today` - "who's on shift right now", not
         "who's scheduled this month" (`GET /attendance/summary`) or "what actually happened last
-        month" (`GET /roster/actuals-export`). Only employees with a `countsAsWorked` `RosterEntry`
-        for today appear at all - an `ABSENCE`-kind entry (`PH` and the like) and an employee with
-        no entry today are both simply absent from this list, the same "a day off is the absence
-        of a row" convention `RosterEntry` itself already uses for the roster grid.
+        month" (`GET /roster/actuals-export`). Employees with a `countsAsWorked` `RosterEntry` for
+        today appear; an `ABSENCE`-kind entry (`PH` and the like) is absent from this list, the
+        same "a day off is the absence of a row" convention `RosterEntry` itself already uses for
+        the roster grid. The one addition: an employee with no `RosterEntry` at all today who has
+        nevertheless punched today appears as if rostered on the active `OP` code for their staff
+        area (`unscheduled: true`) - they are demonstrably working, and an open schedule is the one
+        code that claims nothing about when. Display-time only: no `RosterEntry` is written, so the
+        roster, its coverage counts and the planned side of every attendance report stay exactly
+        what a manager planned. If no active `OP` code exists for their area (or area-less), they
+        are left out rather than shown under an invented code.
 
         `referenceTime` is deliberately one raw timestamp whose meaning switches with `state`, not
         a pre-formatted "in 23 minutes" string - the frontend derives (and re-derives, every poll
@@ -14652,6 +14809,12 @@ components:
           type: string
           format: date-time
           nullable: true
+        unscheduled:
+          type: boolean
+          description: >
+            True when this row has no `RosterEntry` behind it - the employee punched today without
+            being rostered, and `shiftCode` is the `OP` fallback described above, not a plan.
+            Always present; false for every rostered row.
 
     ServerTime:
       type: object
