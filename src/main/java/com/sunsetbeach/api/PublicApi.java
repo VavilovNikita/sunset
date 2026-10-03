@@ -5,10 +5,12 @@
  */
 package com.sunsetbeach.api;
 
+import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.PricingResponse;
 import com.sunsetbeach.model.PublicAvailabilityResponse;
 import com.sunsetbeach.model.Room;
+import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -129,6 +131,58 @@ public interface PublicApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"days\" : [ { \"date\" : \"date\", \"price\" : 6.027456183070403, \"isOverride\" : true }, { \"date\" : \"date\", \"price\" : 6.027456183070403, \"isOverride\" : true } ], \"basePrice\" : 0.8008281904610115 }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /public/rooms/{id}/quote : Price and availability of a stay, before booking it (public)
+     * Unauthenticated and read-only. The guest-facing counterpart of &#x60;POST /bookings/staff/quote&#x60;: the same &#x60;BookingWriter&#x60; pricing (each night at the current &#x60;RatePlan&#x60;/&#x60;Room.basePrice&#x60;) and the same availability check &#x60;POST /bookings&#x60; runs, so the figure a guest is shown before booking is the figure the booking call would store - never a client-side sum of &#x60;GET /public/rooms/{id}/pricing&#x60; days. Unlike the staff quote it takes no &#x60;roomUnitId&#x60; (guests don&#39;t pick a physical room) and its &#x60;reason&#x60; never names a room or count. Advisory: &#x60;POST /bookings&#x60; re-prices and re-checks from scratch. Rate limited per caller address (&#x60;PublicQuoteRateLimiter&#x60;, the same sliding-window shape as &#x60;BookingRateLimiter&#x60; but its own, larger bucket, so quoting never uses up a guest&#39;s booking attempts). A stay is capped at 90 nights. 
+     *
+     * @param id  (required)
+     * @param checkIn  (required)
+     * @param checkOut  (required)
+     * @return Server-computed &#x60;totalPrice&#x60; and availability. Returned even when &#x60;available&#x60; is false - &#x60;reason&#x60; then says why, in the same words the booking call would use.  (status code 200)
+     *         or Not a real date, &#x60;checkIn&#x60; not before &#x60;checkOut&#x60;, or longer than 90 nights. (status code 400)
+     *         or Room not found. (status code 404)
+     *         or Too many quote requests from this address recently. (status code 429)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/public/rooms/{id}/quote",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<BookingScheduleQuote> getPublicRoomQuote(
+         @PathVariable("id") String id,
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "checkIn", required = true) String checkIn,
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "checkOut", required = true) String checkOut
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"reason\" : \"reason\", \"totalPrice\" : \"totalPrice\", \"nights\" : 0, \"available\" : true }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

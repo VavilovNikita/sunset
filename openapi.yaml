@@ -540,6 +540,92 @@ paths:
               example:
                 error: Too many failed login attempts. Try again later.
 
+  /guest-auth/forgot-password:
+    post:
+      operationId: requestGuestAccountPasswordReset
+      tags: [GuestAccountAuth]
+      summary: Email a password-reset link
+      description: >
+        Same generic response every time, whether or not `email` has an account - so this can't
+        be used to find out who is registered. When it does, a single-use reset token is
+        generated (only its SHA-256 is stored), valid for 1 hour, replacing any earlier one, and
+        emailed as a link to the site's `/guest/reset-password` page. Rate limited per IP and per
+        email exactly like `register`/`resend-verification` (`GuestAccountAuthRateLimiter`).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestAccountForgotPasswordInput"
+      responses:
+        "200":
+          description: Always this - see this operation's own description.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestAccountMessage"
+              example:
+                message: If this email has an account, we've sent a link to reset the password.
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "429":
+          description: Too many attempts from this IP/email recently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many requests. Please slow down and try again.
+
+  /guest-auth/reset-password:
+    post:
+      operationId: resetGuestAccountPassword
+      tags: [GuestAccountAuth]
+      summary: Set a new password with an emailed reset token
+      description: >
+        Consumes the token from `forgot-password` (unknown, used or expired all give the same
+        400). Sets the new password, clears the token, and bumps `tokenVersion`, which signs out
+        every guest token issued before. Holding the emailed token proves control of the mailbox,
+        so an account whose email was never verified becomes verified here too - which also means
+        whoever first registered an address without verifying it loses that account to the
+        mailbox's real owner. Returns a `guestBearerAuth` token, like `verify`, so the guest is
+        signed in straight away.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuestAccountResetPasswordInput"
+      responses:
+        "200":
+          description: Password changed - `token` signs the guest in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuestAccountAuthResponse"
+        "400":
+          description: Body failed validation, or the token is unknown, already used, or expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: This reset link is invalid or has expired.
+        "429":
+          description: Too many attempts from this IP recently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many requests. Please slow down and try again.
+
   /guest-auth/unsubscribe:
     get:
       operationId: unsubscribeGuestAccount
@@ -7611,6 +7697,74 @@ paths:
               example:
                 error: Room not found
 
+  /public/rooms/{id}/quote:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getPublicRoomQuote
+      tags: [Public]
+      summary: Price and availability of a stay, before booking it (public)
+      description: >
+        Unauthenticated and read-only. The guest-facing counterpart of `POST /bookings/staff/quote`:
+        the same `BookingWriter` pricing (each night at the current `RatePlan`/`Room.basePrice`)
+        and the same availability check `POST /bookings` runs, so the figure a guest is shown
+        before booking is the figure the booking call would store - never a client-side sum of
+        `GET /public/rooms/{id}/pricing` days. Unlike the staff quote it takes no `roomUnitId`
+        (guests don't pick a physical room) and its `reason` never names a room or count.
+        Advisory: `POST /bookings` re-prices and re-checks from scratch. Rate limited per caller
+        address (`PublicQuoteRateLimiter`, the same sliding-window shape as `BookingRateLimiter`
+        but its own, larger bucket, so quoting never uses up a guest's booking attempts). A stay
+        is capped at 90 nights.
+      security: []
+      parameters:
+        - name: checkIn
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: checkOut
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+      responses:
+        "200":
+          description: >
+            Server-computed `totalPrice` and availability. Returned even when `available` is
+            false - `reason` then says why, in the same words the booking call would use.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingScheduleQuote"
+        "400":
+          description: Not a real date, `checkIn` not before `checkOut`, or longer than 90 nights.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "404":
+          description: Room not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Room not found
+        "429":
+          description: Too many quote requests from this address recently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: Too many price requests from this address. Please try again later.
+
   /public/rooms/{id}/availability:
     parameters:
       - name: id
@@ -9707,6 +9861,12 @@ components:
         script, not a person.
 
   responses:
+    ValidationErrorResponse:
+      description: Request failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
     Unauthorized:
       description: No valid JWT.
       content:
@@ -12426,6 +12586,31 @@ components:
         email:
           type: string
           format: email
+          x-sensitive: true
+
+    GuestAccountForgotPasswordInput:
+      type: object
+      description: Body of `POST /guest-auth/forgot-password`.
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          x-sensitive: true
+
+    GuestAccountResetPasswordInput:
+      type: object
+      description: Body of `POST /guest-auth/reset-password`.
+      required: [token, newPassword]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          x-sensitive: true
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 200
           x-sensitive: true
 
     GuestAccountLoginInput:

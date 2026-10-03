@@ -4,7 +4,9 @@ import com.sunsetbeach.entity.GuestAccountEntity;
 import com.sunsetbeach.error.UnauthorizedException;
 import com.sunsetbeach.mapper.GuestAccountMapper;
 import com.sunsetbeach.model.GuestAccountAuthResponse;
+import com.sunsetbeach.model.GuestAccountForgotPasswordInput;
 import com.sunsetbeach.model.GuestAccountLoginInput;
+import com.sunsetbeach.model.GuestAccountResetPasswordInput;
 import com.sunsetbeach.model.GuestAccountMessage;
 import com.sunsetbeach.model.GuestAccountRegisterInput;
 import com.sunsetbeach.model.GuestAccountResendVerificationInput;
@@ -102,6 +104,22 @@ public class GuestAccountAuthController {
      * /guest/unsubscribe page) - see the operation's openapi.yaml description. Rate-limited like
      * {@link #verify}: both look an account up by a secret token alone.
      */
+    @PostMapping("/guest-auth/forgot-password")
+    public GuestAccountMessage forgotPassword(@Valid @RequestBody GuestAccountForgotPasswordInput input, HttpServletRequest httpRequest) {
+        String ip = ClientIpResolver.resolve(httpRequest);
+        authRateLimiter.checkAllowedAndRecordForEmail(ip, input.getEmail());
+        guestAccountService.requestPasswordReset(input.getEmail());
+        return new GuestAccountMessage("If this email has an account, we've sent a link to reset the password.");
+    }
+
+    @PostMapping("/guest-auth/reset-password")
+    public GuestAccountAuthResponse resetPassword(@Valid @RequestBody GuestAccountResetPasswordInput input, HttpServletRequest httpRequest) {
+        String ip = ClientIpResolver.resolve(httpRequest);
+        authRateLimiter.checkAllowedAndRecordForToken(ip);
+        GuestAccountEntity account = guestAccountService.resetPassword(input.getToken(), input.getNewPassword());
+        return issueResponse(account);
+    }
+
     @GetMapping("/guest-auth/unsubscribe")
     public GuestAccountMessage unsubscribe(@RequestParam("token") String token, HttpServletRequest httpRequest) {
         String ip = ClientIpResolver.resolve(httpRequest);

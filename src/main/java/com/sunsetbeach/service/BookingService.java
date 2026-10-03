@@ -289,6 +289,37 @@ public class BookingService {
         return new BookingScheduleQuote(PriceFormat.asDecimalString(quote.totalPrice()), quote.nights(), quote.available(), quote.reason());
     }
 
+    /** Longest stay {@link #quotePublicBooking} will price - bounds the work one unauthenticated request can cause. */
+    static final int MAX_PUBLIC_QUOTE_NIGHTS = 90;
+
+    /**
+     * {@code GET /public/rooms/{id}/quote}: the guest-facing price preview. Same {@link
+     * BookingWriter#quoteStaff} computation the staff quote and {@code POST /bookings} use, with no
+     * room unit (guests never pick one), so a guest client never has to add up nightly prices
+     * itself. Read-only and advisory - the create call re-prices from scratch.
+     */
+    public BookingScheduleQuote quotePublicBooking(String roomId, String checkInValue, String checkOutValue) {
+        LocalDate checkIn = parseQuoteDate("checkIn", checkInValue);
+        LocalDate checkOut = parseQuoteDate("checkOut", checkOutValue);
+        if (!checkIn.isBefore(checkOut)) {
+            throw ValidationException.field("checkOut", "checkIn must be before checkOut");
+        }
+        if (java.time.temporal.ChronoUnit.DAYS.between(checkIn, checkOut) > MAX_PUBLIC_QUOTE_NIGHTS) {
+            throw ValidationException.field("checkOut", "a stay can be at most " + MAX_PUBLIC_QUOTE_NIGHTS + " nights");
+        }
+        RoomEntity room = roomRepository.findById(roomId).orElseThrow(() -> new NotFoundException("Room not found"));
+        BookingWriter.ScheduleQuote quote = bookingWriter.quoteStaff(room, checkIn, checkOut, null);
+        return new BookingScheduleQuote(PriceFormat.asDecimalString(quote.totalPrice()), quote.nights(), quote.available(), quote.reason());
+    }
+
+    private static LocalDate parseQuoteDate(String field, String value) {
+        try {
+            return LocalDate.parse(value);
+        } catch (java.time.format.DateTimeParseException e) {
+            throw ValidationException.field(field, "must be a valid date (YYYY-MM-DD)");
+        }
+    }
+
     /**
      * {@code children} is optional with a default of 0 in openapi.yaml, but an explicit JSON
      * {@code null} still arrives as null - it means the same thing as leaving it out.
