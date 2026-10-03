@@ -228,6 +228,30 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
         assertThat(appointment.getOrderId().get()).isNull();
     }
 
+    /** The grid block names the guest's room - from the booking's segment on the appointment date. */
+    @Test
+    void appointment_namesTheRoomUnitTheGuestIsIn_onCreateAndInTheDaySchedule() {
+        LocalDate checkIn = LocalDate.of(2027, 9, 6);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(3));
+        String unitLabel = roomUnitRepository.findByRoomId(booking.getRoomId()).get(0).getLabel();
+        TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        LocalDate day = checkIn.plusDays(1);
+
+        SpaAppointment created = spaAppointmentService.create(
+                new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapist.getId(), treatment.getId(), day.toString(), "10:00"),
+                receptionist.getId()).getAppointment();
+        assertThat(created.getRoomUnitLabel()).isEqualTo(unitLabel);
+
+        SpaAppointment scheduled = spaAppointmentService.getSchedule(day).getAppointments().stream()
+                .filter(a -> a.getId().equals(created.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(scheduled.getRoomUnitLabel()).isEqualTo(unitLabel);
+    }
+
     /**
      * The scenario the correction named directly: a therapist with no login is an ordinary,
      * bookable therapist - the picker (listTherapists) and the appointment it produces must both

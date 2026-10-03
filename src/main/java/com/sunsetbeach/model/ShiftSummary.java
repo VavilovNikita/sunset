@@ -47,6 +47,10 @@ public class ShiftSummary {
 
   private ShiftTotals totals;
 
+  private String openedByEmail;
+
+  private String closedByEmail;
+
   public ShiftSummary() {
     super();
   }
@@ -257,6 +261,44 @@ public class ShiftSummary {
     this.totals = totals;
   }
 
+  public ShiftSummary openedByEmail(String openedByEmail) {
+    this.openedByEmail = openedByEmail;
+    return this;
+  }
+
+  /**
+   * Who opened the shift, same lookup as `ShiftListItem.openedByEmail` - so the shift screen can say who opened the drawer without a second call to `GET /users` (which a CASHIER can't make). Absent only if that account has no email any more. 
+   * @return openedByEmail
+   */
+  
+  @JsonProperty("openedByEmail")
+  public String getOpenedByEmail() {
+    return openedByEmail;
+  }
+
+  public void setOpenedByEmail(String openedByEmail) {
+    this.openedByEmail = openedByEmail;
+  }
+
+  public ShiftSummary closedByEmail(String closedByEmail) {
+    this.closedByEmail = closedByEmail;
+    return this;
+  }
+
+  /**
+   * Who closed the shift; absent while it is still open.
+   * @return closedByEmail
+   */
+  
+  @JsonProperty("closedByEmail")
+  public String getClosedByEmail() {
+    return closedByEmail;
+  }
+
+  public void setClosedByEmail(String closedByEmail) {
+    this.closedByEmail = closedByEmail;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -275,12 +317,14 @@ public class ShiftSummary {
         Objects.equals(this.closingCashCounted, shiftSummary.closingCashCounted) &&
         Objects.equals(this.status, shiftSummary.status) &&
         Objects.equals(this.notes, shiftSummary.notes) &&
-        Objects.equals(this.totals, shiftSummary.totals);
+        Objects.equals(this.totals, shiftSummary.totals) &&
+        Objects.equals(this.openedByEmail, shiftSummary.openedByEmail) &&
+        Objects.equals(this.closedByEmail, shiftSummary.closedByEmail);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, openedByUserId, openedAt, closedByUserId, closedAt, openingCashFloat, closingCashCounted, status, notes, totals);
+    return Objects.hash(id, openedByUserId, openedAt, closedByUserId, closedAt, openingCashFloat, closingCashCounted, status, notes, totals, openedByEmail, closedByEmail);
   }
 
   @Override
@@ -297,6 +341,8 @@ public class ShiftSummary {
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    notes: ").append(toIndentedString(notes)).append("\n");
     sb.append("    totals: ").append(toIndentedString(totals)).append("\n");
+    sb.append("    openedByEmail: ").append(toIndentedString(openedByEmail)).append("\n");
+    sb.append("    closedByEmail: ").append(toIndentedString(closedByEmail)).append("\n");
     sb.append("}");
     return sb.toString();
   }

@@ -1,9 +1,11 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
+import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.entity.SpaAppointmentEntity;
 import com.sunsetbeach.entity.SpaAppointmentTreatmentEntity;
 import com.sunsetbeach.entity.TableEntity;
@@ -33,9 +35,11 @@ import com.sunsetbeach.model.SwapSpaAppointmentTableInput;
 import com.sunsetbeach.model.Table;
 import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.OrderRepository;
+import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.repository.SpaAppointmentRepository;
 import com.sunsetbeach.repository.SpaAppointmentTreatmentRepository;
 import com.sunsetbeach.repository.TableRepository;
@@ -47,6 +51,8 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -89,6 +95,8 @@ public class SpaAppointmentService {
     private final TableMapper tableMapper;
     private final AuditLogService auditLogService;
     private final OverstayRule overstayRule;
+    private final BookingSegmentRepository bookingSegmentRepository;
+    private final RoomUnitRepository roomUnitRepository;
     private final LocalTime openingTime;
     private final LocalTime closingTime;
     private final int slotMinutes;
@@ -105,8 +113,12 @@ public class SpaAppointmentService {
             TableMapper tableMapper,
             AuditLogService auditLogService,
             OverstayRule overstayRule,
+            BookingSegmentRepository bookingSegmentRepository,
+            RoomUnitRepository roomUnitRepository,
             org.springframework.core.env.Environment env) {
         this.overstayRule = overstayRule;
+        this.bookingSegmentRepository = bookingSegmentRepository;
+        this.roomUnitRepository = roomUnitRepository;
         this.spaAppointmentRepository = spaAppointmentRepository;
         this.spaAppointmentTreatmentRepository = spaAppointmentTreatmentRepository;
         this.bookingRepository = bookingRepository;
@@ -172,13 +184,15 @@ public class SpaAppointmentService {
                 .stream()
                 .collect(Collectors.toMap(UserEntity::getId, u -> u));
 
+        Map<String, String> roomUnitLabelsByBookingId = roomUnitLabelsOn(date, bookingsById.keySet());
+
         List<SpaAppointment> appointments = appointmentEntities.stream()
                 .map(e -> {
                     List<SpaAppointmentTreatmentEntity> treatmentRows = treatmentsByAppointmentId.getOrDefault(e.getId(), List.of());
                     OrderEntity order = e.getOrderId() != null ? ordersById.get(e.getOrderId()) : null;
                     boolean orderBills = order != null && order.getStatus() != OrderStatus.CANCELLED;
                     List<OrderItemEntity> orderItems = orderBills ? orderItemsByOrderId.getOrDefault(e.getOrderId(), List.of()) : List.of();
-                    return buildDto(
+                    SpaAppointment dto = buildDto(
                             e,
                             bookingsById.get(e.getBookingId()),
                             tablesById.get(e.getTableId()),
@@ -187,6 +201,8 @@ public class SpaAppointmentService {
                             menuItemsById,
                             orderBills,
                             orderItems);
+                    dto.setRoomUnitLabel(roomUnitLabelsByBookingId.get(e.getBookingId()));
+                    return dto;
                 })
                 .toList();
 
@@ -632,7 +648,45 @@ public class SpaAppointmentService {
             }
         }
 
-        return buildDto(e, booking, table, therapist, treatmentRows, menuItemsById, orderBills, orderItems);
+        SpaAppointment dto = buildDto(e, booking, table, therapist, treatmentRows, menuItemsById, orderBills, orderItems);
+        dto.setRoomUnitLabel(roomUnitLabelsOn(e.getDate(), List.of(e.getBookingId())).get(e.getBookingId()));
+        return dto;
+    }
+
+    /**
+     * {@code SpaAppointment.roomUnitLabel}: the room each booking occupies on {@code date}, read
+     * from its segments so a relocated stay names the room the guest is actually in that day.
+     * Outside the stay, the nearest segment - the last one from the departure day on (which is
+     * also the room an overdue guest still holds, see {@link OverstayRule}), the first one before
+     * arrival. Two queries for any number of bookings. A booking whose segment has no unit yet is
+     * simply missing from the result.
+     */
+    private Map<String, String> roomUnitLabelsOn(LocalDate date, Collection<String> bookingIds) {
+        if (bookingIds.isEmpty()) return Map.of();
+        Map<String, List<BookingSegmentEntity>> segmentsByBookingId = bookingSegmentRepository
+                .findByBookingIdIn(List.copyOf(bookingIds))
+                .stream()
+                .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+
+        Map<String, String> unitIdByBookingId = new HashMap<>();
+        segmentsByBookingId.forEach((bookingId, segments) -> {
+            List<BookingSegmentEntity> ordered =
+                    segments.stream().sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn)).toList();
+            BookingSegmentEntity onDate = ordered.stream()
+                    .filter(seg -> !date.isBefore(seg.getCheckIn()) && date.isBefore(seg.getCheckOut()))
+                    .findFirst()
+                    .orElse(date.isBefore(ordered.get(0).getCheckIn()) ? ordered.get(0) : ordered.get(ordered.size() - 1));
+            if (onDate.getRoomUnitId() != null) unitIdByBookingId.put(bookingId, onDate.getRoomUnitId());
+        });
+
+        Map<String, String> labelsByUnitId = roomUnitRepository.findAllById(new HashSet<>(unitIdByBookingId.values())).stream()
+                .collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
+        Map<String, String> result = new HashMap<>();
+        unitIdByBookingId.forEach((bookingId, unitId) -> {
+            String label = labelsByUnitId.get(unitId);
+            if (label != null) result.put(bookingId, label);
+        });
+        return result;
     }
 
     private SpaAppointment buildDto(

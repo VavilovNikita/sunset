@@ -210,7 +210,7 @@ public interface ShiftsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"notes\" : \"notes\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"totals\" : { \"other\" : \"other\", \"roomCharge\" : \"roomCharge\", \"cash\" : \"cash\", \"paymentCount\" : 0, \"card\" : \"card\" }, \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"OPEN\" }";
+                    String exampleString = "{ \"notes\" : \"notes\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByEmail\" : \"openedByEmail\", \"closedByEmail\" : \"closedByEmail\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"totals\" : { \"other\" : \"other\", \"roomCharge\" : \"roomCharge\", \"cash\" : \"cash\", \"paymentCount\" : 0, \"card\" : \"card\" }, \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"OPEN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

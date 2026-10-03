@@ -78,6 +78,15 @@ class ShiftOwnershipTests extends AbstractIntegrationTest {
         assertThat(summary.getId()).isEqualTo(shiftA.getId());
     }
 
+    // The shift screen shows who opened the drawer - a CASHIER can't resolve the id via GET /users.
+    @Test
+    void getSummary_namesWhoOpenedTheShift() {
+        ShiftSummary summary = shiftService.getSummary(shiftA.getId(), manager.getId(), Role.MANAGER);
+
+        assertThat(summary.getOpenedByEmail()).isEqualTo(cashierA.getEmail());
+        assertThat(summary.getClosedByEmail()).isNull();
+    }
+
     @Test
     void getSummary_anyShift_asAdmin_succeeds() {
         ShiftSummary summary = shiftService.getSummary(shiftA.getId(), admin.getId(), Role.ADMIN);

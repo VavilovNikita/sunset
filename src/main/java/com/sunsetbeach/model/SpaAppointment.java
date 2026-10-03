@@ -44,6 +44,8 @@ public class SpaAppointment {
 
   private String therapistEmail;
 
+  private String roomUnitLabel;
+
   @Valid
   private List<@Valid SpaAppointmentTreatment> treatments = new ArrayList<>();
 
@@ -251,6 +253,25 @@ public class SpaAppointment {
 
   public void setTherapistEmail(String therapistEmail) {
     this.therapistEmail = therapistEmail;
+  }
+
+  public SpaAppointment roomUnitLabel(String roomUnitLabel) {
+    this.roomUnitLabel = roomUnitLabel;
+    return this;
+  }
+
+  /**
+   * The physical room (`RoomUnit.label`) the named booking occupies on `date`, resolved at read time from the booking's segments - so a relocated stay shows the room the guest is actually in that day. On a date outside the stay (allowed, with a warning - see `POST /spa-appointments`), the nearest segment's room: the last one from the departure day on, the first one before arrival. Absent when that segment has no room unit assigned yet. 
+   * @return roomUnitLabel
+   */
+  
+  @JsonProperty("roomUnitLabel")
+  public String getRoomUnitLabel() {
+    return roomUnitLabel;
+  }
+
+  public void setRoomUnitLabel(String roomUnitLabel) {
+    this.roomUnitLabel = roomUnitLabel;
   }
 
   public SpaAppointment treatments(List<@Valid SpaAppointmentTreatment> treatments) {
@@ -514,6 +535,7 @@ public class SpaAppointment {
         Objects.equals(this.therapistUserId, spaAppointment.therapistUserId) &&
         Objects.equals(this.therapistName, spaAppointment.therapistName) &&
         Objects.equals(this.therapistEmail, spaAppointment.therapistEmail) &&
+        Objects.equals(this.roomUnitLabel, spaAppointment.roomUnitLabel) &&
         Objects.equals(this.treatments, spaAppointment.treatments) &&
         Objects.equals(this.date, spaAppointment.date) &&
         Objects.equals(this.startTime, spaAppointment.startTime) &&
@@ -530,7 +552,7 @@ public class SpaAppointment {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, bookingId, guestName, tableId, tableLabel, therapistUserId, therapistName, therapistEmail, treatments, date, startTime, durationMinutes, status, orderId, missingTreatmentNames, createdByUserId, cancelledByUserId, cancelReason, createdAt, updatedAt);
+    return Objects.hash(id, bookingId, guestName, tableId, tableLabel, therapistUserId, therapistName, therapistEmail, roomUnitLabel, treatments, date, startTime, durationMinutes, status, orderId, missingTreatmentNames, createdByUserId, cancelledByUserId, cancelReason, createdAt, updatedAt);
   }
 
   @Override
@@ -545,6 +567,7 @@ public class SpaAppointment {
     sb.append("    therapistUserId: ").append(toIndentedString(therapistUserId)).append("\n");
     sb.append("    therapistName: ").append(toIndentedString(therapistName)).append("\n");
     sb.append("    therapistEmail: ").append(toIndentedString(therapistEmail)).append("\n");
+    sb.append("    roomUnitLabel: ").append(toIndentedString(roomUnitLabel)).append("\n");
     sb.append("    treatments: ").append(toIndentedString(treatments)).append("\n");
     sb.append("    date: ").append(toIndentedString(date)).append("\n");
     sb.append("    startTime: ").append(toIndentedString(startTime)).append("\n");

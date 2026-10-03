@@ -42,6 +42,12 @@ public class Printer {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private OffsetDateTime lastSentAt;
+
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private OffsetDateTime lastFailedAt;
+
   public Printer() {
     super();
   }
@@ -212,6 +218,44 @@ public class Printer {
     this.createdAt = createdAt;
   }
 
+  public Printer lastSentAt(OffsetDateTime lastSentAt) {
+    this.lastSentAt = lastSentAt;
+    return this;
+  }
+
+  /**
+   * When this printer last accepted a job (the newest `SENT` print job's `updatedAt`). Derived from the print queue, not from a separate heartbeat: nothing polls a printer that has nothing to print, so a quiet printer simply has an old value here. Absent if it has never printed anything. 
+   * @return lastSentAt
+   */
+  @Valid 
+  @JsonProperty("lastSentAt")
+  public OffsetDateTime getLastSentAt() {
+    return lastSentAt;
+  }
+
+  public void setLastSentAt(OffsetDateTime lastSentAt) {
+    this.lastSentAt = lastSentAt;
+  }
+
+  public Printer lastFailedAt(OffsetDateTime lastFailedAt) {
+    this.lastFailedAt = lastFailedAt;
+    return this;
+  }
+
+  /**
+   * When a delivery attempt to this printer last failed (the newest `updatedAt` among its non-dismissed `PENDING`/`FAILED` jobs that carry a `lastError`). Dismissed jobs are left out because dismissing one also touches its `updatedAt`. Newer than `lastSentAt` means the printer is not answering right now. Absent if no undismissed attempt has failed. 
+   * @return lastFailedAt
+   */
+  @Valid 
+  @JsonProperty("lastFailedAt")
+  public OffsetDateTime getLastFailedAt() {
+    return lastFailedAt;
+  }
+
+  public void setLastFailedAt(OffsetDateTime lastFailedAt) {
+    this.lastFailedAt = lastFailedAt;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -228,12 +272,14 @@ public class Printer {
         Objects.equals(this.port, printer.port) &&
         Objects.equals(this.codepage, printer.codepage) &&
         Objects.equals(this.isActive, printer.isActive) &&
-        Objects.equals(this.createdAt, printer.createdAt);
+        Objects.equals(this.createdAt, printer.createdAt) &&
+        Objects.equals(this.lastSentAt, printer.lastSentAt) &&
+        Objects.equals(this.lastFailedAt, printer.lastFailedAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, department, host, port, codepage, isActive, createdAt);
+    return Objects.hash(id, name, department, host, port, codepage, isActive, createdAt, lastSentAt, lastFailedAt);
   }
 
   @Override
@@ -248,6 +294,8 @@ public class Printer {
     sb.append("    codepage: ").append(toIndentedString(codepage)).append("\n");
     sb.append("    isActive: ").append(toIndentedString(isActive)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
+    sb.append("    lastSentAt: ").append(toIndentedString(lastSentAt)).append("\n");
+    sb.append("    lastFailedAt: ").append(toIndentedString(lastFailedAt)).append("\n");
     sb.append("}");
     return sb.toString();
   }

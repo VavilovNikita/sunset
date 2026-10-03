@@ -61,7 +61,7 @@ public interface PrintersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"port\" : 0, \"name\" : \"name\", \"host\" : \"host\", \"id\" : \"id\", \"department\" : \"KITCHEN\", \"codepage\" : \"PC437\", \"isActive\" : true }";
+                    String exampleString = "{ \"lastFailedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"port\" : 0, \"name\" : \"name\", \"host\" : \"host\", \"lastSentAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"department\" : \"KITCHEN\", \"codepage\" : \"PC437\", \"isActive\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -261,7 +261,7 @@ public interface PrintersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"port\" : 0, \"name\" : \"name\", \"host\" : \"host\", \"id\" : \"id\", \"department\" : \"KITCHEN\", \"codepage\" : \"PC437\", \"isActive\" : true }, { \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"port\" : 0, \"name\" : \"name\", \"host\" : \"host\", \"id\" : \"id\", \"department\" : \"KITCHEN\", \"codepage\" : \"PC437\", \"isActive\" : true } ]";
+                    String exampleString = "[ { \"lastFailedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"port\" : 0, \"name\" : \"name\", \"host\" : \"host\", \"lastSentAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"department\" : \"KITCHEN\", \"codepage\" : \"PC437\", \"isActive\" : true }, { \"lastFailedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"port\" : 0, \"name\" : \"name\", \"host\" : \"host\", \"lastSentAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"department\" : \"KITCHEN\", \"codepage\" : \"PC437\", \"isActive\" : true } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -399,7 +399,7 @@ public interface PrintersApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"port\" : 0, \"name\" : \"name\", \"host\" : \"host\", \"id\" : \"id\", \"department\" : \"KITCHEN\", \"codepage\" : \"PC437\", \"isActive\" : true }";
+                    String exampleString = "{ \"lastFailedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"port\" : 0, \"name\" : \"name\", \"host\" : \"host\", \"lastSentAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"department\" : \"KITCHEN\", \"codepage\" : \"PC437\", \"isActive\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

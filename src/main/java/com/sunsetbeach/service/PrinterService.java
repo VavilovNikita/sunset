@@ -23,8 +23,10 @@ import com.sunsetbeach.repository.PrinterRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -67,7 +69,29 @@ public class PrinterService {
 
     @Transactional(readOnly = true)
     public List<Printer> list() {
-        return printerRepository.findAll().stream().map(printerMapper::toDto).toList();
+        return withActivity(printerRepository.findAll().stream().map(printerMapper::toDto).toList());
+    }
+
+    /**
+     * Fills {@code lastSentAt}/{@code lastFailedAt} from the print queue - the only contact this
+     * system has with a printer. Two grouped queries for the whole list, not one per printer.
+     */
+    private List<Printer> withActivity(List<Printer> printers) {
+        Map<String, LocalDateTime> lastSent = toMap(printJobRepository.findLastUpdatedAtByPrinter(PrintJobStatus.SENT));
+        Map<String, LocalDateTime> lastFailed = toMap(printJobRepository.findLastFailedAtByPrinter(PrintJobStatus.SENT));
+        for (Printer printer : printers) {
+            LocalDateTime sent = lastSent.get(printer.getId());
+            if (sent != null) printer.setLastSentAt(TimestampFormat.toUtc(sent));
+            LocalDateTime failed = lastFailed.get(printer.getId());
+            if (failed != null) printer.setLastFailedAt(TimestampFormat.toUtc(failed));
+        }
+        return printers;
+    }
+
+    private static Map<String, LocalDateTime> toMap(List<Object[]> rows) {
+        Map<String, LocalDateTime> byPrinterId = new HashMap<>();
+        for (Object[] row : rows) byPrinterId.put((String) row[0], (LocalDateTime) row[1]);
+        return byPrinterId;
     }
 
     @Transactional
@@ -78,7 +102,7 @@ public class PrinterService {
         PrinterEntity entity = new PrinterEntity();
         printerMapper.applyInput(entity, input);
         try {
-            return printerMapper.toDto(printerRepository.saveAndFlush(entity));
+            return withActivity(List.of(printerMapper.toDto(printerRepository.saveAndFlush(entity)))).get(0);
         } catch (DataIntegrityViolationException e) {
             // Belt-and-suspenders: the unique partial index (Printer_one_active_per_department)
             // is the real guard against a race between two concurrent activations.
@@ -94,7 +118,7 @@ public class PrinterService {
         }
         printerMapper.applyInput(entity, input);
         try {
-            return printerMapper.toDto(printerRepository.saveAndFlush(entity));
+            return withActivity(List.of(printerMapper.toDto(printerRepository.saveAndFlush(entity)))).get(0);
         } catch (DataIntegrityViolationException e) {
             throw conflictFor(input.getDepartment());
         }

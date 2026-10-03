@@ -9862,6 +9862,23 @@ components:
         createdAt:
           type: string
           format: date-time
+        lastSentAt:
+          type: string
+          format: date-time
+          description: >
+            When this printer last accepted a job (the newest `SENT` print job's `updatedAt`).
+            Derived from the print queue, not from a separate heartbeat: nothing polls a printer
+            that has nothing to print, so a quiet printer simply has an old value here. Absent if
+            it has never printed anything.
+        lastFailedAt:
+          type: string
+          format: date-time
+          description: >
+            When a delivery attempt to this printer last failed (the newest `updatedAt` among its
+            non-dismissed `PENDING`/`FAILED` jobs that carry a `lastError`). Dismissed jobs are
+            left out because dismissing one also touches its `updatedAt`. Newer than
+            `lastSentAt` means the printer is not answering right now. Absent if no undismissed
+            attempt has failed.
 
     PrinterInput:
       type: object
@@ -10659,6 +10676,15 @@ components:
           description: >
             Absent for a no-login therapist (see `UserCreateInput`) - `therapistName` is the
             field to display, never absent.
+        roomUnitLabel:
+          type: string
+          description: >
+            The physical room (`RoomUnit.label`) the named booking occupies on `date`, resolved
+            at read time from the booking's segments - so a relocated stay shows the room the
+            guest is actually in that day. On a date outside the stay (allowed, with a warning -
+            see `POST /spa-appointments`), the nearest segment's room: the last one from the
+            departure day on, the first one before arrival. Absent when that segment has no room
+            unit assigned yet.
         treatments:
           type: array
           items:
@@ -13537,6 +13563,15 @@ components:
           nullable: true
         totals:
           $ref: "#/components/schemas/ShiftTotals"
+        openedByEmail:
+          type: string
+          description: >
+            Who opened the shift, same lookup as `ShiftListItem.openedByEmail` - so the shift
+            screen can say who opened the drawer without a second call to `GET /users` (which a
+            CASHIER can't make). Absent only if that account has no email any more.
+        closedByEmail:
+          type: string
+          description: Who closed the shift; absent while it is still open.
 
     ShiftListItem:
       type: object

@@ -249,7 +249,14 @@ public class ShiftService {
         if (callerRole == Role.CASHIER && !shift.getOpenedByUserId().equals(callerId)) {
             throw new NotFoundException("Shift not found");
         }
-        return shiftMapper.toSummaryDto(shift, computeTotals(id));
+        ShiftSummary summary = shiftMapper.toSummaryDto(shift, computeTotals(id));
+        // Who opened/closed the drawer, same lookup as list() - a CASHIER can't call GET /users
+        // to resolve the ids themselves.
+        userRepository.findById(shift.getOpenedByUserId()).map(UserEntity::getEmail).ifPresent(summary::setOpenedByEmail);
+        if (shift.getClosedByUserId() != null) {
+            userRepository.findById(shift.getClosedByUserId()).map(UserEntity::getEmail).ifPresent(summary::setClosedByEmail);
+        }
+        return summary;
     }
 
     /**
