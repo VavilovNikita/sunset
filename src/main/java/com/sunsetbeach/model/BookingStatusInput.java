@@ -174,7 +174,7 @@ public class BookingStatusInput {
   }
 
   /**
-   * Why the booking is being cancelled. Read only when this request moves the booking into `CANCELLED` (ignored otherwise) and recorded in that status change's audit entry - it is not a column on the booking. Optional at the API so system paths (the SiteMinder import, the expiry sweep) keep working; the admin screens require it before they send a cancel. 
+   * Why the booking is being cancelled. Read only when this request moves the booking into `CANCELLED` (ignored otherwise); stored as `Booking.cancellationReason` and repeated in that status change's audit entry. Optional at the API so system paths (the SiteMinder import, the expiry sweep) keep working; the admin screens require it before they send a cancel. 
    * @return cancellationReason
    */
   @Size(max = 500) 

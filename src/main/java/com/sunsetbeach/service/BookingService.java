@@ -248,9 +248,9 @@ public class BookingService {
 
     /**
      * The staff-given reason for a cancellation, trimmed, or null when this change isn't into
-     * {@code CANCELLED} or none was given. It lives only in the audit entry (see
-     * {@code BookingStatusInput.cancellationReason}); free text, so it is capped at the spec's
-     * 500 characters by Bean Validation before it gets here.
+     * {@code CANCELLED} or none was given. Stored on the booking (shown to CASHIER+) and repeated
+     * in the audit entry (see {@code BookingStatusInput.cancellationReason}); free text, so it is
+     * capped at the spec's 500 characters by Bean Validation before it gets here.
      */
     private static String cancellationReason(BookingStatusInput input, BookingStatus newStatus) {
         if (newStatus != BookingStatus.CANCELLED || input.getCancellationReason() == null || !input.getCancellationReason().isPresent()) {
@@ -369,6 +369,17 @@ public class BookingService {
         }
         if (input.getChildren() != null) {
             booking.setChildren(input.getChildren());
+        }
+        // The reason belongs to the current cancellation only: written on a move into CANCELLED
+        // (null when none was given - SiteMinder, the expiry sweep), cleared on a move out, so a
+        // reinstated booking never shows a stale one. Re-sending CANCELLED to an already-cancelled
+        // booking isn't a status change and leaves it alone, same as the audit entry.
+        if (oldStatus != input.getStatus()) {
+            if (input.getStatus() == BookingStatus.CANCELLED) {
+                booking.setCancellationReason(cancellationReason(input, BookingStatus.CANCELLED));
+            } else if (oldStatus == BookingStatus.CANCELLED) {
+                booking.setCancellationReason(null);
+            }
         }
         // flush so @UpdateTimestamp (regenerated on every save) is on the object before mapping
         BookingEntity saved = bookingRepository.saveAndFlush(booking);

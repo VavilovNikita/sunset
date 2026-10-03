@@ -84,6 +84,8 @@ public class Booking {
 
   private JsonNullable<String> externalChannel = JsonNullable.<String>undefined();
 
+  private JsonNullable<String> cancellationReason = JsonNullable.<String>undefined();
+
   @Valid
   private List<@Valid BookingSegment> segments = new ArrayList<>();
 
@@ -100,7 +102,7 @@ public class Booking {
   /**
    * Constructor with only required parameters
    */
-  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String guestId, Guest guest, String checkIn, String checkOut, String totalPrice, BookingStatus status, BookingChannel channel, BookingPurpose purpose, Integer adults, Integer children, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, String externalReference, String externalChannel, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+  public Booking(String id, String roomId, Room room, String roomUnitId, RoomUnit roomUnit, String guestName, String guestEmail, String guestPhone, String guestId, Guest guest, String checkIn, String checkOut, String totalPrice, BookingStatus status, BookingChannel channel, BookingPurpose purpose, Integer adults, Integer children, String paymentNote, OccupancyStatus occupancyStatus, OffsetDateTime checkedInAt, OffsetDateTime checkedOutAt, String externalReference, String externalChannel, String cancellationReason, List<@Valid BookingSegment> segments, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
     this.id = id;
     this.roomId = roomId;
     this.room = room;
@@ -125,6 +127,7 @@ public class Booking {
     this.checkedOutAt = JsonNullable.of(checkedOutAt);
     this.externalReference = JsonNullable.of(externalReference);
     this.externalChannel = JsonNullable.of(externalChannel);
+    this.cancellationReason = JsonNullable.of(cancellationReason);
     this.segments = segments;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
@@ -586,6 +589,25 @@ public class Booking {
     this.externalChannel = externalChannel;
   }
 
+  public Booking cancellationReason(String cancellationReason) {
+    this.cancellationReason = JsonNullable.of(cancellationReason);
+    return this;
+  }
+
+  /**
+   * The reason staff gave when this booking was cancelled (`BookingStatusInput.cancellationReason`). Set only while `status` is `CANCELLED`, and only for the current cancellation: cleared if the booking is moved out of `CANCELLED`. Null for a cancellation without a reason (the SiteMinder import, the unconfirmed-booking expiry sweep) and for cancellations made before this field existed - their reason, if any, is only in the audit log. 
+   * @return cancellationReason
+   */
+  @NotNull 
+  @JsonProperty("cancellationReason")
+  public JsonNullable<String> getCancellationReason() {
+    return cancellationReason;
+  }
+
+  public void setCancellationReason(JsonNullable<String> cancellationReason) {
+    this.cancellationReason = cancellationReason;
+  }
+
   public Booking segments(List<@Valid BookingSegment> segments) {
     this.segments = segments;
     return this;
@@ -684,6 +706,7 @@ public class Booking {
         Objects.equals(this.checkedOutAt, booking.checkedOutAt) &&
         Objects.equals(this.externalReference, booking.externalReference) &&
         Objects.equals(this.externalChannel, booking.externalChannel) &&
+        Objects.equals(this.cancellationReason, booking.cancellationReason) &&
         Objects.equals(this.segments, booking.segments) &&
         Objects.equals(this.createdAt, booking.createdAt) &&
         Objects.equals(this.updatedAt, booking.updatedAt);
@@ -691,7 +714,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, segments, createdAt, updatedAt);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt);
   }
 
   @Override
@@ -722,6 +745,7 @@ public class Booking {
     sb.append("    checkedOutAt: ").append(toIndentedString(checkedOutAt)).append("\n");
     sb.append("    externalReference: ").append(toIndentedString(externalReference)).append("\n");
     sb.append("    externalChannel: ").append(toIndentedString(externalChannel)).append("\n");
+    sb.append("    cancellationReason: ").append(toIndentedString(cancellationReason)).append("\n");
     sb.append("    segments: ").append(toIndentedString(segments)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");

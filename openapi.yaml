@@ -11865,6 +11865,7 @@ components:
         - checkedOutAt
         - externalReference
         - externalChannel
+        - cancellationReason
         - createdAt
         - updatedAt
       properties:
@@ -11953,6 +11954,15 @@ components:
             For a SiteMinder import, the channel name exactly as SiteMinder showed it - what `channel`
             was mapped from, and the only record of which OTA an `OTHER` booking came through. Null
             for every other booking.
+        cancellationReason:
+          type: string
+          nullable: true
+          description: >
+            The reason staff gave when this booking was cancelled (`BookingStatusInput.cancellationReason`).
+            Set only while `status` is `CANCELLED`, and only for the current cancellation: cleared if
+            the booking is moved out of `CANCELLED`. Null for a cancellation without a reason (the
+            SiteMinder import, the unconfirmed-booking expiry sweep) and for cancellations made before
+            this field existed - their reason, if any, is only in the audit log.
         segments:
           type: array
           minItems: 1
@@ -12039,8 +12049,8 @@ components:
           nullable: true
           description: >
             Why the booking is being cancelled. Read only when this request moves the booking into
-            `CANCELLED` (ignored otherwise) and recorded in that status change's audit entry - it is
-            not a column on the booking. Optional at the API so system paths (the SiteMinder import,
+            `CANCELLED` (ignored otherwise); stored as `Booking.cancellationReason` and repeated in
+            that status change's audit entry. Optional at the API so system paths (the SiteMinder import,
             the expiry sweep) keep working; the admin screens require it before they send a cancel.
 
     Guest:

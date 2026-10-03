@@ -171,6 +171,31 @@ class StaffBookingFormSupportTests extends AbstractIntegrationTest {
         assertThat(summaries).noneMatch(s -> s.contains("not a cancel"));
     }
 
+    @Test
+    void cancellationReason_isShownOnTheBooking_forTheCurrentCancellationOnly() {
+        RoomUnitEntity unit = roomWithUnit("1000.00");
+        Booking booking = staffBooking(unit, "Back And Forth", null, null);
+
+        Booking notCancelled = bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CONFIRMED).cancellationReason("not a cancel"));
+        assertThat(notCancelled.getCancellationReason().orElse(null)).isNull();
+
+        Booking cancelled = bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CANCELLED).cancellationReason("  Flight cancelled  "));
+        assertThat(cancelled.getCancellationReason().orElse(null)).isEqualTo("Flight cancelled");
+        assertThat(bookingService.getById(booking.getId()).getCancellationReason().orElse(null)).isEqualTo("Flight cancelled");
+
+        // Re-sending CANCELLED isn't a status change: the recorded reason stays.
+        Booking resent = bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CANCELLED).cancellationReason("something else"));
+        assertThat(resent.getCancellationReason().orElse(null)).isEqualTo("Flight cancelled");
+
+        // Reinstated: no stale reason on a live booking.
+        Booking reinstated = bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CONFIRMED));
+        assertThat(reinstated.getCancellationReason().orElse(null)).isNull();
+
+        // Cancelled again without a reason (the system paths): null, not the old one.
+        Booking recancelled = bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CANCELLED));
+        assertThat(recancelled.getCancellationReason().orElse(null)).isNull();
+    }
+
     // --- paged search ----------------------------------------------------------------------------
 
     @Test

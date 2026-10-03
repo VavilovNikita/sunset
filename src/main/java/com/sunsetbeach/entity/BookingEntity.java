@@ -112,6 +112,9 @@ public class BookingEntity {
     // UTC, like @CreationTimestamp - SiteMinder's own last-changed time, for skipping stale imports.
     private LocalDateTime externalModifiedAt;
 
+    // Set on a move into CANCELLED, cleared on a move out - see V130__booking_cancellation_reason.sql.
+    private String cancellationReason;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
@@ -312,6 +315,14 @@ public class BookingEntity {
 
     public void setExternalChannel(String externalChannel) {
         this.externalChannel = externalChannel;
+    }
+
+    public String getCancellationReason() {
+        return cancellationReason;
+    }
+
+    public void setCancellationReason(String cancellationReason) {
+        this.cancellationReason = cancellationReason;
     }
 
     public LocalDateTime getExternalModifiedAt() {
