@@ -36,6 +36,8 @@ Some migrations are destructive (dropped columns, deleted rows) — V4 and V11 a
 
 The one deliberate exception is a booking imported from SiteMinder (see its own section below): its price is SiteMinder's total, because the guest already agreed it on the OTA. It is still frozen per night like any other agreed price, and only `BookingWriter#insertExternal`/`#applyAgreedTotal` accept it. Don't widen this to any staff or public request.
 
+**A guest sees a price only from the server.** `GET /public/rooms/{id}/quote` is the guest-facing counterpart of `POST /bookings/staff/quote` (same `BookingWriter#quoteStaff` computation, no room unit, own `PublicQuoteRateLimiter` bucket so quoting never uses up the eight-an-hour booking attempts). A guest client must show that figure, never a sum of `GET /public/rooms/{id}/pricing` days - the public web flow still does the latter (audit finding M14), the mobile guest app does not.
+
 **Agreed prices are frozen per night** (`BookingSegmentNightlyRate`). Extending a stay prices only the new nights; already-agreed nights keep their original rate. Repricing an existing night happens only through the explicit reprice action, and only for nights from today forward. This exists because the system used to recompute the whole stay from current rates, so extending a booking by one night silently repriced the entire stay.
 
 Undoing a relocation restores the preserved original rates. It is not a new agreement.

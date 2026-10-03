@@ -11,7 +11,13 @@ import com.sunsetbeach.model.GuestBookingView;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.GuestAccountRepository;
 import com.sunsetbeach.security.PasswordTimingNormalization;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.Duration;
+import java.util.HexFormat;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
@@ -37,6 +43,10 @@ public class GuestAccountService {
     private final GuestAccountMapper guestAccountMapper;
     private final GuestLinkService guestLinkService;
     private final long verificationTtlHours;
+    private final Clock clock;
+
+    /** How long a password-reset link stays usable. Short on purpose - it is a credential for a live account. */
+    static final Duration PASSWORD_RESET_TTL = Duration.ofHours(1);
 
     public GuestAccountService(
             GuestAccountRepository guestAccountRepository,
@@ -45,7 +55,8 @@ public class GuestAccountService {
             EmailService emailService,
             GuestAccountMapper guestAccountMapper,
             GuestLinkService guestLinkService,
-            @Value("${app.guest-account.verification-ttl-hours}") long verificationTtlHours) {
+            @Value("${app.guest-account.verification-ttl-hours}") long verificationTtlHours,
+            Clock clock) {
         this.guestAccountRepository = guestAccountRepository;
         this.bookingRepository = bookingRepository;
         this.passwordEncoder = passwordEncoder;
@@ -53,6 +64,7 @@ public class GuestAccountService {
         this.guestAccountMapper = guestAccountMapper;
         this.guestLinkService = guestLinkService;
         this.verificationTtlHours = verificationTtlHours;
+        this.clock = clock;
     }
 
     /**
@@ -141,6 +153,60 @@ public class GuestAccountService {
      * account throws {@link ForbiddenException} instead, since a correct password already proves
      * legitimate possession of the account and there's nothing left to hide.
      */
+    /**
+     * {@code POST /guest-auth/forgot-password}. Silent about whether the email has an account - the
+     * controller returns the same message either way. Issues a fresh single-use token (replacing any
+     * earlier one), stores only its SHA-256, and emails the raw token as a link.
+     */
+    @Transactional
+    public void requestPasswordReset(String rawEmail) {
+        String email = normalize(rawEmail);
+        guestAccountRepository.findByEmail(email).ifPresent(account -> {
+            String token = generateToken();
+            account.setPasswordResetTokenHash(sha256Hex(token));
+            account.setPasswordResetExpiresAt(LocalDateTime.now(clock).plus(PASSWORD_RESET_TTL));
+            guestAccountRepository.save(account);
+            emailService.sendGuestPasswordResetEmail(account.getEmail(), account.getName(), token);
+        });
+    }
+
+    /**
+     * {@code POST /guest-auth/reset-password}. Unknown, used and expired tokens are one 400. A
+     * successful reset sets the password, clears the token, bumps {@code tokenVersion} (signing out
+     * every earlier guest token) and - because holding the emailed token proves control of the
+     * mailbox - verifies a not-yet-verified account, clearing its pending verification token. That
+     * last part is deliberate: it hands an address someone else registered but never verified back
+     * to the mailbox's real owner.
+     */
+    @Transactional
+    public GuestAccountEntity resetPassword(String token, String newPassword) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        GuestAccountEntity account = (token == null || token.isBlank() ? java.util.Optional.<GuestAccountEntity>empty()
+                        : guestAccountRepository.findByPasswordResetTokenHash(sha256Hex(token)))
+                .filter(a -> a.getPasswordResetExpiresAt() != null && a.getPasswordResetExpiresAt().isAfter(now))
+                .orElseThrow(() -> new BadRequestException("This reset link is invalid or has expired."));
+
+        account.setPasswordHash(passwordEncoder.encode(newPassword));
+        account.setTokenVersion(account.getTokenVersion() + 1);
+        account.setPasswordResetTokenHash(null);
+        account.setPasswordResetExpiresAt(null);
+        if (account.getEmailVerifiedAt() == null) {
+            account.setEmailVerifiedAt(now);
+            account.setEmailVerificationToken(null);
+            account.setEmailVerificationExpiresAt(null);
+            guestLinkService.linkAccount(account, true);
+        }
+        return guestAccountRepository.save(account);
+    }
+
+    static String sha256Hex(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is always available", e);
+        }
+    }
+
     @Transactional(readOnly = true)
     public GuestAccountEntity login(String rawEmail, String password) {
         String email = normalize(rawEmail);

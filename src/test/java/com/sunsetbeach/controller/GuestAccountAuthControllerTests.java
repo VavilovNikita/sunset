@@ -125,6 +125,52 @@ class GuestAccountAuthControllerTests {
     }
 
     @Test
+    void forgotPassword_alwaysReturnsGenericMessage_andNeverAToken() throws Exception {
+        mockMvc.perform(post("/guest-auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"forgot@example.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("If this email has an account, we've sent a link to reset the password."))
+                .andExpect(jsonPath("$.token").doesNotExist());
+
+        verify(guestAccountService).requestPasswordReset("forgot@example.com");
+    }
+
+    @Test
+    void resetPassword_success_signsTheGuestIn() throws Exception {
+        when(guestAccountService.resetPassword("reset-token", "brand-new-password-1")).thenReturn(verifiedAccount());
+
+        mockMvc.perform(post("/guest-auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"reset-token\",\"newPassword\":\"brand-new-password-1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty())
+                .andExpect(jsonPath("$.account.email").value("guest@example.com"));
+    }
+
+    @Test
+    void resetPassword_badToken_isA400WithTheGenericMessage() throws Exception {
+        when(guestAccountService.resetPassword("stale", "brand-new-password-1"))
+                .thenThrow(new BadRequestException("This reset link is invalid or has expired."));
+
+        mockMvc.perform(post("/guest-auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"stale\",\"newPassword\":\"brand-new-password-1\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("This reset link is invalid or has expired."));
+    }
+
+    @Test
+    void resetPassword_shortPassword_isRejectedBeforeTheServiceRuns() throws Exception {
+        mockMvc.perform(post("/guest-auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"any\",\"newPassword\":\"short\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(guestAccountService, org.mockito.Mockito.never()).resetPassword(any(), any());
+    }
+
+    @Test
     void unsubscribe_needsNoLogin_andOptsTheTokensAccountOut() throws Exception {
         mockMvc.perform(get("/guest-auth/unsubscribe").param("token", "stable-unsubscribe-token"))
                 .andExpect(status().isOk())

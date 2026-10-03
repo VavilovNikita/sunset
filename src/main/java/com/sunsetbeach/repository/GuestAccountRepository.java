@@ -11,6 +11,8 @@ public interface GuestAccountRepository extends JpaRepository<GuestAccountEntity
 
     Optional<GuestAccountEntity> findByEmailVerificationToken(String emailVerificationToken);
 
+    Optional<GuestAccountEntity> findByPasswordResetTokenHash(String passwordResetTokenHash);
+
     Optional<GuestAccountEntity> findByUnsubscribeToken(String unsubscribeToken);
 
     Optional<GuestAccountEntity> findByGuestId(String guestId);

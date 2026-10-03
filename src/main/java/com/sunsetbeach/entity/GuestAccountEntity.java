@@ -47,6 +47,11 @@ public class GuestAccountEntity {
     private String emailVerificationToken;
     private LocalDateTime emailVerificationExpiresAt;
 
+    // Nullable together (V130). Only the SHA-256 (hex) of the emailed reset token is stored, and
+    // the expiry is hotel wall-clock from the shared Clock - see GuestAccountService#requestPasswordReset.
+    private String passwordResetTokenHash;
+    private LocalDateTime passwordResetExpiresAt;
+
     // Bumped on a self-service password change - see GuestJwtAuthFilter, which rejects any token
     // whose tokenVersion claim doesn't match the current value here. Same mechanism as
     // User.tokenVersion.
@@ -167,5 +172,21 @@ public class GuestAccountEntity {
 
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
+    }
+
+    public String getPasswordResetTokenHash() {
+        return passwordResetTokenHash;
+    }
+
+    public void setPasswordResetTokenHash(String passwordResetTokenHash) {
+        this.passwordResetTokenHash = passwordResetTokenHash;
+    }
+
+    public LocalDateTime getPasswordResetExpiresAt() {
+        return passwordResetExpiresAt;
+    }
+
+    public void setPasswordResetExpiresAt(LocalDateTime passwordResetExpiresAt) {
+        this.passwordResetExpiresAt = passwordResetExpiresAt;
     }
 }

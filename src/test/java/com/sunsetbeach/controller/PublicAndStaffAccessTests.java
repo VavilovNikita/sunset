@@ -45,7 +45,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * directory, so the file-serving 200/404 cases hit an actual filesystem lookup).
  */
 @WebMvcTest(controllers = {RoomController.class, UserController.class, PublicController.class})
-@Import({SecurityConfig.class, JwtService.class, com.sunsetbeach.security.GuestJwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, RoomImageService.class})
+@Import({SecurityConfig.class, JwtService.class, com.sunsetbeach.security.GuestJwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, RoomImageService.class,
+        com.sunsetbeach.security.PublicQuoteRateLimiter.class})
 class PublicAndStaffAccessTests {
 
     private static final String JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long!!";
@@ -56,6 +57,11 @@ class PublicAndStaffAccessTests {
 
     @Autowired
     private JwtService jwtService;
+
+    // PublicController's quote endpoint (GET /public/rooms/{id}/quote) - not exercised here, but
+    // the slice's context needs the bean to start.
+    @MockitoBean
+    private com.sunsetbeach.service.BookingService bookingService;
 
     @MockitoBean
     private RoomService roomService;

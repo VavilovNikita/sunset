@@ -228,6 +228,27 @@ public class EmailService {
         }
     }
 
+    /**
+     * Sent by {@code GuestAccountService#requestPasswordReset}. Same fail-open contract as the
+     * verification email (the endpoint's response is identical whether or not this went out).
+     * The link goes to the site's {@code /guest/reset-password} page, which works from any device
+     * - the guest app's "forgot password" screen points the guest at this same email. The name is
+     * the guest's own free text, so it is escaped.
+     */
+    public void sendGuestPasswordResetEmail(String email, String name, String token) {
+        try {
+            String link = siteUrl + "/guest/reset-password?token=" + token;
+            String html = "<p>Hi " + escapeName(name) + ",</p>"
+                    + "<p>Someone asked to reset the password for your guest account. To choose a new one:</p>"
+                    + "<p><a href=\"" + HtmlUtils.htmlEscape(link) + "\">Reset password</a></p>"
+                    + "<p>This link expires in 1 hour and works once. If you didn't ask for this, you can ignore this email - "
+                    + "your password hasn't changed.</p>";
+            send(List.of(email), "Reset your password — The Sunset Beach Resort & Spa", html);
+        } catch (Exception e) {
+            log.error("sendGuestPasswordResetEmail failed:", e);
+        }
+    }
+
     public static final String PRE_ARRIVAL_SUBJECT = "Your stay is coming up — The Sunset Beach Resort & Spa";
     public static final String POST_STAY_SUBJECT = "Thank you for staying with us — The Sunset Beach Resort & Spa";
     public static final String WIN_BACK_SUBJECT = "We'd love to welcome you back — The Sunset Beach Resort & Spa";
