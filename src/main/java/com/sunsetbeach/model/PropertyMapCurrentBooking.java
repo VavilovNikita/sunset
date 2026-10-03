@@ -32,6 +32,8 @@ public class PropertyMapCurrentBooking {
 
   private String outstandingBalance;
 
+  private Integer overdueDays;
+
   public PropertyMapCurrentBooking() {
     super();
   }
@@ -142,6 +144,25 @@ public class PropertyMapCurrentBooking {
     this.outstandingBalance = outstandingBalance;
   }
 
+  public PropertyMapCurrentBooking overdueDays(Integer overdueDays) {
+    this.overdueDays = overdueDays;
+    return this;
+  }
+
+  /**
+   * How many days past `checkOut` a still-`CHECKED_IN` guest is (`0` when not overdue). The one rule for this lives in `OverstayRule` - an overdue guest is still in the house and still occupies their room tonight, on every screen. Same figure the night audit's missed departures show. 
+   * @return overdueDays
+   */
+  
+  @JsonProperty("overdueDays")
+  public Integer getOverdueDays() {
+    return overdueDays;
+  }
+
+  public void setOverdueDays(Integer overdueDays) {
+    this.overdueDays = overdueDays;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -155,12 +176,13 @@ public class PropertyMapCurrentBooking {
         Objects.equals(this.guestName, propertyMapCurrentBooking.guestName) &&
         Objects.equals(this.checkOut, propertyMapCurrentBooking.checkOut) &&
         Objects.equals(this.occupancyStatus, propertyMapCurrentBooking.occupancyStatus) &&
-        Objects.equals(this.outstandingBalance, propertyMapCurrentBooking.outstandingBalance);
+        Objects.equals(this.outstandingBalance, propertyMapCurrentBooking.outstandingBalance) &&
+        Objects.equals(this.overdueDays, propertyMapCurrentBooking.overdueDays);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(bookingId, guestName, checkOut, occupancyStatus, outstandingBalance);
+    return Objects.hash(bookingId, guestName, checkOut, occupancyStatus, outstandingBalance, overdueDays);
   }
 
   @Override
@@ -172,6 +194,7 @@ public class PropertyMapCurrentBooking {
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
     sb.append("    outstandingBalance: ").append(toIndentedString(outstandingBalance)).append("\n");
+    sb.append("    overdueDays: ").append(toIndentedString(overdueDays)).append("\n");
     sb.append("}");
     return sb.toString();
   }

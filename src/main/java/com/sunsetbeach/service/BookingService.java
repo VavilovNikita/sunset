@@ -32,6 +32,7 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.FolioPayment;
 import com.sunsetbeach.model.FolioPaymentInput;
+import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RelocationUndoInput;
@@ -91,6 +92,7 @@ public class BookingService {
     private final AuditLogService auditLogService;
     private final GuestLinkService guestLinkService;
     private final LedgerService ledgerService;
+    private final OverstayRule overstayRule;
 
     public BookingService(
             RoomRepository roomRepository,
@@ -107,7 +109,9 @@ public class BookingService {
             MenuItemRepository menuItemRepository,
             AuditLogService auditLogService,
             GuestLinkService guestLinkService,
-            LedgerService ledgerService) {
+            LedgerService ledgerService,
+            OverstayRule overstayRule) {
+        this.overstayRule = overstayRule;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.guestRepository = guestRepository;
@@ -345,7 +349,7 @@ public class BookingService {
 
     @Transactional(readOnly = true)
     public List<Booking> list(String from, String to, BookingStatus status, String guestName) {
-        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status, guestName));
+        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status, guestName, overstayRule.today()));
         Map<String, List<BookingSegmentEntity>> segmentsByBookingId = bookings.isEmpty()
                 ? Map.of()
                 : segmentRepository.findByBookingIdIn(bookings.stream().map(BookingEntity::getId).toList()).stream()
@@ -930,7 +934,7 @@ public class BookingService {
     public String exportCsv(String from, String to, BookingStatus status) {
         // guestName search is deliberately not offered on the bulk CSV export - see
         // GET /bookings/export's own description for why that stays a plain date-range report.
-        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status, null));
+        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status, null, null));
         auditLogService.record(
                 AuditAction.BOOKINGS_EXPORTED,
                 AuditEntityType.BOOKING,
@@ -945,8 +949,15 @@ public class BookingService {
      * Shared by {@link #list} and {@link #exportCsv} - same filters, same `checkIn` ascending
      * order. {@code guestName} (case-insensitive substring) is passed as {@code null} from
      * {@link #exportCsv} - it's a `GET /bookings`-only filter, see that operation's description.
+     *
+     * <p>{@code today}, when given, widens the date range by {@link OverstayRule}: a guest still
+     * checked in past checkOut is still staying on every date up to today, so a range reaching
+     * back to today or earlier includes them - this is what lets POS charge-to-room and the spa's
+     * guest picker (both {@code from=to=today}-style lookups) find them. {@code null} keeps the
+     * plain agreed-dates filter, for the CSV export (a date-range report, not a who's-here query).
      */
-    private static Specification<BookingEntity> buildSpecification(String from, String to, BookingStatus status, String guestName) {
+    private static Specification<BookingEntity> buildSpecification(
+            String from, String to, BookingStatus status, String guestName, LocalDate today) {
         LocalDate fromDate = from != null ? LocalDate.parse(from) : null;
         LocalDate toDate = to != null ? LocalDate.parse(to) : null;
         String guestNamePattern = guestName != null && !guestName.isBlank() ? "%" + guestName.toLowerCase().trim() + "%" : null;
@@ -960,7 +971,15 @@ public class BookingService {
                 predicates.add(cb.equal(root.get("status"), status));
             }
             if (fromDate != null) {
-                predicates.add(cb.greaterThan(root.get("checkOut"), fromDate));
+                Predicate staysPastFrom = cb.greaterThan(root.get("checkOut"), fromDate);
+                if (today != null && !fromDate.isAfter(today)) {
+                    Predicate overdue = cb.and(
+                            cb.equal(root.get("occupancyStatus"), OccupancyStatus.CHECKED_IN),
+                            cb.notEqual(root.get("status"), BookingStatus.CANCELLED),
+                            cb.lessThan(root.get("checkOut"), today));
+                    staysPastFrom = cb.or(staysPastFrom, overdue);
+                }
+                predicates.add(staysPastFrom);
             }
             if (toDate != null) {
                 // <=, not < : checkIn/checkOut is a half-open [checkIn, checkOut) stay window,

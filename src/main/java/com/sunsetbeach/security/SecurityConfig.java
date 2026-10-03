@@ -382,7 +382,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/shift-codes/*/kind").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/shift-codes/*/display-color").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/employee-patterns", "/employee-patterns/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
-                        .requestMatchers("/roster/employees", "/roster/generate", "/roster/actuals-export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers("/roster/employees", "/roster/generate", "/roster/copy", "/roster/actuals-export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/roster", "/roster/entries", "/roster/entries/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/staff-area-coverage-rules", "/staff-area-coverage-rules/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/attendance", "/attendance/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())

@@ -32,16 +32,19 @@ public class AvailabilityService {
     private final RoomUnitRepository roomUnitRepository;
     private final RoomUnitBlockRepository roomUnitBlockRepository;
     private final BookingSegmentRepository segmentRepository;
+    private final OverstayRule overstayRule;
 
     public AvailabilityService(
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             RoomUnitBlockRepository roomUnitBlockRepository,
-            BookingSegmentRepository segmentRepository) {
+            BookingSegmentRepository segmentRepository,
+            OverstayRule overstayRule) {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
         this.segmentRepository = segmentRepository;
+        this.overstayRule = overstayRule;
     }
 
     @Transactional(readOnly = true)
@@ -95,6 +98,8 @@ public class AvailabilityService {
 
         List<BookingSegmentEntity> segments = segmentRepository.findByRoomIdAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
                 room.getId(), BookingStatus.CANCELLED, monthEnd, monthStart);
+        // A guest still checked in past checkOut keeps their room - see OverstayRule.
+        List<OverstayRule.Overstay> overstays = overstayRule.overlapping(room.getId(), monthStart, monthEnd.plusDays(1));
 
         return DateRangeUtil.eachDateInRange(monthStart, monthEnd).stream()
                 .map(date -> {
@@ -106,21 +111,27 @@ public class AvailabilityService {
 
                     List<BookingSegmentEntity> bookedToday =
                             segments.stream().filter(s -> !date.isBefore(s.getCheckIn()) && date.isBefore(s.getCheckOut())).toList();
-                    Map<String, BookingSegmentEntity> segmentByUnitId = bookedToday.stream()
+                    List<OverstayRule.Overstay> overstayingToday = overstays.stream().filter(o -> o.covers(date)).toList();
+                    Map<String, String> bookingIdByUnitId = new HashMap<>();
+                    bookedToday.stream()
                             .filter(s -> s.getRoomUnitId() != null)
-                            .collect(Collectors.toMap(BookingSegmentEntity::getRoomUnitId, s -> s, (a, b) -> a));
+                            .forEach(s -> bookingIdByUnitId.putIfAbsent(s.getRoomUnitId(), s.getBookingId()));
+                    overstayingToday.stream()
+                            .filter(o -> o.roomUnitId() != null)
+                            .forEach(o -> bookingIdByUnitId.putIfAbsent(o.roomUnitId(), o.bookingId()));
 
                     List<RoomUnitAvailability> units = activeUnits.stream()
                             .map(unit -> {
                                 boolean blocked = blockedUnitIds.contains(unit.getId());
-                                BookingSegmentEntity segment = segmentByUnitId.get(unit.getId());
-                                boolean booked = segment != null;
+                                String bookingId = bookingIdByUnitId.get(unit.getId());
+                                boolean booked = bookingId != null;
                                 return new RoomUnitAvailability(unit.getId(), unit.getLabel(), blocked, booked, !blocked && !booked,
-                                        segment != null ? segment.getBookingId() : null, blocked ? blockReasonByUnitId.get(unit.getId()) : null);
+                                        bookingId, blocked ? blockReasonByUnitId.get(unit.getId()) : null);
                             })
                             .toList();
 
-                    return new DayInventory(date, activeUnits.size(), blockedUnitIds.size(), bookedToday.size(), units);
+                    return new DayInventory(
+                            date, activeUnits.size(), blockedUnitIds.size(), bookedToday.size() + overstayingToday.size(), units);
                 })
                 .toList();
     }

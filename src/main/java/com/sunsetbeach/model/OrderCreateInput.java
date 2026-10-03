@@ -4,7 +4,10 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.sunsetbeach.model.OrderItemInput;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -28,6 +31,9 @@ public class OrderCreateInput {
   private JsonNullable<String> bookingId = JsonNullable.<String>undefined();
 
   private JsonNullable<@Size(max = 120) String> guestName = JsonNullable.<String>undefined();
+
+  @Valid
+  private List<@Valid OrderItemInput> items = new ArrayList<>();
 
   private JsonNullable<String> spaAppointmentId = JsonNullable.<String>undefined();
 
@@ -88,6 +94,33 @@ public class OrderCreateInput {
     this.guestName = guestName;
   }
 
+  public OrderCreateInput items(List<@Valid OrderItemInput> items) {
+    this.items = items;
+    return this;
+  }
+
+  public OrderCreateInput addItemsItem(OrderItemInput itemsItem) {
+    if (this.items == null) {
+      this.items = new ArrayList<>();
+    }
+    this.items.add(itemsItem);
+    return this;
+  }
+
+  /**
+   * Lines to add in the same transaction, exactly as `POST /orders/{id}/items` would add them. The POS screens send the first line here instead of creating the order when a table is tapped: an order only comes into existence with something on it, so opening a free table and walking away leaves no empty order behind and the table stays free. Optional - the spa billing door and room service still create first and add after. 
+   * @return items
+   */
+  @Valid 
+  @JsonProperty("items")
+  public List<@Valid OrderItemInput> getItems() {
+    return items;
+  }
+
+  public void setItems(List<@Valid OrderItemInput> items) {
+    this.items = items;
+  }
+
   public OrderCreateInput spaAppointmentId(String spaAppointmentId) {
     this.spaAppointmentId = JsonNullable.of(spaAppointmentId);
     return this;
@@ -119,6 +152,7 @@ public class OrderCreateInput {
     return equalsNullable(this.tableId, orderCreateInput.tableId) &&
         equalsNullable(this.bookingId, orderCreateInput.bookingId) &&
         equalsNullable(this.guestName, orderCreateInput.guestName) &&
+        Objects.equals(this.items, orderCreateInput.items) &&
         equalsNullable(this.spaAppointmentId, orderCreateInput.spaAppointmentId);
   }
 
@@ -128,7 +162,7 @@ public class OrderCreateInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(hashCodeNullable(tableId), hashCodeNullable(bookingId), hashCodeNullable(guestName), hashCodeNullable(spaAppointmentId));
+    return Objects.hash(hashCodeNullable(tableId), hashCodeNullable(bookingId), hashCodeNullable(guestName), items, hashCodeNullable(spaAppointmentId));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -145,6 +179,7 @@ public class OrderCreateInput {
     sb.append("    tableId: ").append(toIndentedString(tableId)).append("\n");
     sb.append("    bookingId: ").append(toIndentedString(bookingId)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
+    sb.append("    items: ").append(toIndentedString(items)).append("\n");
     sb.append("    spaAppointmentId: ").append(toIndentedString(spaAppointmentId)).append("\n");
     sb.append("}");
     return sb.toString();

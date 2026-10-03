@@ -42,6 +42,8 @@ public class CalendarBooking {
 
   private Integer segmentCount;
 
+  private String overstayUntil;
+
   public CalendarBooking() {
     super();
   }
@@ -252,6 +254,25 @@ public class CalendarBooking {
     this.segmentCount = segmentCount;
   }
 
+  public CalendarBooking overstayUntil(String overstayUntil) {
+    this.overstayUntil = overstayUntil;
+    return this;
+  }
+
+  /**
+   * Set only on the last segment of a guest still `CHECKED_IN` past `checkOut` (see `OverstayRule`): the exclusive end of the nights they are actually occupying beyond the agreed stay - tomorrow, so tonight is covered. Not an agreed date and never priced; availability counts the room as taken through it, so it can't be sold over the guest. Absent for every other segment. 
+   * @return overstayUntil
+   */
+  @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") 
+  @JsonProperty("overstayUntil")
+  public String getOverstayUntil() {
+    return overstayUntil;
+  }
+
+  public void setOverstayUntil(String overstayUntil) {
+    this.overstayUntil = overstayUntil;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -270,12 +291,13 @@ public class CalendarBooking {
         Objects.equals(this.checkOut, calendarBooking.checkOut) &&
         Objects.equals(this.status, calendarBooking.status) &&
         Objects.equals(this.totalPrice, calendarBooking.totalPrice) &&
-        Objects.equals(this.segmentCount, calendarBooking.segmentCount);
+        Objects.equals(this.segmentCount, calendarBooking.segmentCount) &&
+        Objects.equals(this.overstayUntil, calendarBooking.overstayUntil);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(segmentId, bookingId, roomId, roomUnitId, guestName, checkIn, checkOut, status, totalPrice, segmentCount);
+    return Objects.hash(segmentId, bookingId, roomId, roomUnitId, guestName, checkIn, checkOut, status, totalPrice, segmentCount, overstayUntil);
   }
 
   @Override
@@ -292,6 +314,7 @@ public class CalendarBooking {
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
     sb.append("    segmentCount: ").append(toIndentedString(segmentCount)).append("\n");
+    sb.append("    overstayUntil: ").append(toIndentedString(overstayUntil)).append("\n");
     sb.append("}");
     return sb.toString();
   }

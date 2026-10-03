@@ -205,7 +205,7 @@ public interface ReportsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"date\" : \"date\", \"rooms\" : [ { \"roomUnitLabel\" : \"roomUnitLabel\", \"children\" : 6, \"arrival\" : \"arrival\", \"adults\" : 0, \"departure\" : \"departure\", \"bookingId\" : \"bookingId\", \"roomName\" : \"roomName\", \"guestName\" : \"guestName\", \"marketSegment\" : \"COM\" }, { \"roomUnitLabel\" : \"roomUnitLabel\", \"children\" : 6, \"arrival\" : \"arrival\", \"adults\" : 0, \"departure\" : \"departure\", \"bookingId\" : \"bookingId\", \"roomName\" : \"roomName\", \"guestName\" : \"guestName\", \"marketSegment\" : \"COM\" } ], \"total\" : { \"rooms\" : 1, \"children\" : 5, \"adults\" : 5 } }";
+                    String exampleString = "{ \"date\" : \"date\", \"rooms\" : [ { \"roomUnitLabel\" : \"roomUnitLabel\", \"children\" : 6, \"arrival\" : \"arrival\", \"adults\" : 0, \"overdueDays\" : 1, \"departure\" : \"departure\", \"bookingId\" : \"bookingId\", \"roomName\" : \"roomName\", \"guestName\" : \"guestName\", \"marketSegment\" : \"COM\" }, { \"roomUnitLabel\" : \"roomUnitLabel\", \"children\" : 6, \"arrival\" : \"arrival\", \"adults\" : 0, \"overdueDays\" : 1, \"departure\" : \"departure\", \"bookingId\" : \"bookingId\", \"roomName\" : \"roomName\", \"guestName\" : \"guestName\", \"marketSegment\" : \"COM\" } ], \"total\" : { \"rooms\" : 5, \"children\" : 2, \"adults\" : 5 } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

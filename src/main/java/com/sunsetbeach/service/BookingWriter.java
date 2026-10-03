@@ -120,6 +120,7 @@ public class BookingWriter {
     private final BookingSegmentRepository segmentRepository;
     private final BookingSegmentNightlyRateRepository nightlyRateRepository;
     private final RatePlanRepository ratePlanRepository;
+    private final OverstayRule overstayRule;
 
     public BookingWriter(
             RoomRepository roomRepository,
@@ -128,7 +129,9 @@ public class BookingWriter {
             BookingRepository bookingRepository,
             BookingSegmentRepository segmentRepository,
             BookingSegmentNightlyRateRepository nightlyRateRepository,
-            RatePlanRepository ratePlanRepository) {
+            RatePlanRepository ratePlanRepository,
+            OverstayRule overstayRule) {
+        this.overstayRule = overstayRule;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
@@ -1123,7 +1126,25 @@ public class BookingWriter {
         if (!overlapping.isEmpty()) {
             return new UnitConflict("Room " + unit.getLabel() + " is already booked for an overlapping stay", false);
         }
-        return null;
+        return overstayConflict(unit, roomId, checkIn, checkOut, o -> !o.bookingId().equals(excludeBookingId));
+    }
+
+    /**
+     * A guest still checked in past checkOut holds their last segment's room through tonight
+     * (see {@link OverstayRule}) - no {@code BookingSegment} row says so, so every unit-level
+     * check asks here as well. Read inside the caller's SERIALIZABLE transaction like the
+     * segment query beside it, so a concurrent check-out or extension is a serialization
+     * conflict, not a missed one.
+     */
+    private UnitConflict overstayConflict(
+            RoomUnitEntity unit, String roomId, LocalDate checkIn, LocalDate checkOut, java.util.function.Predicate<OverstayRule.Overstay> counts) {
+        return overstayRule.overlapping(roomId, checkIn, checkOut).stream()
+                .filter(o -> unit.getId().equals(o.roomUnitId()))
+                .filter(counts)
+                .findFirst()
+                .map(o -> new UnitConflict("Room " + unit.getLabel() + " is still occupied by " + o.booking().getGuestName()
+                        + ", who was due to check out on " + o.booking().getCheckOut() + " and hasn't been checked out", false))
+                .orElse(null);
     }
 
     /**
@@ -1146,7 +1167,7 @@ public class BookingWriter {
         if (!overlapping.isEmpty()) {
             return new UnitConflict("Room " + unit.getLabel() + " is already booked for an overlapping stay", false);
         }
-        return null;
+        return overstayConflict(unit, roomId, checkIn, checkOut, o -> !excludeSegmentIds.contains(o.lastSegment().getId()));
     }
 
     /**
@@ -1173,6 +1194,9 @@ public class BookingWriter {
                         roomId, BookingStatus.CANCELLED, checkOut, checkIn)
                 : segmentRepository.findByRoomIdAndBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThanAndBookingIdNot(
                         roomId, BookingStatus.CANCELLED, checkOut, checkIn, excludeBookingId);
+        List<OverstayRule.Overstay> overstays = overstayRule.overlapping(roomId, checkIn, checkOut).stream()
+                .filter(o -> !o.bookingId().equals(excludeBookingId))
+                .toList();
 
         for (LocalDate night : nights) {
             long blockedUnits = blocks.stream()
@@ -1182,7 +1206,8 @@ public class BookingWriter {
                     .count();
             long bookedUnits = overlapping.stream()
                     .filter(b -> !night.isBefore(b.getCheckIn()) && night.isBefore(b.getCheckOut()))
-                    .count();
+                    .count()
+                    + overstays.stream().filter(o -> o.covers(night)).count();
             int available = InventoryMath.availableCount(unitCount, (int) blockedUnits, (int) bookedUnits);
             if (available < 1) {
                 return false;

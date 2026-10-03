@@ -8057,6 +8057,53 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /roster/copy:
+    post:
+      operationId: copyRosterMonth
+      tags: [Roster]
+      summary: Fill a month by copying an earlier stretch of the roster
+      description: >
+        Requires MANAGER or above. The way to set up a month when nobody has an employee pattern
+        (so `POST /roster/generate` has nothing to work from): copy what was actually rostered
+        before. The source defaults to the whole previous month; `sourceFrom`/`sourceTo` narrow
+        it to any range of at least 7 days.
+
+        Copied by weekday, not by day of the month, because a roster is a weekly rhythm (a
+        weekly day off has to stay on the same weekday). The source is cut to whole weeks - its
+        first `7 x floor(days / 7)` days - and repeated to cover the target month: each target
+        date takes the entry its own weekday had at the matching point of that cycle, i.e.
+        `sourceFrom + ((target - sourceFrom) mod period)`. A blank source cell (a day off) stays
+        blank.
+
+        Same safety rules as `/roster/generate`: an existing entry in the target month is never
+        overwritten (re-running is harmless), an inactive employee is skipped, and a copied code
+        is re-pointed to the version of that code in force on the target date (see
+        `ShiftCode.effectiveFrom`) - a code with no such version is skipped and counted, never
+        guessed. Notes and locks are not copied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterCopyInput"
+      responses:
+        "200":
+          description: The target month after copying, with what happened.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterCopyResult"
+        "400":
+          description: Invalid range (fewer than 7 days, `sourceFrom` after `sourceTo`, or overlapping the target month).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /roster/entries:
     post:
       operationId: createRosterEntry
@@ -9830,16 +9877,24 @@ components:
         outstandingBalance:
           type: string
           description: Decimal(10,2) rendered as a string. Same meaning as `CheckOutResult.outstandingBalance`.
+        overdueDays:
+          type: integer
+          description: >
+            How many days past `checkOut` a still-`CHECKED_IN` guest is (`0` when not overdue).
+            The one rule for this lives in `OverstayRule` - an overdue guest is still in the house
+            and still occupies their room tonight, on every screen. Same figure the night audit's
+            missed departures show.
 
     TodayBoard:
       type: object
       description: >
         Response of `GET /bookings/today` - the front desk's daily working set, in the three
-        groups reception actually thinks in. A booking appears in exactly one list: `arrivingToday`
-        (`checkIn` = today, `occupancyStatus` = `EXPECTED`), `departingToday` (`checkOut` = today,
-        `occupancyStatus` = `CHECKED_IN`), or `inHouse` (`occupancyStatus` = `CHECKED_IN`,
-        regardless of date - a guest mid-stay, not just one departing today; `departingToday` is a
-        subset by date, not a separate population). A booking marked `NO_SHOW` or already
+        groups reception actually thinks in. `arrivingToday` (`checkIn` = today,
+        `occupancyStatus` = `EXPECTED`), `departingToday` (`checkOut` on or before today,
+        `occupancyStatus` = `CHECKED_IN` - an overdue guest who should have left on an earlier day
+        is still due out, see `TodayBoardEntry.overdueDays`), or `inHouse` (`occupancyStatus` =
+        `CHECKED_IN`, regardless of date - a guest mid-stay, not just one departing today;
+        `departingToday` is a subset by date, not a separate population). A booking marked `NO_SHOW` or already
         `CHECKED_OUT` today appears in none of the three - it's no longer part of today's
         open work.
       required: [arrivingToday, departingToday, inHouse]
@@ -10824,6 +10879,13 @@ components:
             Decimal(10,2) as a string, from `BookingService#computeOutstandingBalance` - the
             same PAID-aware figure the check-out warning and `TodayBoardEntry` already use, not
             re-derived.
+        overdueDays:
+          type: integer
+          description: >
+            How many days past `checkOut` a still-`CHECKED_IN` guest is (`0` when not overdue).
+            The one rule for this lives in `OverstayRule` - an overdue guest is still in the house
+            and still occupies their room tonight, on every screen. Same figure the night audit's
+            missed departures show.
 
     PropertyMapActiveBlock:
       type: object
@@ -11210,6 +11272,15 @@ components:
         segmentCount:
           type: integer
           description: How many segments the parent booking has in total - `1` for the overwhelmingly common never-relocated case. The grid uses this to decide whether drag-resize/drag-move is offered on this bar at all (see `PATCH /bookings/{id}/schedule`'s description) without a second round trip to fetch the full booking.
+        overstayUntil:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: >
+            Set only on the last segment of a guest still `CHECKED_IN` past `checkOut` (see
+            `OverstayRule`): the exclusive end of the nights they are actually occupying beyond the
+            agreed stay - tomorrow, so tonight is covered. Not an agreed date and never priced;
+            availability counts the room as taken through it, so it can't be sold over the guest.
+            Absent for every other segment.
 
     BookingCalendarResponse:
       type: object
@@ -12789,6 +12860,16 @@ components:
           type: string
           nullable: true
           maxLength: 120
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItemInput"
+          description: >
+            Lines to add in the same transaction, exactly as `POST /orders/{id}/items` would add
+            them. The POS screens send the first line here instead of creating the order when a
+            table is tapped: an order only comes into existence with something on it, so opening a
+            free table and walking away leaves no empty order behind and the table stays free.
+            Optional - the spa billing door and room service still create first and add after.
         spaAppointmentId:
           type: string
           nullable: true
@@ -12880,12 +12961,22 @@ components:
         client on money" rule as `Booking.totalPrice`/`Order.total` itself. `bookingId` is
         required when `method` is `ROOM_CHARGE` — a cross-field rule enforced server-side, not
         expressible in JSON Schema (same pattern as `BookingCreateInput`'s `checkIn < checkOut`).
+        An order with no lines can't be closed at all (409) - there is nothing to charge, and a
+        ฿0 `PAID` order is noise in the history and the cash report; cancel it instead.
       required: [method]
       properties:
         method:
           $ref: "#/components/schemas/PaymentMethod"
         bookingId:
           type: string
+        amountTendered:
+          type: string
+          pattern: '^\d{1,8}(\.\d{1,2})?$'
+          description: >
+            `CASH` only, optional: the cash the guest handed over, as the cashier counted it in the
+            close dialog. Never what is charged - the payment is still exactly `Order.total`. The
+            server rejects it (400) when it's less than the total, or sent with any other method,
+            and records it with the change due in the audit entry.
 
     GuestOrderItem:
       type: object
@@ -13360,6 +13451,7 @@ components:
         - ROSTER_ENTRY_DELETED
         - ROSTER_ENTRY_LOCKED_CHANGED
         - ROSTER_MONTH_GENERATED
+        - ROSTER_MONTH_COPIED
         - STAFF_AREA_COVERAGE_RULE_CHANGED
         - ATTENDANCE_PUNCH_RECORDED
         - ATTENDANCE_PUNCH_CORRECTED
@@ -14075,6 +14167,48 @@ components:
           type: integer
         minimumWorking:
           type: integer
+
+    RosterCopyInput:
+      type: object
+      description: Body of `POST /roster/copy`. Leave both source dates out to copy the whole previous month.
+      required: [year, month]
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        sourceFrom:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: First source date (inclusive). Give both or neither.
+        sourceTo:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Last source date (inclusive).
+
+    RosterCopyResult:
+      type: object
+      required: [month, sourceFrom, sourceTo, created, skippedExisting, skippedNoCurrentCode]
+      properties:
+        month:
+          $ref: "#/components/schemas/RosterMonth"
+        sourceFrom:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        sourceTo:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The last source date actually used - the range cut down to whole weeks.
+        created:
+          type: integer
+        skippedExisting:
+          type: integer
+          description: Target cells that already had an entry and were left alone.
+        skippedNoCurrentCode:
+          type: integer
+          description: Cells whose shift code has no version in force on the target date.
 
     RosterMonth:
       type: object
@@ -15350,6 +15484,13 @@ components:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
           description: The booking's `checkOut`.
+        overdueDays:
+          type: integer
+          description: >
+            How many days past `checkOut` a still-`CHECKED_IN` guest is (`0` when not overdue).
+            The one rule for this lives in `OverstayRule` - an overdue guest is still in the house
+            and still occupies their room tonight, on every screen. Same figure the night audit's
+            missed departures show.
 
     InHouseTotal:
       type: object

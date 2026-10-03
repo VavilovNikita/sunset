@@ -14,6 +14,8 @@ import com.sunsetbeach.model.EmployeePayRate;
 import com.sunsetbeach.model.EmployeePayRateCreateInput;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.OkTrue;
+import com.sunsetbeach.model.RosterCopyInput;
+import com.sunsetbeach.model.RosterCopyResult;
 import com.sunsetbeach.model.RosterEmployee;
 import com.sunsetbeach.model.RosterEntry;
 import com.sunsetbeach.model.RosterEntryCreateInput;
@@ -151,6 +153,55 @@ public interface RosterApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /roster/copy : Fill a month by copying an earlier stretch of the roster
+     * Requires MANAGER or above. The way to set up a month when nobody has an employee pattern (so &#x60;POST /roster/generate&#x60; has nothing to work from): copy what was actually rostered before. The source defaults to the whole previous month; &#x60;sourceFrom&#x60;/&#x60;sourceTo&#x60; narrow it to any range of at least 7 days. Copied by weekday, not by day of the month, because a roster is a weekly rhythm (a weekly day off has to stay on the same weekday). The source is cut to whole weeks - its first &#x60;7 x floor(days / 7)&#x60; days - and repeated to cover the target month: each target date takes the entry its own weekday had at the matching point of that cycle, i.e. &#x60;sourceFrom + ((target - sourceFrom) mod period)&#x60;. A blank source cell (a day off) stays blank. Same safety rules as &#x60;/roster/generate&#x60;: an existing entry in the target month is never overwritten (re-running is harmless), an inactive employee is skipped, and a copied code is re-pointed to the version of that code in force on the target date (see &#x60;ShiftCode.effectiveFrom&#x60;) - a code with no such version is skipped and counted, never guessed. Notes and locks are not copied. 
+     *
+     * @param rosterCopyInput  (required)
+     * @return The target month after copying, with what happened. (status code 200)
+     *         or Invalid range (fewer than 7 days, &#x60;sourceFrom&#x60; after &#x60;sourceTo&#x60;, or overlapping the target month). (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/roster/copy",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<RosterCopyResult> copyRosterMonth(
+         @Valid @RequestBody RosterCopyInput rosterCopyInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"sourceTo\" : \"sourceTo\", \"month\" : { \"entries\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ], \"month\" : 6, \"year\" : 0, \"employees\" : [ { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ], \"coverageWarnings\" : [ { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 }, { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 } ] }, \"skippedNoCurrentCode\" : 1, \"created\" : 0, \"skippedExisting\" : 6, \"sourceFrom\" : \"sourceFrom\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

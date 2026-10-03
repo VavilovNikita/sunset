@@ -44,8 +44,15 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
     List<BookingEntity> findByOccupancyStatusAndStatusNotAndCheckInIs(
             OccupancyStatus occupancyStatus, BookingStatus excludedStatus, LocalDate checkIn);
 
-    /** Departing-today list for {@code GET /bookings/today} - {@code checkOut} has no such conflict, but kept explicit for symmetry with {@link #findByOccupancyStatusAndStatusNotAndCheckInIs}. */
-    List<BookingEntity> findByOccupancyStatusAndStatusNotAndCheckOut(
+    /**
+     * Departing list for {@code GET /bookings/today} - due out today, or overdue from an earlier
+     * day (see {@code OverstayRule}). With {@code CheckOutLessThan}, the overdue population itself.
+     */
+    List<BookingEntity> findByOccupancyStatusAndStatusNotAndCheckOutLessThanEqual(
+            OccupancyStatus occupancyStatus, BookingStatus excludedStatus, LocalDate checkOut);
+
+    /** {@code OverstayRule#current} - still checked in, past {@code checkOut}. */
+    List<BookingEntity> findByOccupancyStatusAndStatusNotAndCheckOutLessThan(
             OccupancyStatus occupancyStatus, BookingStatus excludedStatus, LocalDate checkOut);
 
     /** In-house list for {@code GET /bookings/today} - every currently checked-in guest, regardless of checkOut date. */

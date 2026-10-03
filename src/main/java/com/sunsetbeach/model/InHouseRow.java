@@ -40,6 +40,8 @@ public class InHouseRow {
 
   private String departure;
 
+  private Integer overdueDays;
+
   public InHouseRow() {
     super();
   }
@@ -230,6 +232,25 @@ public class InHouseRow {
     this.departure = departure;
   }
 
+  public InHouseRow overdueDays(Integer overdueDays) {
+    this.overdueDays = overdueDays;
+    return this;
+  }
+
+  /**
+   * How many days past `checkOut` a still-`CHECKED_IN` guest is (`0` when not overdue). The one rule for this lives in `OverstayRule` - an overdue guest is still in the house and still occupies their room tonight, on every screen. Same figure the night audit's missed departures show. 
+   * @return overdueDays
+   */
+  
+  @JsonProperty("overdueDays")
+  public Integer getOverdueDays() {
+    return overdueDays;
+  }
+
+  public void setOverdueDays(Integer overdueDays) {
+    this.overdueDays = overdueDays;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -247,12 +268,13 @@ public class InHouseRow {
         Objects.equals(this.guestName, inHouseRow.guestName) &&
         Objects.equals(this.marketSegment, inHouseRow.marketSegment) &&
         Objects.equals(this.arrival, inHouseRow.arrival) &&
-        Objects.equals(this.departure, inHouseRow.departure);
+        Objects.equals(this.departure, inHouseRow.departure) &&
+        Objects.equals(this.overdueDays, inHouseRow.overdueDays);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(bookingId, roomName, roomUnitLabel, adults, children, guestName, marketSegment, arrival, departure);
+    return Objects.hash(bookingId, roomName, roomUnitLabel, adults, children, guestName, marketSegment, arrival, departure, overdueDays);
   }
 
   @Override
@@ -268,6 +290,7 @@ public class InHouseRow {
     sb.append("    marketSegment: ").append(toIndentedString(marketSegment)).append("\n");
     sb.append("    arrival: ").append(toIndentedString(arrival)).append("\n");
     sb.append("    departure: ").append(toIndentedString(departure)).append("\n");
+    sb.append("    overdueDays: ").append(toIndentedString(overdueDays)).append("\n");
     sb.append("}");
     return sb.toString();
   }

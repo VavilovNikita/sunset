@@ -9,6 +9,8 @@ import com.sunsetbeach.model.EmployeePatternInput;
 import com.sunsetbeach.model.EmployeePayRate;
 import com.sunsetbeach.model.EmployeePayRateCreateInput;
 import com.sunsetbeach.model.OkTrue;
+import com.sunsetbeach.model.RosterCopyInput;
+import com.sunsetbeach.model.RosterCopyResult;
 import com.sunsetbeach.model.RosterEntry;
 import com.sunsetbeach.model.RosterEntryCreateInput;
 import com.sunsetbeach.model.RosterGridImportCommitInput;
@@ -145,6 +147,11 @@ public class RosterController implements RosterApi {
     @Override
     public ResponseEntity<RosterMonth> generateRosterMonth(Integer year, Integer month) {
         return ResponseEntity.ok(rosterService.generateMonth(year, month, callerId()));
+    }
+
+    @Override
+    public ResponseEntity<RosterCopyResult> copyRosterMonth(RosterCopyInput rosterCopyInput) {
+        return ResponseEntity.ok(rosterService.copyMonth(rosterCopyInput, callerId()));
     }
 
     @Override

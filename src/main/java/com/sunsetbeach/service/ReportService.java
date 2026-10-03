@@ -108,6 +108,7 @@ public class ReportService {
     private final GuestRepository guestRepository;
     private final VatSettingsService vatSettingsService;
     private final Clock clock;
+    private final OverstayRule overstayRule;
 
     public ReportService(
             BookingSegmentRepository segmentRepository,
@@ -121,7 +122,9 @@ public class ReportService {
             BookingRepository bookingRepository,
             GuestRepository guestRepository,
             VatSettingsService vatSettingsService,
-            Clock clock) {
+            Clock clock,
+            OverstayRule overstayRule) {
+        this.overstayRule = overstayRule;
         this.segmentRepository = segmentRepository;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
@@ -469,7 +472,15 @@ public class ReportService {
         LocalDate night = ReportDateRange.parseDateOrToday(date, clock);
         ReportDateRange range = ReportDateRange.night(night);
         List<SegmentInRange> slices = segmentsInRange(range);
-        List<InHouseStay> stays = inHouseStays(range, slices, bookingsOf(slices));
+        List<InHouseStay> stays = new ArrayList<>(inHouseStays(range, slices, bookingsOf(slices)));
+        // A guest still checked in past checkOut is in the house tonight, and was on every night
+        // since (OverstayRule) - no agreed segment covers those nights, so they're added here as
+        // a zero-revenue slice of the last segment's room. The in-house list only: the occupancy
+        // and manager reports stay on agreed, priced room-nights.
+        LocalDate today = overstayRule.today();
+        overstayRule.current().stream()
+                .filter(o -> o.covers(night))
+                .forEach(o -> stays.add(new InHouseStay(new SegmentInRange(o.lastSegment(), 1, BigDecimal.ZERO), o.booking())));
 
         Map<String, String> roomNames = roomRepository.findAllById(stays.stream().map(s -> s.segment().getRoomId()).distinct().toList())
                 .stream().collect(Collectors.toMap(RoomEntity::getId, RoomEntity::getName));
@@ -487,7 +498,8 @@ public class ReportService {
                         s.booking().getGuestName(),
                         marketSegmentOf(s.booking()),
                         s.booking().getCheckIn().toString(),
-                        s.booking().getCheckOut().toString()))
+                        s.booking().getCheckOut().toString())
+                        .overdueDays(OverstayRule.overdueDays(s.booking(), today)))
                 .sorted(Comparator.comparing((InHouseRow r) -> r.getRoomUnitLabel().orElse(null), Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
                         .thenComparing(InHouseRow::getRoomName, String.CASE_INSENSITIVE_ORDER))
                 .toList();

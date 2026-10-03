@@ -31,6 +31,7 @@ import java.math.BigDecimal;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
@@ -71,6 +72,7 @@ public class PropertyMapService {
     private final ImageUploadValidator imageUploadValidator;
     private final AuditLogService auditLogService;
     private final Path uploadsRoot;
+    private final Clock clock;
 
     public PropertyMapService(
             RoomUnitRepository roomUnitRepository,
@@ -82,7 +84,9 @@ public class PropertyMapService {
             MaintenanceTaskRepository maintenanceTaskRepository,
             ImageUploadValidator imageUploadValidator,
             AuditLogService auditLogService,
+            Clock clock,
             @Value("${app.uploads.root}") String uploadsRoot) {
+        this.clock = clock;
         this.roomUnitRepository = roomUnitRepository;
         this.roomRepository = roomRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
@@ -101,7 +105,7 @@ public class PropertyMapService {
         Map<String, String> roomNames = roomRepository.findAll().stream().collect(Collectors.toMap(RoomEntity::getId, RoomEntity::getName));
 
         List<String> unitIds = units.stream().map(RoomUnitEntity::getId).toList();
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
 
         // Currently in-house (a real guest, right now) - same query BookingOccupancyService#getTodayBoard
         // uses for its own inHouse list, just regrouped by roomUnitId instead of returned as a flat list.
@@ -128,7 +132,7 @@ public class PropertyMapService {
         Map<String, PropertyMapMaintenanceTask> openTaskByUnit = computeOpenTaskByUnit(today);
 
         List<PropertyMapUnit> unitDtos =
-                units.stream().map(unit -> toUnitDto(unit, roomNames, checkedInByUnit, arrivingTodayByUnit, blockByUnit, openTaskByUnit)).toList();
+                units.stream().map(unit -> toUnitDto(unit, roomNames, checkedInByUnit, arrivingTodayByUnit, blockByUnit, openTaskByUnit, today)).toList();
 
         PropertyMapEntity map = propertyMapRepository.findById(SINGLETON_ID).orElse(null);
         String imagePath = map != null ? map.getImagePath() : null;
@@ -143,10 +147,12 @@ public class PropertyMapService {
             Map<String, BookingEntity> checkedInByUnit,
             Map<String, BookingEntity> arrivingTodayByUnit,
             Map<String, RoomUnitBlockEntity> blockByUnit,
-            Map<String, PropertyMapMaintenanceTask> openTaskByUnit) {
+            Map<String, PropertyMapMaintenanceTask> openTaskByUnit,
+            LocalDate today) {
         BookingEntity checkedIn = checkedInByUnit.get(unit.getId());
-        PropertyMapCurrentBooking currentBooking =
-                checkedIn != null ? toCurrentBookingDto(checkedIn) : toCurrentBookingDtoOrNull(arrivingTodayByUnit.get(unit.getId()));
+        PropertyMapCurrentBooking currentBooking = checkedIn != null
+                ? toCurrentBookingDto(checkedIn, today)
+                : toCurrentBookingDtoOrNull(arrivingTodayByUnit.get(unit.getId()), today);
 
         RoomUnitBlockEntity block = blockByUnit.get(unit.getId());
         PropertyMapActiveBlock activeBlock =
@@ -211,18 +217,19 @@ public class PropertyMapService {
         return new PropertyMapMaintenanceTask(task.getId(), task.getDescription(), task.getStatus(), blockExpired(task, blocksById, today));
     }
 
-    private PropertyMapCurrentBooking toCurrentBookingDtoOrNull(BookingEntity booking) {
-        return booking == null ? null : toCurrentBookingDto(booking);
+    private PropertyMapCurrentBooking toCurrentBookingDtoOrNull(BookingEntity booking, LocalDate today) {
+        return booking == null ? null : toCurrentBookingDto(booking, today);
     }
 
-    private PropertyMapCurrentBooking toCurrentBookingDto(BookingEntity booking) {
+    private PropertyMapCurrentBooking toCurrentBookingDto(BookingEntity booking, LocalDate today) {
         BigDecimal outstanding = bookingService.computeOutstandingBalance(booking.getId());
         return new PropertyMapCurrentBooking(
                 booking.getId(),
                 booking.getGuestName(),
                 booking.getCheckOut().toString(),
                 booking.getOccupancyStatus(),
-                PriceFormat.asDecimalString(outstanding));
+                PriceFormat.asDecimalString(outstanding))
+                .overdueDays(OverstayRule.overdueDays(booking, today));
     }
 
     @Transactional

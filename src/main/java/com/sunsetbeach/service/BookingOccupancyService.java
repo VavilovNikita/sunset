@@ -196,17 +196,19 @@ public class BookingOccupancyService {
         List<TodayBoardEntry> arriving = bookingRepository
                 .findByOccupancyStatusAndStatusNotAndCheckInIs(OccupancyStatus.EXPECTED, BookingStatus.CANCELLED, today)
                 .stream()
-                .map(this::toEntry)
+                .map(b -> toEntry(b, today))
                 .toList();
+        // On or before today, not only on it: a guest who should have left on an earlier day is
+        // still due out (OverstayRule), and this list is where the desk's check-out button lives.
         List<TodayBoardEntry> departing = bookingRepository
-                .findByOccupancyStatusAndStatusNotAndCheckOut(OccupancyStatus.CHECKED_IN, BookingStatus.CANCELLED, today)
+                .findByOccupancyStatusAndStatusNotAndCheckOutLessThanEqual(OccupancyStatus.CHECKED_IN, BookingStatus.CANCELLED, today)
                 .stream()
-                .map(this::toEntry)
+                .map(b -> toEntry(b, today))
                 .toList();
         List<TodayBoardEntry> inHouse = bookingRepository
                 .findByOccupancyStatusAndStatusNot(OccupancyStatus.CHECKED_IN, BookingStatus.CANCELLED)
                 .stream()
-                .map(this::toEntry)
+                .map(b -> toEntry(b, today))
                 .toList();
         return new TodayBoard(arriving, departing, inHouse);
     }
@@ -223,9 +225,10 @@ public class BookingOccupancyService {
         return LocalDateTime.now(clock.withZone(ZoneOffset.UTC));
     }
 
-    private TodayBoardEntry toEntry(BookingEntity entity) {
+    private TodayBoardEntry toEntry(BookingEntity entity, LocalDate today) {
         BigDecimal outstanding = bookingService.computeOutstandingBalance(entity.getId());
-        return new TodayBoardEntry(toDto(entity), PriceFormat.asDecimalString(outstanding));
+        return new TodayBoardEntry(toDto(entity), PriceFormat.asDecimalString(outstanding))
+                .overdueDays(OverstayRule.overdueDays(entity, today));
     }
 
     private Booking toDto(BookingEntity entity) {

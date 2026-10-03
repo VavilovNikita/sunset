@@ -25,6 +25,8 @@ public class TodayBoardEntry {
 
   private String outstandingBalance;
 
+  private Integer overdueDays;
+
   public TodayBoardEntry() {
     super();
   }
@@ -75,6 +77,25 @@ public class TodayBoardEntry {
     this.outstandingBalance = outstandingBalance;
   }
 
+  public TodayBoardEntry overdueDays(Integer overdueDays) {
+    this.overdueDays = overdueDays;
+    return this;
+  }
+
+  /**
+   * How many days past `checkOut` a still-`CHECKED_IN` guest is (`0` when not overdue). The one rule for this lives in `OverstayRule` - an overdue guest is still in the house and still occupies their room tonight, on every screen. Same figure the night audit's missed departures show. 
+   * @return overdueDays
+   */
+  
+  @JsonProperty("overdueDays")
+  public Integer getOverdueDays() {
+    return overdueDays;
+  }
+
+  public void setOverdueDays(Integer overdueDays) {
+    this.overdueDays = overdueDays;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -85,12 +106,13 @@ public class TodayBoardEntry {
     }
     TodayBoardEntry todayBoardEntry = (TodayBoardEntry) o;
     return Objects.equals(this.booking, todayBoardEntry.booking) &&
-        Objects.equals(this.outstandingBalance, todayBoardEntry.outstandingBalance);
+        Objects.equals(this.outstandingBalance, todayBoardEntry.outstandingBalance) &&
+        Objects.equals(this.overdueDays, todayBoardEntry.overdueDays);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(booking, outstandingBalance);
+    return Objects.hash(booking, outstandingBalance, overdueDays);
   }
 
   @Override
@@ -99,6 +121,7 @@ public class TodayBoardEntry {
     sb.append("class TodayBoardEntry {\n");
     sb.append("    booking: ").append(toIndentedString(booking)).append("\n");
     sb.append("    outstandingBalance: ").append(toIndentedString(outstandingBalance)).append("\n");
+    sb.append("    overdueDays: ").append(toIndentedString(overdueDays)).append("\n");
     sb.append("}");
     return sb.toString();
   }

@@ -74,7 +74,15 @@ class TodayBoardClockTests extends AbstractIntegrationTest {
         TodayBoard board = occupancyService.getTodayBoard();
 
         assertThat(ids(board.getArrivingToday())).contains(arrivingToday.getId()).doesNotContain(arrivedYesterday.getId());
-        assertThat(ids(board.getDepartingToday())).contains(departingToday.getId()).doesNotContain(departingYesterday.getId());
+        // The overstay is still due out - listed as departing, but as 1 day overdue (OverstayRule),
+        // which is only right if "today" is the hotel's date: on UTC's yesterday it would read 0.
+        assertThat(ids(board.getDepartingToday())).contains(departingToday.getId(), departingYesterday.getId());
+        assertThat(overdueDays(board.getDepartingToday(), departingToday)).isZero();
+        assertThat(overdueDays(board.getDepartingToday(), departingYesterday)).isEqualTo(1);
+    }
+
+    private static int overdueDays(java.util.List<com.sunsetbeach.model.TodayBoardEntry> entries, Booking booking) {
+        return entries.stream().filter(e -> e.getBooking().getId().equals(booking.getId())).findFirst().orElseThrow().getOverdueDays();
     }
 
     // --- Moved from BookingOccupancyTests, where they read the wall clock ---------------------------

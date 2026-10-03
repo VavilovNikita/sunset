@@ -171,6 +171,14 @@ public class OrderService {
             linkExplicitSpaAppointment(explicitSpaAppointmentId, saved.getId());
         }
 
+        // The POS creates a table's order together with its first line (see OrderCreateInput.items),
+        // so tapping a free table and leaving never leaves an empty order holding the table.
+        // Same transaction and same path as POST /orders/{id}/items, so pricing, merging and the
+        // spa auto-link behave identically either way.
+        if (input.getItems() != null && !input.getItems().isEmpty()) {
+            return addItems(saved.getId(), input.getItems());
+        }
+
         return orderMapper.toDto(saved, List.of(), resolveEmail(openedByUserId), null);
     }
 
@@ -451,9 +459,17 @@ public class OrderService {
             throw new ConflictException("Order is already " + order.getStatus().getValue().toLowerCase());
         }
 
+        // Nothing to charge: a ฿0 PAID order is noise in the history and the cash report, and it
+        // is how an opened-and-abandoned table used to end up "paid". Cancel it instead.
+        if (orderItemRepository.findByOrderId(id).isEmpty()) {
+            throw new ConflictException("This order has no items - add something or cancel the order.");
+        }
+
         ShiftEntity shift = shiftRepository
                 .findByOpenedByUserIdAndStatus(cashierUserId, ShiftStatus.OPEN)
                 .orElseThrow(() -> new ConflictException("You don't have an open shift"));
+
+        BigDecimal tendered = parseTendered(input, order.getTotal());
 
         String bookingId = null;
         BookingEntity booking = null;
@@ -514,6 +530,7 @@ public class OrderService {
                 AuditEntityType.ORDER,
                 saved.getId(),
                 "Order closed with " + input.getMethod().getValue() + " payment of " + saved.getTotal()
+                        + (tendered != null ? " (tendered " + tendered + ", change " + tendered.subtract(saved.getTotal()) + ")" : "")
                         + (booking != null ? " (charged to " + booking.getGuestName() + "'s room)" : ""));
         if (booking != null) {
             auditLogService.record(
@@ -524,6 +541,25 @@ public class OrderService {
         }
 
         return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), payment.getMethod());
+    }
+
+    /**
+     * {@code CloseOrderInput.amountTendered} - what the guest handed over, as counted in the cash
+     * dialog. Only ever checked and recorded, never charged: the payment is {@code Order.total}.
+     */
+    private static BigDecimal parseTendered(CloseOrderInput input, BigDecimal total) {
+        String raw = input.getAmountTendered();
+        if (raw == null) {
+            return null;
+        }
+        if (input.getMethod() != PaymentMethod.CASH) {
+            throw ValidationException.field("amountTendered", "only applies to a CASH payment");
+        }
+        BigDecimal tendered = new BigDecimal(raw);
+        if (tendered.compareTo(total) < 0) {
+            throw ValidationException.field("amountTendered", "is less than the order total (" + total + ")");
+        }
+        return tendered;
     }
 
     @Transactional

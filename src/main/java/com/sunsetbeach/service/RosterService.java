@@ -8,6 +8,8 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
+import com.sunsetbeach.model.RosterCopyInput;
+import com.sunsetbeach.model.RosterCopyResult;
 import com.sunsetbeach.model.RosterCoverageWarning;
 import com.sunsetbeach.model.RosterEmployee;
 import com.sunsetbeach.model.RosterEntry;
@@ -24,6 +26,7 @@ import com.sunsetbeach.repository.StaffAreaCoverageRuleRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -306,6 +309,113 @@ public class RosterService {
                 (locked ? "Locked" : "Unlocked") + " " + employee.getName() + "'s " + shiftCode.getCode() + " shift on " + saved.getDate());
 
         return toDto(saved, employee, shiftCode, null);
+    }
+
+    /**
+     * {@code POST /roster/copy} - see that operation's description for the rules. The working
+     * path for a month nobody has patterns for: {@link #generateMonth} needs an
+     * {@code EmployeePattern} per person, this only needs a roster that was already worked.
+     *
+     * <p>Copied by weekday: the source is cut to whole weeks ({@code period}) and each target date
+     * reads {@code sourceFrom + ((target - sourceFrom) mod period)}, which always lands on the same
+     * weekday. Copying by day of the month instead would move everyone's weekly day off to a
+     * different weekday every month.
+     */
+    @Transactional
+    public RosterCopyResult copyMonth(RosterCopyInput input, String actorUserId) {
+        YearMonth target = YearMonth.of(input.getYear(), input.getMonth());
+        LocalDate targetStart = target.atDay(1);
+        LocalDate targetEnd = target.atEndOfMonth();
+
+        LocalDate sourceFrom;
+        LocalDate sourceTo;
+        if (input.getSourceFrom() == null && input.getSourceTo() == null) {
+            YearMonth previous = target.minusMonths(1);
+            sourceFrom = previous.atDay(1);
+            sourceTo = previous.atEndOfMonth();
+        } else if (input.getSourceFrom() == null || input.getSourceTo() == null) {
+            throw new BadRequestException("Give both sourceFrom and sourceTo, or neither");
+        } else {
+            sourceFrom = LocalDate.parse(input.getSourceFrom());
+            sourceTo = LocalDate.parse(input.getSourceTo());
+        }
+        long sourceDays = ChronoUnit.DAYS.between(sourceFrom, sourceTo) + 1;
+        if (sourceDays < 7) {
+            throw new BadRequestException("The source range must cover at least 7 days, so every weekday has something to copy from");
+        }
+        if (!sourceFrom.isAfter(targetEnd) && !sourceTo.isBefore(targetStart)) {
+            throw new BadRequestException("The source range can't overlap the month being filled");
+        }
+        int period = (int) (sourceDays / 7) * 7;
+        LocalDate usedSourceTo = sourceFrom.plusDays(period - 1L);
+
+        Map<String, UserEntity> activeEmployees = userRepository.findAll().stream()
+                .filter(UserEntity::isActive)
+                .collect(Collectors.toMap(UserEntity::getId, u -> u));
+        Map<String, Map<LocalDate, RosterEntryEntity>> sourceByEmployee = rosterEntryRepository.findByDateBetween(sourceFrom, usedSourceTo).stream()
+                .filter(e -> activeEmployees.containsKey(e.getEmployeeUserId()))
+                .collect(Collectors.groupingBy(RosterEntryEntity::getEmployeeUserId, Collectors.toMap(RosterEntryEntity::getDate, e -> e, (a, b) -> a)));
+        java.util.Set<String> occupied = rosterEntryRepository.findByDateBetween(targetStart, targetEnd).stream()
+                .map(e -> e.getEmployeeUserId() + "|" + e.getDate())
+                .collect(Collectors.toSet());
+
+        // Every version of every code, so a copied entry can be re-pointed to the version in force
+        // on its new date (ShiftCodeService#createVersion) rather than keep last month's terms.
+        Map<String, ShiftCodeEntity> codesById = shiftCodeRepository.findAll().stream().collect(Collectors.toMap(ShiftCodeEntity::getId, c -> c));
+        Map<String, List<ShiftCodeEntity>> versionsByKey =
+                codesById.values().stream().collect(Collectors.groupingBy(RosterService::versionKey));
+
+        int created = 0;
+        int skippedExisting = 0;
+        int skippedNoCurrentCode = 0;
+        for (Map.Entry<String, Map<LocalDate, RosterEntryEntity>> employee : sourceByEmployee.entrySet()) {
+            for (LocalDate date = targetStart; !date.isAfter(targetEnd); date = date.plusDays(1)) {
+                LocalDate sourceDate = sourceFrom.plusDays(Math.floorMod(ChronoUnit.DAYS.between(sourceFrom, date), period));
+                RosterEntryEntity source = employee.getValue().get(sourceDate);
+                if (source == null) {
+                    continue; // a day off stays a day off
+                }
+                if (occupied.contains(employee.getKey() + "|" + date)) {
+                    skippedExisting++;
+                    continue;
+                }
+                ShiftCodeEntity sourceCode = codesById.get(source.getShiftCodeId());
+                ShiftCodeEntity code = sourceCode == null ? null : versionInForce(versionsByKey.get(versionKey(sourceCode)), date);
+                if (code == null) {
+                    skippedNoCurrentCode++;
+                    continue;
+                }
+                RosterEntryEntity entry = new RosterEntryEntity();
+                entry.setEmployeeUserId(employee.getKey());
+                entry.setDate(date);
+                entry.setShiftCodeId(code.getId());
+                entry.setCreatedByUserId(actorUserId);
+                rosterEntryRepository.save(entry);
+                occupied.add(employee.getKey() + "|" + date);
+                created++;
+            }
+        }
+        rosterEntryRepository.flush();
+
+        auditLogService.record(
+                AuditAction.ROSTER_MONTH_COPIED, AuditEntityType.ROSTER_ENTRY, null,
+                "Copied " + sourceFrom + " to " + usedSourceTo + " into the " + target + " roster: " + created + " entr" + (created == 1 ? "y" : "ies")
+                        + " created, " + skippedExisting + " existing left alone, " + skippedNoCurrentCode + " without a current code skipped");
+
+        return new RosterCopyResult(
+                getMonth(target.getYear(), target.getMonthValue()), sourceFrom.toString(), usedSourceTo.toString(), created, skippedExisting, skippedNoCurrentCode);
+    }
+
+    private static String versionKey(ShiftCodeEntity code) {
+        return (code.getStaffArea() == null ? "" : code.getStaffArea().getValue()) + "|" + code.getCode();
+    }
+
+    /** The version starting latest on or before {@code date}, or {@code null} if every version starts after it. */
+    private static ShiftCodeEntity versionInForce(List<ShiftCodeEntity> versions, LocalDate date) {
+        return versions.stream()
+                .filter(v -> !v.getEffectiveFrom().isAfter(date))
+                .max(java.util.Comparator.comparing(ShiftCodeEntity::getEffectiveFrom))
+                .orElse(null);
     }
 
     private RosterMonth buildMonth(int year, int month, List<RosterEntryEntity> entities) {

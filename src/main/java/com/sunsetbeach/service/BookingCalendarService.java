@@ -24,6 +24,7 @@ import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +62,7 @@ public class BookingCalendarService {
     private final RoomUnitMapper roomUnitMapper;
     private final UserRepository userRepository;
     private final MaintenanceTaskRepository maintenanceTaskRepository;
+    private final OverstayRule overstayRule;
 
     public BookingCalendarService(
             RoomRepository roomRepository,
@@ -69,7 +71,9 @@ public class BookingCalendarService {
             BookingSegmentRepository segmentRepository,
             RoomUnitMapper roomUnitMapper,
             UserRepository userRepository,
-            MaintenanceTaskRepository maintenanceTaskRepository) {
+            MaintenanceTaskRepository maintenanceTaskRepository,
+            OverstayRule overstayRule) {
+        this.overstayRule = overstayRule;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
@@ -99,8 +103,22 @@ public class BookingCalendarService {
                 : roomUnitBlockRepository.findByFromDateLessThanEqualAndToDateGreaterThanEqual(to.minusDays(1), from);
         Map<String, List<RoomUnitBlockEntity>> blocksByUnitId = blocks.stream().collect(Collectors.groupingBy(RoomUnitBlockEntity::getRoomUnitId));
 
-        List<BookingSegmentEntity> segments = segmentRepository.findByBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThan(BookingStatus.CANCELLED, to, from);
+        List<BookingSegmentEntity> segments = new ArrayList<>(
+                segmentRepository.findByBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThan(BookingStatus.CANCELLED, to, from));
         Map<String, List<BookingSegmentEntity>> segmentsByRoomId = segments.stream().collect(Collectors.groupingBy(BookingSegmentEntity::getRoomId));
+
+        // A guest still checked in past checkOut keeps their room through tonight (OverstayRule).
+        // Their last segment may have ended before this window, so it's added to the bars here -
+        // the grid draws the agreed stay plus the overstay after it, never a moved checkOut.
+        Map<String, OverstayRule.Overstay> overstayBySegmentId = overstayRule.current().stream()
+                .filter(o -> o.overlaps(from, to))
+                .collect(Collectors.toMap(o -> o.lastSegment().getId(), o -> o, (a, b) -> a));
+        Set<String> listedSegmentIds = segments.stream().map(BookingSegmentEntity::getId).collect(Collectors.toSet());
+        overstayBySegmentId.values().stream()
+                .filter(o -> !listedSegmentIds.contains(o.lastSegment().getId()))
+                .forEach(o -> segments.add(o.lastSegment()));
+        Map<String, List<OverstayRule.Overstay>> overstaysByRoomId =
+                overstayBySegmentId.values().stream().collect(Collectors.groupingBy(OverstayRule.Overstay::roomId));
 
         // segmentCount on each CalendarBooking is the *whole* booking's segment count, not just
         // how many fall inside [from, to) - the grid needs to know "has this booking ever been
@@ -117,12 +135,14 @@ public class BookingCalendarService {
         List<RoomTypeCalendar> roomTypes = rooms.stream()
                 .sorted(Comparator.comparing(RoomEntity::getName))
                 .map(room -> toRoomTypeCalendar(room, unitsByRoomId.getOrDefault(room.getId(), List.of()),
-                        segmentsByRoomId.getOrDefault(room.getId(), List.of()), blocksByUnitId, days))
+                        segmentsByRoomId.getOrDefault(room.getId(), List.of()), overstaysByRoomId.getOrDefault(room.getId(), List.of()),
+                        blocksByUnitId, days))
                 .toList();
 
         List<CalendarBooking> calendarBookings = segments.stream()
                 .sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn))
-                .map(s -> toCalendarBooking(s, segmentCountByBookingId.getOrDefault(s.getBookingId(), 1L).intValue()))
+                .map(s -> toCalendarBooking(
+                        s, segmentCountByBookingId.getOrDefault(s.getBookingId(), 1L).intValue(), overstayBySegmentId.get(s.getId())))
                 .toList();
 
         List<RoomUnitBlock> blockDtos = toBlockDtos(blocks);
@@ -159,6 +179,7 @@ public class BookingCalendarService {
             RoomEntity room,
             List<RoomUnitEntity> units,
             List<BookingSegmentEntity> roomSegments,
+            List<OverstayRule.Overstay> roomOverstays,
             Map<String, List<RoomUnitBlockEntity>> blocksByUnitId,
             List<LocalDate> days) {
         List<RoomUnitEntity> activeUnits = units.stream().filter(RoomUnitEntity::isActive).toList();
@@ -170,7 +191,8 @@ public class BookingCalendarService {
                                     .anyMatch(b -> !date.isBefore(b.getFromDate()) && !date.isAfter(b.getToDate())))
                             .count();
                     long bookedToday =
-                            roomSegments.stream().filter(s -> !date.isBefore(s.getCheckIn()) && date.isBefore(s.getCheckOut())).count();
+                            roomSegments.stream().filter(s -> !date.isBefore(s.getCheckIn()) && date.isBefore(s.getCheckOut())).count()
+                                    + roomOverstays.stream().filter(o -> o.covers(date)).count();
                     int available = InventoryMath.availableCount(activeUnits.size(), (int) blockedUnitsToday, (int) bookedToday);
                     return new RoomTypeDailyAvailability(date.toString(), available);
                 })
@@ -185,8 +207,8 @@ public class BookingCalendarService {
     }
 
     /** One bar per *segment* - see {@code CalendarBooking}'s schema description for why. */
-    private static CalendarBooking toCalendarBooking(BookingSegmentEntity s, int segmentCount) {
-        return new CalendarBooking(
+    private static CalendarBooking toCalendarBooking(BookingSegmentEntity s, int segmentCount, OverstayRule.Overstay overstay) {
+        CalendarBooking dto = new CalendarBooking(
                 s.getId(),
                 s.getBookingId(),
                 s.getRoomId(),
@@ -197,5 +219,9 @@ public class BookingCalendarService {
                 s.getBooking().getStatus(),
                 PriceFormat.asDecimalString(s.getTotalPrice()),
                 segmentCount);
+        if (overstay != null) {
+            dto.setOverstayUntil(overstay.toExclusive().toString());
+        }
+        return dto;
     }
 }

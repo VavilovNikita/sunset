@@ -88,6 +88,7 @@ public class SpaAppointmentService {
     private final OrderItemRepository orderItemRepository;
     private final TableMapper tableMapper;
     private final AuditLogService auditLogService;
+    private final OverstayRule overstayRule;
     private final LocalTime openingTime;
     private final LocalTime closingTime;
     private final int slotMinutes;
@@ -103,7 +104,9 @@ public class SpaAppointmentService {
             OrderItemRepository orderItemRepository,
             TableMapper tableMapper,
             AuditLogService auditLogService,
+            OverstayRule overstayRule,
             org.springframework.core.env.Environment env) {
+        this.overstayRule = overstayRule;
         this.spaAppointmentRepository = spaAppointmentRepository;
         this.spaAppointmentTreatmentRepository = spaAppointmentTreatmentRepository;
         this.bookingRepository = bookingRepository;
@@ -239,7 +242,9 @@ public class SpaAppointmentService {
         // Inclusive both ends - the guest is still in the hotel on the departure day (see
         // CORRECTION 1: this is not the same [checkIn, checkOut) convention room occupancy uses,
         // which is about when the *room* is free for the next guest, not where the guest is).
-        String warning = date.isBefore(booking.getCheckIn()) || date.isAfter(booking.getCheckOut())
+        // A guest still checked in past checkOut is here until checked out (OverstayRule), so
+        // booking them a treatment today isn't "outside their stay".
+        String warning = date.isBefore(booking.getCheckIn()) || date.isAfter(OverstayRule.lastDayInHouse(booking, overstayRule.today()))
                 ? "This date falls outside " + booking.getGuestName() + "'s stay (" + booking.getCheckIn() + " to " + booking.getCheckOut() + ")."
                 : null;
 
