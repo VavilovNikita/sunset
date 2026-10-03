@@ -1,9 +1,12 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.entity.EmployeePatternEntity;
+import com.sunsetbeach.entity.RosterEntryEntity;
 import com.sunsetbeach.entity.RosterImportShiftColorMappingEntity;
 import com.sunsetbeach.entity.ShiftCodeEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
+import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -11,10 +14,14 @@ import com.sunsetbeach.model.FillColor;
 import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
 import com.sunsetbeach.model.ShiftCodeKind;
+import com.sunsetbeach.model.ShiftCodeVersionInput;
 import com.sunsetbeach.model.StaffArea;
+import com.sunsetbeach.repository.EmployeePatternRepository;
+import com.sunsetbeach.repository.RosterEntryRepository;
 import com.sunsetbeach.repository.RosterImportShiftColorMappingRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.UserRepository;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Comparator;
@@ -51,16 +58,25 @@ public class ShiftCodeService {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final RosterImportShiftColorMappingRepository colorMappingRepository;
+    private final RosterEntryRepository rosterEntryRepository;
+    private final EmployeePatternRepository employeePatternRepository;
+    private final Clock clock;
 
     public ShiftCodeService(
             ShiftCodeRepository shiftCodeRepository,
             UserRepository userRepository,
             AuditLogService auditLogService,
-            RosterImportShiftColorMappingRepository colorMappingRepository) {
+            RosterImportShiftColorMappingRepository colorMappingRepository,
+            RosterEntryRepository rosterEntryRepository,
+            EmployeePatternRepository employeePatternRepository,
+            Clock clock) {
         this.shiftCodeRepository = shiftCodeRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
         this.colorMappingRepository = colorMappingRepository;
+        this.rosterEntryRepository = rosterEntryRepository;
+        this.employeePatternRepository = employeePatternRepository;
+        this.clock = clock;
     }
 
     /**
@@ -137,6 +153,96 @@ public class ShiftCodeService {
                         + ", effective " + saved.getEffectiveFrom());
 
         return toDtoForApi(saved, creatorEmail);
+    }
+
+    /**
+     * {@code POST /shift-codes/{id}/versions} - the shift-code screen's edit action. Same
+     * versioning as {@link #create} (the current row is retired, a new one takes over, nothing is
+     * edited in place), with {@code effectiveFrom} fixed to today on the shared {@link Clock}, and
+     * one addition {@code create} doesn't have: entries dated today or later, and employee
+     * patterns, that point at any version of this {@code (staffArea, code)} move to the new
+     * version. Earlier entries keep theirs, so past days still read the terms they were planned
+     * under. Entries are re-pointed through the entity (not a bulk UPDATE) so their own
+     * {@code updatedAt} moves - the grid re-import's staleness check reads it.
+     *
+     * <p>A second edit on the same day can't add another row (one version per start date, V57's
+     * unique index), so it amends today's version instead - safe only while no entry dated before
+     * today points at it, since that entry would otherwise be silently reinterpreted.
+     */
+    @Transactional
+    public ShiftCode createVersion(String id, ShiftCodeVersionInput input, String actorUserId) {
+        ShiftCodeEntity current = shiftCodeRepository.findById(id).orElseThrow(() -> new NotFoundException("Shift code not found"));
+        if (!current.isActive()) {
+            throw new ConflictException("This is a retired version of \"" + current.getCode() + "\" - edit the current one instead");
+        }
+        LocalTime start1 = parseTime(input.getStartTime1().orElse(null));
+        LocalTime end1 = parseTime(input.getEndTime1().orElse(null));
+        LocalTime start2 = parseTime(input.getStartTime2().orElse(null));
+        LocalTime end2 = parseTime(input.getEndTime2().orElse(null));
+        validateIntervals(start1, end1, start2, end2);
+        validateKindShape(input.getKind(), start1, start2, input.getCountsAsWorked());
+
+        LocalDate today = LocalDate.now(clock);
+        String before = describeTerms(current);
+
+        ShiftCodeEntity target;
+        if (current.getEffectiveFrom().isBefore(today)) {
+            current.setActive(false);
+            shiftCodeRepository.save(current);
+            target = new ShiftCodeEntity();
+            target.setStaffArea(current.getStaffArea());
+            target.setCode(current.getCode());
+            target.setEffectiveFrom(today);
+            target.setCreatedByUserId(actorUserId);
+        } else {
+            if (rosterEntryRepository.existsByShiftCodeIdAndDateBefore(current.getId(), today)) {
+                throw new ConflictException("\"" + current.getCode() + "\" was already changed today and that version is used on earlier days - try again tomorrow");
+            }
+            target = current;
+        }
+        target.setKind(input.getKind());
+        target.setStartTime1(start1);
+        target.setEndTime1(end1);
+        target.setStartTime2(start2);
+        target.setEndTime2(end2);
+        target.setCountsAsWorked(input.getCountsAsWorked());
+        target.setPaid(input.getIsPaid());
+        target.setDisplayColor(input.getDisplayColor().orElse(null));
+        ShiftCodeEntity saved = shiftCodeRepository.saveAndFlush(target);
+
+        List<String> otherVersionIds = shiftCodeRepository.findByStaffAreaAndCode(saved.getStaffArea(), saved.getCode()).stream()
+                .map(ShiftCodeEntity::getId)
+                .filter(versionId -> !versionId.equals(saved.getId()))
+                .toList();
+        int movedEntries = 0;
+        int movedPatterns = 0;
+        if (!otherVersionIds.isEmpty()) {
+            List<RosterEntryEntity> entries = rosterEntryRepository.findByShiftCodeIdInAndDateGreaterThanEqual(otherVersionIds, today);
+            entries.forEach(e -> e.setShiftCodeId(saved.getId()));
+            rosterEntryRepository.saveAllAndFlush(entries);
+            movedEntries = entries.size();
+            List<EmployeePatternEntity> patterns = employeePatternRepository.findByDefaultShiftCodeIdIn(otherVersionIds);
+            patterns.forEach(pattern -> pattern.setDefaultShiftCodeId(saved.getId()));
+            employeePatternRepository.saveAllAndFlush(patterns);
+            movedPatterns = patterns.size();
+        }
+
+        auditLogService.record(
+                AuditAction.SHIFT_CODE_VERSIONED,
+                AuditEntityType.SHIFT_CODE,
+                saved.getId(),
+                "Changed code \"" + saved.getCode() + "\" from " + today + ": " + before + " -> " + describeTerms(saved)
+                        + "; moved " + movedEntries + " roster entries (today on) and " + movedPatterns + " employee patterns to it");
+
+        String creatorEmail = userRepository.findById(saved.getCreatedByUserId()).map(UserEntity::getEmail).orElse(null);
+        return toDtoForApi(saved, creatorEmail);
+    }
+
+    private static String describeTerms(ShiftCodeEntity e) {
+        String hours = e.getStartTime1() == null ? "no fixed hours"
+                : e.getStartTime1() + "-" + e.getEndTime1() + (e.getStartTime2() != null ? ", " + e.getStartTime2() + "-" + e.getEndTime2() : "");
+        return (e.getKind() != null ? e.getKind().getValue() : "kind unset") + ", " + hours
+                + ", " + (e.isCountsAsWorked() ? "worked" : "not worked") + ", " + (e.isPaid() ? "paid" : "unpaid");
     }
 
     /**

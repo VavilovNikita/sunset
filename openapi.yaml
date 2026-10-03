@@ -7689,6 +7689,72 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
 
+  /shift-codes/{id}/versions:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: createShiftCodeVersion
+      tags: [Roster]
+      summary: Edit an existing shift code - saved as a new version effective today
+      description: >
+        Requires MANAGER or above, same as `POST /shift-codes`. The edit action on the shift-code
+        screen: `id` is the code's current (active) version; `staffArea` and `code` stay as they
+        are, every other term (hours, `countsAsWorked`, `isPaid`, `kind`, `displayColor`) comes from
+        the body. Not an in-place edit - same versioning as `POST /shift-codes`: the current row is
+        retired and a new one takes over, `effectiveFrom` = today in the hotel's own zone.
+
+        Unlike `POST /shift-codes`, existing roster entries follow the edit from today on: every
+        `RosterEntry` dated today or later that points at any version of this `(staffArea, code)`
+        is moved to the new version, and so is every `EmployeePattern.defaultShiftCode` pointing at
+        one (a pattern may only use an active code, and `POST /roster/generate` would otherwise keep
+        stamping the retired one). Entries dated before today keep the version they had, so
+        coverage, totals and the actuals export for past days still read the old terms.
+
+        Editing the same code a second time on the same day amends today's version in place rather
+        than creating a second one (two versions can't start on the same date), as long as no
+        entry dated before today points at it - otherwise 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShiftCodeVersionInput"
+      responses:
+        "201":
+          description: The new (or, for a same-day re-edit, amended) current version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftCode"
+        "400":
+          description: An interval is malformed, or `kind` doesn't match the hours / `countsAsWorked` (e.g. `ABSENCE` that counts as worked).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such shift code.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            `id` is a retired version (edit the current one instead), or today's version is
+            already referenced by an entry dated before today.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /shift-codes/{id}/kind:
     parameters:
       - name: id
@@ -13285,6 +13351,7 @@ components:
         - SHIFT_CODE_CREATED
         - SHIFT_CODE_KIND_CHANGED
         - SHIFT_CODE_DISPLAY_COLOR_CHANGED
+        - SHIFT_CODE_VERSIONED
         - EMPLOYEE_PATTERN_CHANGED
         - ROSTER_ENTRY_CREATED
         - ROSTER_ENTRY_MOVED
@@ -13788,6 +13855,43 @@ components:
         effectiveFrom:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
+
+    ShiftCodeVersionInput:
+      type: object
+      description: >
+        Body of `POST /shift-codes/{id}/versions`. No `staffArea`, `code` or `effectiveFrom` - the
+        first two are the edited code's own, the last is always today. The interval fields and
+        `displayColor` are nullable and so left out of `required` (see CLAUDE.md's Code generation
+        section); omitting one means "none" (an OP/PH-style code with no hours, or no colour), not
+        "keep the old value" - the form sends every field.
+      required: [kind, countsAsWorked, isPaid]
+      properties:
+        kind:
+          $ref: "#/components/schemas/ShiftCodeKind"
+        startTime1:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        endTime1:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        startTime2:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        endTime2:
+          type: string
+          nullable: true
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        countsAsWorked:
+          type: boolean
+        isPaid:
+          type: boolean
+        displayColor:
+          type: string
+          nullable: true
+          pattern: '^#[0-9a-fA-F]{6}$'
 
     ShiftCodeKindUpdateInput:
       type: object

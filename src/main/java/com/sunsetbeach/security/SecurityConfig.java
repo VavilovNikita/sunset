@@ -378,6 +378,7 @@ public class SecurityConfig {
                         // Not a prefix of the bare "/shift-codes" GET/POST rules above, so order
                         // relative to them doesn't matter - listed here anyway, next to the rest
                         // of this resource's rules.
+                        .requestMatchers(HttpMethod.POST, "/shift-codes/*/versions").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/shift-codes/*/kind").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/shift-codes/*/display-color").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/employee-patterns", "/employee-patterns/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())

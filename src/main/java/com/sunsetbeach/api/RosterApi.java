@@ -37,6 +37,7 @@ import com.sunsetbeach.model.ShiftCode;
 import com.sunsetbeach.model.ShiftCodeCreateInput;
 import com.sunsetbeach.model.ShiftCodeDisplayColorUpdateInput;
 import com.sunsetbeach.model.ShiftCodeKindUpdateInput;
+import com.sunsetbeach.model.ShiftCodeVersionInput;
 import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.model.StaffAreaCoverageRule;
 import com.sunsetbeach.model.StaffAreaCoverageRuleInput;
@@ -413,6 +414,69 @@ public interface RosterApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /shift-codes/{id}/versions : Edit an existing shift code - saved as a new version effective today
+     * Requires MANAGER or above, same as &#x60;POST /shift-codes&#x60;. The edit action on the shift-code screen: &#x60;id&#x60; is the code&#39;s current (active) version; &#x60;staffArea&#x60; and &#x60;code&#x60; stay as they are, every other term (hours, &#x60;countsAsWorked&#x60;, &#x60;isPaid&#x60;, &#x60;kind&#x60;, &#x60;displayColor&#x60;) comes from the body. Not an in-place edit - same versioning as &#x60;POST /shift-codes&#x60;: the current row is retired and a new one takes over, &#x60;effectiveFrom&#x60; &#x3D; today in the hotel&#39;s own zone. Unlike &#x60;POST /shift-codes&#x60;, existing roster entries follow the edit from today on: every &#x60;RosterEntry&#x60; dated today or later that points at any version of this &#x60;(staffArea, code)&#x60; is moved to the new version, and so is every &#x60;EmployeePattern.defaultShiftCode&#x60; pointing at one (a pattern may only use an active code, and &#x60;POST /roster/generate&#x60; would otherwise keep stamping the retired one). Entries dated before today keep the version they had, so coverage, totals and the actuals export for past days still read the old terms. Editing the same code a second time on the same day amends today&#39;s version in place rather than creating a second one (two versions can&#39;t start on the same date), as long as no entry dated before today points at it - otherwise 409. 
+     *
+     * @param id  (required)
+     * @param shiftCodeVersionInput  (required)
+     * @return The new (or, for a same-day re-edit, amended) current version. (status code 201)
+     *         or An interval is malformed, or &#x60;kind&#x60; doesn&#39;t match the hours / &#x60;countsAsWorked&#x60; (e.g. &#x60;ABSENCE&#x60; that counts as worked). (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     *         or No such shift code. (status code 404)
+     *         or &#x60;id&#x60; is a retired version (edit the current one instead), or today&#39;s version is already referenced by an entry dated before today.  (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/shift-codes/{id}/versions",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<ShiftCode> createShiftCodeVersion(
+         @PathVariable("id") String id,
+         @Valid @RequestBody ShiftCodeVersionInput shiftCodeVersionInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

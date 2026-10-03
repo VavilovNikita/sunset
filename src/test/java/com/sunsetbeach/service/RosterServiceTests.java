@@ -381,6 +381,55 @@ class RosterServiceTests extends AbstractIntegrationTest {
                 .anyMatch(w -> w.getStaffArea() == StaffArea.MAINTENANCE && w.getDate().equals(date) && w.getWorkingCount() == expectedMaintenance);
     }
 
+    /**
+     * Admin, one day - Mai has no entry at all, Pueng has the shared working code 7: 1/1, and with a
+     * minimum of 2 it's 1/2, not 0/2 - coverage is "N of the area's active people on a
+     * countsAsWorked code", not tied to any particular person. Front office, Joy's row: OP covers;
+     * PH and any other countsAsWorked=false code (like an unpaid-leave one) doesn't, and neither
+     * does a blank cell.
+     */
+    @Test
+    void getMonth_coverage_oneOfTwoInAreaOnWorkingCode_isCovered_absenceIsNot() {
+        UserEntity mgr = createUser(Role.MANAGER);
+        UserEntity codeAuthor = manager != null ? manager : createUser(Role.MANAGER);
+        manager = codeAuthor;
+        ShiftCode seven = shiftCodeService.create(
+                new ShiftCodeCreateInput("7" + UUID.randomUUID().toString().substring(0, 5), ShiftCodeKind.MORNING, true, true, "2020-01-01")
+                        .startTime1("07:00")
+                        .endTime1("16:00"),
+                codeAuthor.getId());
+        createdShiftCodeIds.add(seven.getId());
+        ShiftCode op = createSharedCode("O" + UUID.randomUUID().toString().substring(0, 5), ShiftCodeKind.OPEN_SCHEDULE, true);
+        ShiftCode ph = createSharedCode("P" + UUID.randomUUID().toString().substring(0, 5), ShiftCodeKind.ABSENCE, false);
+        ShiftCode unpaid = createSharedCode("U" + UUID.randomUUID().toString().substring(0, 5), ShiftCodeKind.ABSENCE, false);
+        staffAreaCoverageRuleService.set(StaffArea.ADMIN, new StaffAreaCoverageRuleInput(1), mgr.getId());
+        staffAreaCoverageRuleService.set(StaffArea.FRONT_OFFICE, new StaffAreaCoverageRuleInput(1), mgr.getId());
+
+        UserEntity mai = createUserInArea(StaffArea.ADMIN);
+        UserEntity pueng = createUserInArea(StaffArea.ADMIN);
+        UserEntity joy = createUserInArea(StaffArea.FRONT_OFFICE);
+        rosterService.createEntry(new RosterEntryCreateInput(mai.getId(), "2031-03-09", seven.getId()), mgr.getId());
+        rosterService.createEntry(new RosterEntryCreateInput(pueng.getId(), "2031-03-10", seven.getId()), mgr.getId());
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-03-10", op.getId()), mgr.getId());
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-03-11", ph.getId()), mgr.getId());
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-03-12", unpaid.getId()), mgr.getId());
+        // 2031-03-13: Joy's cell left blank.
+
+        RosterMonth month = rosterService.getMonth(2031, 3);
+        assertThat(month.getCoverageWarnings())
+                .noneMatch(w -> w.getStaffArea() == StaffArea.ADMIN && w.getDate().equals("2031-03-10"))
+                .noneMatch(w -> w.getStaffArea() == StaffArea.FRONT_OFFICE && w.getDate().equals("2031-03-10"))
+                .anyMatch(w -> w.getStaffArea() == StaffArea.FRONT_OFFICE && w.getDate().equals("2031-03-11") && w.getWorkingCount() == 0)
+                .anyMatch(w -> w.getStaffArea() == StaffArea.FRONT_OFFICE && w.getDate().equals("2031-03-12") && w.getWorkingCount() == 0)
+                .anyMatch(w -> w.getStaffArea() == StaffArea.FRONT_OFFICE && w.getDate().equals("2031-03-13") && w.getWorkingCount() == 0);
+
+        staffAreaCoverageRuleService.set(StaffArea.ADMIN, new StaffAreaCoverageRuleInput(2), mgr.getId());
+        staffAreaCoverageRuleService.set(StaffArea.FRONT_OFFICE, new StaffAreaCoverageRuleInput(2), mgr.getId());
+        assertThat(rosterService.getMonth(2031, 3).getCoverageWarnings())
+                .anyMatch(w -> w.getStaffArea() == StaffArea.ADMIN && w.getDate().equals("2031-03-10") && w.getWorkingCount() == 1 && w.getMinimumWorking() == 2)
+                .anyMatch(w -> w.getStaffArea() == StaffArea.FRONT_OFFICE && w.getDate().equals("2031-03-10") && w.getWorkingCount() == 1 && w.getMinimumWorking() == 2);
+    }
+
     private ShiftCode createSharedCode(String code, ShiftCodeKind kind, boolean countsAsWorked) {
         UserEntity actor = manager != null ? manager : createUser(Role.MANAGER);
         manager = actor;

@@ -23,4 +23,7 @@ public interface ShiftCodeRepository extends JpaRepository<ShiftCodeEntity, Stri
      * sharing a {@code code} string never retire each other.
      */
     Optional<ShiftCodeEntity> findByStaffAreaAndCodeAndActiveTrue(StaffArea staffArea, String code);
+
+    /** Every version, active or retired, of one {@code (staffArea, code)} - same null-means-shared handling as above. */
+    List<ShiftCodeEntity> findByStaffAreaAndCode(StaffArea staffArea, String code);
 }
