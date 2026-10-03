@@ -9861,6 +9861,12 @@ components:
         script, not a person.
 
   responses:
+    ValidationErrorResponse:
+      description: Request failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
     Unauthorized:
       description: No valid JWT.
       content:

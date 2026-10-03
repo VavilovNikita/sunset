@@ -11,6 +11,7 @@ import com.sunsetbeach.model.GuestCreateInput;
 import com.sunsetbeach.model.GuestDetail;
 import com.sunsetbeach.model.GuestUpdateInput;
 import com.sunsetbeach.model.OkTrue;
+import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -40,7 +41,7 @@ public interface GuestsApi {
      *
      * @param guestCreateInput  (required)
      * @return Guest created. (status code 201)
-     *         or  (status code 400)
+     *         or Request failed validation. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
      */
@@ -58,6 +59,11 @@ public interface GuestsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"notes\" : \"notes\", \"phone\" : \"phone\", \"name\" : \"name\", \"dateOfBirth\" : \"dateOfBirth\", \"id\" : \"id\", \"vip\" : true, \"email\" : \"email\", \"tags\" : [ \"tags\", \"tags\" ], \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -229,7 +235,7 @@ public interface GuestsApi {
      * @param id  (required)
      * @param guestUpdateInput  (required)
      * @return Updated guest. (status code 200)
-     *         or  (status code 400)
+     *         or Request failed validation. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
      *         or Guest not found. (status code 404)
@@ -249,6 +255,11 @@ public interface GuestsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"notes\" : \"notes\", \"phone\" : \"phone\", \"name\" : \"name\", \"dateOfBirth\" : \"dateOfBirth\", \"id\" : \"id\", \"vip\" : true, \"email\" : \"email\", \"tags\" : [ \"tags\", \"tags\" ], \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
