@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
+import com.sunsetbeach.entity.OrderItemVoidEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.PrintJobEntity;
 import com.sunsetbeach.entity.PrinterEntity;
@@ -94,12 +95,49 @@ public class OrderPrintingService {
                     printService.queueAndAttempt(
                             printer,
                             documentType,
-                            (printerDepartment == PrinterDepartment.BAR ? "Bar ticket" : "Kitchen ticket") + " — Order #" + shortId(order.getId()),
+                            (printerDepartment == PrinterDepartment.BAR ? "Bar ticket" : "Kitchen ticket") + " — " + orderLabel(order),
                             payload);
                 });
             }
         } catch (Exception e) {
             log.error("printTickets failed for order {}", order.getId(), e);
+        }
+    }
+
+    /**
+     * {@code POST /orders/{id}/items/{itemId}/void} - tells the station that already has the line
+     * on paper to stop making it. Same department routing and best-effort contract as
+     * {@link #printTickets}; a SPA line never had a ticket, so it gets no void ticket either.
+     */
+    public void printVoidTicket(OrderEntity order, OrderItemVoidEntity voided, MenuItemEntity menuItem) {
+        try {
+            MenuDepartment department = menuItem != null ? menuItem.getDepartment() : MenuDepartment.KITCHEN;
+            if (department == MenuDepartment.SPA) {
+                return;
+            }
+            PrinterDepartment printerDepartment = department == MenuDepartment.BAR ? PrinterDepartment.BAR : PrinterDepartment.KITCHEN;
+            PrintDocumentType documentType =
+                    printerDepartment == PrinterDepartment.BAR ? PrintDocumentType.BAR_TICKET : PrintDocumentType.KITCHEN_TICKET;
+            printService.findActivePrinter(printerDepartment).ifPresent(printer -> {
+                EscPosBuilder b = new EscPosBuilder(printer.getCodepage());
+                b.center(true).bold(true).line("*** VOID ***").bold(false).center(false);
+                b.line(describeLocation(order));
+                b.line(orderLabel(order));
+                b.line("Time: " + TimestampFormat.readable(LocalDateTime.now()));
+                b.divider();
+                b.line(voided.getQuantity() + "x " + (menuItem != null ? menuItem.getName() : "Unknown item"));
+                if (voided.getNote() != null && !voided.getNote().isBlank()) {
+                    b.line("   note: " + voided.getNote());
+                }
+                b.line("Reason: " + voided.getReason());
+                printService.queueAndAttempt(
+                        printer,
+                        documentType,
+                        (printerDepartment == PrinterDepartment.BAR ? "Bar void" : "Kitchen void") + " — " + orderLabel(order),
+                        b.cutAndBuild());
+            });
+        } catch (Exception e) {
+            log.error("printVoidTicket failed for order {}", order.getId(), e);
         }
     }
 
@@ -114,7 +152,7 @@ public class OrderPrintingService {
             byte[] payload = buildPriceListPayload(
                     "PRE-BILL", order, items, menuItemsById, printer.getCodepage(), null, null);
             PrintJobEntity job = printService.queueAndAttempt(
-                    printer, PrintDocumentType.PREBILL, "Pre-bill — Order #" + shortId(order.getId()), payload);
+                    printer, PrintDocumentType.PREBILL, "Pre-bill — " + orderLabel(order), payload);
             return new PrintAttemptResult(true).job(printJobMapper.toDto(job));
         } catch (Exception e) {
             log.error("printPrebill failed for order {}", order.getId(), e);
@@ -129,7 +167,7 @@ public class OrderPrintingService {
                 Map<String, MenuItemEntity> menuItemsById = resolveMenuItems(items);
                 byte[] payload = buildPriceListPayload(
                         "GUEST RECEIPT", order, items, menuItemsById, printer.getCodepage(), payment, booking);
-                String summary = "Guest receipt — Order #" + shortId(order.getId()) + " (" + describePayment(payment, booking) + ")";
+                String summary = "Guest receipt — " + orderLabel(order) + " (" + describePayment(payment, booking) + ")";
                 printService.queueAndAttempt(printer, PrintDocumentType.GUEST_RECEIPT, summary, payload);
             });
         } catch (Exception e) {
@@ -173,6 +211,7 @@ public class OrderPrintingService {
                 .bold(false)
                 .center(false);
         b.line(describeLocation(order));
+        b.line(orderLabel(order));
         b.line("Time: " + TimestampFormat.readable(LocalDateTime.now()));
         b.line("Waiter: " + resolveWaiterLabel(order.getOpenedByUserId()));
         b.divider();
@@ -203,6 +242,7 @@ public class OrderPrintingService {
         EscPosBuilder b = new EscPosBuilder(codepage);
         b.center(true).bold(true).line(title).bold(false).center(false);
         b.line(describeLocation(order));
+        b.line(orderLabel(order) + " (ref " + shortId(order.getId()) + ")");
         b.line("Time: " + TimestampFormat.readable(LocalDateTime.now()));
         b.divider();
         BigDecimal total = BigDecimal.ZERO;
@@ -235,12 +275,12 @@ public class OrderPrintingService {
             return tableRepository
                     .findById(order.getTableId())
                     .map(t -> zoneLabel(t.getZone()) + " – " + t.getLabel())
-                    .orElseGet(() -> "Order #" + shortId(order.getId()));
+                    .orElseGet(() -> orderLabel(order));
         }
         if (order.getGuestName() != null && !order.getGuestName().isBlank()) {
             return "Takeaway – " + order.getGuestName();
         }
-        return "Order #" + shortId(order.getId());
+        return orderLabel(order);
     }
 
     /**
@@ -264,6 +304,11 @@ public class OrderPrintingService {
             case POOL -> "Pool";
             case ROOM_SERVICE -> "Room service";
         };
+    }
+
+    /** {@code Order.number} - the receipt number staff and guests see; falls back to the id prefix only for an unsaved order. */
+    private static String orderLabel(OrderEntity order) {
+        return order.getNumber() != null ? "Order #" + order.getNumber() : "Order #" + shortId(order.getId());
     }
 
     private static String shortId(String id) {

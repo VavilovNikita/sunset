@@ -225,6 +225,30 @@ class PrintingTests extends AbstractIntegrationTest {
         }
     }
 
+    // --- Void after send: the station that has the line on paper is told to stop making it ---
+
+    @Test
+    void voidAfterSend_printsAVoidTicketToTheSameStation_withTheReason() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 2)));
+            Order sent = sendOrder(order.getId());
+
+            orderService.voidItem(
+                    order.getId(),
+                    sent.getItems().get(0).getId(),
+                    new com.sunsetbeach.model.OrderItemVoidInput("Table left").quantity(1),
+                    cashier.getId());
+
+            List<PrintJobEntity> jobs = jobsFor(order.getId());
+            assertThat(jobs).hasSize(2);
+            String voidText = jobs.stream().map(PrintingTests::decode).filter(t -> t.contains("VOID")).findFirst().orElseThrow();
+            assertThat(voidText).contains("1x Caesar Salad").contains("Reason: Table left");
+        }
+    }
+
     // --- Re-order after send: the second ticket carries only the delta, never the whole order again ---
 
     @Test
@@ -691,10 +715,10 @@ class PrintingTests extends AbstractIntegrationTest {
 
     private List<PrintJobEntity> jobsFor(String orderId) {
         // PrintJob doesn't carry orderId directly - every summary generated for an order embeds
-        // its short id (see OrderPrintingService.shortId), which is unique enough to filter on here.
-        String shortId = orderId.substring(0, 8).toUpperCase();
+        // its receipt number (see OrderPrintingService.orderLabel), unique per order.
+        String label = "Order #" + orderService.getById(orderId).getNumber();
         return printJobRepository.findAll().stream()
-                .filter(j -> j.getSummary().contains(shortId))
+                .filter(j -> j.getSummary().endsWith(label) || j.getSummary().contains(label + " "))
                 .toList();
     }
 

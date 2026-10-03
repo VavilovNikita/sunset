@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.UuidGenerator;
@@ -41,6 +42,11 @@ public class OrderEntity {
     private String note;
 
     private String guestAccessToken;
+
+    /** Assigned by the database's own sequence at insert (V128), read back after it - never set here. */
+    @Generated
+    @Column(insertable = false, updatable = false)
+    private Long number;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
@@ -114,6 +120,10 @@ public class OrderEntity {
 
     public void setGuestAccessToken(String guestAccessToken) {
         this.guestAccessToken = guestAccessToken;
+    }
+
+    public Long getNumber() {
+        return number;
     }
 
     public LocalDateTime getCreatedAt() {

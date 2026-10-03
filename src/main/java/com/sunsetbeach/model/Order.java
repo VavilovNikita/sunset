@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.OrderItem;
+import com.sunsetbeach.model.OrderItemVoid;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import java.time.OffsetDateTime;
@@ -30,6 +31,16 @@ import jakarta.annotation.Generated;
 public class Order {
 
   private String id;
+
+  private Long number;
+
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private JsonNullable<OffsetDateTime> closedAt = JsonNullable.<OffsetDateTime>undefined();
+
+  private JsonNullable<String> spaAppointmentId = JsonNullable.<String>undefined();
+
+  @Valid
+  private List<@Valid OrderItemVoid> voids = new ArrayList<>();
 
   private JsonNullable<String> tableId = JsonNullable.<String>undefined();
 
@@ -67,8 +78,12 @@ public class Order {
   /**
    * Constructor with only required parameters
    */
-  public Order(String id, String tableId, String bookingId, String guestName, OrderStatus status, String openedByUserId, String openedByEmail, String total, String note, List<@Valid OrderItem> items, OffsetDateTime createdAt, OffsetDateTime updatedAt, PaymentMethod paymentMethod, String guestAccessToken) {
+  public Order(String id, Long number, OffsetDateTime closedAt, String spaAppointmentId, List<@Valid OrderItemVoid> voids, String tableId, String bookingId, String guestName, OrderStatus status, String openedByUserId, String openedByEmail, String total, String note, List<@Valid OrderItem> items, OffsetDateTime createdAt, OffsetDateTime updatedAt, PaymentMethod paymentMethod, String guestAccessToken) {
     this.id = id;
+    this.number = number;
+    this.closedAt = JsonNullable.of(closedAt);
+    this.spaAppointmentId = JsonNullable.of(spaAppointmentId);
+    this.voids = voids;
     this.tableId = JsonNullable.of(tableId);
     this.bookingId = JsonNullable.of(bookingId);
     this.guestName = JsonNullable.of(guestName);
@@ -101,6 +116,90 @@ public class Order {
 
   public void setId(String id) {
     this.id = id;
+  }
+
+  public Order number(Long number) {
+    this.number = number;
+    return this;
+  }
+
+  /**
+   * Human-readable receipt number - one global, monotonically increasing sequence assigned by the database at insert (orders that existed before it were numbered in the order they were opened). Printed on every ticket/pre-bill/receipt and shown next to `id`, never instead of it: `id` stays the key every reference uses. 
+   * @return number
+   */
+  @NotNull 
+  @JsonProperty("number")
+  public Long getNumber() {
+    return number;
+  }
+
+  public void setNumber(Long number) {
+    this.number = number;
+  }
+
+  public Order closedAt(OffsetDateTime closedAt) {
+    this.closedAt = JsonNullable.of(closedAt);
+    return this;
+  }
+
+  /**
+   * When the order left the floor - the `Payment`'s time for `PAID`, the last update (the cancellation itself) for `CANCELLED`, `null` while `OPEN`/`SENT`. What `GET /orders?dateBasis=CLOSED` filters on. 
+   * @return closedAt
+   */
+  @NotNull @Valid 
+  @JsonProperty("closedAt")
+  public JsonNullable<OffsetDateTime> getClosedAt() {
+    return closedAt;
+  }
+
+  public void setClosedAt(JsonNullable<OffsetDateTime> closedAt) {
+    this.closedAt = closedAt;
+  }
+
+  public Order spaAppointmentId(String spaAppointmentId) {
+    this.spaAppointmentId = JsonNullable.of(spaAppointmentId);
+    return this;
+  }
+
+  /**
+   * The spa appointment this order bills (`SpaAppointment.orderId` read back the other way), or `null`. Read-only here - the link is made on `POST /orders` or by the auto-link, see `OrderCreateInput.spaAppointmentId`. Lets a list of open tickets mark a spa order without a lookup per row. 
+   * @return spaAppointmentId
+   */
+  @NotNull 
+  @JsonProperty("spaAppointmentId")
+  public JsonNullable<String> getSpaAppointmentId() {
+    return spaAppointmentId;
+  }
+
+  public void setSpaAppointmentId(JsonNullable<String> spaAppointmentId) {
+    this.spaAppointmentId = spaAppointmentId;
+  }
+
+  public Order voids(List<@Valid OrderItemVoid> voids) {
+    this.voids = voids;
+    return this;
+  }
+
+  public Order addVoidsItem(OrderItemVoid voidsItem) {
+    if (this.voids == null) {
+      this.voids = new ArrayList<>();
+    }
+    this.voids.add(voidsItem);
+    return this;
+  }
+
+  /**
+   * Lines (or parts of lines) voided after being sent - see `POST /orders/{id}/items/{itemId}/void`. Never part of `items` or `total`.
+   * @return voids
+   */
+  @NotNull @Valid 
+  @JsonProperty("voids")
+  public List<@Valid OrderItemVoid> getVoids() {
+    return voids;
+  }
+
+  public void setVoids(List<@Valid OrderItemVoid> voids) {
+    this.voids = voids;
   }
 
   public Order tableId(String tableId) {
@@ -368,6 +467,10 @@ public class Order {
     }
     Order order = (Order) o;
     return Objects.equals(this.id, order.id) &&
+        Objects.equals(this.number, order.number) &&
+        Objects.equals(this.closedAt, order.closedAt) &&
+        Objects.equals(this.spaAppointmentId, order.spaAppointmentId) &&
+        Objects.equals(this.voids, order.voids) &&
         Objects.equals(this.tableId, order.tableId) &&
         Objects.equals(this.bookingId, order.bookingId) &&
         Objects.equals(this.guestName, order.guestName) &&
@@ -385,7 +488,7 @@ public class Order {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, tableId, bookingId, guestName, status, openedByUserId, openedByEmail, total, note, items, createdAt, updatedAt, paymentMethod, guestAccessToken);
+    return Objects.hash(id, number, closedAt, spaAppointmentId, voids, tableId, bookingId, guestName, status, openedByUserId, openedByEmail, total, note, items, createdAt, updatedAt, paymentMethod, guestAccessToken);
   }
 
   @Override
@@ -393,6 +496,10 @@ public class Order {
     StringBuilder sb = new StringBuilder();
     sb.append("class Order {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
+    sb.append("    number: ").append(toIndentedString(number)).append("\n");
+    sb.append("    closedAt: ").append(toIndentedString(closedAt)).append("\n");
+    sb.append("    spaAppointmentId: ").append(toIndentedString(spaAppointmentId)).append("\n");
+    sb.append("    voids: ").append(toIndentedString(voids)).append("\n");
     sb.append("    tableId: ").append(toIndentedString(tableId)).append("\n");
     sb.append("    bookingId: ").append(toIndentedString(bookingId)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");

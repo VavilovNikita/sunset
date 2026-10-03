@@ -84,6 +84,7 @@ public class RestaurantMapService {
         List<RestaurantMapTable> tableDtos = tables.stream()
                 .map(t -> new RestaurantMapTable(
                         t.getId(),
+                        t.getShape(),
                         t.getLabel(),
                         t.getZone(),
                         t.getCapacity(),

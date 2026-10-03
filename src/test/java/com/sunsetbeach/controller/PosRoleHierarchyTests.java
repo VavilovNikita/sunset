@@ -73,6 +73,7 @@ import com.sunsetbeach.model.SwapSegmentRoomUnitInput;
 import com.sunsetbeach.model.SwapSpaAppointmentTableInput;
 import com.sunsetbeach.model.Table;
 import com.sunsetbeach.model.TablePositionInput;
+import com.sunsetbeach.model.TableShape;
 import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.security.JwtService;
 import com.sunsetbeach.security.RestAccessDeniedHandler;
@@ -373,6 +374,32 @@ class PosRoleHierarchyTests {
                         .header("Authorization", token(Role.ADMIN))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"active\":false}"))
+                .andExpect(status().isOk());
+    }
+
+    // --- voiding a sent order line is MANAGER+, stricter than the WAITER floor of /orders/** ---
+
+    private static final String VOID_BODY = "{\"quantity\":1,\"reason\":\"Guest sent it back\"}";
+
+    @Test
+    void voidOrderItem_belowManager_isForbidden() throws Exception {
+        for (Role role : new Role[] {Role.CASHIER, Role.WAITER}) {
+            mockMvc.perform(post("/orders/order-1/items/item-1/void")
+                            .header("Authorization", token(role))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(VOID_BODY))
+                    .andExpect(status().isForbidden());
+        }
+        verify(orderService, never()).voidItem(anyString(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void voidOrderItem_withManagerToken_isOk() throws Exception {
+        when(orderService.voidItem(eq("order-1"), eq("item-1"), any(), eq("user-1"))).thenReturn(new Order());
+        mockMvc.perform(post("/orders/order-1/items/item-1/void")
+                        .header("Authorization", token(Role.MANAGER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VOID_BODY))
                 .andExpect(status().isOk());
     }
 
@@ -2183,7 +2210,7 @@ class PosRoleHierarchyTests {
     }
 
     private static MenuItemInput sampleMenuItemInput() {
-        return new MenuItemInput("Pad Thai", "Stir-fried rice noodles", "Mains", BigDecimal.valueOf(250));
+        return new MenuItemInput("Pad Thai", "Mains", BigDecimal.valueOf(250)).description("Stir-fried rice noodles");
     }
 
     private static MenuItem sampleMenuItem() {
@@ -2192,7 +2219,7 @@ class PosRoleHierarchyTests {
     }
 
     private static Table sampleTable() {
-        return new Table("table-1", Zone.SPA, "Spa Table 1", 1, true);
+        return new Table("table-1", Zone.SPA, "Spa Table 1", 1, TableShape.ROUND, true);
     }
 
     private static SpaAppointment sampleSpaAppointment() {
@@ -2225,6 +2252,10 @@ class PosRoleHierarchyTests {
     private static Order sampleOrder() {
         return new Order(
                 "order-1",
+                1L,
+                null,
+                null,
+                List.of(),
                 null,
                 null,
                 "Walk-in",

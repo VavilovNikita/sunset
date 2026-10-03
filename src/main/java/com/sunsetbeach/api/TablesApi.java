@@ -57,7 +57,7 @@ public interface TablesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }";
+                    String exampleString = "{ \"positionY\" : 0.14658129805029452, \"shape\" : \"ROUND\", \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -156,7 +156,7 @@ public interface TablesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ]";
+                    String exampleString = "[ { \"positionY\" : 0.14658129805029452, \"shape\" : \"ROUND\", \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"shape\" : \"ROUND\", \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -195,7 +195,7 @@ public interface TablesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ]";
+                    String exampleString = "[ { \"positionY\" : 0.14658129805029452, \"shape\" : \"ROUND\", \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"shape\" : \"ROUND\", \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -247,7 +247,7 @@ public interface TablesApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }";
+                    String exampleString = "{ \"positionY\" : 0.14658129805029452, \"shape\" : \"ROUND\", \"zone\" : \"RESTAURANT\", \"id\" : \"id\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

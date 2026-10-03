@@ -4809,14 +4809,25 @@ paths:
           schema:
             type: string
             format: date
-          description: Inclusive lower bound on `Order.createdAt` (whole day, local to the server).
+          description: Inclusive lower bound (whole day, local to the server) on the date `dateBasis` names.
         - name: to
           in: query
           required: false
           schema:
             type: string
             format: date
-          description: Inclusive upper bound on `Order.createdAt` (whole day, local to the server).
+          description: Inclusive upper bound (whole day, local to the server) on the date `dateBasis` names.
+        - name: dateBasis
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/OrderDateBasis"
+          description: >
+            Which date `from`/`to` filter on. `OPENED` (the default, and the only behaviour before
+            this parameter existed) is `Order.createdAt`. `CLOSED` is `Order.closedAt` - when the
+            order was paid or cancelled - so an order opened a month ago and paid today shows up
+            in today's history; an order still `OPEN`/`SENT` has no close date and never matches.
+            Ignored when neither `from` nor `to` is given.
         - name: shiftId
           in: query
           required: false
@@ -5085,6 +5096,71 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Order is not open
+
+  /orders/{id}/items/{itemId}/void:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: voidOrderItem
+      tags: [Orders]
+      summary: Void (part of) a line that was already sent to the kitchen/bar
+      description: >
+        Requires role `MANAGER` or above - taking something off a ticket the kitchen already has
+        is exactly how a shortfall or a theft would be hidden, so it needs someone other than the
+        person who rang it up, and a reason. Legal only while the order is `OPEN`/`SENT` and only
+        for a line with `sentAt` set (an unsent line is simply edited or removed through
+        `PATCH`/`DELETE /orders/{id}/items/{itemId}`, 409 here). Voids `quantity` units of the
+        line (all of them by default): that quantity leaves the line - the line is deleted when
+        nothing is left - and is recorded as an `OrderItemVoid` on `Order.voids` with the reason,
+        the user and the time; `total` is recomputed. A void ticket is printed for the line's
+        department (best effort, same as every other print). Audited as `ORDER_ITEM_VOIDED`. A
+        `PAID` order is not voided here - that would be a refund, which this API does not model.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderItemVoidInput"
+      responses:
+        "200":
+          description: Updated order, with `total` recomputed and the void on `voids`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Body failed validation, blank `reason`, or `quantity` larger than the line's.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Order or line item not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Order is `PAID`/`CANCELLED`, or the line hasn't been sent yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /orders/{id}/close:
     parameters:
@@ -9703,6 +9779,16 @@ components:
       enum: [RESTAURANT, BAR, SPA, POOL, ROOM_SERVICE]
       description: Physical area a POS Table belongs to.
 
+    TableShape:
+      type: string
+      enum: [ROUND, SQUARE, RECTANGLE]
+      description: How a table is drawn on its floor plan. Display only - nothing else reads it.
+
+    OrderDateBasis:
+      type: string
+      enum: [OPENED, CLOSED]
+      description: Which date `GET /orders`' `from`/`to` filter on - see that parameter's own description.
+
     MenuDepartment:
       type: string
       enum: [KITCHEN, BAR, SPA]
@@ -10842,10 +10928,12 @@ components:
         excluded, and its `busy`/`nextAppointmentStartTime`/`appointments` are still the real
         values (whatever inactive-but-still-technically-scheduled state that implies) rather than
         being zeroed out - which state wins visually is a frontend decision, not encoded here.
-      required: [tableId, label, capacity, isActive, positionX, positionY, busy, nextAppointmentStartTime, appointments]
+      required: [tableId, label, capacity, shape, isActive, positionX, positionY, busy, nextAppointmentStartTime, appointments]
       properties:
         tableId:
           type: string
+        shape:
+          $ref: "#/components/schemas/TableShape"
         label:
           type: string
         capacity:
@@ -10909,10 +10997,12 @@ components:
         than one is possible (`POST /orders` doesn't enforce one order per table). `isActive` is
         an independent fact, as on `SpaMapTable`: a deactivated table is still listed, never
         excluded.
-      required: [tableId, label, zone, capacity, isActive, positionX, positionY, openOrderIds]
+      required: [tableId, label, zone, capacity, shape, isActive, positionX, positionY, openOrderIds]
       properties:
         tableId:
           type: string
+        shape:
+          $ref: "#/components/schemas/TableShape"
         label:
           type: string
         zone:
@@ -12781,7 +12871,7 @@ components:
         Full replacement on PATCH — no partial update (same convention as `RoomInput`).
         `department` defaults to `KITCHEN` (most menu items are food) - existing rows migrated
         the same way; staff reassign drinks to `BAR` explicitly, or a treatment to `SPA`.
-      required: [name, description, category, price]
+      required: [name, category, price]
       properties:
         name:
           type: string
@@ -12789,12 +12879,17 @@ components:
           maxLength: 120
         description:
           type: string
-          minLength: 1
           maxLength: 2000
+          description: Optional - the POS never shows it. Omitted or blank is stored as an empty string, so `MenuItem.description` is always a string.
         category:
           type: string
           minLength: 1
           maxLength: 60
+          description: >
+            Trimmed, with inner runs of whitespace collapsed to one space. Must not differ only in
+            letter case or spacing from a category already in use (400 on `category`, naming the
+            existing spelling) - "cocktails" next to "Cocktails" would otherwise become a second
+            menu tab. The exact existing spelling is always accepted.
         department:
           $ref: "#/components/schemas/MenuDepartment"
           default: KITCHEN
@@ -12817,7 +12912,7 @@ components:
         A physical POS table/spot a guest tab can be opened against. Mapped to a
         `PosTable` database table (not `Table`) to sidestep the SQL keyword collision — the
         API schema name is unaffected.
-      required: [id, zone, label, capacity, isActive]
+      required: [id, zone, label, capacity, shape, isActive]
       properties:
         id:
           type: string
@@ -12827,6 +12922,8 @@ components:
           type: string
         capacity:
           type: integer
+        shape:
+          $ref: "#/components/schemas/TableShape"
         isActive:
           type: boolean
         positionX:
@@ -12864,6 +12961,9 @@ components:
           type: integer
           minimum: 1
           maximum: 50
+        shape:
+          $ref: "#/components/schemas/TableShape"
+          description: Omitted means `ROUND` (full replacement, like every other field here).
         isActive:
           type: boolean
           default: true
@@ -12955,10 +13055,43 @@ components:
           updatedAt,
           paymentMethod,
           guestAccessToken,
+          number,
+          closedAt,
+          spaAppointmentId,
+          voids,
         ]
       properties:
         id:
           type: string
+        number:
+          type: integer
+          format: int64
+          description: >
+            Human-readable receipt number - one global, monotonically increasing sequence assigned
+            by the database at insert (orders that existed before it were numbered in the order
+            they were opened). Printed on every ticket/pre-bill/receipt and shown next to `id`,
+            never instead of it: `id` stays the key every reference uses.
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            When the order left the floor - the `Payment`'s time for `PAID`, the last update (the
+            cancellation itself) for `CANCELLED`, `null` while `OPEN`/`SENT`. What
+            `GET /orders?dateBasis=CLOSED` filters on.
+        spaAppointmentId:
+          type: string
+          nullable: true
+          description: >
+            The spa appointment this order bills (`SpaAppointment.orderId` read back the other
+            way), or `null`. Read-only here - the link is made on `POST /orders` or by the
+            auto-link, see `OrderCreateInput.spaAppointmentId`. Lets a list of open tickets mark a
+            spa order without a lookup per row.
+        voids:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItemVoid"
+          description: Lines (or parts of lines) voided after being sent - see `POST /orders/{id}/items/{itemId}/void`. Never part of `items` or `total`.
         tableId:
           type: string
           nullable: true
@@ -13028,6 +13161,56 @@ components:
             into a stray log line" reasoning applies - marked `x-sensitive` so it renders
             `[REDACTED]` in this model's generated `toString()`, same mechanism as
             `guestEmail`/`guestPhone`/`paymentNote` elsewhere in this spec.
+
+    OrderItemVoid:
+      type: object
+      description: >
+        A quantity taken off a sent line (`POST /orders/{id}/items/{itemId}/void`). Immutable once
+        written. `unitPrice`/`note`/`sentAt` are copied from the line as it was, so what was voided
+        can be read without the line (which is deleted once fully voided).
+      required: [id, menuItemId, quantity, unitPrice, note, sentAt, reason, voidedByUserId, voidedByEmail, voidedAt]
+      properties:
+        id:
+          type: string
+        menuItemId:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        note:
+          type: string
+          nullable: true
+        sentAt:
+          type: string
+          format: date-time
+          nullable: true
+        reason:
+          type: string
+        voidedByUserId:
+          type: string
+        voidedByEmail:
+          type: string
+          description: Same denormalization as `Order.openedByEmail`; falls back to the raw id for a deleted user.
+        voidedAt:
+          type: string
+          format: date-time
+
+    OrderItemVoidInput:
+      type: object
+      required: [reason]
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: How many units of the line to void; omitted or null voids the whole line.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Required - recorded on the void and in the audit log.
 
     OrderCreateInput:
       type: object
@@ -13665,6 +13848,7 @@ components:
         - SITEMINDER_ROOM_TYPE_MAPPING_UPDATED
         - SITEMINDER_ROOM_TYPE_MAPPING_DELETED
         - RESTAURANT_MAP_IMAGE_UPDATED
+        - ORDER_ITEM_VOIDED
 
     AuditEntityType:
       type: string

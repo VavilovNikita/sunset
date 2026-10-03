@@ -8,6 +8,8 @@ import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.ShiftEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.model.Order;
+import com.sunsetbeach.model.OrderDateBasis;
+import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.OrderRepository;
@@ -97,12 +99,75 @@ class OrderListTests extends AbstractIntegrationTest {
         OrderEntity onToDate = persistOrder(staffOne, to.atTime(23, 30));
         OrderEntity afterRange = persistOrder(staffOne, to.plusDays(1).atTime(12, 0));
 
-        List<String> ids = orderService.list(null, null, from, to, null).stream()
+        List<String> ids = orderService.list(null, null, from, to, null, null).stream()
                 .map(Order::getId)
                 .toList();
 
         assertThat(ids).contains(onFromDate.getId(), onToDate.getId());
         assertThat(ids).doesNotContain(beforeRange.getId(), afterRange.getId());
+    }
+
+    /**
+     * {@code dateBasis=CLOSED}: an order opened a month before the period and paid inside it is in
+     * that period's history - the bug was that the history only ever filtered on the opening date.
+     * Fixed dates throughout; the payment's and the cancellation's timestamps are backdated the
+     * same way as {@link #persistOrder}'s createdAt.
+     */
+    @Test
+    void list_closedDateBasis_filtersOnWhenTheOrderWasPaidOrCancelled_notOpened() {
+        LocalDate from = LocalDate.of(2026, 2, 9);
+        LocalDate to = LocalDate.of(2026, 2, 11);
+        ShiftEntity shift = new ShiftEntity();
+        shift.setOpenedByUserId(staffOne.getId());
+        shift.setOpeningCashFloat(BigDecimal.ZERO);
+        shift = shiftRepository.saveAndFlush(shift);
+
+        OrderEntity openedLongAgoPaidInRange = persistOrder(staffOne, LocalDateTime.of(2026, 1, 5, 19, 0));
+        pay(openedLongAgoPaidInRange, shift, LocalDateTime.of(2026, 2, 10, 13, 0));
+        OrderEntity openedInRangePaidAfter = persistOrder(staffOne, LocalDateTime.of(2026, 2, 10, 20, 0));
+        pay(openedInRangePaidAfter, shift, LocalDateTime.of(2026, 2, 12, 1, 0));
+        OrderEntity cancelledInRange = persistOrder(staffOne, LocalDateTime.of(2026, 1, 20, 12, 0));
+        setStatusAndUpdatedAt(cancelledInRange, OrderStatus.CANCELLED, LocalDateTime.of(2026, 2, 9, 0, 30));
+        OrderEntity stillOpen = persistOrder(staffOne, LocalDateTime.of(2026, 2, 10, 12, 0));
+
+        List<String> byClose = orderService.list(null, null, from, to, OrderDateBasis.CLOSED, null).stream().map(Order::getId).toList();
+        assertThat(byClose).contains(openedLongAgoPaidInRange.getId(), cancelledInRange.getId());
+        assertThat(byClose).doesNotContain(openedInRangePaidAfter.getId(), stillOpen.getId());
+
+        // The opening date stays available, and is still the default.
+        List<String> byOpen = orderService.list(null, null, from, to, null, null).stream().map(Order::getId).toList();
+        assertThat(byOpen).contains(openedInRangePaidAfter.getId(), stillOpen.getId());
+        assertThat(byOpen).doesNotContain(openedLongAgoPaidInRange.getId(), cancelledInRange.getId());
+
+        Order paid = orderService.getById(openedLongAgoPaidInRange.getId());
+        assertThat(paid.getClosedAt().get().toLocalDateTime()).isEqualTo(LocalDateTime.of(2026, 2, 10, 13, 0));
+        assertThat(orderService.getById(stillOpen.getId()).getClosedAt().get()).isNull();
+    }
+
+    private void pay(OrderEntity order, ShiftEntity shift, LocalDateTime paidAt) {
+        PaymentEntity payment = new PaymentEntity();
+        payment.setOrderId(order.getId());
+        payment.setMethod(PaymentMethod.CASH);
+        payment.setAmount(new BigDecimal("100.00"));
+        payment.setRecordedByUserId(staffOne.getId());
+        payment.setShiftId(shift.getId());
+        PaymentEntity saved = paymentRepository.saveAndFlush(payment);
+        entityManager
+                .createNativeQuery("UPDATE \"Payment\" SET \"createdAt\" = :paidAt WHERE id = :id")
+                .setParameter("paidAt", paidAt)
+                .setParameter("id", saved.getId())
+                .executeUpdate();
+        setStatusAndUpdatedAt(order, OrderStatus.PAID, paidAt);
+    }
+
+    private void setStatusAndUpdatedAt(OrderEntity order, OrderStatus status, LocalDateTime updatedAt) {
+        entityManager
+                .createNativeQuery("UPDATE \"Order\" SET status = CAST(:status AS \"OrderStatus\"), \"updatedAt\" = :updatedAt WHERE id = :id")
+                .setParameter("status", status.getValue())
+                .setParameter("updatedAt", updatedAt)
+                .setParameter("id", order.getId())
+                .executeUpdate();
+        entityManager.clear();
     }
 
     @Test
@@ -123,7 +188,7 @@ class OrderListTests extends AbstractIntegrationTest {
 
         OrderEntity unrelatedOrder = persistOrder(staffOne, LocalDateTime.now()); // no Payment at all
 
-        List<String> ids = orderService.list(null, null, null, null, shift.getId()).stream().map(Order::getId).toList();
+        List<String> ids = orderService.list(null, null, null, null, null, shift.getId()).stream().map(Order::getId).toList();
 
         assertThat(ids).containsExactly(paidInShift.getId());
         assertThat(ids).doesNotContain(unrelatedOrder.getId());
@@ -137,7 +202,7 @@ class OrderListTests extends AbstractIntegrationTest {
         shift = shiftRepository.saveAndFlush(shift);
         persistOrder(staffOne, LocalDateTime.now());
 
-        List<Order> results = orderService.list(null, null, null, null, shift.getId());
+        List<Order> results = orderService.list(null, null, null, null, null, shift.getId());
 
         assertThat(results).isEmpty();
     }
@@ -165,7 +230,7 @@ class OrderListTests extends AbstractIntegrationTest {
         assertThat(fetched.getPaymentMethod().get()).isEqualTo(PaymentMethod.CARD);
         assertThat(fetched.getOpenedByEmail()).isEqualTo(staffOne.getEmail());
         // list() must carry the same values through its batched lookups, not just getById's single ones.
-        List<Order> listed = orderService.list(null, null, null, null, null);
+        List<Order> listed = orderService.list(null, null, null, null, null, null);
         Order listedPaid = listed.stream().filter(o -> o.getId().equals(paidOrder.getId())).findFirst().orElseThrow();
         assertThat(listedPaid.getPaymentMethod().get()).isEqualTo(PaymentMethod.CARD);
         assertThat(listedPaid.getOpenedByEmail()).isEqualTo(staffOne.getEmail());
@@ -188,7 +253,7 @@ class OrderListTests extends AbstractIntegrationTest {
         assertThat(fetched.getOpenedByUserId().get()).isNull();
         assertThat(fetched.getOpenedByEmail()).isEqualTo("Guest (room service)");
 
-        List<Order> listed = orderService.list(null, null, null, null, null);
+        List<Order> listed = orderService.list(null, null, null, null, null, null);
         Order listedOne = listed.stream().filter(o -> o.getId().equals(saved.getId())).findFirst().orElseThrow();
         assertThat(listedOne.getOpenedByUserId().get()).isNull();
         assertThat(listedOne.getOpenedByEmail()).isEqualTo("Guest (room service)");

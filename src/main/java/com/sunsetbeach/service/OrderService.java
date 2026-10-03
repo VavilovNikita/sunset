@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
+import com.sunsetbeach.entity.OrderItemVoidEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.ShiftEntity;
 import com.sunsetbeach.entity.SpaAppointmentEntity;
@@ -22,7 +23,9 @@ import com.sunsetbeach.model.GuestOrderView;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.Order;
 import com.sunsetbeach.model.OrderCreateInput;
+import com.sunsetbeach.model.OrderDateBasis;
 import com.sunsetbeach.model.OrderItemInput;
+import com.sunsetbeach.model.OrderItemVoidInput;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.OrderUpdateInput;
 import com.sunsetbeach.model.PaymentMethod;
@@ -33,6 +36,7 @@ import com.sunsetbeach.model.Zone;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.OrderItemRepository;
+import com.sunsetbeach.repository.OrderItemVoidRepository;
 import com.sunsetbeach.repository.OrderRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.ShiftRepository;
@@ -40,17 +44,22 @@ import com.sunsetbeach.repository.SpaAppointmentRepository;
 import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -72,6 +81,7 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
+    private final OrderItemVoidRepository orderItemVoidRepository;
     private final MenuItemRepository menuItemRepository;
     private final TableRepository tableRepository;
     private final BookingRepository bookingRepository;
@@ -90,6 +100,7 @@ public class OrderService {
     public OrderService(
             OrderRepository orderRepository,
             OrderItemRepository orderItemRepository,
+            OrderItemVoidRepository orderItemVoidRepository,
             MenuItemRepository menuItemRepository,
             TableRepository tableRepository,
             BookingRepository bookingRepository,
@@ -105,6 +116,7 @@ public class OrderService {
             @Value("${app.spa.order-link-grace-minutes}") long spaOrderLinkGraceMinutes) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
+        this.orderItemVoidRepository = orderItemVoidRepository;
         this.menuItemRepository = menuItemRepository;
         this.tableRepository = tableRepository;
         this.bookingRepository = bookingRepository;
@@ -121,7 +133,7 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
-    public List<Order> list(OrderStatus status, String tableId, LocalDate from, LocalDate to, String shiftId) {
+    public List<Order> list(OrderStatus status, String tableId, LocalDate from, LocalDate to, OrderDateBasis dateBasis, String shiftId) {
         // Order carries no shiftId (only Payment does, and only once the order is closed - see
         // ShiftsApi) - resolve the membership the same way ShiftService's own reconciliation
         // does, then filter on Order.id, rather than a Criteria subquery.
@@ -133,15 +145,14 @@ public class OrderService {
             }
         }
 
-        List<OrderEntity> orders = orderRepository.findAll(buildSpecification(status, tableId, from, to, shiftOrderIds));
+        List<OrderEntity> orders = orderRepository.findAll(buildSpecification(status, tableId, from, to, dateBasis, shiftOrderIds));
         return toDtos(orders);
     }
 
     @Transactional(readOnly = true)
     public Order getById(String id) {
         OrderEntity order = findOrThrow(id);
-        PaymentMethod paymentMethod = paymentRepository.findByOrderId(id).map(PaymentEntity::getMethod).orElse(null);
-        return orderMapper.toDto(order, orderItemRepository.findByOrderId(id), resolveEmail(order.getOpenedByUserId()), paymentMethod);
+        return toDto(order, orderItemRepository.findByOrderId(id));
     }
 
     @Transactional
@@ -179,7 +190,7 @@ public class OrderService {
             return addItems(saved.getId(), input.getItems());
         }
 
-        return orderMapper.toDto(saved, List.of(), resolveEmail(openedByUserId), null);
+        return toDto(saved, List.of());
     }
 
     /**
@@ -353,7 +364,7 @@ public class OrderService {
             dispatchUnsentTickets(saved);
             items = orderItemRepository.findByOrderId(id);
         }
-        return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), null); // never PAID through this endpoint
+        return toDto(saved, items);
     }
 
     @Transactional
@@ -415,7 +426,7 @@ public class OrderService {
             items = orderItemRepository.findByOrderId(id);
         }
 
-        return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), null); // never PAID through this endpoint
+        return toDto(saved, items);
     }
 
     @Transactional
@@ -433,7 +444,7 @@ public class OrderService {
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
         order.setTotal(sumTotal(items));
         OrderEntity saved = orderRepository.saveAndFlush(order);
-        return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), null); // OPEN-only endpoint, never PAID
+        return toDto(saved, items);
     }
 
     @Transactional
@@ -449,12 +460,78 @@ public class OrderService {
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
         order.setTotal(sumTotal(items));
         OrderEntity saved = orderRepository.saveAndFlush(order);
-        return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), null); // OPEN-only endpoint, never PAID
+        return toDto(saved, items);
+    }
+
+    /**
+     * {@code POST /orders/{id}/items/{itemId}/void} - see its openapi.yaml description. The voided
+     * quantity leaves {@code OrderItem} (so the total, the ledger posting at close, Z410 and the
+     * spa completeness check never see it) and is kept as an {@link OrderItemVoidEntity} with who,
+     * when and why. MANAGER+ is enforced in {@code SecurityConfig}.
+     */
+    @Transactional
+    public Order voidItem(String id, String itemId, OrderItemVoidInput input, String userId) {
+        OrderEntity order = orderRepository.findByIdForUpdate(id).orElseThrow(() -> new NotFoundException("Order not found"));
+        if (!ADDABLE_STATUSES.contains(order.getStatus())) {
+            throw new ConflictException("Order is not open or sent");
+        }
+        OrderItemEntity item = orderItemRepository
+                .findByIdAndOrderId(itemId, id)
+                .orElseThrow(() -> new NotFoundException("Line item not found"));
+        if (item.getSentAt() == null) {
+            throw new ConflictException("This line hasn't been sent yet - change or remove it instead of voiding it.");
+        }
+        String reason = input.getReason() != null ? input.getReason().trim() : "";
+        if (reason.isEmpty()) {
+            throw ValidationException.field("reason", "A reason is required to void a sent item.");
+        }
+        Integer requested = input.getQuantity().orElse(null);
+        int quantity = requested != null ? requested : item.getQuantity();
+        if (quantity < 1 || quantity > item.getQuantity()) {
+            throw ValidationException.field("quantity", "must be between 1 and the line's quantity (" + item.getQuantity() + ")");
+        }
+
+        OrderItemVoidEntity voided = new OrderItemVoidEntity();
+        voided.setOrderId(id);
+        voided.setMenuItemId(item.getMenuItemId());
+        voided.setQuantity(quantity);
+        voided.setUnitPrice(item.getUnitPrice());
+        voided.setNote(item.getNote());
+        voided.setSentAt(item.getSentAt());
+        voided.setReason(reason);
+        voided.setVoidedByUserId(userId);
+        orderItemVoidRepository.save(voided);
+
+        if (quantity == item.getQuantity()) {
+            orderItemRepository.delete(item);
+        } else {
+            item.setQuantity(item.getQuantity() - quantity);
+            orderItemRepository.save(item);
+        }
+        orderItemRepository.flush();
+
+        List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);
+        order.setTotal(sumTotal(items));
+        OrderEntity saved = orderRepository.saveAndFlush(order);
+
+        MenuItemEntity menuItem = menuItemRepository.findById(voided.getMenuItemId()).orElse(null);
+        String itemName = menuItem != null ? menuItem.getName() : voided.getMenuItemId();
+        orderPrintingService.printVoidTicket(saved, voided, menuItem);
+        auditLogService.record(
+                AuditAction.ORDER_ITEM_VOIDED,
+                AuditEntityType.ORDER,
+                saved.getId(),
+                "Voided " + quantity + "x " + itemName + " ("
+                        + voided.getUnitPrice().multiply(BigDecimal.valueOf(quantity)) + ") from order #" + saved.getNumber()
+                        + " after it was sent. Reason: " + reason);
+        return toDto(saved, items);
     }
 
     @Transactional
     public Order close(String id, CloseOrderInput input, String cashierUserId) {
-        OrderEntity order = findOrThrow(id);
+        // Locked so a concurrent void (see #voidItem) can't change the total between reading it
+        // here and charging it below.
+        OrderEntity order = orderRepository.findByIdForUpdate(id).orElseThrow(() -> new NotFoundException("Order not found"));
         if (CLOSED_STATUSES.contains(order.getStatus())) {
             throw new ConflictException("Order is already " + order.getStatus().getValue().toLowerCase());
         }
@@ -540,7 +617,7 @@ public class OrderService {
                     "Room charge of " + saved.getTotal() + " posted to " + booking.getGuestName() + "'s folio from order " + saved.getId());
         }
 
-        return orderMapper.toDto(saved, items, resolveEmail(saved.getOpenedByUserId()), payment.getMethod());
+        return toDto(saved, items);
     }
 
     /**
@@ -579,8 +656,7 @@ public class OrderService {
         OrderEntity saved = orderRepository.saveAndFlush(order);
         auditLogService.record(
                 AuditAction.ORDER_CANCELLED, AuditEntityType.ORDER, saved.getId(), "Order cancelled (total was " + saved.getTotal() + ")");
-        return orderMapper.toDto(
-                saved, orderItemRepository.findByOrderId(id), resolveEmail(saved.getOpenedByUserId()), null); // cancelled, never paid
+        return toDto(saved, orderItemRepository.findByOrderId(id));
     }
 
     /**
@@ -686,24 +762,63 @@ public class OrderService {
         List<String> orderIds = orders.stream().map(OrderEntity::getId).toList();
         Map<String, List<OrderItemEntity>> itemsByOrderId = orderItemRepository.findByOrderIdIn(orderIds).stream()
                 .collect(Collectors.groupingBy(OrderItemEntity::getOrderId));
-        // One batched lookup, not one query per row - same pattern as itemsByOrderId above.
-        Map<String, PaymentMethod> paymentMethodByOrderId = paymentRepository.findByOrderIdIn(orderIds).stream()
-                .collect(Collectors.toMap(PaymentEntity::getOrderId, PaymentEntity::getMethod));
+        // One batched lookup each, not one query per row - same pattern as itemsByOrderId above.
+        Map<String, PaymentEntity> paymentByOrderId = paymentRepository.findByOrderIdIn(orderIds).stream()
+                .collect(Collectors.toMap(PaymentEntity::getOrderId, p -> p));
+        Map<String, List<OrderItemVoidEntity>> voidsByOrderId = orderItemVoidRepository.findByOrderIdInOrderByVoidedAtAsc(orderIds).stream()
+                .collect(Collectors.groupingBy(OrderItemVoidEntity::getOrderId));
+        Map<String, String> spaAppointmentIdByOrderId = spaAppointmentIdsByOrderId(orderIds);
         // Room-service orders (Order.openedByUserId == null - see that field's own openapi.yaml
-        // description) are filtered out here: JpaRepository#findAllById rejects a null id in the
-        // list outright, and there's no row to look up for one anyway.
-        List<String> userIds = orders.stream().map(OrderEntity::getOpenedByUserId).filter(Objects::nonNull).distinct().toList();
-        Map<String, String> emailsById =
-                userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
+        // description) are filtered out in emailsFor: JpaRepository#findAllById rejects a null id
+        // in the list outright, and there's no row to look up for one anyway.
+        Map<String, String> emailsById = emailsFor(Stream.concat(
+                orders.stream().map(OrderEntity::getOpenedByUserId),
+                voidsByOrderId.values().stream().flatMap(List::stream).map(OrderItemVoidEntity::getVoidedByUserId)));
         return orders.stream()
                 .map(o -> orderMapper.toDto(
                         o,
                         itemsByOrderId.getOrDefault(o.getId(), List.of()),
-                        o.getOpenedByUserId() == null
-                                ? GUEST_ROOM_SERVICE_LABEL
-                                : emailsById.getOrDefault(o.getOpenedByUserId(), o.getOpenedByUserId()),
-                        paymentMethodByOrderId.get(o.getId())))
+                        new OrderMapper.Extras(
+                                o.getOpenedByUserId() == null
+                                        ? GUEST_ROOM_SERVICE_LABEL
+                                        : emailsById.getOrDefault(o.getOpenedByUserId(), o.getOpenedByUserId()),
+                                paymentByOrderId.get(o.getId()),
+                                voidsByOrderId.getOrDefault(o.getId(), List.of()),
+                                emailsById,
+                                spaAppointmentIdByOrderId.get(o.getId()))))
                 .toList();
+    }
+
+    /** The single-order counterpart of {@link #toDtos} - every write path returns through this. */
+    private Order toDto(OrderEntity order, List<OrderItemEntity> items) {
+        PaymentEntity payment = paymentRepository.findByOrderId(order.getId()).orElse(null);
+        List<OrderItemVoidEntity> voids = orderItemVoidRepository.findByOrderIdOrderByVoidedAtAsc(order.getId());
+        return orderMapper.toDto(
+                order,
+                items,
+                new OrderMapper.Extras(
+                        resolveEmail(order.getOpenedByUserId()),
+                        payment,
+                        voids,
+                        emailsFor(voids.stream().map(OrderItemVoidEntity::getVoidedByUserId)),
+                        spaAppointmentIdsByOrderId(List.of(order.getId())).get(order.getId())));
+    }
+
+    private Map<String, String> emailsFor(Stream<String> userIds) {
+        List<String> ids = userIds.filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return userRepository.findAllById(ids).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
+    }
+
+    /** {@code Order.spaAppointmentId}. Should more than one appointment ever point at one order, the first wins. */
+    private Map<String, String> spaAppointmentIdsByOrderId(Collection<String> orderIds) {
+        Map<String, String> result = new HashMap<>();
+        for (SpaAppointmentEntity appointment : spaAppointmentRepository.findByOrderIdIn(orderIds)) {
+            result.putIfAbsent(appointment.getOrderId(), appointment.getId());
+        }
+        return result;
     }
 
     /**
@@ -722,7 +837,7 @@ public class OrderService {
 
     /** Shared by {@link #list}. */
     private static Specification<OrderEntity> buildSpecification(
-            OrderStatus status, String tableId, LocalDate from, LocalDate to, List<String> shiftOrderIds) {
+            OrderStatus status, String tableId, LocalDate from, LocalDate to, OrderDateBasis dateBasis, List<String> shiftOrderIds) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (status != null) {
@@ -731,11 +846,34 @@ public class OrderService {
             if (tableId != null) {
                 predicates.add(cb.equal(root.get("tableId"), tableId));
             }
-            if (from != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from.atStartOfDay()));
-            }
-            if (to != null) {
-                predicates.add(cb.lessThan(root.get("createdAt"), to.plusDays(1).atStartOfDay()));
+            if ((from != null || to != null) && dateBasis == OrderDateBasis.CLOSED) {
+                // Order.closedAt isn't a column: it's the Payment's time for PAID and the last
+                // update (the cancellation itself) for CANCELLED. OPEN/SENT have no close date.
+                Subquery<String> paidInRange = query.subquery(String.class);
+                Root<PaymentEntity> payment = paidInRange.from(PaymentEntity.class);
+                List<Predicate> paymentPredicates = new ArrayList<>();
+                paymentPredicates.add(cb.equal(payment.get("orderId"), root.get("id")));
+                List<Predicate> cancelledPredicates = new ArrayList<>();
+                cancelledPredicates.add(cb.equal(root.get("status"), OrderStatus.CANCELLED));
+                if (from != null) {
+                    paymentPredicates.add(cb.greaterThanOrEqualTo(payment.get("createdAt"), from.atStartOfDay()));
+                    cancelledPredicates.add(cb.greaterThanOrEqualTo(root.get("updatedAt"), from.atStartOfDay()));
+                }
+                if (to != null) {
+                    paymentPredicates.add(cb.lessThan(payment.get("createdAt"), to.plusDays(1).atStartOfDay()));
+                    cancelledPredicates.add(cb.lessThan(root.get("updatedAt"), to.plusDays(1).atStartOfDay()));
+                }
+                paidInRange.select(payment.get("orderId")).where(paymentPredicates.toArray(new Predicate[0]));
+                predicates.add(cb.or(
+                        cb.and(cb.equal(root.get("status"), OrderStatus.PAID), cb.exists(paidInRange)),
+                        cb.and(cancelledPredicates.toArray(new Predicate[0]))));
+            } else {
+                if (from != null) {
+                    predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from.atStartOfDay()));
+                }
+                if (to != null) {
+                    predicates.add(cb.lessThan(root.get("createdAt"), to.plusDays(1).atStartOfDay()));
+                }
             }
             if (shiftOrderIds != null) {
                 predicates.add(root.get("id").in(shiftOrderIds));

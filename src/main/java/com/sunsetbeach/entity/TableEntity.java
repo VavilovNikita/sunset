@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
+import com.sunsetbeach.model.TableShape;
 import com.sunsetbeach.model.Zone;
 
 /** Backed by the "PosTable" table, not "Table" — see V3__pos_module.sql for why. */
@@ -27,6 +28,10 @@ public class TableEntity {
     private String label;
 
     private int capacity;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private TableShape shape = TableShape.ROUND;
 
     private boolean isActive = true;
 
@@ -86,5 +91,13 @@ public class TableEntity {
 
     public void setPositionY(BigDecimal positionY) {
         this.positionY = positionY;
+    }
+
+    public TableShape getShape() {
+        return shape;
+    }
+
+    public void setShape(TableShape shape) {
+        this.shape = shape;
     }
 }

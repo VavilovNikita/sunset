@@ -47,9 +47,8 @@ public class MenuItemInput {
   /**
    * Constructor with only required parameters
    */
-  public MenuItemInput(String name, String description, String category, BigDecimal price) {
+  public MenuItemInput(String name, String category, BigDecimal price) {
     this.name = name;
-    this.description = description;
     this.category = category;
     this.price = price;
   }
@@ -79,10 +78,10 @@ public class MenuItemInput {
   }
 
   /**
-   * Get description
+   * Optional - the POS never shows it. Omitted or blank is stored as an empty string, so `MenuItem.description` is always a string.
    * @return description
    */
-  @NotNull @Size(min = 1, max = 2000) 
+  @Size(max = 2000) 
   @JsonProperty("description")
   public String getDescription() {
     return description;
@@ -98,7 +97,7 @@ public class MenuItemInput {
   }
 
   /**
-   * Get category
+   * Trimmed, with inner runs of whitespace collapsed to one space. Must not differ only in letter case or spacing from a category already in use (400 on `category`, naming the existing spelling) - \"cocktails\" next to \"Cocktails\" would otherwise become a second menu tab. The exact existing spelling is always accepted. 
    * @return category
    */
   @NotNull @Size(min = 1, max = 60) 

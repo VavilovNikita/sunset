@@ -275,6 +275,9 @@ public class SecurityConfig {
                         // More specific than the /orders/** rule below, so it must come first -
                         // authorizeHttpRequests matches in declaration order.
                         .requestMatchers(HttpMethod.POST, "/orders/*/close").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Taking a line off a ticket the kitchen already has is how a shortfall
+                        // would be hidden - see voidOrderItem's own openapi.yaml description.
+                        .requestMatchers(HttpMethod.POST, "/orders/*/items/*/void").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/orders/**").hasRole(com.sunsetbeach.model.Role.WAITER.getValue())
                         // Same ordering requirement: /shifts/*/export and the bare /shifts list
                         // (till reconciliation across many shifts, same tier as the export and

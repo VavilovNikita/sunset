@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.TableShape;
 import com.sunsetbeach.model.Zone;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -28,6 +29,8 @@ public class RestaurantMapTable {
 
   private String tableId;
 
+  private TableShape shape;
+
   private String label;
 
   private Zone zone;
@@ -50,8 +53,9 @@ public class RestaurantMapTable {
   /**
    * Constructor with only required parameters
    */
-  public RestaurantMapTable(String tableId, String label, Zone zone, Integer capacity, Boolean isActive, BigDecimal positionX, BigDecimal positionY, List<String> openOrderIds) {
+  public RestaurantMapTable(String tableId, TableShape shape, String label, Zone zone, Integer capacity, Boolean isActive, BigDecimal positionX, BigDecimal positionY, List<String> openOrderIds) {
     this.tableId = tableId;
+    this.shape = shape;
     this.label = label;
     this.zone = zone;
     this.capacity = capacity;
@@ -78,6 +82,25 @@ public class RestaurantMapTable {
 
   public void setTableId(String tableId) {
     this.tableId = tableId;
+  }
+
+  public RestaurantMapTable shape(TableShape shape) {
+    this.shape = shape;
+    return this;
+  }
+
+  /**
+   * Get shape
+   * @return shape
+   */
+  @NotNull @Valid 
+  @JsonProperty("shape")
+  public TableShape getShape() {
+    return shape;
+  }
+
+  public void setShape(TableShape shape) {
+    this.shape = shape;
   }
 
   public RestaurantMapTable label(String label) {
@@ -235,6 +258,7 @@ public class RestaurantMapTable {
     }
     RestaurantMapTable restaurantMapTable = (RestaurantMapTable) o;
     return Objects.equals(this.tableId, restaurantMapTable.tableId) &&
+        Objects.equals(this.shape, restaurantMapTable.shape) &&
         Objects.equals(this.label, restaurantMapTable.label) &&
         Objects.equals(this.zone, restaurantMapTable.zone) &&
         Objects.equals(this.capacity, restaurantMapTable.capacity) &&
@@ -246,7 +270,7 @@ public class RestaurantMapTable {
 
   @Override
   public int hashCode() {
-    return Objects.hash(tableId, label, zone, capacity, isActive, positionX, positionY, openOrderIds);
+    return Objects.hash(tableId, shape, label, zone, capacity, isActive, positionX, positionY, openOrderIds);
   }
 
   @Override
@@ -254,6 +278,7 @@ public class RestaurantMapTable {
     StringBuilder sb = new StringBuilder();
     sb.append("class RestaurantMapTable {\n");
     sb.append("    tableId: ").append(toIndentedString(tableId)).append("\n");
+    sb.append("    shape: ").append(toIndentedString(shape)).append("\n");
     sb.append("    label: ").append(toIndentedString(label)).append("\n");
     sb.append("    zone: ").append(toIndentedString(zone)).append("\n");
     sb.append("    capacity: ").append(toIndentedString(capacity)).append("\n");

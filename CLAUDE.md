@@ -42,6 +42,10 @@ Undoing a relocation restores the preserved original rates. It is not a new agre
 
 **A POS order is created with its first line, and an order with no lines can't be closed.** The POS screens send the first item in `POST /orders` (`OrderCreateInput.items`) instead of creating the order when a table is tapped - an opened-and-abandoned table used to hold the table busy and end up as a ฿0 `PAID` order. `OrderService#close` refuses an empty order (409). `CloseOrderInput.amountTendered` (CASH only) is checked against the total and written to the audit entry with the change; it is never what's charged.
 
+**A sent line is voided, never edited.** `PATCH`/`DELETE` on a line stay `OPEN`-only; once the kitchen/bar has it on paper, `POST /orders/{id}/items/{itemId}/void` (MANAGER+, required reason) takes the quantity out of `OrderItem` and records it as an `OrderItemVoid` (V128), and a VOID ticket goes to the same station. Keeping voids out of `OrderItem` is the point: every reader that sums lines (the total, the ledger posting at close, Z410, the spa missing-treatment check, receipts) stays correct without knowing voids exist - don't fold them back in as a flagged `OrderItem` row. `voidItem` and `close` both lock the order row `FOR UPDATE`, so a void can't change the total between close reading it and charging it. Known gap: cancelling a whole `SENT` order is still WAITER+.
+
+`Order.number` (V128) is the receipt number - one global DB sequence, printed on every ticket/receipt and shown next to the id, never instead of it.
+
 ## Ledger
 
 **Double-entry, immutable, no backfill.** `LedgerService` is the only writer of `JournalEntry`/`JournalLine` (V120) and refuses any entry whose debits and credits differ. Posted entries are never edited or deleted; a mistake is corrected by a reversing entry (`reversesEntryId`, unique, so at most once). Only activity from V120 forward is in the ledger - Z120 (trial balance) won't reconcile with Z410/occupancy for earlier periods, and that is expected.

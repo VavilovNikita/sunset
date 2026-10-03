@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.TableShape;
 import com.sunsetbeach.model.Zone;
 import java.math.BigDecimal;
 import java.util.Arrays;
@@ -34,6 +35,8 @@ public class Table {
 
   private Integer capacity;
 
+  private TableShape shape;
+
   private Boolean isActive;
 
   private JsonNullable<@DecimalMin("0") @DecimalMax("1") BigDecimal> positionX = JsonNullable.<BigDecimal>undefined();
@@ -47,11 +50,12 @@ public class Table {
   /**
    * Constructor with only required parameters
    */
-  public Table(String id, Zone zone, String label, Integer capacity, Boolean isActive) {
+  public Table(String id, Zone zone, String label, Integer capacity, TableShape shape, Boolean isActive) {
     this.id = id;
     this.zone = zone;
     this.label = label;
     this.capacity = capacity;
+    this.shape = shape;
     this.isActive = isActive;
   }
 
@@ -131,6 +135,25 @@ public class Table {
     this.capacity = capacity;
   }
 
+  public Table shape(TableShape shape) {
+    this.shape = shape;
+    return this;
+  }
+
+  /**
+   * Get shape
+   * @return shape
+   */
+  @NotNull @Valid 
+  @JsonProperty("shape")
+  public TableShape getShape() {
+    return shape;
+  }
+
+  public void setShape(TableShape shape) {
+    this.shape = shape;
+  }
+
   public Table isActive(Boolean isActive) {
     this.isActive = isActive;
     return this;
@@ -205,6 +228,7 @@ public class Table {
         Objects.equals(this.zone, table.zone) &&
         Objects.equals(this.label, table.label) &&
         Objects.equals(this.capacity, table.capacity) &&
+        Objects.equals(this.shape, table.shape) &&
         Objects.equals(this.isActive, table.isActive) &&
         equalsNullable(this.positionX, table.positionX) &&
         equalsNullable(this.positionY, table.positionY);
@@ -216,7 +240,7 @@ public class Table {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, zone, label, capacity, isActive, hashCodeNullable(positionX), hashCodeNullable(positionY));
+    return Objects.hash(id, zone, label, capacity, shape, isActive, hashCodeNullable(positionX), hashCodeNullable(positionY));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -234,6 +258,7 @@ public class Table {
     sb.append("    zone: ").append(toIndentedString(zone)).append("\n");
     sb.append("    label: ").append(toIndentedString(label)).append("\n");
     sb.append("    capacity: ").append(toIndentedString(capacity)).append("\n");
+    sb.append("    shape: ").append(toIndentedString(shape)).append("\n");
     sb.append("    isActive: ").append(toIndentedString(isActive)).append("\n");
     sb.append("    positionX: ").append(toIndentedString(positionX)).append("\n");
     sb.append("    positionY: ").append(toIndentedString(positionY)).append("\n");

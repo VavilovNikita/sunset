@@ -4,7 +4,9 @@ import com.sunsetbeach.api.OrdersApi;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.Order;
 import com.sunsetbeach.model.OrderCreateInput;
+import com.sunsetbeach.model.OrderDateBasis;
 import com.sunsetbeach.model.OrderItemInput;
+import com.sunsetbeach.model.OrderItemVoidInput;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.OrderUpdateInput;
 import com.sunsetbeach.model.PrintAttemptResult;
@@ -26,8 +28,9 @@ public class OrderController implements OrdersApi {
     }
 
     @Override
-    public ResponseEntity<List<Order>> listOrders(OrderStatus status, String tableId, LocalDate from, LocalDate to, String shiftId) {
-        return ResponseEntity.ok(orderService.list(status, tableId, from, to, shiftId));
+    public ResponseEntity<List<Order>> listOrders(
+            OrderStatus status, String tableId, LocalDate from, LocalDate to, OrderDateBasis dateBasis, String shiftId) {
+        return ResponseEntity.ok(orderService.list(status, tableId, from, to, dateBasis, shiftId));
     }
 
     @Override
@@ -58,6 +61,11 @@ public class OrderController implements OrdersApi {
     @Override
     public ResponseEntity<Order> deleteOrderItem(String id, String itemId) {
         return ResponseEntity.ok(orderService.deleteItem(id, itemId));
+    }
+
+    @Override
+    public ResponseEntity<Order> voidOrderItem(String id, String itemId, OrderItemVoidInput orderItemVoidInput) {
+        return ResponseEntity.ok(orderService.voidItem(id, itemId, orderItemVoidInput, CurrentUser.id()));
     }
 
     @Override

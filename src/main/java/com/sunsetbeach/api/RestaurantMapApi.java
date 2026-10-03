@@ -49,7 +49,7 @@ public interface RestaurantMapApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"imageUpdatedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"tables\" : [ { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"openOrderIds\" : [ \"openOrderIds\", \"openOrderIds\" ], \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"openOrderIds\" : [ \"openOrderIds\", \"openOrderIds\" ], \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ], \"imagePath\" : \"imagePath\" }";
+                    String exampleString = "{ \"imageUpdatedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"tables\" : [ { \"positionY\" : 0.14658129805029452, \"shape\" : \"ROUND\", \"zone\" : \"RESTAURANT\", \"openOrderIds\" : [ \"openOrderIds\", \"openOrderIds\" ], \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"shape\" : \"ROUND\", \"zone\" : \"RESTAURANT\", \"openOrderIds\" : [ \"openOrderIds\", \"openOrderIds\" ], \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ], \"imagePath\" : \"imagePath\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -124,7 +124,7 @@ public interface RestaurantMapApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"imageUpdatedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"tables\" : [ { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"openOrderIds\" : [ \"openOrderIds\", \"openOrderIds\" ], \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"zone\" : \"RESTAURANT\", \"openOrderIds\" : [ \"openOrderIds\", \"openOrderIds\" ], \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ], \"imagePath\" : \"imagePath\" }";
+                    String exampleString = "{ \"imageUpdatedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"tables\" : [ { \"positionY\" : 0.14658129805029452, \"shape\" : \"ROUND\", \"zone\" : \"RESTAURANT\", \"openOrderIds\" : [ \"openOrderIds\", \"openOrderIds\" ], \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 }, { \"positionY\" : 0.14658129805029452, \"shape\" : \"ROUND\", \"zone\" : \"RESTAURANT\", \"openOrderIds\" : [ \"openOrderIds\", \"openOrderIds\" ], \"tableId\" : \"tableId\", \"label\" : \"label\", \"isActive\" : true, \"capacity\" : 0, \"positionX\" : 0.6027456183070403 } ], \"imagePath\" : \"imagePath\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

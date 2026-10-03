@@ -3,6 +3,7 @@ package com.sunsetbeach.repository;
 import com.sunsetbeach.entity.SpaAppointmentEntity;
 import com.sunsetbeach.model.SpaAppointmentStatus;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -51,6 +52,9 @@ public interface SpaAppointmentRepository extends JpaRepository<SpaAppointmentEn
      * could wrongly attach this same order to a second appointment.
      */
     boolean existsByOrderId(String orderId);
+
+    /** {@code Order.spaAppointmentId} read back for a batch of orders - see {@code OrderService#toDtos}. */
+    List<SpaAppointmentEntity> findByOrderIdIn(Collection<String> orderIds);
 
     /**
      * Pushes both {@code SpaAppointment} exclusion constraints' checks to the end of the current

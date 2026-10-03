@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.TableShape;
 import com.sunsetbeach.model.Zone;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -27,6 +28,8 @@ public class TableInput {
   private String label;
 
   private Integer capacity;
+
+  private TableShape shape;
 
   private Boolean isActive = true;
 
@@ -102,6 +105,25 @@ public class TableInput {
     this.capacity = capacity;
   }
 
+  public TableInput shape(TableShape shape) {
+    this.shape = shape;
+    return this;
+  }
+
+  /**
+   * Get shape
+   * @return shape
+   */
+  @Valid 
+  @JsonProperty("shape")
+  public TableShape getShape() {
+    return shape;
+  }
+
+  public void setShape(TableShape shape) {
+    this.shape = shape;
+  }
+
   public TableInput isActive(Boolean isActive) {
     this.isActive = isActive;
     return this;
@@ -133,12 +155,13 @@ public class TableInput {
     return Objects.equals(this.zone, tableInput.zone) &&
         Objects.equals(this.label, tableInput.label) &&
         Objects.equals(this.capacity, tableInput.capacity) &&
+        Objects.equals(this.shape, tableInput.shape) &&
         Objects.equals(this.isActive, tableInput.isActive);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(zone, label, capacity, isActive);
+    return Objects.hash(zone, label, capacity, shape, isActive);
   }
 
   @Override
@@ -148,6 +171,7 @@ public class TableInput {
     sb.append("    zone: ").append(toIndentedString(zone)).append("\n");
     sb.append("    label: ").append(toIndentedString(label)).append("\n");
     sb.append("    capacity: ").append(toIndentedString(capacity)).append("\n");
+    sb.append("    shape: ").append(toIndentedString(shape)).append("\n");
     sb.append("    isActive: ").append(toIndentedString(isActive)).append("\n");
     sb.append("}");
     return sb.toString();

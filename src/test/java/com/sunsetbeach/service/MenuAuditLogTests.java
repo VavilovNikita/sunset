@@ -66,7 +66,7 @@ class MenuAuditLogTests extends AbstractIntegrationTest {
 
     @Test
     void createUpdateDeleteMenuItem_writeExpectedEntries() {
-        MenuItem created = menuService.create(new MenuItemInput("Audit Mojito " + UUID.randomUUID(), "test item", "Test", new BigDecimal("100.00")));
+        MenuItem created = menuService.create(new MenuItemInput("Audit Mojito " + UUID.randomUUID(), "Test", new BigDecimal("100.00")).description("test item"));
         createdItemIds.add(created.getId());
 
         List<AuditLogEntity> createdEntries =
@@ -75,7 +75,7 @@ class MenuAuditLogTests extends AbstractIntegrationTest {
         assertThat(createdEntries.get(0).getSummary()).contains(created.getName());
 
         String newName = "Renamed Mojito " + UUID.randomUUID();
-        menuService.update(created.getId(), new MenuItemInput(newName, "test item", "Test", new BigDecimal("120.00")));
+        menuService.update(created.getId(), new MenuItemInput(newName, "Test", new BigDecimal("120.00")).description("test item"));
 
         List<AuditLogEntity> updatedEntries =
                 entriesFor(created.getId()).stream().filter(e -> e.getAction() == AuditAction.MENU_ITEM_UPDATED).toList();

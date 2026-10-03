@@ -128,6 +128,7 @@ public class SpaMapService {
 
         return new SpaMapTable(
                 table.getId(),
+                table.getShape(),
                 table.getLabel(),
                 table.getCapacity(),
                 table.isActive(),

@@ -4,7 +4,9 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.SpaMapTableAppointment;
+import com.sunsetbeach.model.TableShape;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,6 +28,8 @@ import jakarta.annotation.Generated;
 public class SpaMapTable {
 
   private String tableId;
+
+  private TableShape shape;
 
   private String label;
 
@@ -51,8 +55,9 @@ public class SpaMapTable {
   /**
    * Constructor with only required parameters
    */
-  public SpaMapTable(String tableId, String label, Integer capacity, Boolean isActive, BigDecimal positionX, BigDecimal positionY, Boolean busy, String nextAppointmentStartTime, List<@Valid SpaMapTableAppointment> appointments) {
+  public SpaMapTable(String tableId, TableShape shape, String label, Integer capacity, Boolean isActive, BigDecimal positionX, BigDecimal positionY, Boolean busy, String nextAppointmentStartTime, List<@Valid SpaMapTableAppointment> appointments) {
     this.tableId = tableId;
+    this.shape = shape;
     this.label = label;
     this.capacity = capacity;
     this.isActive = isActive;
@@ -80,6 +85,25 @@ public class SpaMapTable {
 
   public void setTableId(String tableId) {
     this.tableId = tableId;
+  }
+
+  public SpaMapTable shape(TableShape shape) {
+    this.shape = shape;
+    return this;
+  }
+
+  /**
+   * Get shape
+   * @return shape
+   */
+  @NotNull @Valid 
+  @JsonProperty("shape")
+  public TableShape getShape() {
+    return shape;
+  }
+
+  public void setShape(TableShape shape) {
+    this.shape = shape;
   }
 
   public SpaMapTable label(String label) {
@@ -256,6 +280,7 @@ public class SpaMapTable {
     }
     SpaMapTable spaMapTable = (SpaMapTable) o;
     return Objects.equals(this.tableId, spaMapTable.tableId) &&
+        Objects.equals(this.shape, spaMapTable.shape) &&
         Objects.equals(this.label, spaMapTable.label) &&
         Objects.equals(this.capacity, spaMapTable.capacity) &&
         Objects.equals(this.isActive, spaMapTable.isActive) &&
@@ -268,7 +293,7 @@ public class SpaMapTable {
 
   @Override
   public int hashCode() {
-    return Objects.hash(tableId, label, capacity, isActive, positionX, positionY, busy, nextAppointmentStartTime, appointments);
+    return Objects.hash(tableId, shape, label, capacity, isActive, positionX, positionY, busy, nextAppointmentStartTime, appointments);
   }
 
   @Override
@@ -276,6 +301,7 @@ public class SpaMapTable {
     StringBuilder sb = new StringBuilder();
     sb.append("class SpaMapTable {\n");
     sb.append("    tableId: ").append(toIndentedString(tableId)).append("\n");
+    sb.append("    shape: ").append(toIndentedString(shape)).append("\n");
     sb.append("    label: ").append(toIndentedString(label)).append("\n");
     sb.append("    capacity: ").append(toIndentedString(capacity)).append("\n");
     sb.append("    isActive: ").append(toIndentedString(isActive)).append("\n");
