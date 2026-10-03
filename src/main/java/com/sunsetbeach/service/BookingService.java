@@ -24,10 +24,12 @@ import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingGuestLinkInput;
+import com.sunsetbeach.model.BookingPage;
 import com.sunsetbeach.model.BookingPosOrder;
 import com.sunsetbeach.model.BookingPosOrderItem;
 import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
+import com.sunsetbeach.model.BookingSortField;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.FolioPayment;
@@ -39,7 +41,9 @@ import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RepriceInput;
 import com.sunsetbeach.model.RepriceQuote;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
+import com.sunsetbeach.model.SortDirection;
 import com.sunsetbeach.model.StaffBookingCreateInput;
+import com.sunsetbeach.model.StaffBookingQuoteInput;
 import com.sunsetbeach.model.SwapSegmentRoomUnitInput;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
@@ -58,12 +62,16 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -199,6 +207,12 @@ public class BookingService {
 
         RoomEntity room = roomRepository.findById(input.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         String roomUnitId = input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
+        // Checked before the booking exists, so a stale picked card is a 404 with nothing created,
+        // not a booking that silently fell back to find-or-create by email.
+        String pickedGuestId = input.getGuestId() != null && input.getGuestId().isPresent() ? input.getGuestId().get() : null;
+        if (pickedGuestId != null && !guestRepository.existsById(pickedGuestId)) {
+            throw new NotFoundException("Guest not found");
+        }
 
         BookingEntity saved;
         try {
@@ -221,7 +235,7 @@ public class BookingService {
             throw e;
         }
 
-        GuestEntity guest = linkGuestQuietly(saved);
+        GuestEntity guest = pickedGuestId != null ? linkPickedGuestQuietly(saved, pickedGuestId) : linkGuestQuietly(saved);
         RoomUnitEntity assignedUnit = findRoomUnit(saved.getRoomUnitId());
         auditLogService.record(
                 AuditAction.BOOKING_CREATED,
@@ -230,6 +244,49 @@ public class BookingService {
                 "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + checkIn + " to " + checkOut + ")"
                         + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : ""));
         return bookingMapper.toDto(saved, room, assignedUnit, guest, loadSegments(saved.getId()));
+    }
+
+    /**
+     * The staff-given reason for a cancellation, trimmed, or null when this change isn't into
+     * {@code CANCELLED} or none was given. It lives only in the audit entry (see
+     * {@code BookingStatusInput.cancellationReason}); free text, so it is capped at the spec's
+     * 500 characters by Bean Validation before it gets here.
+     */
+    private static String cancellationReason(BookingStatusInput input, BookingStatus newStatus) {
+        if (newStatus != BookingStatus.CANCELLED || input.getCancellationReason() == null || !input.getCancellationReason().isPresent()) {
+            return null;
+        }
+        String reason = input.getCancellationReason().get();
+        return reason == null || reason.isBlank() ? null : reason.trim();
+    }
+
+    /** {@link #linkGuestQuietly}'s counterpart for a card staff picked in the create form - same after-commit, never-breaks-the-booking contract. */
+    private GuestEntity linkPickedGuestQuietly(BookingEntity booking, String guestId) {
+        try {
+            GuestEntity guest = guestLinkService.linkNewBookingToGuest(booking.getId(), guestId);
+            booking.setGuestId(guest.getId());
+            return guest;
+        } catch (RuntimeException e) {
+            log.error("Failed to link booking {} to picked guest {}", booking.getId(), guestId, e);
+            return null;
+        }
+    }
+
+    /**
+     * Prices a not-yet-created staff booking for {@code POST /bookings/staff/quote} - see
+     * {@link BookingWriter#quoteStaff}. Same date and room checks as {@link #createStaffBooking},
+     * so a request the create call would reject as a 400/404 is rejected the same way here.
+     */
+    public BookingScheduleQuote quoteStaffBooking(StaffBookingQuoteInput input) {
+        LocalDate checkIn = LocalDate.parse(input.getCheckIn());
+        LocalDate checkOut = LocalDate.parse(input.getCheckOut());
+        if (!checkIn.isBefore(checkOut)) {
+            throw ValidationException.field("checkOut", "checkIn must be before checkOut");
+        }
+        RoomEntity room = roomRepository.findById(input.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        String roomUnitId = input.getRoomUnitId() != null && input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
+        BookingWriter.ScheduleQuote quote = bookingWriter.quoteStaff(room, checkIn, checkOut, roomUnitId);
+        return new BookingScheduleQuote(PriceFormat.asDecimalString(quote.totalPrice()), quote.nights(), quote.available(), quote.reason());
     }
 
     /**
@@ -322,11 +379,13 @@ public class BookingService {
                 changes.add("guests changed from " + partySize(oldAdults, oldChildren) + " to " + partySize(saved.getAdults(), saved.getChildren()));
             }
             String summary = String.join("; ", changes);
+            String reason = statusChanged ? cancellationReason(input, saved.getStatus()) : null;
             auditLogService.record(
                     AuditAction.BOOKING_STATUS_CHANGED,
                     AuditEntityType.BOOKING,
                     saved.getId(),
-                    Character.toUpperCase(summary.charAt(0)) + summary.substring(1) + " for " + saved.getGuestName() + " in " + room.getName());
+                    Character.toUpperCase(summary.charAt(0)) + summary.substring(1) + " for " + saved.getGuestName() + " in " + room.getName()
+                            + (reason != null ? ". Reason: " + reason : ""));
         }
         // Content is deliberately never included in the summary - paymentNote is free text staff
         // may (against guidance) use for something sensitive; recording that it changed is
@@ -358,6 +417,66 @@ public class BookingService {
                 .map(b -> bookingMapper.toDto(
                         b, b.getRoom(), b.getRoomUnit(), b.getGuest(), segmentsByBookingId.getOrDefault(b.getId(), List.of())))
                 .toList();
+    }
+
+    /**
+     * {@code GET /bookings/search} - the admin Bookings list. The same filters as {@link #list}
+     * (including the {@link OverstayRule} widening), plus free text over the guest's own contact
+     * fields, the SiteMinder reference and the booking id, sorted and paged in the database so a
+     * long history never travels to the screen whole. A tie on the sort column falls back to
+     * {@code id}, or a booking could appear on two pages (or none) while paging.
+     */
+    @Transactional(readOnly = true)
+    public BookingPage search(
+            String q, String from, String to, BookingStatus status, BookingSortField sort, SortDirection direction, Integer page, Integer pageSize) {
+        int pageNumber = page != null ? page : 0;
+        int size = pageSize != null ? pageSize : 50;
+        BookingSortField sortField = sort != null ? sort : BookingSortField.CHECK_IN;
+        Sort.Direction dir = direction == SortDirection.ASC ? Sort.Direction.ASC : Sort.Direction.DESC;
+        Sort.Order primary = new Sort.Order(dir, sortProperty(sortField));
+        if (sortField == BookingSortField.GUEST_NAME || sortField == BookingSortField.ROOM) {
+            primary = primary.ignoreCase();
+        }
+        Sort order = Sort.by(primary, Sort.Order.asc("id"));
+
+        Specification<BookingEntity> spec = buildSpecification(from, to, status, null, overstayRule.today()).and(textSearch(q));
+        Page<BookingEntity> result = bookingRepository.findAll(spec, PageRequest.of(pageNumber, size, order));
+        List<BookingEntity> bookings = result.getContent();
+        Map<String, List<BookingSegmentEntity>> segmentsByBookingId = bookings.isEmpty()
+                ? Map.of()
+                : segmentRepository.findByBookingIdIn(bookings.stream().map(BookingEntity::getId).toList()).stream()
+                        .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+        List<Booking> items = bookings.stream()
+                .map(b -> bookingMapper.toDto(
+                        b, b.getRoom(), b.getRoomUnit(), b.getGuest(), segmentsByBookingId.getOrDefault(b.getId(), List.of())))
+                .toList();
+        return new BookingPage(items, pageNumber, size, (int) result.getTotalElements());
+    }
+
+    private static String sortProperty(BookingSortField field) {
+        return switch (field) {
+            case GUEST_NAME -> "guestName";
+            case ROOM -> "room.name";
+            case CHECK_IN -> "checkIn";
+            case CHECK_OUT -> "checkOut";
+            case TOTAL_PRICE -> "totalPrice";
+            case STATUS -> "status";
+            case CREATED_AT -> "createdAt";
+        };
+    }
+
+    private static Specification<BookingEntity> textSearch(String q) {
+        if (q == null || q.isBlank()) {
+            return (root, query, cb) -> null;
+        }
+        String needle = q.trim().toLowerCase(Locale.ROOT);
+        String contains = "%" + needle + "%";
+        return (root, query, cb) -> cb.or(
+                cb.like(cb.lower(root.get("guestName")), contains),
+                cb.like(cb.lower(root.get("guestEmail")), contains),
+                cb.like(cb.lower(root.get("guestPhone")), contains),
+                cb.like(cb.lower(root.get("externalReference")), contains),
+                cb.like(root.get("id"), needle + "%"));
     }
 
     @Transactional(readOnly = true)

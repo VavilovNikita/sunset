@@ -157,7 +157,7 @@ public class SecurityConfig {
                         // literal path segment "export".
                         .requestMatchers(HttpMethod.GET, "/bookings/*/folio", "/bookings/*/pos-orders").authenticated()
                         .requestMatchers(HttpMethod.GET, "/bookings/export").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
-                        // GET /bookings/calendar is matched by the general GET /bookings/* rule
+                        // GET /bookings/calendar and GET /bookings/search are matched by the general GET /bookings/* rule
                         // below (same CASHIER+ role, no reason to loosen/tighten it separately) -
                         // Ant-style "*" matches exactly one path segment, same as how
                         // GET /bookings/export above already coexists with it. Left unlisted here
@@ -184,6 +184,7 @@ public class SecurityConfig {
                         // the single-segment "/bookings/*" wildcard above and each needs its own
                         // explicit rule (same reasoning as PUT /bookings/*/room-unit).
                         .requestMatchers(HttpMethod.POST, "/bookings/staff").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.POST, "/bookings/staff/quote").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/bookings/*/schedule/quote").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/bookings/*/schedule").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Mid-stay room relocation (a guest moving to a different room, possibly a

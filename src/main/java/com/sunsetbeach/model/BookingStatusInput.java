@@ -39,6 +39,8 @@ public class BookingStatusInput {
 
   private Integer children;
 
+  private JsonNullable<@Size(max = 500) String> cancellationReason = JsonNullable.<String>undefined();
+
   public BookingStatusInput() {
     super();
   }
@@ -166,6 +168,25 @@ public class BookingStatusInput {
     this.children = children;
   }
 
+  public BookingStatusInput cancellationReason(String cancellationReason) {
+    this.cancellationReason = JsonNullable.of(cancellationReason);
+    return this;
+  }
+
+  /**
+   * Why the booking is being cancelled. Read only when this request moves the booking into `CANCELLED` (ignored otherwise) and recorded in that status change's audit entry - it is not a column on the booking. Optional at the API so system paths (the SiteMinder import, the expiry sweep) keep working; the admin screens require it before they send a cancel. 
+   * @return cancellationReason
+   */
+  @Size(max = 500) 
+  @JsonProperty("cancellationReason")
+  public JsonNullable<@Size(max = 500) String> getCancellationReason() {
+    return cancellationReason;
+  }
+
+  public void setCancellationReason(JsonNullable<String> cancellationReason) {
+    this.cancellationReason = cancellationReason;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -180,7 +201,8 @@ public class BookingStatusInput {
         Objects.equals(this.channel, bookingStatusInput.channel) &&
         Objects.equals(this.purpose, bookingStatusInput.purpose) &&
         Objects.equals(this.adults, bookingStatusInput.adults) &&
-        Objects.equals(this.children, bookingStatusInput.children);
+        Objects.equals(this.children, bookingStatusInput.children) &&
+        equalsNullable(this.cancellationReason, bookingStatusInput.cancellationReason);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -189,7 +211,7 @@ public class BookingStatusInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(status, hashCodeNullable(paymentNote), channel, purpose, adults, children);
+    return Objects.hash(status, hashCodeNullable(paymentNote), channel, purpose, adults, children, hashCodeNullable(cancellationReason));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -209,6 +231,7 @@ public class BookingStatusInput {
     sb.append("    purpose: ").append(toIndentedString(purpose)).append("\n");
     sb.append("    adults: ").append(toIndentedString(adults)).append("\n");
     sb.append("    children: ").append(toIndentedString(children)).append("\n");
+    sb.append("    cancellationReason: ").append(toIndentedString(cancellationReason)).append("\n");
     sb.append("}");
     return sb.toString();
   }

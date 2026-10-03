@@ -2605,6 +2605,51 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
 
+  /bookings/staff/quote:
+    post:
+      operationId: quoteStaffBooking
+      tags: [Bookings]
+      summary: Preview the price and availability of a new staff booking without creating it
+      description: >
+        Requires CASHIER or above, same as `POST /bookings/staff`. Non-mutating: prices the nights
+        at the current rates exactly as `POST /bookings/staff` would (the same `BookingWriter`
+        pricing and the same availability and room-unit checks), without a `Serializable`
+        transaction and without writing anything. Advisory only - the create call re-validates and
+        re-prices from scratch, so a concurrent booking or a rate change between preview and create
+        can still change the answer. A separate operation rather than a `dryRun` flag, same
+        reasoning as `POST /bookings/{id}/schedule/quote`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffBookingQuoteInput"
+      responses:
+        "200":
+          description: >
+            Computed price and availability. Returned even when `available: false` - a successful
+            computation whose answer is "no", not an error. `totalPrice` is computed either way.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingScheduleQuote"
+        "400":
+          description: Body failed validation (includes `checkIn < checkOut`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Room (or room unit) not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /bookings/calendar:
     get:
       operationId: getBookingsCalendar
@@ -3393,6 +3438,85 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Booking not found
+
+  /bookings/search:
+    get:
+      operationId: searchBookings
+      tags: [Bookings]
+      summary: Search, sort and page bookings (the admin Bookings list)
+      description: >
+        Requires CASHIER or above - same floor and same filters as `GET /bookings`, plus a free-text
+        `q`, a sort column and server-side paging. A separate operation rather than new parameters
+        on `GET /bookings`, because that one returns a bare array that POS charge-to-room, the spa
+        guest picker and the calendar side panels all read whole; changing its response shape would
+        break every one of them. `from`/`to` widen by `OverstayRule` exactly like `GET /bookings`.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >
+            Case-insensitive substring of the guest name, guest email or guest phone, or of the
+            SiteMinder reference (`externalReference`), or a prefix of the booking id. Blank means
+            no text filter.
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Same as `GET /bookings`.
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: Same as `GET /bookings`.
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/BookingStatus"
+        - name: sort
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/BookingSortField"
+        - name: direction
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SortDirection"
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: One page of matching bookings, ordered by `sort`/`direction` and then by `id` (so paging is stable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingPage"
+        "400":
+          $ref: "#/components/responses/ValidationErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
 
   /bookings/export:
     get:
@@ -11060,7 +11184,62 @@ components:
           minimum: 0
           default: 0
           description: Number of children in the party. Optional, defaults to 0.
+        guestId:
+          type: string
+          nullable: true
+          description: >
+            An existing `Guest` card picked at the counter. When given, the booking is linked to
+            exactly that card (404 if it doesn't exist) instead of the usual find-or-create by
+            `guestEmail`. `guestName`/`guestEmail`/`guestPhone` are still the booking's own
+            snapshot of what was given - the form prefills them from the card, but whatever is sent
+            is what's stored.
       # Cross-field rule enforced server-side, not expressible in JSON Schema: checkIn must be strictly before checkOut.
+
+    StaffBookingQuoteInput:
+      type: object
+      description: Body of `POST /bookings/staff/quote` - the fields of `StaffBookingCreateInput` that decide price and availability.
+      required: [roomId, checkIn, checkOut]
+      properties:
+        roomId:
+          type: string
+          minLength: 1
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        roomUnitId:
+          type: string
+          nullable: true
+          description: When given, also checks that this physical room is free, active and of this room type for the stay.
+
+    BookingSortField:
+      type: string
+      enum: [GUEST_NAME, ROOM, CHECK_IN, CHECK_OUT, TOTAL_PRICE, STATUS, CREATED_AT]
+      description: Sort column for `GET /bookings/search`. `ROOM` sorts by the room type's name. Defaults to `CHECK_IN`.
+
+    SortDirection:
+      type: string
+      enum: [ASC, DESC]
+      description: Defaults to `DESC` on `GET /bookings/search` (latest stays first).
+
+    BookingPage:
+      type: object
+      description: One page of `GET /bookings/search` results.
+      required: [items, page, pageSize, totalCount]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Booking"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalCount:
+          type: integer
+          description: Total number of matching bookings across all pages.
 
     BookingScheduleInput:
       type: object
@@ -11578,6 +11757,15 @@ components:
           type: integer
           minimum: 0
           description: Optional. Omitted leaves the child count as it is; present sets it. Not nullable.
+        cancellationReason:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: >
+            Why the booking is being cancelled. Read only when this request moves the booking into
+            `CANCELLED` (ignored otherwise) and recorded in that status change's audit entry - it is
+            not a column on the booking. Optional at the API so system paths (the SiteMinder import,
+            the expiry sweep) keep working; the admin screens require it before they send a cancel.
 
     Guest:
       type: object

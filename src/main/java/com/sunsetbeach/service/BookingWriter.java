@@ -221,6 +221,30 @@ public class BookingWriter {
     }
 
     /**
+     * Non-mutating preview of {@link #insertStaff} for {@code POST /bookings/staff/quote}: the
+     * same pricing ({@link #priceNightsAtCurrentRate}) and the same availability and unit checks,
+     * so the figure the create form shows is the figure the create call would store. Never throws
+     * on an unavailable result - reports it, like {@link #quoteSchedule}.
+     */
+    @Transactional(readOnly = true)
+    public ScheduleQuote quoteStaff(RoomEntity room, LocalDate checkIn, LocalDate checkOut, String roomUnitId) {
+        List<LocalDate> nights = DateRangeUtil.getNights(checkIn, checkOut);
+        BigDecimal totalPrice = sumPrices(priceNightsAtCurrentRate(room, nights));
+        int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
+        if (!isRangeAvailable(room.getId(), unitCount, checkIn, checkOut, null)) {
+            return new ScheduleQuote(totalPrice, nights.size(), false, "Selected dates are no longer available");
+        }
+        if (roomUnitId != null) {
+            RoomUnitEntity unit = roomUnitRepository.findById(roomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
+            UnitConflict conflict = checkUnitAssignable(unit, room.getId(), checkIn, checkOut, null);
+            if (conflict != null) {
+                return new ScheduleQuote(totalPrice, nights.size(), false, conflict.message());
+            }
+        }
+        return new ScheduleQuote(totalPrice, nights.size(), true, null);
+    }
+
+    /**
      * SiteMinder-import counterpart of {@link #insertStaff} - same availability check in the same
      * SERIALIZABLE transaction, but the nights are frozen at {@code agreedTotal} (the price the
      * guest already agreed on the OTA, spread by {@link #spreadEvenly}) instead of this system's

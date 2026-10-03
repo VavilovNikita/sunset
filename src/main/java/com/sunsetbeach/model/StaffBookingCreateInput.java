@@ -48,6 +48,8 @@ public class StaffBookingCreateInput {
 
   private Integer children = 0;
 
+  private JsonNullable<String> guestId = JsonNullable.<String>undefined();
+
   public StaffBookingCreateInput() {
     super();
   }
@@ -275,6 +277,25 @@ public class StaffBookingCreateInput {
     this.children = children;
   }
 
+  public StaffBookingCreateInput guestId(String guestId) {
+    this.guestId = JsonNullable.of(guestId);
+    return this;
+  }
+
+  /**
+   * An existing `Guest` card picked at the counter. When given, the booking is linked to exactly that card (404 if it doesn't exist) instead of the usual find-or-create by `guestEmail`. `guestName`/`guestEmail`/`guestPhone` are still the booking's own snapshot of what was given - the form prefills them from the card, but whatever is sent is what's stored. 
+   * @return guestId
+   */
+  
+  @JsonProperty("guestId")
+  public JsonNullable<String> getGuestId() {
+    return guestId;
+  }
+
+  public void setGuestId(JsonNullable<String> guestId) {
+    this.guestId = guestId;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -294,7 +315,8 @@ public class StaffBookingCreateInput {
         Objects.equals(this.channel, staffBookingCreateInput.channel) &&
         Objects.equals(this.purpose, staffBookingCreateInput.purpose) &&
         Objects.equals(this.adults, staffBookingCreateInput.adults) &&
-        Objects.equals(this.children, staffBookingCreateInput.children);
+        Objects.equals(this.children, staffBookingCreateInput.children) &&
+        equalsNullable(this.guestId, staffBookingCreateInput.guestId);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -303,7 +325,7 @@ public class StaffBookingCreateInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomId, guestName, hashCodeNullable(guestEmail), hashCodeNullable(guestPhone), checkIn, checkOut, hashCodeNullable(roomUnitId), channel, purpose, adults, children);
+    return Objects.hash(roomId, guestName, hashCodeNullable(guestEmail), hashCodeNullable(guestPhone), checkIn, checkOut, hashCodeNullable(roomUnitId), channel, purpose, adults, children, hashCodeNullable(guestId));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -328,6 +350,7 @@ public class StaffBookingCreateInput {
     sb.append("    purpose: ").append(toIndentedString(purpose)).append("\n");
     sb.append("    adults: ").append(toIndentedString(adults)).append("\n");
     sb.append("    children: ").append(toIndentedString(children)).append("\n");
+    sb.append("    guestId: ").append(toIndentedString(guestId)).append("\n");
     sb.append("}");
     return sb.toString();
   }

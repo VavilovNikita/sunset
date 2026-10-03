@@ -6,9 +6,11 @@ import com.sunsetbeach.model.BookingCalendarResponse;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingGuestLinkInput;
+import com.sunsetbeach.model.BookingPage;
 import com.sunsetbeach.model.BookingPosOrder;
 import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
+import com.sunsetbeach.model.BookingSortField;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.CheckInResult;
@@ -20,7 +22,9 @@ import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RepriceInput;
 import com.sunsetbeach.model.RepriceQuote;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
+import com.sunsetbeach.model.SortDirection;
 import com.sunsetbeach.model.StaffBookingCreateInput;
+import com.sunsetbeach.model.StaffBookingQuoteInput;
 import com.sunsetbeach.model.SwapSegmentRoomUnitInput;
 import com.sunsetbeach.model.TodayBoard;
 import com.sunsetbeach.security.BookingRateLimiter;
@@ -106,6 +110,17 @@ public class BookingController implements BookingsApi {
     @Override
     public ResponseEntity<Booking> createStaffBooking(StaffBookingCreateInput staffBookingCreateInput) {
         return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.createStaffBooking(staffBookingCreateInput));
+    }
+
+    @Override
+    public ResponseEntity<BookingScheduleQuote> quoteStaffBooking(StaffBookingQuoteInput staffBookingQuoteInput) {
+        return ResponseEntity.ok(bookingService.quoteStaffBooking(staffBookingQuoteInput));
+    }
+
+    @Override
+    public ResponseEntity<BookingPage> searchBookings(
+            String q, String from, String to, BookingStatus status, BookingSortField sort, SortDirection direction, Integer page, Integer pageSize) {
+        return ResponseEntity.ok(bookingService.search(q, from, to, status, sort, direction, page, pageSize));
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.Role;
+import com.sunsetbeach.repository.GuestRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
@@ -31,6 +32,7 @@ public class EmailService {
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
 
     private final UserRepository userRepository;
+    private final GuestRepository guestRepository;
     private final RestClient restClient;
     private final String resendApiKey;
     private final String from;
@@ -38,10 +40,12 @@ public class EmailService {
 
     public EmailService(
             UserRepository userRepository,
+            GuestRepository guestRepository,
             @Value("${app.email.resend-api-key}") String resendApiKey,
             @Value("${app.email.from}") String from,
             @Value("${app.email.site-url}") String siteUrl) {
         this.userRepository = userRepository;
+        this.guestRepository = guestRepository;
         this.restClient = RestClient.builder().baseUrl("https://api.resend.com").build();
         this.resendApiKey = resendApiKey;
         this.from = from;
@@ -155,7 +159,8 @@ public class EmailService {
         // an NPE (List.of(null) throws) and, more importantly, an ERROR-level log entry that
         // would misleadingly look like a real send failure every single time a walk-in's booking
         // is marked PAID/CANCELLED.
-        if (booking.getGuestEmail() == null) {
+        String to = guestEmailFor(booking);
+        if (to == null) {
             return;
         }
         try {
@@ -169,9 +174,35 @@ public class EmailService {
                     : "<p>Hi " + booking.getGuestName() + ",</p><p>Your booking for " + stay
                             + " has been cancelled. If you have questions, just reply to this email.</p>";
 
-            send(List.of(booking.getGuestEmail()), subject, html);
+            send(List.of(to), subject, html);
         } catch (Exception e) {
             log.error("sendGuestStatusEmail failed:", e);
+        }
+    }
+
+    /**
+     * Where a booking's guest email goes: the booking's own snapshot {@code guestEmail} when it has
+     * one, otherwise the email on its linked Guest card. A walk-in typed in with no email and linked
+     * to a card afterwards ({@code PUT /bookings/{id}/guest}) used to get nothing even though the
+     * card had an address. The snapshot itself is never rewritten - it stays what was given when
+     * the booking was made - this only reads the card at send time. Null when neither has one.
+     */
+    String guestEmailFor(BookingEntity booking) {
+        if (booking.getGuestEmail() != null && !booking.getGuestEmail().isBlank()) {
+            return booking.getGuestEmail().trim();
+        }
+        if (booking.getGuestId() == null) {
+            return null;
+        }
+        try {
+            return guestRepository.findById(booking.getGuestId())
+                    .map(g -> g.getEmail())
+                    .filter(e -> e != null && !e.isBlank())
+                    .map(String::trim)
+                    .orElse(null);
+        } catch (Exception e) {
+            log.error("Could not read the linked guest's email for booking {}", booking.getId(), e);
+            return null;
         }
     }
 

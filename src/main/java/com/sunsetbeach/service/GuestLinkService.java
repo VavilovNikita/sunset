@@ -73,6 +73,21 @@ public class GuestLinkService {
     }
 
     /**
+     * Links a just-created staff booking to the card staff picked in the create form
+     * ({@code StaffBookingCreateInput.guestId}) - no lookup by email at all: a person chose this
+     * card, which is better evidence than an email match. Same after-commit contract as
+     * {@link #linkNewBooking}.
+     */
+    @Transactional
+    public GuestEntity linkNewBookingToGuest(String bookingId, String guestId) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        GuestEntity guest = guestRepository.findById(guestId).orElseThrow(() -> new NotFoundException("Guest not found"));
+        booking.setGuestId(guest.getId());
+        bookingRepository.saveAndFlush(booking);
+        return guest;
+    }
+
+    /**
      * The SiteMinder import's guest card: always a new card, named after the booking, with no
      * email or phone (SiteMinder doesn't give us any yet), linked to that booking. Never a lookup
      * by name - a name identifies nobody, and linking to the wrong existing card would show this
