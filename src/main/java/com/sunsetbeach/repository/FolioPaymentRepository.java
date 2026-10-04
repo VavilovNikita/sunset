@@ -9,6 +9,9 @@ public interface FolioPaymentRepository extends JpaRepository<FolioPaymentEntity
 
     List<FolioPaymentEntity> findByBookingIdOrderByCreatedAtAsc(String bookingId);
 
+    /** Taken at reception during this cash shift - see {@code ShiftService#folioTotals}. */
+    List<FolioPaymentEntity> findByShiftIdOrderByCreatedAtAsc(String shiftId);
+
     /** GET /reports/revenue-export - {@code createdAt} is UTC wall-clock, so callers pass a UTC window. */
     List<FolioPaymentEntity> findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(LocalDateTime from, LocalDateTime toExclusive);
 }

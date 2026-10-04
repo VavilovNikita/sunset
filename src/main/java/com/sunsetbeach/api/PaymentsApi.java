@@ -55,7 +55,7 @@ public interface PaymentsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"grandTotal\" : \"grandTotal\", \"from\" : \"from\", \"to\" : \"to\", \"totals\" : { \"other\" : \"other\", \"roomCharge\" : \"roomCharge\", \"cash\" : \"cash\", \"paymentCount\" : 0, \"card\" : \"card\" } }";
+                    String exampleString = "{ \"grandTotal\" : \"grandTotal\", \"from\" : \"from\", \"to\" : \"to\", \"totals\" : { \"other\" : \"other\", \"folioOther\" : \"folioOther\", \"roomCharge\" : \"roomCharge\", \"folioCard\" : \"folioCard\", \"folioCash\" : \"folioCash\", \"cash\" : \"cash\", \"paymentCount\" : 0, \"card\" : \"card\" } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

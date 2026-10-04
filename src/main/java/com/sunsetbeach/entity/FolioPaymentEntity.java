@@ -39,6 +39,9 @@ public class FolioPaymentEntity {
 
     private String recordedByUserId;
 
+    // The recorder's open cash shift, if any - see V132.
+    private String shiftId;
+
     @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
@@ -76,6 +79,14 @@ public class FolioPaymentEntity {
 
     public void setRecordedByUserId(String recordedByUserId) {
         this.recordedByUserId = recordedByUserId;
+    }
+
+    public String getShiftId() {
+        return shiftId;
+    }
+
+    public void setShiftId(String shiftId) {
+        this.shiftId = shiftId;
     }
 
     public LocalDateTime getCreatedAt() {

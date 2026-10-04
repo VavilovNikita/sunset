@@ -60,6 +60,8 @@ public class Booking {
 
   private String totalPrice;
 
+  private String earlyDepartureFee;
+
   private BookingStatus status;
 
   private BookingChannel channel;
@@ -367,7 +369,7 @@ public class Booking {
   }
 
   /**
-   * Decimal(10,2) rendered as a string, e.g. `\"4500.00\"`. Server-computed from this system's rates, never taken from a staff or public request. The one exception is a booking imported from SiteMinder (`externalReference` set), whose price is the total the guest agreed on the OTA - see `POST /integrations/siteminder/reservations`. 
+   * Decimal(10,2) rendered as a string, e.g. `\"4500.00\"`. Server-computed from this system's rates, never taken from a staff or public request. The one exception is a booking imported from SiteMinder (`externalReference` set), whose price is the total the guest agreed on the OTA - see `POST /integrations/siteminder/reservations`. The nights actually stayed only - see `earlyDepartureFee`. 
    * @return totalPrice
    */
   @NotNull 
@@ -378,6 +380,25 @@ public class Booking {
 
   public void setTotalPrice(String totalPrice) {
     this.totalPrice = totalPrice;
+  }
+
+  public Booking earlyDepartureFee(String earlyDepartureFee) {
+    this.earlyDepartureFee = earlyDepartureFee;
+    return this;
+  }
+
+  /**
+   * Decimal(10,2) rendered as a string, `\"0.00\"` unless an early checkout released nights and staff chose to charge them anyway (`CheckOutInput.chargeUnusedNights`). Owed on top of `totalPrice` - see `BookingFolio`. 
+   * @return earlyDepartureFee
+   */
+  
+  @JsonProperty("earlyDepartureFee")
+  public String getEarlyDepartureFee() {
+    return earlyDepartureFee;
+  }
+
+  public void setEarlyDepartureFee(String earlyDepartureFee) {
+    this.earlyDepartureFee = earlyDepartureFee;
   }
 
   public Booking status(BookingStatus status) {
@@ -695,6 +716,7 @@ public class Booking {
         Objects.equals(this.checkIn, booking.checkIn) &&
         Objects.equals(this.checkOut, booking.checkOut) &&
         Objects.equals(this.totalPrice, booking.totalPrice) &&
+        Objects.equals(this.earlyDepartureFee, booking.earlyDepartureFee) &&
         Objects.equals(this.status, booking.status) &&
         Objects.equals(this.channel, booking.channel) &&
         Objects.equals(this.purpose, booking.purpose) &&
@@ -714,7 +736,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt);
   }
 
   @Override
@@ -734,6 +756,7 @@ public class Booking {
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
+    sb.append("    earlyDepartureFee: ").append(toIndentedString(earlyDepartureFee)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    channel: ").append(toIndentedString(channel)).append("\n");
     sb.append("    purpose: ").append(toIndentedString(purpose)).append("\n");

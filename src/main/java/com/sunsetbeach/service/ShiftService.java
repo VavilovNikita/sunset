@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.FolioPaymentEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
@@ -34,6 +35,7 @@ import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.OrderRepository;
+import com.sunsetbeach.repository.FolioPaymentRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.ShiftRepository;
@@ -68,6 +70,7 @@ public class ShiftService {
     private final ShiftRepository shiftRepository;
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
+    private final FolioPaymentRepository folioPaymentRepository;
     private final OrderItemRepository orderItemRepository;
     private final MenuItemRepository menuItemRepository;
     private final TableRepository tableRepository;
@@ -83,6 +86,7 @@ public class ShiftService {
             ShiftRepository shiftRepository,
             OrderRepository orderRepository,
             PaymentRepository paymentRepository,
+            FolioPaymentRepository folioPaymentRepository,
             OrderItemRepository orderItemRepository,
             MenuItemRepository menuItemRepository,
             TableRepository tableRepository,
@@ -97,6 +101,7 @@ public class ShiftService {
         this.shiftRepository = shiftRepository;
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
+        this.folioPaymentRepository = folioPaymentRepository;
         this.orderItemRepository = orderItemRepository;
         this.menuItemRepository = menuItemRepository;
         this.tableRepository = tableRepository;
@@ -177,13 +182,15 @@ public class ShiftService {
      */
     private String describeShiftClose(ShiftEntity shift) {
         PaymentAggregation.Totals totals = PaymentAggregation.aggregate(paymentRepository.findByShiftId(shift.getId()));
-        BigDecimal openingFloat = shift.getOpeningCashFloat() != null ? shift.getOpeningCashFloat() : BigDecimal.ZERO;
-        BigDecimal expectedCash = openingFloat.add(totals.cash());
+        FolioTotals folio = folioTotals(shift.getId());
+        BigDecimal expectedCash = expectedCash(shift, totals.cash(), folio);
         BigDecimal closingCounted = shift.getClosingCashCounted();
 
         String summary = "Shift closed, received " + PriceFormat.asDecimalString(totals.receivedTotal()) + " (cash "
                 + PriceFormat.asDecimalString(totals.cash()) + ", card " + PriceFormat.asDecimalString(totals.card()) + ", other "
-                + PriceFormat.asDecimalString(totals.other()) + ")";
+                + PriceFormat.asDecimalString(totals.other()) + ")"
+                + (folio.isEmpty() ? "" : ", plus folio payments " + PriceFormat.asDecimalString(folio.total()) + " (cash "
+                        + PriceFormat.asDecimalString(folio.cash()) + ")");
         if (closingCounted != null) {
             BigDecimal discrepancy = closingCounted.subtract(expectedCash);
             summary += ", counted cash " + PriceFormat.asDecimalString(closingCounted);
@@ -219,8 +226,9 @@ public class ShiftService {
      */
     private byte[] buildZReportPayload(ShiftEntity shift, PrinterCodepage codepage) {
         PaymentAggregation.Totals totals = PaymentAggregation.aggregate(paymentRepository.findByShiftId(shift.getId()));
+        FolioTotals folio = folioTotals(shift.getId());
         BigDecimal openingFloat = shift.getOpeningCashFloat() != null ? shift.getOpeningCashFloat() : BigDecimal.ZERO;
-        BigDecimal expectedCash = openingFloat.add(totals.cash());
+        BigDecimal expectedCash = expectedCash(shift, totals.cash(), folio);
         BigDecimal closingCounted = shift.getClosingCashCounted();
 
         EscPosBuilder b = new EscPosBuilder(codepage);
@@ -235,6 +243,12 @@ public class ShiftService {
         b.divider();
         b.twoColumn("Received total", PriceFormat.asDecimalString(totals.receivedTotal()));
         b.twoColumn("Payments", String.valueOf(totals.paymentCount()));
+        if (!folio.isEmpty()) {
+            b.divider();
+            b.twoColumn("Folio cash (reception)", PriceFormat.asDecimalString(folio.cash()));
+            b.twoColumn("Folio card", PriceFormat.asDecimalString(folio.card()));
+            b.twoColumn("Folio other", PriceFormat.asDecimalString(folio.other()));
+        }
         b.divider();
         b.twoColumn("Opening float", PriceFormat.asDecimalString(openingFloat));
         b.twoColumn("Expected cash", PriceFormat.asDecimalString(expectedCash));
@@ -315,7 +329,7 @@ public class ShiftService {
                     p.getOrderId());
         }
 
-        appendSummary(csv, shift, PaymentAggregation.aggregate(payments));
+        appendSummary(csv, shift, PaymentAggregation.aggregate(payments), folioTotals(shift.getId()));
 
         auditLogService.record(
                 AuditAction.SHIFT_EXPORTED,
@@ -327,7 +341,48 @@ public class ShiftService {
     }
 
     private ShiftTotals computeTotals(String shiftId) {
-        return PaymentAggregation.toShiftTotals(PaymentAggregation.aggregate(paymentRepository.findByShiftId(shiftId)));
+        FolioTotals folio = folioTotals(shiftId);
+        return PaymentAggregation.toShiftTotals(PaymentAggregation.aggregate(paymentRepository.findByShiftId(shiftId)))
+                .folioCash(PriceFormat.asDecimalString(folio.cash()))
+                .folioCard(PriceFormat.asDecimalString(folio.card()))
+                .folioOther(PriceFormat.asDecimalString(folio.other()));
+    }
+
+    /**
+     * Folio payments recorded during this shift ({@code FolioPayment.shiftId}, set by {@code
+     * BookingService#recordFolioPayment} from the recorder's open shift) - money taken at reception
+     * against a booking. Kept apart from POS {@code Payment} totals, but its cash is in the drawer,
+     * so it counts in {@link #expectedCash}: leaving it out made every shift that took room money
+     * at the desk look over by exactly that amount.
+     */
+    private FolioTotals folioTotals(String shiftId) {
+        BigDecimal cash = BigDecimal.ZERO;
+        BigDecimal card = BigDecimal.ZERO;
+        BigDecimal other = BigDecimal.ZERO;
+        for (FolioPaymentEntity p : folioPaymentRepository.findByShiftIdOrderByCreatedAtAsc(shiftId)) {
+            switch (p.getMethod()) {
+                case CASH -> cash = cash.add(p.getAmount());
+                case CARD -> card = card.add(p.getAmount());
+                case OTHER -> other = other.add(p.getAmount());
+            }
+        }
+        return new FolioTotals(cash, card, other);
+    }
+
+    private record FolioTotals(BigDecimal cash, BigDecimal card, BigDecimal other) {
+        BigDecimal total() {
+            return cash.add(card).add(other);
+        }
+
+        boolean isEmpty() {
+            return total().signum() == 0;
+        }
+    }
+
+    /** Opening float + POS cash + folio cash - the one expected-cash formula every shift read uses. */
+    private static BigDecimal expectedCash(ShiftEntity shift, BigDecimal posCash, FolioTotals folio) {
+        BigDecimal openingFloat = shift.getOpeningCashFloat() != null ? shift.getOpeningCashFloat() : BigDecimal.ZERO;
+        return openingFloat.add(posCash).add(folio.cash());
     }
 
     /**
@@ -356,8 +411,7 @@ public class ShiftService {
         return shifts.stream()
                 .map(shift -> {
                     ShiftTotals totals = computeTotals(shift.getId());
-                    BigDecimal openingFloat = shift.getOpeningCashFloat() != null ? shift.getOpeningCashFloat() : BigDecimal.ZERO;
-                    BigDecimal expectedCash = openingFloat.add(new BigDecimal(totals.getCash()));
+                    BigDecimal expectedCash = expectedCash(shift, new BigDecimal(totals.getCash()), folioTotals(shift.getId()));
                     BigDecimal discrepancy =
                             shift.getClosingCashCounted() != null ? shift.getClosingCashCounted().subtract(expectedCash) : null;
                     return shiftMapper.toListItemDto(
@@ -456,9 +510,9 @@ public class ShiftService {
      * used by GET /payments/summary - it's a folio transfer, not cash that ever entered the
      * drawer.
      */
-    private static void appendSummary(CsvBuilder csv, ShiftEntity shift, PaymentAggregation.Totals totals) {
+    private static void appendSummary(CsvBuilder csv, ShiftEntity shift, PaymentAggregation.Totals totals, FolioTotals folio) {
         BigDecimal openingFloat = shift.getOpeningCashFloat() != null ? shift.getOpeningCashFloat() : BigDecimal.ZERO;
-        BigDecimal expectedCash = openingFloat.add(totals.cash());
+        BigDecimal expectedCash = expectedCash(shift, totals.cash(), folio);
         BigDecimal closingCounted = shift.getClosingCashCounted();
 
         csv.row();
@@ -469,8 +523,11 @@ public class ShiftService {
         csv.row("Room charge (posted to room folio - not received cash/card)", PriceFormat.asDecimalString(totals.roomCharge()));
         csv.row("Received total (cash + card + other)", PriceFormat.asDecimalString(totals.receivedTotal()));
         csv.row("Payments", String.valueOf(totals.paymentCount()));
+        csv.row("Folio payments at reception - cash", PriceFormat.asDecimalString(folio.cash()));
+        csv.row("Folio payments at reception - card", PriceFormat.asDecimalString(folio.card()));
+        csv.row("Folio payments at reception - other", PriceFormat.asDecimalString(folio.other()));
         csv.row("Opening cash float", PriceFormat.asDecimalString(openingFloat));
-        csv.row("Expected cash (float + cash payments)", PriceFormat.asDecimalString(expectedCash));
+        csv.row("Expected cash (float + cash payments + folio cash)", PriceFormat.asDecimalString(expectedCash));
         csv.row("Counted cash", closingCounted != null ? PriceFormat.asDecimalString(closingCounted) : "—");
         csv.row(
                 "Discrepancy (counted - expected)",

@@ -5,6 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.FolioPaymentEntity;
+import com.sunsetbeach.model.FolioPaymentMethod;
+import com.sunsetbeach.model.ShiftSummary;
+import com.sunsetbeach.repository.FolioPaymentRepository;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
@@ -79,6 +83,9 @@ class ShiftExportTests extends AbstractIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private FolioPaymentRepository folioPaymentRepository;
 
     private UserEntity cashier;
 
@@ -277,7 +284,52 @@ class ShiftExportTests extends AbstractIntegrationTest {
         assertThat(csv).contains("Room charge (posted to room folio - not received cash/card),5000.00");
         assertThat(csv).contains("Received total (cash + card + other),500.00");
         // Expected cash = opening float (1000.00) + cash payments (200.00) only - not the room charge.
-        assertThat(csv).contains("Expected cash (float + cash payments),1200.00");
+        assertThat(csv).contains("Expected cash (float + cash payments + folio cash),1200.00");
+    }
+
+    /** Cash taken at reception against a booking is in the drawer - it used to read as an overage. */
+    @Test
+    void folioCashTakenDuringTheShift_countsInExpectedCash() {
+        ShiftEntity shift = persistShift(new BigDecimal("1000.00"), null);
+        persistPayment(shift, PaymentMethod.CASH, "200.00", persistOrder(null), null);
+        persistFolioPayment(shift, FolioPaymentMethod.CASH, "450.00");
+        persistFolioPayment(shift, FolioPaymentMethod.CARD, "7000.00");
+
+        String csv = shiftService.exportCsv(shift.getId());
+        ShiftSummary summary = shiftService.getSummary(shift.getId(), cashier.getId(), Role.CASHIER);
+
+        assertThat(csv).contains("Expected cash (float + cash payments + folio cash),1650.00");
+        assertThat(summary.getTotals().getCash()).isEqualTo("200.00");
+        assertThat(summary.getTotals().getFolioCash()).isEqualTo("450.00");
+        assertThat(summary.getTotals().getFolioCard()).isEqualTo("7000.00");
+    }
+
+    private void persistFolioPayment(ShiftEntity shift, FolioPaymentMethod method, String amount) {
+        RoomEntity room = new RoomEntity();
+        room.setName("Shift Folio Room " + UUID.randomUUID());
+        room.setDescription("Room used only by ShiftExportTests");
+        room.setCapacity(2);
+        room.setBasePrice(new BigDecimal("1000.00"));
+        room = roomRepository.saveAndFlush(room);
+        BookingEntity booking = new BookingEntity();
+        booking.setRoomId(room.getId());
+        booking.setChannel(BookingChannel.DIRECT);
+        booking.setGuestName("Folio Guest");
+        booking.setGuestEmail("guest@example.com");
+        booking.setGuestPhone("+66800000000");
+        booking.setCheckIn(LocalDate.parse("2034-01-01"));
+        booking.setCheckOut(LocalDate.parse("2034-01-03"));
+        booking.setTotalPrice(new BigDecimal("7000.00"));
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking = bookingRepository.saveAndFlush(booking);
+
+        FolioPaymentEntity payment = new FolioPaymentEntity();
+        payment.setBookingId(booking.getId());
+        payment.setMethod(method);
+        payment.setAmount(new BigDecimal(amount));
+        payment.setRecordedByUserId(cashier.getId());
+        payment.setShiftId(shift.getId());
+        folioPaymentRepository.saveAndFlush(payment);
     }
 
     @Test
@@ -337,7 +389,7 @@ class ShiftExportTests extends AbstractIntegrationTest {
         String csv = shiftService.exportCsv(shift.getId());
 
         assertThat(csv).contains("Opening cash float,0.00");
-        assertThat(csv).contains("Expected cash (float + cash payments),75.00");
+        assertThat(csv).contains("Expected cash (float + cash payments + folio cash),75.00");
     }
 
     @Test

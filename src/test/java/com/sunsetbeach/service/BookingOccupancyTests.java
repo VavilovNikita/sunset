@@ -142,7 +142,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
         assignUnit(booking.getId(), unit.getId());
         occupancyService.checkIn(booking.getId());
 
-        CheckOutResult result = occupancyService.checkOut(booking.getId());
+        CheckOutResult result = occupancyService.checkOut(booking.getId(), null);
 
         assertThat(result.getBooking().getOccupancyStatus()).isEqualTo(OccupancyStatus.CHECKED_OUT);
         assertThat(result.getBooking().getCheckedOutAt().get()).isNotNull();
@@ -161,7 +161,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
         assignUnit(booking.getId(), unit.getId());
         occupancyService.checkIn(booking.getId());
 
-        CheckOutResult result = occupancyService.checkOut(booking.getId());
+        CheckOutResult result = occupancyService.checkOut(booking.getId(), null);
 
         assertThat(result.getBooking().getOccupancyStatus()).isEqualTo(OccupancyStatus.CHECKED_OUT);
         assertThat(new BigDecimal(result.getOutstandingBalance())).isEqualByComparingTo(booking.getTotalPrice());
@@ -177,7 +177,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
         bookingService.updateStatus(booking.getId(), new BookingStatusInput(com.sunsetbeach.model.BookingStatus.PAID));
         occupancyService.checkIn(booking.getId());
 
-        CheckOutResult result = occupancyService.checkOut(booking.getId());
+        CheckOutResult result = occupancyService.checkOut(booking.getId(), null);
 
         assertThat(new BigDecimal(result.getOutstandingBalance())).isEqualByComparingTo("0.00");
     }
@@ -206,7 +206,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
 
-        assertThatCode(() -> occupancyService.checkOut(booking.getId()))
+        assertThatCode(() -> occupancyService.checkOut(booking.getId(), null))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("hasn't been checked in");
     }
@@ -219,9 +219,9 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
         occupancyService.checkIn(booking.getId());
-        occupancyService.checkOut(booking.getId());
+        occupancyService.checkOut(booking.getId(), null);
 
-        assertThatCode(() -> occupancyService.checkOut(booking.getId()))
+        assertThatCode(() -> occupancyService.checkOut(booking.getId(), null))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("hasn't been checked in");
     }
@@ -280,7 +280,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
         assertThat(whileCheckedIn.getBookedCount()).isEqualTo(1);
         assertThat(whileCheckedIn.getAvailableCount()).isEqualTo(availableBefore);
 
-        occupancyService.checkOut(booking.getId());
+        occupancyService.checkOut(booking.getId(), null);
         AvailabilityDay afterCheckOut = availabilityOn(room.getId(), checkIn);
         assertThat(afterCheckOut.getBookedCount()).isEqualTo(1);
         assertThat(afterCheckOut.getAvailableCount()).isEqualTo(availableBefore);

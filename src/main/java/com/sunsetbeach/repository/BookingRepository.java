@@ -97,17 +97,18 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
 
     /**
      * {@code GET /reports/guest-ltv}'s ranking - one row per guest card with at least one booking
-     * whose status isn't {@code excludedStatus}, highest summed {@code totalPrice} first. The
+     * whose status isn't {@code excludedStatus}, highest summed room amount ({@code totalPrice} +
+     * {@code earlyDepartureFee} - what the guest paid for rooms) first. The
      * {@code guestId} tie-break only keeps the order stable between calls; the page size is the
      * report's {@code limit}.
      */
     @Query("""
-        SELECT b.guestId AS guestId, COUNT(b) AS bookingCount, SUM(b.totalPrice) AS roomRevenue,
+        SELECT b.guestId AS guestId, COUNT(b) AS bookingCount, SUM(b.totalPrice + b.earlyDepartureFee) AS roomRevenue,
                MIN(b.checkIn) AS firstCheckIn, MAX(b.checkIn) AS lastCheckIn
         FROM BookingEntity b
         WHERE b.guestId IS NOT NULL AND b.status <> :excludedStatus
         GROUP BY b.guestId
-        ORDER BY SUM(b.totalPrice) DESC, b.guestId ASC
+        ORDER BY SUM(b.totalPrice + b.earlyDepartureFee) DESC, b.guestId ASC
         """)
     List<GuestBookingTotals> sumByGuest(@Param("excludedStatus") BookingStatus excludedStatus, Pageable page);
 

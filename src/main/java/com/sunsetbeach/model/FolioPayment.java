@@ -7,7 +7,10 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.FolioPaymentMethod;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.springframework.format.annotation.DateTimeFormat;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -18,7 +21,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Money actually collected against a booking&#39;s folio - the record that makes a &#x60;ROOM_CHARGE&#x60; payment&#39;s amount stop counting as owed in &#x60;BookingFolio.roomChargesTotal&#x60;/ &#x60;CheckOutResult.outstandingBalance&#x60;/&#x60;TodayBoardEntry.outstandingBalance&#x60;. Deliberately not tied to a shift - unlike &#x60;Payment&#x60;, cash collected this way is not counted in end-of-shift cash-drawer reconciliation, the same gap &#x60;Booking.status &#x3D; PAID&#x60; already has for the room portion of a stay. Rows accumulate (a guest can pay part now, the rest later) and are never edited or deleted - to correct a mistake, staff record another entry, the same append-only convention the audit log uses. 
+ * Money actually collected against a booking&#39;s folio - room and POS room charges alike (see &#x60;BookingFolio&#x60; for how it&#39;s applied). &#x60;shiftId&#x60; is the recorder&#39;s open cash shift at the time, if they had one: that shift&#39;s &#x60;ShiftTotals.folioCash&#x60;/&#x60;folioCard&#x60;/ &#x60;folioOther&#x60; include it, and &#x60;folioCash&#x60; counts in its expected cash. Rows accumulate (a guest can pay part now, the rest later) and are never edited or deleted - to correct a mistake, staff record another entry, the same append-only convention the audit log uses. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -33,6 +36,8 @@ public class FolioPayment {
   private String amount;
 
   private String recordedByUserId;
+
+  private JsonNullable<String> shiftId = JsonNullable.<String>undefined();
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
@@ -148,6 +153,25 @@ public class FolioPayment {
     this.recordedByUserId = recordedByUserId;
   }
 
+  public FolioPayment shiftId(String shiftId) {
+    this.shiftId = JsonNullable.of(shiftId);
+    return this;
+  }
+
+  /**
+   * Get shiftId
+   * @return shiftId
+   */
+  
+  @JsonProperty("shiftId")
+  public JsonNullable<String> getShiftId() {
+    return shiftId;
+  }
+
+  public void setShiftId(JsonNullable<String> shiftId) {
+    this.shiftId = shiftId;
+  }
+
   public FolioPayment createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -181,12 +205,24 @@ public class FolioPayment {
         Objects.equals(this.method, folioPayment.method) &&
         Objects.equals(this.amount, folioPayment.amount) &&
         Objects.equals(this.recordedByUserId, folioPayment.recordedByUserId) &&
+        equalsNullable(this.shiftId, folioPayment.shiftId) &&
         Objects.equals(this.createdAt, folioPayment.createdAt);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, bookingId, method, amount, recordedByUserId, createdAt);
+    return Objects.hash(id, bookingId, method, amount, recordedByUserId, hashCodeNullable(shiftId), createdAt);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -198,6 +234,7 @@ public class FolioPayment {
     sb.append("    method: ").append(toIndentedString(method)).append("\n");
     sb.append("    amount: ").append(toIndentedString(amount)).append("\n");
     sb.append("    recordedByUserId: ").append(toIndentedString(recordedByUserId)).append("\n");
+    sb.append("    shiftId: ").append(toIndentedString(shiftId)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("}");
     return sb.toString();

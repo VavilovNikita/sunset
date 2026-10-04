@@ -4,6 +4,8 @@ import com.sunsetbeach.api.BookingsApi;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCalendarResponse;
 import com.sunsetbeach.model.BookingCreateInput;
+import com.sunsetbeach.model.CheckOutInput;
+import com.sunsetbeach.model.CheckOutPreview;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingGuestLinkInput;
 import com.sunsetbeach.model.BookingPage;
@@ -174,8 +176,13 @@ public class BookingController implements BookingsApi {
     }
 
     @Override
-    public ResponseEntity<CheckOutResult> checkOutBooking(String id) {
-        return ResponseEntity.ok(bookingOccupancyService.checkOut(id));
+    public ResponseEntity<CheckOutResult> checkOutBooking(String id, CheckOutInput checkOutInput) {
+        return ResponseEntity.ok(bookingOccupancyService.checkOut(id, checkOutInput));
+    }
+
+    @Override
+    public ResponseEntity<CheckOutPreview> previewBookingCheckOut(String id) {
+        return ResponseEntity.ok(bookingOccupancyService.previewCheckOut(id));
     }
 
     @Override

@@ -107,6 +107,7 @@ public class BookingMapper {
                                 s, roomsById.get(s.getRoomId()), s.getRoomUnitId() != null ? roomUnitsById.get(s.getRoomUnitId()) : null))
                         .toList(),
                 TimestampFormat.toUtc(entity.getCreatedAt()),
-                TimestampFormat.toUtc(entity.getUpdatedAt()));
+                TimestampFormat.toUtc(entity.getUpdatedAt()))
+                .earlyDepartureFee(PriceFormat.asDecimalString(entity.getEarlyDepartureFee()));
     }
 }

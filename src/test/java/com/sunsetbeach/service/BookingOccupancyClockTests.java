@@ -86,7 +86,7 @@ class BookingOccupancyClockTests extends AbstractIntegrationTest {
         LocalDateTime expected = LocalDateTime.parse("2033-11-10T13:00");
 
         occupancyService.checkIn(booking.getId());
-        Booking checkedOut = occupancyService.checkOut(booking.getId()).getBooking();
+        Booking checkedOut = occupancyService.checkOut(booking.getId(), null).getBooking();
 
         entityManager.clear();
         BookingEntity stored = bookingRepository.findById(booking.getId()).orElseThrow();
@@ -108,7 +108,7 @@ class BookingOccupancyClockTests extends AbstractIntegrationTest {
         BookingEntity stayed = persistStay("2033-11-09", "2033-11-12");
         occupancyService.checkIn(left.getId());
         occupancyService.checkIn(stayed.getId());
-        occupancyService.checkOut(left.getId());
+        occupancyService.checkOut(left.getId(), null);
         entityManager.clear();
 
         InHouseReport inHouse = reportService.inHouse("2033-11-10");

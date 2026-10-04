@@ -59,6 +59,10 @@ public class BookingEntity {
     @Column(precision = 10, scale = 2)
     private BigDecimal totalPrice;
 
+    // Nights released by an early checkout that staff chose to charge anyway - see V132.
+    @Column(precision = 10, scale = 2)
+    private BigDecimal earlyDepartureFee = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private BookingStatus status;
@@ -313,6 +317,19 @@ public class BookingEntity {
 
     public void setExternalChannel(String externalChannel) {
         this.externalChannel = externalChannel;
+    }
+
+    public BigDecimal getEarlyDepartureFee() {
+        return earlyDepartureFee;
+    }
+
+    public void setEarlyDepartureFee(BigDecimal earlyDepartureFee) {
+        this.earlyDepartureFee = earlyDepartureFee;
+    }
+
+    /** What the guest owes for the room itself: the nights stayed plus any early-departure fee. */
+    public BigDecimal roomAmount() {
+        return totalPrice.add(earlyDepartureFee);
     }
 
     public String getCancellationReason() {

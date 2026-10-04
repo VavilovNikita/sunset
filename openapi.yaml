@@ -3311,6 +3311,18 @@ paths:
         booking's current room `DIRTY` (`PATCH /room-units/{id}/housekeeping` is the way to mark
         it cleaned again) and reports any outstanding balance - see `CheckOutResult`. Recorded in
         the audit log.
+
+
+        An early checkout (before `checkOut`) can also shorten the stay to the day the guest
+        actually left - see `CheckOutInput`, and `GET /bookings/{id}/check-out/preview` for what
+        that would release and cost. Without a body (or with `shortenStay: false`) the dates and
+        price are left exactly as they were.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckOutInput"
       responses:
         "200":
           description: Checked out, with the outstanding balance (if any) at the moment of checkout.
@@ -3329,13 +3341,47 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
-          description: This booking was never checked in, or is already checked out.
+          description: >
+            This booking was never checked in, or is already checked out, or `shortenStay` was
+            asked for but the stay can't be shortened that way (see `CheckOutPreview.reason`).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: "This booking hasn't been checked in."
+
+  /bookings/{id}/check-out/preview:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: previewBookingCheckOut
+      tags: [Bookings]
+      summary: What checking this guest out today would release and cost
+      description: >
+        Requires CASHIER or above - the same floor as `POST /bookings/{id}/check-out`, which this
+        prepares. Writes nothing. See `CheckOutPreview`.
+      responses:
+        "200":
+          description: The preview.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckOutPreview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /bookings/{id}/no-show:
     parameters:
@@ -3388,11 +3434,11 @@ paths:
     get:
       operationId: getBookingFolio
       tags: [Bookings]
-      summary: Get the total amount owed against a booking's room folio
+      summary: Get what a booking has been charged, paid, and still owes
       description: >
-        Requires any authenticated staff session. `roomTotal` + `roomChargesTotal` = `folioTotal`
-        - built on the same `BookingService` query `GET /bookings/{id}/pos-orders` itemizes (see
-        that operation), just totaled instead of broken out per order.
+        Requires any authenticated staff session. See `BookingFolio` - `balanceDue` there is the
+        one figure for "how much to collect", the same number `CheckOutResult`,
+        `TodayBoardEntry` and the property map report as `outstandingBalance`.
       responses:
         "200":
           description: The booking's folio total.
@@ -3447,9 +3493,12 @@ paths:
       tags: [Bookings]
       summary: Record money collected against a booking's folio
       description: >
-        Requires CASHIER or above. See `FolioPayment`'s own description for what this does and
-        deliberately does not do (no shift/cash-drawer linkage). Not tied to `occupancyStatus`
-        in any way - collectible any time, not just at check-out.
+        Requires CASHIER or above. See `FolioPayment`'s own description. Takes any amount up to
+        `BookingFolio.balanceDue` - room and POS charges alike. When the payment leaves the room
+        part fully covered and the booking is `NEW` or `CONFIRMED`, the booking becomes `PAID` in
+        the same transaction (same ledger posting, email and audit entry as
+        `PATCH /bookings/{id}` to `PAID`). Not tied to `occupancyStatus` in any way - collectible
+        any time, not just at check-out.
       requestBody:
         required: true
         content:
@@ -5762,21 +5811,21 @@ paths:
         range.
 
 
-        **Room-rate revenue is not in any total.** This system has no payment record for the room
-        itself. The only sign that a stay was paid for is `Booking.status = PAID`, which has no
-        date, method or amount-paid of its own. The workbook therefore totals exactly two
-        channels, and says so on its Summary sheet:
+        **Room money is in the totals only when it was taken at the desk.** A room paid through the
+        folio (`POST /bookings/{id}/folio-payments` takes the room as well as POS charges) is a
+        `FolioPayment` like any other. A booking marked `PAID` by hand - an OTA prepayment, a bank
+        transfer - has no date, method or amount of its own and is in no total. The workbook
+        therefore totals exactly two channels, and says so on its Summary sheet:
 
         - **POS payments received**: `Payment` rows with method `CASH`, `CARD` or `OTHER`.
           `ROOM_CHARGE` payments are shown in their own column but never added to any total.
           Closing an order to a room collects no money, it moves the amount onto the booking's
           folio (see `GET /payments/summary`).
 
-        - **Room charges settled**: `FolioPayment` rows, i.e. money collected at the desk against
-          room-charged POS orders (see `POST /bookings/{id}/folio-payments`). This is where a
-          room-charged order's money is counted, once, when it is actually collected. It never
-          includes the room rate: a folio payment can't exceed the booking's outstanding room
-          charges.
+        - **Room charges settled** (the column keeps its old name): `FolioPayment` rows, i.e. money
+          collected at the desk against a booking - room-charged POS orders and, since folio
+          payments can cover it, the room itself. This is where a room-charged order's money is
+          counted, once, when it is actually collected.
 
 
         Four sheets. "Summary": one row per day in the range (days with nothing collected
@@ -10292,14 +10341,78 @@ components:
           type: string
           nullable: true
 
+    CheckOutInput:
+      type: object
+      description: >
+        Optional body of `POST /bookings/{id}/check-out`. Only meaningful for an early checkout
+        (see `CheckOutPreview.early`); ignored otherwise.
+      properties:
+        shortenStay:
+          type: boolean
+          default: false
+          description: >
+            Move `checkOut` to `CheckOutPreview.shortenedCheckOut` through the ordinary schedule
+            change (`PATCH /bookings/{id}/schedule`'s own path), so the released nights are free
+            again on the calendar, in availability, the night audit and every report. Their frozen
+            rates are removed with them.
+        chargeUnusedNights:
+          type: boolean
+          default: false
+          description: >
+            With `shortenStay`: keep charging what the released nights were agreed at, as
+            `Booking.earlyDepartureFee` (added to any fee already there). Without it the guest is
+            charged only for the nights stayed. Staff decide this per checkout.
+
+    CheckOutPreview:
+      type: object
+      description: >
+        Response of `GET /bookings/{id}/check-out/preview`. `early` is true when today (hotel
+        date) is before `checkOut`. Shortening ends the stay today, but never before the first
+        night: a guest leaving on their arrival day is still charged one night, so a one-night
+        booking checked out on its arrival day is not early at all. `shortenable` is false (with
+        `reason`) when the stay can't be shortened through a schedule change - most often a
+        relocated stay whose last room starts after today; release those nights with the
+        relocation tools first.
+      required: [early, shortenable, reason, shortenedCheckOut, nightsReleased, unusedNightsAmount, currentRoomTotal, shortenedRoomTotal, outstandingBalance]
+      properties:
+        early:
+          type: boolean
+        shortenable:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+        shortenedCheckOut:
+          type: string
+          format: date
+          nullable: true
+          description: The `checkOut` the stay would get. Null unless `early`.
+        nightsReleased:
+          type: integer
+        unusedNightsAmount:
+          type: string
+          description: >
+            Decimal(10,2) as a string - what the released nights were agreed at, i.e. the
+            early-departure fee `chargeUnusedNights` would add. `"0.00"` unless `shortenable`.
+        currentRoomTotal:
+          type: string
+          description: Decimal(10,2) as a string - `Booking.totalPrice` + `earlyDepartureFee` now.
+        shortenedRoomTotal:
+          type: string
+          description: >
+            Decimal(10,2) as a string - the room total after shortening without charging the
+            unused nights. Equals `currentRoomTotal` unless `shortenable`.
+        outstandingBalance:
+          type: string
+          description: Decimal(10,2) as a string - `BookingFolio.balanceDue` now, before any change.
+
     CheckOutResult:
       type: object
       description: >
-        Response of `POST /bookings/{id}/check-out`. `outstandingBalance` is the same number
-        `GET /bookings/{id}/folio` would report at this instant (room total, if `status` isn't
-        yet `PAID`, plus any uncollected `ROOM_CHARGE` payments) - the last moment front desk can
-        act on it before the guest walks out. `"0.00"` means nothing is owed, not that the field
-        was skipped.
+        Response of `POST /bookings/{id}/check-out`. `outstandingBalance` is
+        `BookingFolio.balanceDue` at this instant (after any shortening the request asked for) -
+        the last moment front desk can act on it before the guest walks out. `"0.00"` means
+        nothing is owed, not that the field was skipped.
       required: [booking, outstandingBalance]
       properties:
         booking:
@@ -11973,6 +12086,13 @@ components:
             system's rates, never taken from a staff or public request. The one exception is a
             booking imported from SiteMinder (`externalReference` set), whose price is the total
             the guest agreed on the OTA - see `POST /integrations/siteminder/reservations`.
+            The nights actually stayed only - see `earlyDepartureFee`.
+        earlyDepartureFee:
+          type: string
+          description: >
+            Decimal(10,2) rendered as a string, `"0.00"` unless an early checkout released nights
+            and staff chose to charge them anyway (`CheckOutInput.chargeUnusedNights`). Owed on
+            top of `totalPrice` - see `BookingFolio`.
         status:
           $ref: "#/components/schemas/BookingStatus"
         channel:
@@ -13765,7 +13885,13 @@ components:
 
     ShiftTotals:
       type: object
-      description: Sum of this shift's `Payment.amount`, broken out by method — CASH/CARD/OTHER only; ROOM_CHARGE payments settle against the room folio, not this shift's cash/card reconciliation, so they're reported separately as `roomCharge`.
+      description: >
+        Sum of this shift's `Payment.amount`, broken out by method — CASH/CARD/OTHER only;
+        ROOM_CHARGE payments settle against the room folio, not this shift's cash/card
+        reconciliation, so they're reported separately as `roomCharge`. `folioCash`/`folioCard`/
+        `folioOther` (shift reads only, absent from `GET /payments/summary`) are the `FolioPayment`s recorded during this shift (their `shiftId`) - money
+        taken at reception against a booking, kept apart from POS sales. Expected cash is
+        `openingCashFloat` + `cash` + `folioCash`.
       required: [cash, card, roomCharge, other, paymentCount]
       properties:
         cash:
@@ -13782,6 +13908,15 @@ components:
           description: Decimal(10,2) rendered as a string.
         paymentCount:
           type: integer
+        folioCash:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        folioCard:
+          type: string
+          description: Decimal(10,2) rendered as a string.
+        folioOther:
+          type: string
+          description: Decimal(10,2) rendered as a string.
 
     ShiftSummary:
       type: object
@@ -13835,7 +13970,7 @@ components:
         ids against `GET /users`) and the reconciliation numbers themselves,
         `expectedCash`/`discrepancy` - the same arithmetic as the printed Z-report and the CSV
         export (`ShiftService`): `expectedCash` = `openingCashFloat` (0 if unset) + this shift's
-        cash payments; `discrepancy` = `closingCashCounted` - `expectedCash`, positive meaning
+        cash payments + its cash folio payments; `discrepancy` = `closingCashCounted` - `expectedCash`, positive meaning
         more cash counted than expected, negative meaning less. `discrepancy` is `null` exactly
         when `closingCashCounted` is - an open or never-recounted shift has nothing to compare.
       required:
@@ -13924,40 +14059,62 @@ components:
     BookingFolio:
       type: object
       description: >
-        `folioTotal` = `roomTotal` + `roomChargesTotal`, computed on the fly by
-        `BookingService.computeFolio`/`getFolio` - see that method's Javadoc. Never stored.
-        `roomChargesTotal` is *net of settlement* - what's actually still owed, not the raw sum
-        of every ROOM_CHARGE `Payment` this stay ever generated. See `FolioPayment`'s own
-        description for how a charge gets marked collected; `GET /bookings/{id}/folio-payments`
-        lists the settlement history behind this number.
-      required: [roomTotal, roomChargesTotal, folioTotal, roomChargeCount]
+        What a booking has been charged, what has been collected, and what is still owed -
+        computed on the fly by `BookingService` (`computeFolioBreakdown`), never stored. The one
+        place "how much does this guest owe" is answered; `outstandingBalance` everywhere else
+        is `balanceDue` here.
+
+
+        Charged: `roomTotal` (the nights stayed) + `earlyDepartureFee` + `roomChargesGross` (POS
+        orders charged to the room) = `folioTotal`. Collected: `paidTotal` (every
+        `FolioPayment`), applied to the POS charges first and then to the room, plus
+        `settledOutside` - the room amount not covered by folio payments on a booking marked
+        `PAID` by hand (prepaid on an OTA, bank transfer: collected, just not through this
+        system). `balanceDue` = `folioTotal` - `paidTotal` - `settledOutside`, never below zero;
+        `creditBalance` is what was collected beyond `folioTotal` (a stay shortened after it was
+        paid), which this system has no refund record for. A `CANCELLED` booking owes nothing
+        for the room - `roomTotal` and `earlyDepartureFee` still show what it was priced at, but
+        neither counts in `folioTotal`.
+      required: [roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, creditBalance, roomChargeCount]
       properties:
         roomTotal:
           type: string
+          description: "`Booking.totalPrice` - decimal(10,2) rendered as a string."
+        earlyDepartureFee:
+          type: string
+          description: "`Booking.earlyDepartureFee` - decimal(10,2) rendered as a string."
+        roomChargesGross:
+          type: string
           description: >
-            `Booking.totalPrice` - decimal(10,2) rendered as a string. Always the full room
-            total regardless of `status` - unlike `CheckOutResult`/`TodayBoardEntry`'s
-            `outstandingBalance` (see `BookingService.computeOutstandingBalance`), which drops
-            this once `status` is `PAID`. `folioTotal` here is "what this stay adds up to," not
-            "what's still owed" - use `outstandingBalance` for that.
+            Sum of this booking's ROOM_CHARGE `Payment.amount` rows - decimal(10,2) rendered as a
+            string.
         roomChargesTotal:
           type: string
           description: >
-            Sum of this booking's ROOM_CHARGE `Payment.amount` rows, minus every `FolioPayment`
-            recorded against it (floored at zero) - decimal(10,2) rendered as a string.
+            The POS room charges still uncollected: `roomChargesGross` minus the folio payments
+            applied to them (payments go to POS charges first) - decimal(10,2) rendered as a
+            string. What the "owes for POS charges" hints on a `PAID` booking read.
         folioTotal:
           type: string
-          description: >
-            `roomTotal` + `roomChargesTotal` - decimal(10,2) rendered as a string. Not the same
-            question as `outstandingBalance` (see `roomTotal`'s own description) - this always
-            includes the full room total, `outstandingBalance` drops it once `status` is `PAID`.
+          description: Everything charged (see the schema description) - decimal(10,2) rendered as a string.
+        paidTotal:
+          type: string
+          description: Sum of every `FolioPayment` - decimal(10,2) rendered as a string.
+        settledOutside:
+          type: string
+          description: See the schema description - decimal(10,2) rendered as a string.
+        balanceDue:
+          type: string
+          description: What is still to collect - decimal(10,2) rendered as a string.
+        creditBalance:
+          type: string
+          description: Collected beyond what was charged - decimal(10,2) rendered as a string.
         roomChargeCount:
           type: integer
           description: >
             Number of ROOM_CHARGE payments this stay has ever generated (a raw historical count,
-            not "how many are still unsettled" - individual charges aren't tracked as
-            settled/unsettled, only the running total is) - same count as
-            `GET /bookings/{id}/pos-orders` would return entries.
+            not "how many are still unsettled") - same count as `GET /bookings/{id}/pos-orders`
+            would return entries.
 
     FolioPaymentMethod:
       type: string
@@ -13970,14 +14127,13 @@ components:
     FolioPayment:
       type: object
       description: >
-        Money actually collected against a booking's folio - the record that makes a
-        `ROOM_CHARGE` payment's amount stop counting as owed in `BookingFolio.roomChargesTotal`/
-        `CheckOutResult.outstandingBalance`/`TodayBoardEntry.outstandingBalance`. Deliberately
-        not tied to a shift - unlike `Payment`, cash collected this way is not counted in
-        end-of-shift cash-drawer reconciliation, the same gap `Booking.status = PAID` already
-        has for the room portion of a stay. Rows accumulate (a guest can pay part now, the rest
-        later) and are never edited or deleted - to correct a mistake, staff record another
-        entry, the same append-only convention the audit log uses.
+        Money actually collected against a booking's folio - room and POS room charges alike
+        (see `BookingFolio` for how it's applied). `shiftId` is the recorder's open cash shift
+        at the time, if they had one: that shift's `ShiftTotals.folioCash`/`folioCard`/
+        `folioOther` include it, and `folioCash` counts in its expected cash. Rows accumulate (a
+        guest can pay part now, the rest later) and are never edited or deleted - to correct a
+        mistake, staff record another entry, the same append-only convention the audit log
+        uses.
       required: [id, bookingId, method, amount, recordedByUserId, createdAt]
       properties:
         id:
@@ -13991,6 +14147,9 @@ components:
           description: Decimal(10,2) rendered as a string.
         recordedByUserId:
           type: string
+        shiftId:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -14006,8 +14165,8 @@ components:
           type: string
           description: >
             Decimal(10,2) as a string, greater than zero. Rejected with 409 if it would exceed
-            what's currently outstanding on this booking's folio - a fat-finger guard, not a
-            restriction on partial payment (a smaller amount than what's owed is always fine).
+            `BookingFolio.balanceDue` - a fat-finger guard, not a restriction on partial payment
+            (a smaller amount than what's owed is always fine).
 
     PaymentsSummary:
       type: object

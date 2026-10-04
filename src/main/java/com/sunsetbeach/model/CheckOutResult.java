@@ -15,7 +15,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Response of &#x60;POST /bookings/{id}/check-out&#x60;. &#x60;outstandingBalance&#x60; is the same number &#x60;GET /bookings/{id}/folio&#x60; would report at this instant (room total, if &#x60;status&#x60; isn&#39;t yet &#x60;PAID&#x60;, plus any uncollected &#x60;ROOM_CHARGE&#x60; payments) - the last moment front desk can act on it before the guest walks out. &#x60;\&quot;0.00\&quot;&#x60; means nothing is owed, not that the field was skipped. 
+ * Response of &#x60;POST /bookings/{id}/check-out&#x60;. &#x60;outstandingBalance&#x60; is &#x60;BookingFolio.balanceDue&#x60; at this instant (after any shortening the request asked for) - the last moment front desk can act on it before the guest walks out. &#x60;\&quot;0.00\&quot;&#x60; means nothing is owed, not that the field was skipped. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

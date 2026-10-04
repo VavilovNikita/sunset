@@ -211,6 +211,7 @@ public class SecurityConfig {
                         // "/bookings", "/bookings/*" GET rule above at the same CASHIER+ role.
                         .requestMatchers(HttpMethod.POST, "/bookings/*/check-in").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/bookings/*/check-out").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .requestMatchers(HttpMethod.GET, "/bookings/*/check-out/preview").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.POST, "/bookings/*/no-show").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Folio payments: recording one is money-handling, CASHIER+ same as the
                         // rest of front-desk work above. Listing them is informational (the same

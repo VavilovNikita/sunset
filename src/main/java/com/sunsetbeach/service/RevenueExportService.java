@@ -49,9 +49,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p><b>Two channels, never three.</b> POS payments received ({@link PaymentAggregation.Totals#receivedTotal()},
  * which already leaves {@code ROOM_CHARGE} out) plus {@link FolioPaymentEntity} settlements. A
  * room-charged order therefore counts exactly once, when its folio payment is collected - never
- * when the order is closed to the room. The room rate itself is in neither: it has no payment
- * record anywhere in this system (see {@link BookingService#computeOutstandingBalance}'s javadoc),
- * only {@code Booking.status = PAID}. The "Paid bookings (info)" sheet shows those bookings for
+ * when the order is closed to the room. A room paid at the desk is a folio payment too; a room
+ * marked {@code PAID} by hand (OTA prepayment, bank transfer) has no payment record and is in
+ * neither channel. The "Paid bookings (info)" sheet shows those bookings for
  * reference and is deliberately kept out of every total, since it says nothing about when, how, or
  * how much was actually collected.
  *
@@ -188,8 +188,8 @@ public class RevenueExportService {
         String[] notes = {
             "Days are Asia/Bangkok calendar days.",
             "POS received = POS payments by cash, card or other. POS charged to rooms is money moved onto a guest's room folio when an order was closed to the room - nothing was collected, so it is in no total.",
-            "Room charges settled = money collected at the desk against room-charged POS orders (folio payments). This is where a room-charged order's money is counted, once, when it is collected.",
-            "Room-rate revenue is NOT included anywhere in this workbook's totals: the system keeps no payment record for the room itself, only a booking's PAID status. See the \"Paid bookings (info)\" sheet.",
+            "Room charges settled = money collected at the desk against a booking (folio payments): room-charged POS orders and, when the guest paid the room at the desk, the room itself. This is where that money is counted, once, when it is collected.",
+            "A room marked PAID without a desk payment (OTA prepayment, bank transfer) is NOT in any total: the system has no date or amount for it. See the \"Paid bookings (info)\" sheet.",
             "No tax breakdown - all amounts are gross, as received.",
         };
         for (String note : notes) {

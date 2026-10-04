@@ -63,7 +63,7 @@ public class FolioPaymentInput {
   }
 
   /**
-   * Decimal(10,2) as a string, greater than zero. Rejected with 409 if it would exceed what's currently outstanding on this booking's folio - a fat-finger guard, not a restriction on partial payment (a smaller amount than what's owed is always fine). 
+   * Decimal(10,2) as a string, greater than zero. Rejected with 409 if it would exceed `BookingFolio.balanceDue` - a fat-finger guard, not a restriction on partial payment (a smaller amount than what's owed is always fine). 
    * @return amount
    */
   @NotNull 

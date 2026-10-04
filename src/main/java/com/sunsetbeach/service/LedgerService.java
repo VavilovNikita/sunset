@@ -62,9 +62,11 @@ import org.springframework.transaction.annotation.Transactional;
  * best-effort: a close or settlement the ledger silently missed would leave a trial balance that
  * still balances but no longer matches what happened, which is worse than the operation failing.
  * <ul>
- *   <li>{@link BookingService#updateStatus}: a booking becoming {@code PAID} - the only record this
- *       system keeps of the room portion being collected (there is no room payment row, and no
- *       method) - posts Dr Cash/Bank, Cr Room Revenue + VAT Payable at {@code totalPrice}. Leaving
+ *   <li>{@link BookingService#updateStatus}: a booking becoming {@code PAID} posts Cr Room
+ *       Revenue + VAT Payable at the room amount ({@code totalPrice} + {@code earlyDepartureFee}),
+ *       debited to Guest Ledger for the part already collected as folio payments (each of which
+ *       posted Dr Cash, Cr Guest Ledger when taken) and to Cash/Bank for the rest - the part
+ *       collected outside this system, for a booking marked {@code PAID} by hand. Leaving
  *       {@code PAID} posts the exact mirror of every such entry not already reversed. A price
  *       change while already {@code PAID} posts nothing, matching {@code PAID}'s existing meaning
  *       everywhere else (outstanding balance reads zero).</li>
@@ -74,7 +76,9 @@ import org.springframework.transaction.annotation.Transactional;
  *       or cancel path in this system ({@code cancel} refuses a {@code PAID} order), so nothing
  *       ever reverses one automatically.</li>
  *   <li>{@link BookingService#recordFolioPayment}: Dr Cash/Bank, Cr Guest Ledger. Folio payments
- *       are append-only with no undo, so nothing reverses one automatically either.</li>
+ *       are append-only with no undo, so nothing reverses one automatically either. They pay the
+ *       room as well as POS charges, so the room money of a stay settled through the folio sits
+ *       in Guest Ledger until the {@code PAID} settlement above moves it to revenue.</li>
  * </ul>
  *
  * <p>VAT is extracted per transaction at the rate stored at the moment of posting, so each entry
@@ -135,15 +139,25 @@ public class LedgerService {
 
     // --- Automatic postings -------------------------------------------------------------------
 
-    /** A booking just became {@code PAID} - see the class javadoc. Nothing to post for a zero price. */
+    /**
+     * A booking just became {@code PAID} - see the class javadoc. Nothing to post for a zero price.
+     * {@code paidThroughFolio} is the part of the room already collected as folio payments.
+     */
     @Transactional
-    public void postBookingSettlement(BookingEntity booking) {
-        BigDecimal gross = booking.getTotalPrice().setScale(2, RoundingMode.UNNECESSARY);
+    public void postBookingSettlement(BookingEntity booking, BigDecimal paidThroughFolio) {
+        BigDecimal gross = booking.roomAmount().setScale(2, RoundingMode.UNNECESSARY);
         if (gross.signum() <= 0) {
             return;
         }
+        BigDecimal fromGuestLedger = paidThroughFolio.min(gross).setScale(2, RoundingMode.UNNECESSARY);
+        BigDecimal fromCash = gross.subtract(fromGuestLedger);
         List<Line> lines = new ArrayList<>();
-        lines.add(Line.debit(CASH, gross));
+        if (fromCash.signum() > 0) {
+            lines.add(Line.debit(CASH, fromCash));
+        }
+        if (fromGuestLedger.signum() > 0) {
+            lines.add(Line.debit(GUEST_LEDGER, fromGuestLedger));
+        }
         lines.addAll(revenueCredits(Map.of(ROOM_REVENUE, gross)));
         post(today(), "Room settled (PAID): " + booking.getGuestName() + ", " + booking.getCheckIn() + " to " + booking.getCheckOut(),
                 JournalSourceType.BOOKING, booking.getId(), null, currentUserId(), lines);
