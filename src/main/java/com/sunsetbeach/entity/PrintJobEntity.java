@@ -8,9 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
 
@@ -41,10 +39,10 @@ public class PrintJobEntity {
 
     private String lastError;
 
-    @CreationTimestamp
+    @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
-    @UpdateTimestamp
+    @UtcUpdateTimestamp
     private LocalDateTime updatedAt;
 
     // Closes a FAILED job as not-actionable without deleting it - see V31__print_job_dismiss.sql.

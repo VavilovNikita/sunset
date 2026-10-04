@@ -8,7 +8,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /** One minimum-staffing rule per area - an area with no row here has no minimum and never warns. */
@@ -25,7 +24,7 @@ public class StaffAreaCoverageRuleEntity {
 
     private String updatedByUserId;
 
-    @UpdateTimestamp
+    @UtcUpdateTimestamp
     private LocalDateTime updatedAt;
 
     public StaffArea getStaffArea() {

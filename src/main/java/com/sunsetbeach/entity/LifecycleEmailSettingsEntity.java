@@ -4,7 +4,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.UpdateTimestamp;
 
 /**
  * The single row of lifecycle email settings - see V112's own comment. Its id is always
@@ -34,7 +33,7 @@ public class LifecycleEmailSettingsEntity {
 
     private int winBackMonthsSinceStay;
 
-    @UpdateTimestamp
+    @UtcUpdateTimestamp
     private LocalDateTime updatedAt;
 
     public Integer getId() {

@@ -32,6 +32,7 @@ import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,6 +56,7 @@ public class RoomUnitService {
     private final AuditLogService auditLogService;
     private final UserRepository userRepository;
     private final MaintenanceTaskRepository maintenanceTaskRepository;
+    private final Clock clock;
 
     public RoomUnitService(
             RoomRepository roomRepository,
@@ -65,7 +67,9 @@ public class RoomUnitService {
             RoomUnitMapper roomUnitMapper,
             AuditLogService auditLogService,
             UserRepository userRepository,
-            MaintenanceTaskRepository maintenanceTaskRepository) {
+            MaintenanceTaskRepository maintenanceTaskRepository,
+            Clock clock) {
+        this.clock = clock;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
@@ -251,7 +255,7 @@ public class RoomUnitService {
 
     /** A non-cancelled booking assigned to this unit whose stay hasn't ended yet - deactivating/deleting would silently orphan it. */
     private boolean hasUpcomingBooking(String roomUnitId) {
-        return segmentRepository.existsByRoomUnitIdAndBooking_StatusNotAndCheckOutGreaterThan(roomUnitId, BookingStatus.CANCELLED, LocalDate.now());
+        return segmentRepository.existsByRoomUnitIdAndBooking_StatusNotAndCheckOutGreaterThan(roomUnitId, BookingStatus.CANCELLED, LocalDate.now(clock));
     }
 
     @Transactional(readOnly = true)

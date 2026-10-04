@@ -8,7 +8,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
@@ -40,7 +39,7 @@ public class FolioPaymentEntity {
 
     private String recordedByUserId;
 
-    @CreationTimestamp
+    @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
     public String getId() {

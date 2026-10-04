@@ -4,7 +4,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.UpdateTimestamp;
 
 /**
  * A single row, id always {@code "default"} - there is exactly one spa floor plan, not one per
@@ -23,7 +22,7 @@ public class SpaMapEntity {
 
     private String updatedByUserId;
 
-    @UpdateTimestamp
+    @UtcUpdateTimestamp
     private LocalDateTime updatedAt;
 
     public String getId() {

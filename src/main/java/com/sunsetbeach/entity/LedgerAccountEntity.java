@@ -7,7 +7,6 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -30,7 +29,7 @@ public class LedgerAccountEntity {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private LedgerAccountType type;
 
-    @CreationTimestamp
+    @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
     public String getCode() {

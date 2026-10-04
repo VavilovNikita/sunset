@@ -22,6 +22,7 @@ import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -48,13 +49,16 @@ public class OrderPrintingService {
     private final MenuItemRepository menuItemRepository;
     private final TableRepository tableRepository;
     private final UserRepository userRepository;
+    private final Clock clock;
 
     public OrderPrintingService(
             PrintService printService,
             PrintJobMapper printJobMapper,
             MenuItemRepository menuItemRepository,
             TableRepository tableRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            Clock clock) {
+        this.clock = clock;
         this.printService = printService;
         this.printJobMapper = printJobMapper;
         this.menuItemRepository = menuItemRepository;
@@ -92,7 +96,7 @@ public class OrderPrintingService {
                         printerDepartment == PrinterDepartment.BAR ? PrintDocumentType.BAR_TICKET : PrintDocumentType.KITCHEN_TICKET;
                 printService.findActivePrinter(printerDepartment).ifPresent(printer -> {
                     byte[] payload = buildTicketPayload(order, entry.getValue(), menuItemsById, printer.getCodepage(), printerDepartment);
-                    printService.queueAndAttempt(
+                    printService.queue(
                             printer,
                             documentType,
                             (printerDepartment == PrinterDepartment.BAR ? "Bar ticket" : "Kitchen ticket") + " — " + orderLabel(order),
@@ -123,14 +127,14 @@ public class OrderPrintingService {
                 b.center(true).bold(true).line("*** VOID ***").bold(false).center(false);
                 b.line(describeLocation(order));
                 b.line(orderLabel(order));
-                b.line("Time: " + TimestampFormat.readable(LocalDateTime.now()));
+                b.line("Time: " + TimestampFormat.readable(TimestampFormat.nowUtc(clock)));
                 b.divider();
                 b.line(voided.getQuantity() + "x " + (menuItem != null ? menuItem.getName() : "Unknown item"));
                 if (voided.getNote() != null && !voided.getNote().isBlank()) {
                     b.line("   note: " + voided.getNote());
                 }
                 b.line("Reason: " + voided.getReason());
-                printService.queueAndAttempt(
+                printService.queue(
                         printer,
                         documentType,
                         (printerDepartment == PrinterDepartment.BAR ? "Bar void" : "Kitchen void") + " — " + orderLabel(order),
@@ -168,10 +172,31 @@ public class OrderPrintingService {
                 byte[] payload = buildPriceListPayload(
                         "GUEST RECEIPT", order, items, menuItemsById, printer.getCodepage(), payment, booking);
                 String summary = "Guest receipt — " + orderLabel(order) + " (" + describePayment(payment, booking) + ")";
-                printService.queueAndAttempt(printer, PrintDocumentType.GUEST_RECEIPT, summary, payload);
+                printService.queue(printer, PrintDocumentType.GUEST_RECEIPT, summary, payload);
             });
         } catch (Exception e) {
             log.error("printGuestReceipt failed for order {}", order.getId(), e);
+        }
+    }
+
+    /**
+     * {@code POST /orders/{id}/print-receipt} - the same receipt as {@link #printGuestReceipt},
+     * titled as a copy, attempted before responding like the pre-bill (someone is waiting for it).
+     */
+    public PrintAttemptResult reprintGuestReceipt(OrderEntity order, List<OrderItemEntity> items, PaymentEntity payment, BookingEntity booking) {
+        try {
+            PrinterEntity printer = printService.findActivePrinter(PrinterDepartment.CASHIER).orElse(null);
+            if (printer == null) {
+                return new PrintAttemptResult(false);
+            }
+            byte[] payload = buildPriceListPayload(
+                    "GUEST RECEIPT - COPY", order, items, resolveMenuItems(items), printer.getCodepage(), payment, booking);
+            String summary = "Guest receipt copy — " + orderLabel(order) + " (" + describePayment(payment, booking) + ")";
+            PrintJobEntity job = printService.queueAndAttempt(printer, PrintDocumentType.GUEST_RECEIPT, summary, payload);
+            return new PrintAttemptResult(true).job(printJobMapper.toDto(job));
+        } catch (Exception e) {
+            log.error("reprintGuestReceipt failed for order {}", order.getId(), e);
+            return new PrintAttemptResult(false);
         }
     }
 
@@ -212,7 +237,7 @@ public class OrderPrintingService {
                 .center(false);
         b.line(describeLocation(order));
         b.line(orderLabel(order));
-        b.line("Time: " + TimestampFormat.readable(LocalDateTime.now()));
+        b.line("Time: " + TimestampFormat.readable(TimestampFormat.nowUtc(clock)));
         b.line("Waiter: " + resolveWaiterLabel(order.getOpenedByUserId()));
         b.divider();
         for (OrderItemEntity item : items) {
@@ -243,7 +268,7 @@ public class OrderPrintingService {
         b.center(true).bold(true).line(title).bold(false).center(false);
         b.line(describeLocation(order));
         b.line(orderLabel(order) + " (ref " + shortId(order.getId()) + ")");
-        b.line("Time: " + TimestampFormat.readable(LocalDateTime.now()));
+        b.line("Time: " + TimestampFormat.readable(TimestampFormat.nowUtc(clock)));
         b.divider();
         BigDecimal total = BigDecimal.ZERO;
         for (OrderItemEntity item : items) {

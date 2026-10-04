@@ -6,7 +6,6 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 
 /**
@@ -31,7 +30,7 @@ public class EmployeePayRateEntity {
 
     private String createdByUserId;
 
-    @CreationTimestamp
+    @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
     public String getId() {

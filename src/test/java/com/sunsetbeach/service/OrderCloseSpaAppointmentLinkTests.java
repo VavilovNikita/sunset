@@ -39,6 +39,7 @@ import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.security.StaffPrincipal;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -69,6 +70,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
  */
 @SpringBootTest
 class OrderCloseSpaAppointmentLinkTests extends AbstractIntegrationTest {
+
+    // Appointments are scheduled in hotel time, so "now" for them comes from the hotel clock the
+    // auto-link compares against - not the JVM default zone.
+    @Autowired
+    private Clock clock;
 
     @Autowired
     private OrderService orderService;
@@ -274,7 +280,7 @@ class OrderCloseSpaAppointmentLinkTests extends AbstractIntegrationTest {
         entity.setBookingId(booking.getId());
         entity.setTherapistUserId(therapist.getId());
         entity.setCreatedByUserId(cashierId);
-        entity.setDate(LocalDate.now());
+        entity.setDate(LocalDate.now(clock));
         entity.setStartTime(startTime);
         entity.setDurationMinutes(durationMinutes);
         entity.setStatus(SpaAppointmentStatus.BOOKED);
@@ -407,7 +413,7 @@ class OrderCloseSpaAppointmentLinkTests extends AbstractIntegrationTest {
         UserEntity secondTherapist = createTherapist();
 
         Booking tableBooking = createBooking(LocalDate.now().plusDays(300));
-        SpaAppointmentEntity liveAppointment = persistAppointment(liveTable, tableBooking, treatment, therapist, LocalTime.now(), 120);
+        SpaAppointmentEntity liveAppointment = persistAppointment(liveTable, tableBooking, treatment, therapist, LocalTime.now(clock), 120);
 
         Booking roomChargeBooking = createBooking(LocalDate.now().plusDays(301));
         SpaAppointmentEntity roomChargeBookingsOwnAppointment =

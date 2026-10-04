@@ -8,7 +8,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /** What {@code POST /roster/generate} reads to seed a month - see V58's own comment. */
@@ -29,7 +28,7 @@ public class EmployeePatternEntity {
 
     private String updatedByUserId;
 
-    @UpdateTimestamp
+    @UtcUpdateTimestamp
     private LocalDateTime updatedAt;
 
     public String getEmployeeUserId() {

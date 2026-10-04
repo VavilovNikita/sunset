@@ -5,7 +5,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 
 /** A physical room pulled off sale for [fromDate, toDate] (inclusive), with a reason. Replaces the old Room-level Availability.blockedCount. */
@@ -28,7 +27,7 @@ public class RoomUnitBlockEntity {
     /** Nullable - a block created before this was tracked has no way to know who created it. */
     private String createdByUserId;
 
-    @CreationTimestamp
+    @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
     public String getId() {

@@ -5335,6 +5335,50 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
 
+  /orders/{id}/print-receipt:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: printOrderReceipt
+      tags: [Orders]
+      summary: Reprint a paid order's guest receipt
+      description: >
+        Requires role `CASHIER` or above - the same floor as `POST /orders/{id}/close`, whose
+        receipt this repeats. Regenerates the guest receipt from the order, its lines and its
+        `Payment` (the room and guest for a room charge), titled "GUEST RECEIPT - COPY" so it
+        can't be mistaken for the original, and prints it to the active `CASHIER` printer.
+        Delivery is attempted before responding, like the pre-bill - the person asked for this
+        printout and is waiting for it. Creates a `GUEST_RECEIPT` `PrintJob`; changes nothing
+        about the order or its payment, and is not audited (the print job is the record). No-op
+        (still returns 201, `attempted: false`) if there's no active `CASHIER` printer.
+      responses:
+        "201":
+          description: Receipt copy print attempted (or skipped - see `attempted`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrintAttemptResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Order not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The order isn't `PAID`, so it has no receipt to reprint.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /orders/{id}/cancel:
     parameters:
       - name: id

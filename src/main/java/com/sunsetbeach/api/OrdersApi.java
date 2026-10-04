@@ -434,6 +434,60 @@ public interface OrdersApi {
 
 
     /**
+     * POST /orders/{id}/print-receipt : Reprint a paid order&#39;s guest receipt
+     * Requires role &#x60;CASHIER&#x60; or above - the same floor as &#x60;POST /orders/{id}/close&#x60;, whose receipt this repeats. Regenerates the guest receipt from the order, its lines and its &#x60;Payment&#x60; (the room and guest for a room charge), titled \&quot;GUEST RECEIPT - COPY\&quot; so it can&#39;t be mistaken for the original, and prints it to the active &#x60;CASHIER&#x60; printer. Delivery is attempted before responding, like the pre-bill - the person asked for this printout and is waiting for it. Creates a &#x60;GUEST_RECEIPT&#x60; &#x60;PrintJob&#x60;; changes nothing about the order or its payment, and is not audited (the print job is the record). No-op (still returns 201, &#x60;attempted: false&#x60;) if there&#39;s no active &#x60;CASHIER&#x60; printer. 
+     *
+     * @param id  (required)
+     * @return Receipt copy print attempted (or skipped - see &#x60;attempted&#x60;). (status code 201)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or Order not found. (status code 404)
+     *         or The order isn&#39;t &#x60;PAID&#x60;, so it has no receipt to reprint. (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/orders/{id}/print-receipt",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<PrintAttemptResult> printOrderReceipt(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"attempted\" : true, \"job\" : { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"dismissNote\" : \"dismissNote\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"dismissedByUserId\" : \"dismissedByUserId\", \"dismissedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * PATCH /orders/{id} : Update an order&#39;s note/table, or send it (OPEN -&gt; SENT)
      * Requires role &#x60;WAITER&#x60; or above.
      *

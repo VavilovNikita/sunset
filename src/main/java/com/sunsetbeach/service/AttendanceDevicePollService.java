@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.attendance.AttendanceDeviceException;
+import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.attendance.RawAttendancePunch;
 import com.sunsetbeach.attendance.TerminalPollResult;
 import com.sunsetbeach.attendance.ZkTerminalClient;
@@ -8,6 +9,7 @@ import com.sunsetbeach.entity.AttendanceDeviceEntity;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.repository.AttendanceDeviceRepository;
 import com.sunsetbeach.repository.AttendancePunchRepository;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -105,13 +107,16 @@ public class AttendanceDevicePollService {
     private final AttendanceService attendanceService;
     private final ZkTerminalClient zkTerminalClient;
     private final Duration silenceWarningThreshold;
+    private final Clock clock;
 
     public AttendanceDevicePollService(
             AttendanceDeviceRepository attendanceDeviceRepository,
             AttendancePunchRepository attendancePunchRepository,
             AttendanceService attendanceService,
             ZkTerminalClient zkTerminalClient,
-            @Value("${app.attendance.device-silence-warning-hours:24}") long silenceWarningHours) {
+            @Value("${app.attendance.device-silence-warning-hours:24}") long silenceWarningHours,
+            Clock clock) {
+        this.clock = clock;
         this.attendanceDeviceRepository = attendanceDeviceRepository;
         this.attendancePunchRepository = attendancePunchRepository;
         this.attendanceService = attendanceService;
@@ -210,7 +215,7 @@ public class AttendanceDevicePollService {
 
     @Transactional
     void markSeen(AttendanceDeviceEntity device, Integer recordSize, Boolean windowedReadUnsupported) {
-        device.setLastSeenAt(LocalDateTime.now());
+        device.setLastSeenAt(TimestampFormat.nowUtc(clock));
         if (recordSize != null) {
             device.setAttendanceRecordSize(recordSize);
         }
@@ -235,7 +240,7 @@ public class AttendanceDevicePollService {
         if (lastSeen == null) {
             return;
         }
-        Duration silence = Duration.between(lastSeen, LocalDateTime.now());
+        Duration silence = Duration.between(lastSeen, TimestampFormat.nowUtc(clock));
         if (silence.compareTo(silenceWarningThreshold) >= 0) {
             log.warn(
                     "Device {} ({}) has not been reached in {} hours - a silence this long is indistinguishable, in the attendance data "

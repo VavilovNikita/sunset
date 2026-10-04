@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.entity.BookingSource;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.model.AuditAction;
@@ -8,6 +9,7 @@ import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.RoomRepository;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -83,6 +85,7 @@ public class BookingExpiryService {
     private final EmailService emailService;
     private final AuditLogService auditLogService;
     private final int expiryBusinessDays;
+    private final Clock clock;
 
     public BookingExpiryService(
             BookingRepository bookingRepository,
@@ -95,7 +98,9 @@ public class BookingExpiryService {
             // that a genuine guest isn't punished for the hotel being closed, short enough that a
             // flood of fake NEW bookings self-heals within a couple of working days instead of
             // holding inventory for months.
-            @Value("${app.booking.new-booking-expiry-business-days:2}") int expiryBusinessDays) {
+            @Value("${app.booking.new-booking-expiry-business-days:2}") int expiryBusinessDays,
+            Clock clock) {
+        this.clock = clock;
         this.bookingRepository = bookingRepository;
         this.roomRepository = roomRepository;
         this.emailService = emailService;
@@ -117,7 +122,8 @@ public class BookingExpiryService {
             return;
         }
 
-        LocalDate today = LocalDate.now();
+        // createdAt is UTC, so "today" is too - both sides of the business-day count in one zone.
+        LocalDate today = TimestampFormat.nowUtc(clock).toLocalDate();
         List<BookingEntity> toRemind = new ArrayList<>();
         Map<String, RoomEntity> roomsByRoomId = new HashMap<>();
 

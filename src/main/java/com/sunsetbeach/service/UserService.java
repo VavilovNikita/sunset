@@ -20,6 +20,7 @@ import com.sunsetbeach.model.UserUpdateResult;
 import com.sunsetbeach.model.UserRoleUpdateInput;
 import com.sunsetbeach.repository.SpaAppointmentRepository;
 import com.sunsetbeach.repository.UserRepository;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -38,13 +39,16 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
     private final SpaAppointmentRepository spaAppointmentRepository;
+    private final Clock clock;
 
     public UserService(
             UserRepository userRepository,
             UserMapper userMapper,
             PasswordEncoder passwordEncoder,
             AuditLogService auditLogService,
-            SpaAppointmentRepository spaAppointmentRepository) {
+            SpaAppointmentRepository spaAppointmentRepository,
+            Clock clock) {
+        this.clock = clock;
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
@@ -405,7 +409,7 @@ public class UserService {
      */
     private String futureBookedAppointmentWarning(String therapistUserId) {
         List<SpaAppointmentEntity> future = spaAppointmentRepository.findByTherapistUserIdAndStatusAndDateGreaterThanEqual(
-                therapistUserId, SpaAppointmentStatus.BOOKED, LocalDate.now());
+                therapistUserId, SpaAppointmentStatus.BOOKED, LocalDate.now(clock));
         if (future.isEmpty()) {
             return null;
         }

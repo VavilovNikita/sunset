@@ -82,4 +82,9 @@ public class OrderController implements OrdersApi {
     public ResponseEntity<PrintAttemptResult> printOrderPrebill(String id) {
         return ResponseEntity.status(HttpStatus.CREATED).body(orderService.printPrebill(id));
     }
+
+    @Override
+    public ResponseEntity<PrintAttemptResult> printOrderReceipt(String id) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(orderService.printReceipt(id));
+    }
 }
