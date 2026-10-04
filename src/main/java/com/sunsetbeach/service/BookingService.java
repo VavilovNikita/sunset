@@ -949,6 +949,18 @@ public class BookingService {
     }
 
     /**
+     * {@link #computeOutstandingBalance} as it would be if the stay were priced at {@code
+     * stayPrice} instead - the check-out preview's "nights stayed only" choice. Same breakdown, one
+     * input swapped, so the dialog never does folio arithmetic of its own.
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal computeOutstandingBalanceWithStayPrice(String bookingId, BigDecimal stayPrice) {
+        FolioBreakdown b = computeFolioBreakdown(bookingId);
+        return new FolioBreakdown(stayPrice, b.earlyDepartureFee(), b.roomChargesGross(), b.roomChargeCount(), b.paid(), b.status())
+                .balanceDue();
+    }
+
+    /**
      * The one place a booking's folio is computed. Never stored.
      *
      * <p>Charged: the room ({@code totalPrice} + {@code earlyDepartureFee}; nothing for a

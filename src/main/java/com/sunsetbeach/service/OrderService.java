@@ -589,6 +589,11 @@ public class OrderService {
             throw new ConflictException("This order was already closed by another request.");
         }
 
+        // Paying is the last moment anything can reach the kitchen/bar: a line nobody pressed
+        // "Send" for would otherwise be charged and never made. Same helper as the Send button,
+        // so only still-unsent lines go out and lines already on paper are never repeated.
+        dispatchUnsentTickets(order);
+
         order.setStatus(OrderStatus.PAID);
         OrderEntity saved = orderRepository.saveAndFlush(order);
         List<OrderItemEntity> items = orderItemRepository.findByOrderId(id);

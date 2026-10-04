@@ -5313,6 +5313,9 @@ paths:
         `Shift` (409 otherwise). Creates a `Payment` row for `Order.total`/`method` (and
         `bookingId` when `method` is `ROOM_CHARGE`) tied to that shift, then sets the order's
         status to `PAID`. The amount charged is always `Order.total` - see `CloseOrderInput`.
+        Any line still unsent (`sentAt: null`) is sent to the kitchen/bar first, exactly as
+        the `OPEN -> SENT` transition does - paying is the last chance for an item nobody
+        pressed "Send" for to reach the station; lines already sent are never reprinted.
       requestBody:
         required: true
         content:
@@ -10195,9 +10198,10 @@ components:
           description: >
             Human-readable one-liner, e.g. "Kitchen ticket — Order #ab12cd34" or
             "Bar ticket — Order #ab12cd34" or, for a
-            `GUEST_RECEIPT`, "Guest receipt — Order #ab12cd34 (CARD)" /
-            "Guest receipt — Order #ab12cd34 (ROOM_CHARGE — Jane Doe)" - enough to tell two
-            receipts on the same order apart at a glance. Never carries a money amount.
+            `GUEST_RECEIPT`, "Guest receipt — Order #ab12cd34 (Card)" /
+            "Guest receipt — Order #ab12cd34 (Room charge — Jane Doe)" - the payment method in
+            words, never its enum value - enough to tell two receipts on the same order apart at
+            a glance. Never carries a money amount.
         status:
           $ref: "#/components/schemas/PrintJobStatus"
         attempts:
@@ -10373,7 +10377,7 @@ components:
         `reason`) when the stay can't be shortened through a schedule change - most often a
         relocated stay whose last room starts after today; release those nights with the
         relocation tools first.
-      required: [early, shortenable, reason, shortenedCheckOut, nightsReleased, unusedNightsAmount, currentRoomTotal, shortenedRoomTotal, outstandingBalance]
+      required: [early, shortenable, reason, shortenedCheckOut, nightsReleased, unusedNightsAmount, currentRoomTotal, shortenedRoomTotal, outstandingBalance, shortenedOutstandingBalance]
       properties:
         early:
           type: boolean
@@ -10405,6 +10409,13 @@ components:
         outstandingBalance:
           type: string
           description: Decimal(10,2) as a string - `BookingFolio.balanceDue` now, before any change.
+        shortenedOutstandingBalance:
+          type: string
+          description: >
+            Decimal(10,2) as a string - `BookingFolio.balanceDue` as it would be after shortening
+            without charging the unused nights (folio payments, POS charges and `PAID` applied
+            the same way). Charging them keeps the room total, so that choice's balance is
+            `outstandingBalance`. Equals `outstandingBalance` unless `shortenable`.
 
     CheckOutResult:
       type: object

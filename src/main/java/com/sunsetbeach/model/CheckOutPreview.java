@@ -41,6 +41,8 @@ public class CheckOutPreview {
 
   private String outstandingBalance;
 
+  private String shortenedOutstandingBalance;
+
   public CheckOutPreview() {
     super();
   }
@@ -48,7 +50,7 @@ public class CheckOutPreview {
   /**
    * Constructor with only required parameters
    */
-  public CheckOutPreview(Boolean early, Boolean shortenable, String reason, LocalDate shortenedCheckOut, Integer nightsReleased, String unusedNightsAmount, String currentRoomTotal, String shortenedRoomTotal, String outstandingBalance) {
+  public CheckOutPreview(Boolean early, Boolean shortenable, String reason, LocalDate shortenedCheckOut, Integer nightsReleased, String unusedNightsAmount, String currentRoomTotal, String shortenedRoomTotal, String outstandingBalance, String shortenedOutstandingBalance) {
     this.early = early;
     this.shortenable = shortenable;
     this.reason = JsonNullable.of(reason);
@@ -58,6 +60,7 @@ public class CheckOutPreview {
     this.currentRoomTotal = currentRoomTotal;
     this.shortenedRoomTotal = shortenedRoomTotal;
     this.outstandingBalance = outstandingBalance;
+    this.shortenedOutstandingBalance = shortenedOutstandingBalance;
   }
 
   public CheckOutPreview early(Boolean early) {
@@ -231,6 +234,25 @@ public class CheckOutPreview {
     this.outstandingBalance = outstandingBalance;
   }
 
+  public CheckOutPreview shortenedOutstandingBalance(String shortenedOutstandingBalance) {
+    this.shortenedOutstandingBalance = shortenedOutstandingBalance;
+    return this;
+  }
+
+  /**
+   * Decimal(10,2) as a string - `BookingFolio.balanceDue` as it would be after shortening without charging the unused nights (folio payments, POS charges and `PAID` applied the same way). Charging them keeps the room total, so that choice's balance is `outstandingBalance`. Equals `outstandingBalance` unless `shortenable`. 
+   * @return shortenedOutstandingBalance
+   */
+  @NotNull 
+  @JsonProperty("shortenedOutstandingBalance")
+  public String getShortenedOutstandingBalance() {
+    return shortenedOutstandingBalance;
+  }
+
+  public void setShortenedOutstandingBalance(String shortenedOutstandingBalance) {
+    this.shortenedOutstandingBalance = shortenedOutstandingBalance;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -248,12 +270,13 @@ public class CheckOutPreview {
         Objects.equals(this.unusedNightsAmount, checkOutPreview.unusedNightsAmount) &&
         Objects.equals(this.currentRoomTotal, checkOutPreview.currentRoomTotal) &&
         Objects.equals(this.shortenedRoomTotal, checkOutPreview.shortenedRoomTotal) &&
-        Objects.equals(this.outstandingBalance, checkOutPreview.outstandingBalance);
+        Objects.equals(this.outstandingBalance, checkOutPreview.outstandingBalance) &&
+        Objects.equals(this.shortenedOutstandingBalance, checkOutPreview.shortenedOutstandingBalance);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(early, shortenable, reason, shortenedCheckOut, nightsReleased, unusedNightsAmount, currentRoomTotal, shortenedRoomTotal, outstandingBalance);
+    return Objects.hash(early, shortenable, reason, shortenedCheckOut, nightsReleased, unusedNightsAmount, currentRoomTotal, shortenedRoomTotal, outstandingBalance, shortenedOutstandingBalance);
   }
 
   @Override
@@ -269,6 +292,7 @@ public class CheckOutPreview {
     sb.append("    currentRoomTotal: ").append(toIndentedString(currentRoomTotal)).append("\n");
     sb.append("    shortenedRoomTotal: ").append(toIndentedString(shortenedRoomTotal)).append("\n");
     sb.append("    outstandingBalance: ").append(toIndentedString(outstandingBalance)).append("\n");
+    sb.append("    shortenedOutstandingBalance: ").append(toIndentedString(shortenedOutstandingBalance)).append("\n");
     sb.append("}");
     return sb.toString();
   }

@@ -208,9 +208,19 @@ public class OrderPrintingService {
      */
     private static String describePayment(PaymentEntity payment, BookingEntity booking) {
         if (payment.getMethod() == PaymentMethod.ROOM_CHARGE && booking != null) {
-            return "ROOM_CHARGE — " + booking.getGuestName();
+            return paymentMethodLabel(payment.getMethod()) + " — " + booking.getGuestName();
         }
-        return payment.getMethod().getValue();
+        return paymentMethodLabel(payment.getMethod());
+    }
+
+    /** What staff read in the print queue and on paper - never the enum value. */
+    private static String paymentMethodLabel(PaymentMethod method) {
+        return switch (method) {
+            case CASH -> "Cash";
+            case CARD -> "Card";
+            case ROOM_CHARGE -> "Room charge";
+            case OTHER -> "Other";
+        };
     }
 
     private Map<String, MenuItemEntity> resolveMenuItems(List<OrderItemEntity> items) {
@@ -288,7 +298,7 @@ public class OrderPrintingService {
                 b.line("Guest: " + booking.getGuestName());
                 b.line("Booking #" + shortId(booking.getId()));
             } else {
-                b.line("Payment: " + payment.getMethod().getValue());
+                b.line("Payment: " + paymentMethodLabel(payment.getMethod()));
             }
         }
         return b.cutAndBuild();

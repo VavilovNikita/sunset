@@ -97,6 +97,9 @@ class EarlyCheckOutTests extends AbstractIntegrationTest {
         assertThat(preview.getShortenedCheckOut().get()).isEqualTo(TODAY.plusDays(1));
         assertThat(preview.getNightsReleased()).isEqualTo(1);
         assertThat(new BigDecimal(preview.getUnusedNightsAmount())).isEqualByComparingTo(oneNight);
+        // The dialog shows one balance per choice, both from the server: full stay vs. nights stayed.
+        assertThat(new BigDecimal(preview.getOutstandingBalance())).isEqualByComparingTo(fullPrice);
+        assertThat(new BigDecimal(preview.getShortenedOutstandingBalance())).isEqualByComparingTo(oneNight);
 
         CheckOutResult result = occupancyService.checkOut(booking.getId(), new CheckOutInput().shortenStay(true).chargeUnusedNights(false));
 

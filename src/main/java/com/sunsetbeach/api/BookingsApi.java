@@ -876,7 +876,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"shortenedRoomTotal\" : \"shortenedRoomTotal\", \"reason\" : \"reason\", \"shortenedCheckOut\" : \"2000-01-23\", \"shortenable\" : true, \"currentRoomTotal\" : \"currentRoomTotal\", \"unusedNightsAmount\" : \"unusedNightsAmount\", \"nightsReleased\" : 0, \"early\" : true, \"outstandingBalance\" : \"outstandingBalance\" }";
+                    String exampleString = "{ \"shortenedRoomTotal\" : \"shortenedRoomTotal\", \"shortenedOutstandingBalance\" : \"shortenedOutstandingBalance\", \"reason\" : \"reason\", \"shortenedCheckOut\" : \"2000-01-23\", \"shortenable\" : true, \"currentRoomTotal\" : \"currentRoomTotal\", \"unusedNightsAmount\" : \"unusedNightsAmount\", \"nightsReleased\" : 0, \"early\" : true, \"outstandingBalance\" : \"outstandingBalance\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

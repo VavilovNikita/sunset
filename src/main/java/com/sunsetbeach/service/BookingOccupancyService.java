@@ -233,14 +233,16 @@ public class BookingOccupancyService {
         String outstanding = PriceFormat.asDecimalString(bookingService.computeOutstandingBalance(bookingId));
         EarlyDeparture plan = planEarlyDeparture(booking);
         if (plan == null) {
-            return new CheckOutPreview(false, false, null, null, 0, "0.00", currentTotal, currentTotal, outstanding);
+            return new CheckOutPreview(false, false, null, null, 0, "0.00", currentTotal, currentTotal, outstanding, outstanding);
         }
         int nightsReleased = (int) ChronoUnit.DAYS.between(plan.shortenedCheckOut(), booking.getCheckOut());
         if (!plan.quote().available()) {
             return new CheckOutPreview(
-                    true, false, plan.quote().reason(), plan.shortenedCheckOut(), nightsReleased, "0.00", currentTotal, currentTotal, outstanding);
+                    true, false, plan.quote().reason(), plan.shortenedCheckOut(), nightsReleased, "0.00", currentTotal, currentTotal, outstanding,
+                    outstanding);
         }
         BigDecimal unused = booking.getTotalPrice().subtract(plan.quote().totalPrice());
+        BigDecimal shortenedOutstanding = bookingService.computeOutstandingBalanceWithStayPrice(bookingId, plan.quote().totalPrice());
         return new CheckOutPreview(
                 true,
                 true,
@@ -250,7 +252,8 @@ public class BookingOccupancyService {
                 PriceFormat.asDecimalString(unused),
                 currentTotal,
                 PriceFormat.asDecimalString(currentRoom.subtract(unused)),
-                outstanding);
+                outstanding,
+                PriceFormat.asDecimalString(shortenedOutstanding));
     }
 
     /**

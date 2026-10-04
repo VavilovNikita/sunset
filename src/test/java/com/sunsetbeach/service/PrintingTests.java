@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
+import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PrintJobEntity;
 import com.sunsetbeach.entity.PrinterEntity;
 import com.sunsetbeach.entity.RoomEntity;
@@ -40,6 +41,7 @@ import com.sunsetbeach.model.ShiftOpenInput;
 import com.sunsetbeach.repository.AuditLogRepository;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
+import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.PrintJobRepository;
 import com.sunsetbeach.repository.PrinterRepository;
 import com.sunsetbeach.repository.RoomRepository;
@@ -110,6 +112,9 @@ class PrintingTests extends AbstractIntegrationTest {
 
     @Autowired
     private MenuItemRepository menuItemRepository;
+
+    @Autowired
+    private OrderItemRepository orderItemRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -312,6 +317,86 @@ class PrintingTests extends AbstractIntegrationTest {
                     jobs.stream().filter(j -> j.getPrinterId().equals(kitchenPrinter.getId())).findFirst().orElseThrow();
             assertThat(decode(barJob)).contains("1x Mojito").doesNotContain("Caesar Salad");
             assertThat(decode(kitchenJob)).contains("1x Caesar Salad").doesNotContain("Mojito");
+        }
+    }
+
+    // --- Paying sends whatever nobody pressed "Send" for ---
+
+    @Test
+    void closeWithoutSend_queuesTheKitchenTicketAtPayment_roomChargeToo() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+            persistPrinter(PrinterDepartment.CASHIER, fake.port());
+            BookingEntity booking = persistConfirmedBooking();
+            shiftService.open(cashier.getId(), new ShiftOpenInput());
+
+            // Exactly as found: add an item, go straight to payment, no Send.
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 2)));
+            Order paid = orderService.close(
+                    order.getId(), new CloseOrderInput(PaymentMethod.ROOM_CHARGE).bookingId(booking.getId()), cashier.getId());
+
+            List<PrintJobEntity> tickets = jobsFor(order.getId()).stream()
+                    .filter(j -> j.getDocumentType() == PrintDocumentType.KITCHEN_TICKET)
+                    .toList();
+            assertThat(tickets).hasSize(1);
+            assertThat(decode(tickets.get(0))).contains("2x Caesar Salad");
+            assertThat(orderItemRepository.findByOrderId(paid.getId())).allSatisfy(i -> assertThat(i.getSentAt()).isNotNull());
+        }
+    }
+
+    @Test
+    void closeAfterPartialSend_sendsOnlyTheUnsentLines_neverRepeatsWhatAlreadyWentOut() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+            persistPrinter(PrinterDepartment.BAR, fake.port());
+            shiftService.open(cashier.getId(), new ShiftOpenInput());
+
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 3)));
+            sendOrder(order.getId()); // the 3 salads are on paper
+            // An add on a SENT order dispatches itself, so put the drink line back into the
+            // "never went out" state directly - the mixed state close has to handle.
+            Order withDrink = orderService.addItems(order.getId(), List.of(new OrderItemInput(barItem.getId(), 1)));
+            String drinkLineId = withDrink.getItems().stream()
+                    .filter(i -> i.getMenuItemId().equals(barItem.getId()))
+                    .findFirst()
+                    .orElseThrow()
+                    .getId();
+            OrderItemEntity drinkLine = orderItemRepository.findById(drinkLineId).orElseThrow();
+            drinkLine.setSentAt(null);
+            orderItemRepository.saveAndFlush(drinkLine);
+            printJobRepository.deleteAll(jobsFor(order.getId()).stream()
+                    .filter(j -> j.getDocumentType() == PrintDocumentType.BAR_TICKET)
+                    .toList());
+
+            orderService.close(order.getId(), new CloseOrderInput(PaymentMethod.CASH), cashier.getId());
+
+            List<PrintJobEntity> jobs = jobsFor(order.getId());
+            List<PrintJobEntity> kitchen =
+                    jobs.stream().filter(j -> j.getDocumentType() == PrintDocumentType.KITCHEN_TICKET).toList();
+            List<PrintJobEntity> bar =
+                    jobs.stream().filter(j -> j.getDocumentType() == PrintDocumentType.BAR_TICKET).toList();
+            assertThat(kitchen).hasSize(1); // the original send only - no duplicate at payment
+            assertThat(bar).hasSize(1);
+            assertThat(decode(bar.get(0))).contains("1x Mojito").doesNotContain("Caesar Salad");
+        }
+    }
+
+    @Test
+    void closeAfterFullSend_queuesNoFurtherTickets() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.KITCHEN, fake.port());
+            shiftService.open(cashier.getId(), new ShiftOpenInput());
+
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
+            sendOrder(order.getId());
+            orderService.close(order.getId(), new CloseOrderInput(PaymentMethod.CARD), cashier.getId());
+
+            assertThat(jobsFor(order.getId()))
+                    .filteredOn(j -> j.getDocumentType() == PrintDocumentType.KITCHEN_TICKET)
+                    .hasSize(1);
         }
     }
 
@@ -622,7 +707,7 @@ class PrintingTests extends AbstractIntegrationTest {
                     .filter(j -> j.getDocumentType() == PrintDocumentType.GUEST_RECEIPT)
                     .findFirst()
                     .orElseThrow();
-            assertThat(guestReceipt.getSummary()).contains("(CASH)");
+            assertThat(guestReceipt.getSummary()).contains("(Cash)");
         }
     }
 
@@ -660,7 +745,7 @@ class PrintingTests extends AbstractIntegrationTest {
             PrintJob receipt = printerService.listPrintJobs(null, PrintDocumentType.GUEST_RECEIPT, false, Role.MANAGER).stream()
                     .findFirst()
                     .orElseThrow();
-            assertThat(receipt.getSummary()).contains("ROOM_CHARGE").contains("Jane Doe");
+            assertThat(receipt.getSummary()).contains("Room charge").doesNotContain("ROOM_CHARGE").contains("Jane Doe");
             assertThat(receipt.getSummary()).doesNotMatch(".*\\d+\\.\\d{2}.*"); // no amount, just method + guest
         }
     }
@@ -684,7 +769,7 @@ class PrintingTests extends AbstractIntegrationTest {
             assertThat(copy.getDocumentType()).isEqualTo(PrintDocumentType.GUEST_RECEIPT);
             assertThat(copy.getSummary()).startsWith("Guest receipt copy");
             String text = decode(copy);
-            assertThat(text).contains("GUEST RECEIPT - COPY").contains("2x Caesar Salad").contains("200.00").contains("Payment: CASH");
+            assertThat(text).contains("GUEST RECEIPT - COPY").contains("2x Caesar Salad").contains("200.00").contains("Payment: Cash");
         }
     }
 
@@ -703,6 +788,30 @@ class PrintingTests extends AbstractIntegrationTest {
     }
 
     // --- helpers ---
+
+    private BookingEntity persistConfirmedBooking() {
+        RoomEntity room = new RoomEntity();
+        room.setName("Ocean View Suite");
+        room.setDescription("A room used only by tests");
+        room.setCapacity(2);
+        room.setBasePrice(new BigDecimal("1000.00"));
+        room = roomRepository.saveAndFlush(room);
+
+        BookingEntity booking = new BookingEntity();
+        booking.setChannel(BookingChannel.DIRECT);
+        booking.setRoomId(room.getId());
+        booking.setGuestName("Jane Doe");
+        booking.setGuestEmail("jane@example.com");
+        booking.setGuestPhone("+66800000000");
+        // Dates are irrelevant to a room charge; fixed so the test never reads the wall clock.
+        booking.setCheckIn(LocalDate.of(2030, 1, 10));
+        booking.setCheckOut(LocalDate.of(2030, 1, 11));
+        booking.setTotalPrice(new BigDecimal("1000.00"));
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking = bookingRepository.saveAndFlush(booking);
+        entityManager.clear(); // see closeShift_printsZReport_... for why
+        return booking;
+    }
 
     private MenuItemEntity persistMenuItem(String name, MenuDepartment department, String price) {
         MenuItemEntity item = new MenuItemEntity();

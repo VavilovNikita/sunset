@@ -149,7 +149,7 @@ public interface OrdersApi {
 
     /**
      * POST /orders/{id}/close : Close an order with a payment
-     * Requires role &#x60;CASHIER&#x60; or above, and requires the calling user to have an &#x60;OPEN&#x60; &#x60;Shift&#x60; (409 otherwise). Creates a &#x60;Payment&#x60; row for &#x60;Order.total&#x60;/&#x60;method&#x60; (and &#x60;bookingId&#x60; when &#x60;method&#x60; is &#x60;ROOM_CHARGE&#x60;) tied to that shift, then sets the order&#39;s status to &#x60;PAID&#x60;. The amount charged is always &#x60;Order.total&#x60; - see &#x60;CloseOrderInput&#x60;. 
+     * Requires role &#x60;CASHIER&#x60; or above, and requires the calling user to have an &#x60;OPEN&#x60; &#x60;Shift&#x60; (409 otherwise). Creates a &#x60;Payment&#x60; row for &#x60;Order.total&#x60;/&#x60;method&#x60; (and &#x60;bookingId&#x60; when &#x60;method&#x60; is &#x60;ROOM_CHARGE&#x60;) tied to that shift, then sets the order&#39;s status to &#x60;PAID&#x60;. The amount charged is always &#x60;Order.total&#x60; - see &#x60;CloseOrderInput&#x60;. Any line still unsent (&#x60;sentAt: null&#x60;) is sent to the kitchen/bar first, exactly as the &#x60;OPEN -&gt; SENT&#x60; transition does - paying is the last chance for an item nobody pressed \&quot;Send\&quot; for to reach the station; lines already sent are never reprinted. 
      *
      * @param id  (required)
      * @param closeOrderInput  (required)
