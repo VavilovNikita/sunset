@@ -36,7 +36,7 @@ public class GuestEmailLogEntity {
     private String subject;
 
     // Hotel-local (Asia/Bangkok) wall-clock, set by LifecycleEmailService from the shared Clock -
-    // deliberately not @CreationTimestamp. The win-back window compares this against a
+    // deliberately not @UtcCreationTimestamp. The win-back window compares this against a
     // Clock-derived cutoff, and the two must come from the same time source (see CLAUDE.md,
     // "Clock and time zones"). For the same reason it's zoned with the Clock's zone on the way
     // out (GuestMapper), never TimestampFormat.toUtc.

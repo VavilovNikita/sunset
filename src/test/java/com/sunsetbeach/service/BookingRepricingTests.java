@@ -25,6 +25,7 @@ import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,10 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional
 class BookingRepricingTests extends AbstractIntegrationTest {
+
+    // "Today"/"now" as the code under test sees it - the hotel clock, not the JVM default zone.
+    @Autowired
+    private Clock clock;
 
     @Autowired
     private BookingService bookingService;
@@ -126,7 +131,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     @Test
     void publicBooking_getsAFullNightlySnapshotAtCreation_beforeAnyRoomUnitIsChosen() {
         RoomEntity room = createRoom(new BigDecimal("1500.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(350);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(350);
         LocalDate checkOut = checkIn.plusDays(5);
 
         Booking booking = createBooking(room.getId(), checkIn, checkOut);
@@ -143,7 +148,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     @Test
     void staffBooking_getsAFullNightlySnapshotAtCreation_withOrWithoutARoomUnitChosen() {
         RoomEntity room = createRoom(new BigDecimal("1800.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(355);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(355);
         LocalDate checkOut = checkIn.plusDays(3);
 
         Booking unassigned = createStaffBooking(room.getId(), checkIn, checkOut);
@@ -171,7 +176,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
         // through the staff creation path - the fix must not be an accident of one path's code
         // happening to snapshot correctly while the other doesn't.
         RoomEntity room = createRoom(new BigDecimal("1000.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(360);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(360);
         LocalDate checkOut = checkIn.plusDays(6); // 6 nights @ 1000 = 6000
         Booking booking = createStaffBooking(room.getId(), checkIn, checkOut);
         assertThat(new BigDecimal(booking.getTotalPrice())).isEqualByComparingTo("6000.00");
@@ -196,7 +201,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     @Test
     void extendingAStay_afterARateHike_onlyPricesTheNewNightAtTheNewRate() {
         RoomEntity room = createRoom(new BigDecimal("1000.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(300);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(300);
         LocalDate checkOut = checkIn.plusDays(6); // 6 nights @ 1000 = 6000, matching the reported bug's shape
         Booking booking = createBooking(room.getId(), checkIn, checkOut);
         assertThat(new BigDecimal(booking.getTotalPrice())).isEqualByComparingTo("6000.00");
@@ -228,7 +233,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     @Test
     void extendingEarlierArrival_afterARateHike_onlyPricesTheNewNightAtTheNewRate() {
         RoomEntity room = createRoom(new BigDecimal("1000.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(305);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(305);
         LocalDate checkOut = checkIn.plusDays(3);
         Booking booking = createBooking(room.getId(), checkIn, checkOut);
 
@@ -250,7 +255,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     @Test
     void shrinkingAStay_afterARateHike_onlyDropsTheRemovedNights_neverReprices() {
         RoomEntity room = createRoom(new BigDecimal("1000.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(310);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(310);
         LocalDate checkOut = checkIn.plusDays(6); // 6 nights @ 1000 = 6000
         Booking booking = createBooking(room.getId(), checkIn, checkOut);
 
@@ -274,7 +279,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     void relocating_afterARateHikeInTheOldRoom_leavesTheRemainingOldNightsAtTheirOriginalPrice() {
         RoomEntity oldRoom = createRoom(new BigDecimal("1000.00"));
         RoomEntity newRoom = createRoom(new BigDecimal("2000.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(315);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(315);
         LocalDate checkOut = checkIn.plusDays(4); // 4 nights @ 1000 = 4000
         LocalDate splitDate = checkIn.plusDays(2); // 2 nights stay in oldRoom, 2 nights move to newRoom
         Booking booking = createBooking(oldRoom.getId(), checkIn, checkOut);
@@ -306,7 +311,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     void quoteRelocation_afterARateHikeInTheOldRoom_previewsTheSameUnrepricedTotal() {
         RoomEntity oldRoom = createRoom(new BigDecimal("1000.00"));
         RoomEntity newRoom = createRoom(new BigDecimal("2000.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(320);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(320);
         LocalDate checkOut = checkIn.plusDays(4);
         LocalDate splitDate = checkIn.plusDays(2);
         Booking booking = createBooking(oldRoom.getId(), checkIn, checkOut);
@@ -340,7 +345,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     void undoRelocation_restoresEachNightsOriginalPrice_ignoringRateChangesSinceTheRelocation() {
         RoomEntity oldRoom = createRoom(new BigDecimal("1000.00"));
         RoomEntity newRoom = createRoom(new BigDecimal("2000.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(325);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(325);
         LocalDate checkOut = checkIn.plusDays(4);
         LocalDate splitDate = checkIn.plusDays(2);
         Booking booking = createBooking(oldRoom.getId(), checkIn, checkOut);
@@ -374,7 +379,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
         // the specific nights actually missing their history.
         RoomEntity oldRoom = createRoom(new BigDecimal("1000.00"));
         RoomEntity newRoom = createRoom(new BigDecimal("2000.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(340);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(340);
         LocalDate checkOut = checkIn.plusDays(4);
         LocalDate splitDate = checkIn.plusDays(2);
         Booking booking = createBooking(oldRoom.getId(), checkIn, checkOut);
@@ -407,7 +412,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     @Test
     void reprice_movesTheWholeSegmentToTheCurrentRate_whenItIsEntirelyInTheFuture() {
         RoomEntity room = createRoom(new BigDecimal("1000.00"));
-        LocalDate checkIn = LocalDate.now().plusDays(330);
+        LocalDate checkIn = LocalDate.now(clock).plusDays(330);
         LocalDate checkOut = checkIn.plusDays(3); // 3000
         Booking booking = createBooking(room.getId(), checkIn, checkOut);
         bumpBasePrice(room, new BigDecimal("4000.00"));
@@ -432,7 +437,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
         // normal create flow never starts in, but a genuinely mid-stay booking always eventually
         // reaches.
         RoomEntity room = createRoom(new BigDecimal("1000.00"));
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         LocalDate checkIn = today.minusDays(2);
         LocalDate checkOut = today.plusDays(3); // nights: -2, -1, 0(today), +1, +2 = 5 nights @ 1000 = 5000
 
@@ -482,7 +487,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
     @Test
     void reprice_onASegmentEntirelyInThePast_isANoOp() {
         RoomEntity room = createRoom(new BigDecimal("1000.00"));
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         LocalDate checkIn = today.minusDays(5);
         LocalDate checkOut = today.minusDays(1); // entirely in the past
 

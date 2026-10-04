@@ -50,6 +50,7 @@ class ToStringRedactsGuestPiiTests {
                 null,
                 null,
                 null,
+                null,
                 java.util.List.of(),
                 OffsetDateTime.now(),
                 OffsetDateTime.now());

@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -60,6 +61,7 @@ public class MaintenanceTaskService {
     private final ImageUploadValidator imageUploadValidator;
     private final AuditLogService auditLogService;
     private final Path uploadsRoot;
+    private final Clock clock;
 
     public MaintenanceTaskService(
             MaintenanceTaskRepository maintenanceTaskRepository,
@@ -70,7 +72,9 @@ public class MaintenanceTaskService {
             RoomUnitService roomUnitService,
             ImageUploadValidator imageUploadValidator,
             AuditLogService auditLogService,
-            @Value("${app.uploads.root}") String uploadsRoot) {
+            @Value("${app.uploads.root}") String uploadsRoot,
+            Clock clock) {
+        this.clock = clock;
         this.maintenanceTaskRepository = maintenanceTaskRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomRepository = roomRepository;
@@ -209,7 +213,7 @@ public class MaintenanceTaskService {
 
         task.setStatus(newStatus);
         if (newStatus == MaintenanceTaskStatus.DONE) {
-            task.setClosedAt(LocalDateTime.now());
+            task.setClosedAt(TimestampFormat.nowUtc(clock));
             liftBlock(task);
         }
         MaintenanceTaskEntity saved = maintenanceTaskRepository.saveAndFlush(task);
@@ -251,7 +255,7 @@ public class MaintenanceTaskService {
         }
 
         RoomUnitBlockEntity block = blockOpt.get();
-        LocalDate newToDate = LocalDate.now().minusDays(1);
+        LocalDate newToDate = LocalDate.now(clock).minusDays(1);
         if (newToDate.isBefore(block.getFromDate())) {
             roomUnitBlockRepository.delete(block);
             task.setBlockId(null);

@@ -20,6 +20,7 @@ import com.sunsetbeach.model.PrinterInput;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.PrintJobRepository;
 import com.sunsetbeach.repository.PrinterRepository;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -51,6 +52,7 @@ public class PrinterService {
     private final PrintJobMapper printJobMapper;
     private final PrintService printService;
     private final AuditLogService auditLogService;
+    private final Clock clock;
 
     public PrinterService(
             PrinterRepository printerRepository,
@@ -58,7 +60,9 @@ public class PrinterService {
             PrinterMapper printerMapper,
             PrintJobMapper printJobMapper,
             PrintService printService,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            Clock clock) {
+        this.clock = clock;
         this.printerRepository = printerRepository;
         this.printJobRepository = printJobRepository;
         this.printerMapper = printerMapper;
@@ -186,7 +190,7 @@ public class PrinterService {
             jobs.add(job);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = TimestampFormat.nowUtc(clock);
         List<PrintJob> dismissed = new ArrayList<>();
         for (PrintJobEntity job : jobs) {
             job.setDismissedAt(now);
@@ -261,13 +265,13 @@ public class PrinterService {
         return new ConflictException("Another printer is already active for department " + department.getValue());
     }
 
-    private static byte[] buildTestPagePayload(PrinterCodepage codepage) {
+    private byte[] buildTestPagePayload(PrinterCodepage codepage) {
         return new EscPosBuilder(codepage)
                 .center(true)
                 .bold(true)
                 .line("TEST PAGE")
                 .bold(false)
-                .line(TimestampFormat.readable(LocalDateTime.now()))
+                .line(TimestampFormat.readable(TimestampFormat.nowUtc(clock)))
                 .center(false)
                 .divider()
                 .line("If you can read this, the host, port, and codepage are configured correctly.")

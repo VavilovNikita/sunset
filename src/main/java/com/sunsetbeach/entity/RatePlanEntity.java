@@ -8,7 +8,6 @@ import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 
 @Entity
@@ -26,7 +25,7 @@ public class RatePlanEntity {
     @Column(precision = 10, scale = 2)
     private BigDecimal price;
 
-    @CreationTimestamp
+    @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
     public String getId() {

@@ -23,6 +23,7 @@ import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -121,6 +122,7 @@ public class BookingWriter {
     private final BookingSegmentNightlyRateRepository nightlyRateRepository;
     private final RatePlanRepository ratePlanRepository;
     private final OverstayRule overstayRule;
+    private final Clock clock;
 
     public BookingWriter(
             RoomRepository roomRepository,
@@ -130,7 +132,9 @@ public class BookingWriter {
             BookingSegmentRepository segmentRepository,
             BookingSegmentNightlyRateRepository nightlyRateRepository,
             RatePlanRepository ratePlanRepository,
-            OverstayRule overstayRule) {
+            OverstayRule overstayRule,
+            Clock clock) {
+        this.clock = clock;
         this.overstayRule = overstayRule;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
@@ -991,7 +995,7 @@ public class BookingWriter {
     }
 
     private RepricePreview previewReprice(BookingSegmentEntity segment, RoomEntity room) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         LocalDate repriceFrom = today.isAfter(segment.getCheckIn()) ? today : segment.getCheckIn();
         if (!repriceFrom.isBefore(segment.getCheckOut())) {
             return new RepricePreview(List.of(), Map.of(), segment.getTotalPrice(), segment.getTotalPrice());

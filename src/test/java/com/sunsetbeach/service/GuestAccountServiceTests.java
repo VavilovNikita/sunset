@@ -16,6 +16,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ForbiddenException;
 import com.sunsetbeach.error.UnauthorizedException;
 import com.sunsetbeach.model.BookingChannel;
+import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.GuestAccountRegisterInput;
 import com.sunsetbeach.model.GuestBookingView;
@@ -24,6 +25,7 @@ import com.sunsetbeach.repository.GuestAccountRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -45,6 +47,10 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional
 class GuestAccountServiceTests extends AbstractIntegrationTest {
+
+    // "Today"/"now" as the code under test sees it - the hotel clock, not the JVM default zone.
+    @Autowired
+    private Clock clock;
 
     @Autowired
     private GuestAccountService guestAccountService;
@@ -94,7 +100,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
         GuestAccountEntity account = guestAccountRepository.findByEmail(email).orElseThrow();
         assertThat(account.getEmailVerifiedAt()).isNull();
         assertThat(account.getEmailVerificationToken()).isNotBlank();
-        assertThat(account.getEmailVerificationExpiresAt()).isAfter(LocalDateTime.now());
+        assertThat(account.getEmailVerificationExpiresAt()).isAfter(TimestampFormat.nowUtc(clock));
         assertThat(passwordEncoder.matches("a-good-password1", account.getPasswordHash())).isTrue();
 
         verify(emailService).sendGuestVerificationEmail(eq(email), eq("Test Guest"), eq(account.getEmailVerificationToken()));
@@ -103,7 +109,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
     @Test
     void register_alreadyVerifiedEmail_doesNothingAndSendsNoEmail() {
         String email = "verified-" + UUID.randomUUID() + "@example.com";
-        GuestAccountEntity existing = persistAccount(email, "original-password1", LocalDateTime.now());
+        GuestAccountEntity existing = persistAccount(email, "original-password1", TimestampFormat.nowUtc(clock));
 
         guestAccountService.register(registerInput(email, "attacker-password1"));
 
@@ -148,7 +154,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
     @Test
     void resendVerification_alreadyVerifiedOrUnknownEmail_doesNothing() {
         String verifiedEmail = "already-verified-" + UUID.randomUUID() + "@example.com";
-        persistAccount(verifiedEmail, "password1234", LocalDateTime.now());
+        persistAccount(verifiedEmail, "password1234", TimestampFormat.nowUtc(clock));
 
         guestAccountService.resendVerification(verifiedEmail);
         guestAccountService.resendVerification("unknown-" + UUID.randomUUID() + "@example.com");
@@ -173,7 +179,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
     void verify_expiredToken_isRejected() {
         String email = "expired-" + UUID.randomUUID() + "@example.com";
         GuestAccountEntity existing = persistAccount(email, "password1234", null);
-        existing.setEmailVerificationExpiresAt(LocalDateTime.now().minusHours(1));
+        existing.setEmailVerificationExpiresAt(TimestampFormat.nowUtc(clock).minusHours(1));
         guestAccountRepository.saveAndFlush(existing);
 
         assertThatThrownBy(() -> guestAccountService.verify(existing.getEmailVerificationToken()))
@@ -191,7 +197,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
     @Test
     void login_wrongPassword_isUnauthorized() {
         String email = "login-wrong-pw-" + UUID.randomUUID() + "@example.com";
-        persistAccount(email, "correct-password1", LocalDateTime.now());
+        persistAccount(email, "correct-password1", TimestampFormat.nowUtc(clock));
 
         assertThatThrownBy(() -> guestAccountService.login(email, "wrong-password1"))
                 .isInstanceOf(UnauthorizedException.class)
@@ -218,7 +224,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
     @Test
     void login_correctPasswordAndVerified_succeeds() {
         String email = "login-ok-" + UUID.randomUUID() + "@example.com";
-        GuestAccountEntity existing = persistAccount(email, "correct-password1", LocalDateTime.now());
+        GuestAccountEntity existing = persistAccount(email, "correct-password1", TimestampFormat.nowUtc(clock));
 
         GuestAccountEntity result = guestAccountService.login(email, "correct-password1");
 
@@ -228,7 +234,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
     @Test
     void changePassword_bumpsTokenVersion_oldPasswordStopsMatching_newPasswordMatches() {
         String email = "change-pw-" + UUID.randomUUID() + "@example.com";
-        GuestAccountEntity existing = persistAccount(email, "old-password1", LocalDateTime.now());
+        GuestAccountEntity existing = persistAccount(email, "old-password1", TimestampFormat.nowUtc(clock));
         int originalVersion = existing.getTokenVersion();
 
         GuestAccountEntity updated = guestAccountService.changePassword(existing.getId(), "old-password1", "brand-new-password1");
@@ -241,7 +247,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
     @Test
     void changePassword_wrongCurrentPassword_isUnauthorized() {
         String email = "change-pw-wrong-" + UUID.randomUUID() + "@example.com";
-        GuestAccountEntity existing = persistAccount(email, "old-password1", LocalDateTime.now());
+        GuestAccountEntity existing = persistAccount(email, "old-password1", TimestampFormat.nowUtc(clock));
 
         assertThatThrownBy(() -> guestAccountService.changePassword(existing.getId(), "not-the-current-password", "brand-new-password1"))
                 .isInstanceOf(UnauthorizedException.class)
@@ -254,11 +260,11 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
     void listBookings_unlinkedAccount_matchesEmailCaseInsensitively_newestFirst_excludesOtherEmails() {
         String email = "guest-history-" + UUID.randomUUID() + "@example.com";
         String otherEmail = "someone-else-" + UUID.randomUUID() + "@example.com";
-        GuestAccountEntity account = persistAccount(email, "a-good-password1", LocalDateTime.now());
+        GuestAccountEntity account = persistAccount(email, "a-good-password1", TimestampFormat.nowUtc(clock));
 
-        BookingEntity older = persistBooking(email.toUpperCase(), LocalDateTime.now().minusDays(2));
-        BookingEntity newer = persistBooking(email, LocalDateTime.now());
-        persistBooking(otherEmail, LocalDateTime.now());
+        BookingEntity older = persistBooking(email.toUpperCase(), TimestampFormat.nowUtc(clock).minusDays(2));
+        BookingEntity newer = persistBooking(email, TimestampFormat.nowUtc(clock));
+        persistBooking(otherEmail, TimestampFormat.nowUtc(clock));
 
         List<GuestBookingView> history = guestAccountService.listBookings(account.getId());
 
@@ -270,7 +276,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
 
     @Test
     void listBookings_noMatches_returnsEmpty() {
-        GuestAccountEntity account = persistAccount("nobody-" + UUID.randomUUID() + "@example.com", "a-good-password1", LocalDateTime.now());
+        GuestAccountEntity account = persistAccount("nobody-" + UUID.randomUUID() + "@example.com", "a-good-password1", TimestampFormat.nowUtc(clock));
         assertThat(guestAccountService.listBookings(account.getId())).isEmpty();
     }
 
@@ -282,7 +288,7 @@ class GuestAccountServiceTests extends AbstractIntegrationTest {
         entity.setEmailVerifiedAt(emailVerifiedAt);
         if (emailVerifiedAt == null) {
             entity.setEmailVerificationToken(UUID.randomUUID().toString());
-            entity.setEmailVerificationExpiresAt(LocalDateTime.now().plusHours(24));
+            entity.setEmailVerificationExpiresAt(TimestampFormat.nowUtc(clock).plusHours(24));
         }
         return guestAccountRepository.saveAndFlush(entity);
     }

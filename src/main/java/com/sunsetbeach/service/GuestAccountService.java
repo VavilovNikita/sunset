@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.entity.GuestAccountEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ForbiddenException;
@@ -97,7 +98,7 @@ public class GuestAccountService {
         // once verified, or (not yet built) a forgot-password flow - same as any other account.
 
         entity.setEmailVerificationToken(generateToken());
-        entity.setEmailVerificationExpiresAt(LocalDateTime.now().plusHours(verificationTtlHours));
+        entity.setEmailVerificationExpiresAt(TimestampFormat.nowUtc(clock).plusHours(verificationTtlHours));
         // Links to an existing card only - see GuestLinkService#linkAccount's allowCreate.
         guestLinkService.linkAccount(entity, false);
         guestAccountRepository.save(entity);
@@ -113,7 +114,7 @@ public class GuestAccountService {
                 .filter(account -> account.getEmailVerifiedAt() == null)
                 .ifPresent(account -> {
                     account.setEmailVerificationToken(generateToken());
-                    account.setEmailVerificationExpiresAt(LocalDateTime.now().plusHours(verificationTtlHours));
+                    account.setEmailVerificationExpiresAt(TimestampFormat.nowUtc(clock).plusHours(verificationTtlHours));
                     guestAccountRepository.save(account);
                     emailService.sendGuestVerificationEmail(account.getEmail(), account.getName(), account.getEmailVerificationToken());
                 });
@@ -122,10 +123,10 @@ public class GuestAccountService {
     @Transactional
     public GuestAccountEntity verify(String token) {
         GuestAccountEntity account = guestAccountRepository.findByEmailVerificationToken(token)
-                .filter(a -> a.getEmailVerificationExpiresAt() != null && a.getEmailVerificationExpiresAt().isAfter(LocalDateTime.now()))
+                .filter(a -> a.getEmailVerificationExpiresAt() != null && a.getEmailVerificationExpiresAt().isAfter(TimestampFormat.nowUtc(clock)))
                 .orElseThrow(() -> new BadRequestException("Invalid or expired verification token"));
 
-        account.setEmailVerifiedAt(LocalDateTime.now());
+        account.setEmailVerifiedAt(TimestampFormat.nowUtc(clock));
         account.setEmailVerificationToken(null);
         account.setEmailVerificationExpiresAt(null);
         guestLinkService.linkAccount(account, true);

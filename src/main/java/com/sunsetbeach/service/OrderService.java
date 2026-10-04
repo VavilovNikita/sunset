@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
@@ -48,6 +49,7 @@ import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -96,6 +98,7 @@ public class OrderService {
     private final LedgerService ledgerService;
     private final long spaOrderLinkGraceMinutes;
     private final SecureRandom guestAccessTokenRandom = new SecureRandom();
+    private final Clock clock;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -113,7 +116,9 @@ public class OrderService {
             OrderPrintingService orderPrintingService,
             AuditLogService auditLogService,
             LedgerService ledgerService,
-            @Value("${app.spa.order-link-grace-minutes}") long spaOrderLinkGraceMinutes) {
+            @Value("${app.spa.order-link-grace-minutes}") long spaOrderLinkGraceMinutes,
+            Clock clock) {
+        this.clock = clock;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.orderItemVoidRepository = orderItemVoidRepository;
@@ -241,7 +246,8 @@ public class OrderService {
         if (tableId == null) {
             return;
         }
-        applyLink(resolveByTable(tableId, order.getCreatedAt()), order.getId());
+        // createdAt is stored UTC; appointments are scheduled in hotel time.
+        applyLink(resolveByTable(tableId, TimestampFormat.inHotelZone(order.getCreatedAt(), clock)), order.getId());
     }
 
     /**
@@ -256,7 +262,7 @@ public class OrderService {
         if (!canAutoLink(order, items)) {
             return;
         }
-        applyLink(resolveByBooking(bookingId, order.getCreatedAt().toLocalDate()), order.getId());
+        applyLink(resolveByBooking(bookingId, TimestampFormat.inHotelZone(order.getCreatedAt(), clock).toLocalDate()), order.getId());
     }
 
     /**
@@ -646,6 +652,20 @@ public class OrderService {
         return orderPrintingService.printPrebill(order, items);
     }
 
+    /** {@code POST /orders/{id}/print-receipt} - a copy of the receipt printed at close; PAID orders only. */
+    @Transactional
+    public PrintAttemptResult printReceipt(String id) {
+        OrderEntity order = findOrThrow(id);
+        if (order.getStatus() != OrderStatus.PAID) {
+            throw new ConflictException("Only a paid order has a receipt to reprint");
+        }
+        PaymentEntity payment = paymentRepository.findByOrderId(id).orElse(null);
+        BookingEntity booking = payment != null && payment.getBookingId() != null
+                ? bookingRepository.findById(payment.getBookingId()).orElse(null)
+                : null;
+        return orderPrintingService.reprintGuestReceipt(order, orderItemRepository.findByOrderId(id), payment, booking);
+    }
+
     @Transactional
     public Order cancel(String id) {
         OrderEntity order = findOrThrow(id);
@@ -674,7 +694,7 @@ public class OrderService {
             return;
         }
         orderPrintingService.printTickets(order, unsent);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = TimestampFormat.nowUtc(clock);
         for (OrderItemEntity item : unsent) {
             item.setSentAt(now);
         }

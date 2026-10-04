@@ -41,6 +41,7 @@ import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -76,6 +77,7 @@ public class ShiftService {
     private final ShiftMapper shiftMapper;
     private final PrintService printService;
     private final AuditLogService auditLogService;
+    private final Clock clock;
 
     public ShiftService(
             ShiftRepository shiftRepository,
@@ -89,7 +91,9 @@ public class ShiftService {
             UserRepository userRepository,
             ShiftMapper shiftMapper,
             PrintService printService,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            Clock clock) {
+        this.clock = clock;
         this.shiftRepository = shiftRepository;
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
@@ -152,7 +156,7 @@ public class ShiftService {
         }
 
         shift.setClosedByUserId(shift.getOpenedByUserId());
-        shift.setClosedAt(LocalDateTime.now());
+        shift.setClosedAt(TimestampFormat.nowUtc(clock));
         shift.setClosingCashCounted(input.getClosingCashCounted());
         shift.setNotes(input.getNotes().orElse(null));
         shift.setStatus(ShiftStatus.CLOSED);
@@ -200,7 +204,7 @@ public class ShiftService {
         try {
             printService.findActivePrinter(PrinterDepartment.CASHIER).ifPresent(printer -> {
                 byte[] payload = buildZReportPayload(shift, printer.getCodepage());
-                printService.queueAndAttempt(
+                printService.queue(
                         printer, PrintDocumentType.Z_REPORT, "Z-report — Shift #" + shortId(shift.getId()), payload);
             });
         } catch (Exception e) {

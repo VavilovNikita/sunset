@@ -5,7 +5,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.UpdateTimestamp;
 
 /**
  * The single row holding the VAT rate - see V118's own comment. Its id is always
@@ -23,7 +22,7 @@ public class VatSettingsEntity {
 
     private BigDecimal vatRate;
 
-    @UpdateTimestamp
+    @UtcUpdateTimestamp
     private LocalDateTime updatedAt;
 
     public Integer getId() {

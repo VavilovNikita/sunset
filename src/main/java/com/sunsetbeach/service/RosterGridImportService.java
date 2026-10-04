@@ -32,6 +32,7 @@ import com.sunsetbeach.rosterimport.ScheduleParseException;
 import com.sunsetbeach.rosterimport.ShiftCodeSnapshot;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -105,6 +106,7 @@ public class RosterGridImportService {
     private final RosterImportNameMappingRepository nameMappingRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final Clock clock;
 
     public RosterGridImportService(
             RosterGridImportParser parser,
@@ -113,7 +115,9 @@ public class RosterGridImportService {
             RosterEntryRepository rosterEntryRepository,
             RosterImportNameMappingRepository nameMappingRepository,
             UserRepository userRepository,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            Clock clock) {
+        this.clock = clock;
         this.parser = parser;
         this.shiftCodeService = shiftCodeService;
         this.shiftCodeRepository = shiftCodeRepository;
@@ -266,7 +270,7 @@ public class RosterGridImportService {
     private ShiftCodeEntity createShiftCode(
             StaffArea staffArea, String code, ShiftCodeKind kind, String startTime1, String endTime1, String startTime2, String endTime2,
             Boolean countsAsWorked, Boolean isPaid, String displayColor, String actorUserId) {
-        ShiftCodeCreateInput createInput = new ShiftCodeCreateInput(code, kind, countsAsWorked, isPaid, LocalDate.now().toString());
+        ShiftCodeCreateInput createInput = new ShiftCodeCreateInput(code, kind, countsAsWorked, isPaid, LocalDate.now(clock).toString());
         createInput.staffArea(staffArea);
         createInput.startTime1(startTime1);
         createInput.endTime1(endTime1);

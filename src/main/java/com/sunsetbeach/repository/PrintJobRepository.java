@@ -2,8 +2,11 @@ package com.sunsetbeach.repository;
 
 import com.sunsetbeach.entity.PrintJobEntity;
 import com.sunsetbeach.model.PrintJobStatus;
+import jakarta.persistence.LockModeType;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -35,6 +38,15 @@ public interface PrintJobRepository extends JpaRepository<PrintJobEntity, String
             + " where j.status <> :sent and j.lastError is not null and j.dismissedAt is null"
             + " group by j.printerId")
     List<Object[]> findLastFailedAtByPrinter(@Param("sent") PrintJobStatus sent);
+
+    /**
+     * Taken by every automatic delivery attempt (the after-commit one and the background sweep)
+     * before re-checking the job is still {@code PENDING}, so the two can never both send the same
+     * ticket.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select j from PrintJobEntity j where j.id = :id")
+    Optional<PrintJobEntity> findByIdForUpdate(@Param("id") String id);
 
     /** Gates {@code DELETE /printers/{id}} - a printer that has ever printed anything is kept for history, only deactivated. */
     boolean existsByPrinterId(String printerId);

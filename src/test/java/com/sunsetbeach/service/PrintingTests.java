@@ -25,6 +25,7 @@ import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderItemInput;
 import com.sunsetbeach.model.OrderUpdateInput;
 import com.sunsetbeach.model.PaymentMethod;
+import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.PrintDocumentType;
 import com.sunsetbeach.model.PrintJob;
 import com.sunsetbeach.model.PrintJobStatus;
@@ -86,6 +87,10 @@ class PrintingTests extends AbstractIntegrationTest {
         registry.add("app.printing.max-attempts", () -> "1");
         registry.add("app.printing.connect-timeout-ms", () -> "1000");
         registry.add("app.printing.retry-interval-ms", () -> "3600000");
+        // These assert the delivery outcome inside a rolled-back transaction, where an
+        // after-commit attempt never fires - attempt inline. PrintDeliveryInBackgroundTests
+        // covers the real (background) path.
+        registry.add("app.printing.deliver-in-background", () -> "false");
     }
 
     @Autowired
@@ -657,6 +662,29 @@ class PrintingTests extends AbstractIntegrationTest {
                     .orElseThrow();
             assertThat(receipt.getSummary()).contains("ROOM_CHARGE").contains("Jane Doe");
             assertThat(receipt.getSummary()).doesNotMatch(".*\\d+\\.\\d{2}.*"); // no amount, just method + guest
+        }
+    }
+
+    @Test
+    void printReceipt_paidOrder_printsAMarkedCopy_unpaidOrderIsRejected() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.CASHIER, fake.port());
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 2)));
+
+            assertThatThrownBy(() -> orderService.printReceipt(order.getId())).isInstanceOf(ConflictException.class);
+
+            shiftService.open(cashier.getId(), new ShiftOpenInput());
+            orderService.close(order.getId(), new CloseOrderInput(PaymentMethod.CASH), cashier.getId());
+
+            PrintAttemptResult result = orderService.printReceipt(order.getId());
+            assertThat(result.getAttempted()).isTrue();
+            assertThat(result.getJob().getStatus()).isEqualTo(PrintJobStatus.SENT);
+            PrintJobEntity copy = printJobRepository.findById(result.getJob().getId()).orElseThrow();
+            assertThat(copy.getDocumentType()).isEqualTo(PrintDocumentType.GUEST_RECEIPT);
+            assertThat(copy.getSummary()).startsWith("Guest receipt copy");
+            String text = decode(copy);
+            assertThat(text).contains("GUEST RECEIPT - COPY").contains("2x Caesar Salad").contains("200.00").contains("Payment: CASH");
         }
     }
 

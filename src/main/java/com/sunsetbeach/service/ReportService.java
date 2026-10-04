@@ -2,6 +2,7 @@ package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
+import com.sunsetbeach.entity.BookingSource;
 import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderEntity;
@@ -387,8 +388,9 @@ public class ReportService {
     }
 
     /**
-     * Same population as {@link #topProduction}, rolled up one level. All five segments are
-     * always returned so the report reads like the legacy Z360 sheet, zero rows included.
+     * Same population as {@link #topProduction}, rolled up one level. All six segments are
+     * always returned, zero rows included - the legacy Z360 sheet's five plus {@code OTH} (see
+     * {@link #marketSegmentOf} for why that sixth line exists).
      * {@code guests} counts each booking's {@code adults + children} once, however many of its
      * nights or segments fall in the range - a head count of parties, not guest-nights.
      */
@@ -427,12 +429,20 @@ public class ReportService {
                 tally.nights == 0 ? null : money(tally.revenue.divide(BigDecimal.valueOf(tally.nights), MC)));
     }
 
+    /**
+     * {@code OTHER} splits by where the booking came from. From SiteMinder it is an OTA whose name
+     * has no channel value here ({@code SiteMinderImportService#mapChannel}) - still an online
+     * agent. Entered by staff it means "not recorded" (every staff booking from before the channel
+     * field defaults to it), and counting those as OTA credited online agents with walk-ins and
+     * phone bookings - so they get their own {@code OTH} line instead of the legacy sheet's five.
+     */
     private static MarketSegment marketSegmentOf(BookingEntity booking) {
         return switch (booking.getPurpose()) {
             case COMPLIMENTARY -> MarketSegment.COM;
             case HOUSE_USE -> MarketSegment.HFO;
             case STANDARD -> switch (booking.getChannel()) {
-                case BOOKING_COM, AIRBNB, AGODA, EXPEDIA, OTHER -> MarketSegment.OTA;
+                case BOOKING_COM, AIRBNB, AGODA, EXPEDIA -> MarketSegment.OTA;
+                case OTHER -> booking.getSource() == BookingSource.SITEMINDER ? MarketSegment.OTA : MarketSegment.OTH;
                 case WALK_IN -> MarketSegment.WLK;
                 case DIRECT, PHONE -> MarketSegment.DIR;
             };

@@ -17,6 +17,7 @@ import com.sunsetbeach.repository.RoomUnitBlockRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -38,6 +39,10 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional
 class MaintenanceTaskBlockLiftingTests extends AbstractIntegrationTest {
+
+    // "Today"/"now" as the code under test sees it - the hotel clock, not the JVM default zone.
+    @Autowired
+    private Clock clock;
 
     @Autowired
     private MaintenanceTaskService maintenanceTaskService;
@@ -99,7 +104,7 @@ class MaintenanceTaskBlockLiftingTests extends AbstractIntegrationTest {
 
     @Test
     void ordinaryCase_closingToday_shortensToDateToYesterday_andRoomIsAvailableTodayPerAvailabilityEngine() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         MaintenanceTask task = createTaskWithBlock(today.minusDays(3), today.plusDays(5));
         assertThat(isBlockedToday(today)).isTrue(); // sanity: blocked before closing
 
@@ -114,7 +119,7 @@ class MaintenanceTaskBlockLiftingTests extends AbstractIntegrationTest {
 
     @Test
     void sameDayCase_blockCreatedAndClosedTheSameDay_isDeletedOutright_andRoomIsAvailableTodayPerAvailabilityEngine() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         // fromDate = today: yesterday (the computed new toDate) falls before fromDate, so the
         // block never covered a usable night once shortened - delete, don't write a backwards range.
         MaintenanceTask task = createTaskWithBlock(today, today.plusDays(7));
@@ -130,7 +135,7 @@ class MaintenanceTaskBlockLiftingTests extends AbstractIntegrationTest {
 
     @Test
     void blockAlreadyDeletedManually_closingStillSucceeds_andTouchesNoBlock() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         MaintenanceTask task = createTaskWithBlock(today.minusDays(1), today.plusDays(5));
         String blockId = task.getBlockId().get();
         roomUnitBlockRepository.deleteById(blockId);

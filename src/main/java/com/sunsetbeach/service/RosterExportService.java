@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
@@ -125,6 +126,7 @@ public class RosterExportService {
     private final ShiftCodeRepository shiftCodeRepository;
     private final AttendancePunchRepository attendancePunchRepository;
     private final UserRepository userRepository;
+    private final Clock clock;
 
     public RosterExportService(
             RosterService rosterService,
@@ -132,7 +134,9 @@ public class RosterExportService {
             RosterEntryRepository rosterEntryRepository,
             ShiftCodeRepository shiftCodeRepository,
             AttendancePunchRepository attendancePunchRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            Clock clock) {
+        this.clock = clock;
         this.rosterService = rosterService;
         this.auditLogService = auditLogService;
         this.rosterEntryRepository = rosterEntryRepository;
@@ -146,7 +150,7 @@ public class RosterExportService {
         RosterMonth data = rosterService.getMonth(year, month);
         YearMonth ym = YearMonth.of(year, month);
         int days = ym.lengthOfMonth();
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         int todayDay = (today.getYear() == year && today.getMonthValue() == month) ? today.getDayOfMonth() : -1;
 
         Map<String, RosterEntry> entriesByKey = new HashMap<>();
@@ -650,7 +654,7 @@ public class RosterExportService {
         int r = 0;
         Row exportedAtRow = sheet.createRow(r++);
         exportedAtRow.createCell(0).setCellValue(RosterGridImportFormat.EXPORTED_AT_LABEL);
-        exportedAtRow.createCell(1).setCellValue(Instant.now().toString());
+        exportedAtRow.createCell(1).setCellValue(clock.instant().toString());
 
         r++; // blank separator - RosterGridImportParser reads each block until a blank row
         Row shiftCodesHeader = sheet.createRow(r++);

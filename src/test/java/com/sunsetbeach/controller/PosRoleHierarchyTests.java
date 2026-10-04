@@ -49,6 +49,7 @@ import com.sunsetbeach.model.PaymentsSummary;
 import com.sunsetbeach.model.PricingResponse;
 import com.sunsetbeach.model.PrintDocumentType;
 import com.sunsetbeach.model.PrintJob;
+import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.PrintJobStatus;
 import com.sunsetbeach.model.PropertyMap;
 import com.sunsetbeach.model.Role;
@@ -779,6 +780,19 @@ class PosRoleHierarchyTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CloseOrderInput(PaymentMethod.CASH))))
                 .andExpect(status().isOk());
+    }
+
+    // --- POST /orders/{id}/print-receipt requires CASHIER or above, the same floor as close ---
+
+    @Test
+    void printOrderReceipt_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/orders/order-1/print-receipt").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void printOrderReceipt_withCashierToken_isCreated() throws Exception {
+        when(orderService.printReceipt(anyString())).thenReturn(new PrintAttemptResult(false));
+        mockMvc.perform(post("/orders/order-1/print-receipt").header("Authorization", token(Role.CASHIER))).andExpect(status().isCreated());
     }
 
     // --- GET /shifts/{id}/export requires MANAGER or above - CASHIER is not enough ---
@@ -1882,6 +1896,7 @@ class PosRoleHierarchyTests {
                 BookingChannel.DIRECT, BookingPurpose.STANDARD, 1, 0,
                 null,
                 OccupancyStatus.EXPECTED,
+                null,
                 null,
                 null,
                 null,

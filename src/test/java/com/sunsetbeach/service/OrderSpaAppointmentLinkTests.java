@@ -32,6 +32,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -98,6 +99,11 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    // The app's own (hotel-zoned) clock - only its zone is used, to store a hotel wall-clock
+    // "now" in Order.createdAt as the UTC value that column holds.
+    @Autowired
+    private Clock appClock;
 
     // A fixed, arbitrary weekday afternoon - see CLAUDE.md's "a test must not read the wall
     // clock" rule. The two tests below that assert a link actually happens (not just "stays
@@ -215,7 +221,7 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
     }
 
     /**
-     * {@code Order.createdAt} is {@code @CreationTimestamp} - Hibernate assigns it from the real
+     * {@code Order.createdAt} is {@code @UtcCreationTimestamp} - assigned from the real
      * wall clock at insert time, same as everywhere else in this codebase (see
      * {@code BookingExpiryServiceTests#persistBooking} for the same pattern). {@code
      * resolveByTable} reads it as "openedAt" and compares it against the appointment times built
@@ -224,12 +230,14 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
      * the entity lifecycle with a native UPDATE - mutating the managed field directly isn't
      * picked up by dirty checking for a generated property - then clears the persistence context
      * so the next read (inside {@code addItems}) reloads the backdated row instead of the
-     * still-cached one.
+     * still-cached one. {@code hotelTime} is hotel wall-clock, like the appointment times; the
+     * column holds UTC, so it is stored converted.
      */
-    private void backdateOrderCreatedAt(String orderId, LocalDateTime createdAt) {
+    private void backdateOrderCreatedAt(String orderId, LocalDateTime hotelTime) {
+        LocalDateTime createdAtUtc = hotelTime.atZone(appClock.getZone()).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
         entityManager
                 .createNativeQuery("UPDATE \"Order\" SET \"createdAt\" = ?1 WHERE id = ?2")
-                .setParameter(1, createdAt)
+                .setParameter(1, createdAtUtc)
                 .setParameter(2, orderId)
                 .executeUpdate();
         entityManager.clear();

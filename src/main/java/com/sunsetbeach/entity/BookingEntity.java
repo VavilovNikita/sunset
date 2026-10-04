@@ -12,9 +12,7 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.annotations.UuidGenerator;
 import org.hibernate.type.SqlTypes;
 import com.sunsetbeach.model.BookingChannel;
@@ -109,13 +107,16 @@ public class BookingEntity {
 
     private String externalChannel;
 
-    // UTC, like @CreationTimestamp - SiteMinder's own last-changed time, for skipping stale imports.
+    // UTC, like @UtcCreationTimestamp - SiteMinder's own last-changed time, for skipping stale imports.
     private LocalDateTime externalModifiedAt;
 
-    @CreationTimestamp
+    // Set on a move into CANCELLED, cleared on a move out - see V131__booking_cancellation_reason.sql.
+    private String cancellationReason;
+
+    @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
-    @UpdateTimestamp
+    @UtcUpdateTimestamp
     private LocalDateTime updatedAt;
 
     public String getId() {
@@ -312,6 +313,14 @@ public class BookingEntity {
 
     public void setExternalChannel(String externalChannel) {
         this.externalChannel = externalChannel;
+    }
+
+    public String getCancellationReason() {
+        return cancellationReason;
+    }
+
+    public void setCancellationReason(String cancellationReason) {
+        this.cancellationReason = cancellationReason;
     }
 
     public LocalDateTime getExternalModifiedAt() {
