@@ -259,6 +259,8 @@ class RosterImportServiceTests extends AbstractIntegrationTest {
                 existingAlice.getId(), LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31));
         assertThat(aliceEntries).hasSize(2);
         assertThat(aliceEntries).extracting(e -> e.getShiftCodeId()).contains(frontOfficeNine.getId());
+        // Mapped to an existing account with no department - the sheet's department row fills it.
+        assertThat(userRepository.findById(existingAlice.getId()).orElseThrow().getStaffArea()).isEqualTo(StaffArea.FRONT_OFFICE);
 
         List<AuditLogEntity> auditEntries =
                 auditLogRepository.findAll().stream().filter(a -> a.getAction() == AuditAction.ROSTER_MONTH_IMPORTED && a.getActorUserId().equals(admin.getId())).toList();

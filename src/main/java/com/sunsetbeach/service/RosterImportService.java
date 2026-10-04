@@ -243,15 +243,49 @@ public class RosterImportService {
             created++;
         }
         rosterEntryRepository.flush();
+        int departmentsFilled = fillMissingStaffAreas(resolution.resolvedCells);
 
         int skipped = resolution.collisions.size();
         YearMonth ym = YearMonth.of(staged.year(), staged.month());
         auditLogService.record(
                 AuditAction.ROSTER_MONTH_IMPORTED, AuditEntityType.ROSTER_ENTRY, null,
                 "Imported " + ym + " schedule: " + created + " entr" + (created == 1 ? "y" : "ies") + " created, " + skipped
-                        + " skipped (already scheduled)");
+                        + " skipped (already scheduled)"
+                        + (departmentsFilled > 0 ? ", department set for " + departmentsFilled + " employee(s) who had none" : ""));
 
         return new RosterImportResult(staged.year(), staged.month(), created, skipped);
+    }
+
+    /**
+     * Sets {@code User.staffArea} from the department row a person sits under in the sheet - only
+     * where it's empty, and only when the sheet puts them under exactly one department. A name
+     * mapped to an existing account ({@link #createNameMapping} with {@code employeeUserId}) never
+     * got the department a newly created one does, which left most imported staff with none.
+     * Never overwrites: a department someone set by hand is a decision, the sheet is a hint. Not
+     * the role - nothing in the sheet says who is a cashier or a manager, so imported accounts stay
+     * WAITER until an admin sets it.
+     */
+    private int fillMissingStaffAreas(List<ResolvedCell> cells) {
+        Map<String, java.util.Set<StaffArea>> areasByEmployee = new LinkedHashMap<>();
+        for (ResolvedCell cell : cells) {
+            if (cell.parsed().staffArea() != null) {
+                areasByEmployee.computeIfAbsent(cell.employeeUserId(), k -> new java.util.HashSet<>()).add(cell.parsed().staffArea());
+            }
+        }
+        int filled = 0;
+        for (Map.Entry<String, java.util.Set<StaffArea>> e : areasByEmployee.entrySet()) {
+            if (e.getValue().size() != 1) {
+                continue;
+            }
+            UserEntity user = userRepository.findById(e.getKey()).orElse(null);
+            if (user != null && user.getStaffArea() == null) {
+                user.setStaffArea(e.getValue().iterator().next());
+                userRepository.save(user);
+                filled++;
+            }
+        }
+        userRepository.flush();
+        return filled;
     }
 
     private ParsedSchedule parseOrBadRequest(byte[] bytes, int year, int month) {
