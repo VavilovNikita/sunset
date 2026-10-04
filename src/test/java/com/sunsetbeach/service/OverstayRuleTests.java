@@ -17,6 +17,8 @@ import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CalendarBooking;
 import com.sunsetbeach.model.InHouseRow;
+import com.sunsetbeach.model.ManagerReportDay;
+import com.sunsetbeach.model.OccupancyReportRow;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.RoomTypeDailyAvailability;
 import com.sunsetbeach.model.TodayBoardEntry;
@@ -178,6 +180,58 @@ class OverstayRuleTests extends AbstractIntegrationTest {
         assertThat(tonight.getOverdueDays()).isEqualTo(5);
         assertThat(row(reportService.inHouse("2033-03-16").getRooms(), overdue)).isNotNull();
         assertThat(row(reportService.inHouse("2033-03-21").getRooms(), overdue)).isNull();
+    }
+
+    /**
+     * The bug this pins: on a night In house listed an overdue guest, the manager report said
+     * "Occupied 0 / Guests in house 0" because it counted agreed segment nights only. Deltas, not
+     * absolutes - the manager report is property-wide.
+     */
+    @Test
+    void managerReport_countsTheOverdueGuestAsOccupiedAndInHouse_sameAsInHouse() {
+        ManagerReportDay before = reportService.manager(TODAY.toString()).getToday();
+        int inHouseBefore = reportService.inHouse(TODAY.toString()).getTotal().getRooms();
+
+        BookingEntity overdue = persistStay(OccupancyStatus.CHECKED_IN, "2033-03-10", "2033-03-15");
+        long guests = overdue.getAdults() + overdue.getChildren();
+
+        ManagerReportDay after = reportService.manager(TODAY.toString()).getToday();
+        int inHouseAfter = reportService.inHouse(TODAY.toString()).getTotal().getRooms();
+        assertThat(inHouseAfter - inHouseBefore).isEqualTo(1);
+        assertThat(after.getRooms().getOccupied() - before.getRooms().getOccupied()).isEqualTo(1);
+        assertThat(after.getGuests().getGuestsInHouse() - before.getGuests().getGuestsInHouse()).isEqualTo(guests);
+        // Nothing was agreed or priced for the overstay nights - no revenue appears from them.
+        assertThat(after.getRevenue().getRoomRevenue()).isEqualTo(before.getRevenue().getRoomRevenue());
+        // Tomorrow isn't promised to anyone, same as availability.
+        assertThat(after.getTomorrow().getOccupied()).isEqualTo(before.getTomorrow().getOccupied());
+    }
+
+    @Test
+    void roomProduction_countsTheOverstayNights_atZeroRevenue() {
+        persistStay(OccupancyStatus.CHECKED_IN, "2033-03-10", "2033-03-15");
+
+        // Agreed 10-14 (5 nights, ฿5000) plus overstay 15-20 (6 nights, nothing agreed).
+        OccupancyReportRow row = reportService.occupancy("2033-03-01", "2033-03-31").getRooms().stream()
+                .filter(r -> room.getId().equals(r.getRoomId().orElse(null))).findFirst().orElseThrow();
+        assertThat(row.getRoomNightsSold()).isEqualTo(11);
+        assertThat(row.getRoomRevenue()).isEqualTo("5000.00");
+
+        OccupancyReportRow overstayOnly = reportService.occupancy("2033-03-16", "2033-03-20").getRooms().stream()
+                .filter(r -> room.getId().equals(r.getRoomId().orElse(null))).findFirst().orElseThrow();
+        assertThat(overstayOnly.getRoomNightsSold()).isEqualTo(5);
+        assertThat(overstayOnly.getRoomRevenue()).isEqualTo("0.00");
+
+        // Top production and market segment read the same population, so they still total the same.
+        assertThat(reportService.topProduction("2033-03-16", "2033-03-20").getTotal().getRoomNights())
+                .isEqualTo(reportService.occupancy("2033-03-16", "2033-03-20").getTotal().getRoomNightsSold());
+    }
+
+    @Test
+    void checkedOutOnTime_addsNothingToTheReportsPastCheckOut() {
+        ManagerReportDay before = reportService.manager(TODAY.toString()).getToday();
+        persistStay(OccupancyStatus.CHECKED_OUT, "2033-03-10", "2033-03-15");
+        ManagerReportDay after = reportService.manager(TODAY.toString()).getToday();
+        assertThat(after.getRooms().getOccupied()).isEqualTo(before.getRooms().getOccupied());
     }
 
     @Test

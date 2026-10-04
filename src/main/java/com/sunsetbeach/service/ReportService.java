@@ -187,10 +187,18 @@ public class ReportService {
     private record SegmentInRange(BookingSegmentEntity segment, long nights, BigDecimal revenue) {}
 
     /**
-     * The room-nights population shared by occupancy, top production and market segment: every
-     * segment of a non-{@code CANCELLED} booking, clipped to the range's nights, its
-     * {@code totalPrice} prorated to them unrounded. One definition, so the three reports always
-     * sum to the same totals for the same range.
+     * The room-nights population shared by every room report here - occupancy, top production,
+     * market segment, the manager report, the forecast and the in-house list: every segment of a
+     * non-{@code CANCELLED} booking, clipped to the range's nights, its {@code totalPrice}
+     * prorated to them unrounded. One definition, so the reports always agree for the same range.
+     *
+     * <p>Plus every {@link OverstayRule} overstay's nights in the range, as a zero-revenue slice
+     * of the last segment's room. A guest still checked in past {@code checkOut} is physically in
+     * that room, so it is occupied and they are in the house; nothing was agreed or priced for
+     * those nights, so they add no revenue. These used to be added by the in-house list alone,
+     * which is how the manager report came to say "0 occupied" on a night In house listed a
+     * guest. Like every other overstay reader this only knows about guests still checked in: once
+     * an overdue guest is checked out, a past night's figures lose their extra nights.
      */
     private List<SegmentInRange> segmentsInRange(ReportDateRange range) {
         LocalDate rangeEnd = range.to().plusDays(1); // exclusive, like a checkOut
@@ -207,6 +215,11 @@ public class ReportService {
                     ? segment.getTotalPrice()
                     : segment.getTotalPrice().multiply(BigDecimal.valueOf(inRange)).divide(BigDecimal.valueOf(segmentNights), MC);
             slices.add(new SegmentInRange(segment, inRange, prorated));
+        }
+        for (OverstayRule.Overstay overstay : overstayRule.current()) {
+            if (!overstay.overlaps(range.from(), rangeEnd)) continue;
+            long inRange = ChronoUnit.DAYS.between(max(overstay.from(), range.from()), min(overstay.toExclusive(), rangeEnd));
+            slices.add(new SegmentInRange(overstay.lastSegment(), inRange, BigDecimal.ZERO));
         }
         return slices;
     }
@@ -482,15 +495,9 @@ public class ReportService {
         LocalDate night = ReportDateRange.parseDateOrToday(date, clock);
         ReportDateRange range = ReportDateRange.night(night);
         List<SegmentInRange> slices = segmentsInRange(range);
-        List<InHouseStay> stays = new ArrayList<>(inHouseStays(range, slices, bookingsOf(slices)));
-        // A guest still checked in past checkOut is in the house tonight, and was on every night
-        // since (OverstayRule) - no agreed segment covers those nights, so they're added here as
-        // a zero-revenue slice of the last segment's room. The in-house list only: the occupancy
-        // and manager reports stay on agreed, priced room-nights.
+        // Overstays are already in segmentsInRange - the same people the manager report counts.
+        List<InHouseStay> stays = inHouseStays(range, slices, bookingsOf(slices));
         LocalDate today = overstayRule.today();
-        overstayRule.current().stream()
-                .filter(o -> o.covers(night))
-                .forEach(o -> stays.add(new InHouseStay(new SegmentInRange(o.lastSegment(), 1, BigDecimal.ZERO), o.booking())));
 
         Map<String, String> roomNames = roomRepository.findAllById(stays.stream().map(s -> s.segment().getRoomId()).distinct().toList())
                 .stream().collect(Collectors.toMap(RoomEntity::getId, RoomEntity::getName));
