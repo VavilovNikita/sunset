@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
+import com.sunsetbeach.entity.BookingSource;
 import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderEntity;
@@ -295,13 +296,14 @@ class ReportServiceTests extends AbstractIntegrationTest {
         MarketSegmentReport report = reportService.marketSegment("2034-03-10", "2034-03-12");
 
         assertThat(report.getSegments()).extracting(MarketSegmentRow::getSegment)
-                .containsExactly(MarketSegment.COM, MarketSegment.DIR, MarketSegment.HFO, MarketSegment.OTA, MarketSegment.WLK);
+                .containsExactly(MarketSegment.COM, MarketSegment.DIR, MarketSegment.HFO, MarketSegment.OTA, MarketSegment.OTH, MarketSegment.WLK);
         // segment: room-nights, guests, revenue, average rate
         assertSegment(report.getSegments().get(0), 2, 5, "500.00", "250.00"); // B + C
         assertSegment(report.getSegments().get(1), 1, 2, "1000.00", "1000.00"); // E
         assertSegment(report.getSegments().get(2), 1, 1, "0.00", "0.00"); // D
         assertSegment(report.getSegments().get(3), 2, 3, "3000.00", "1500.00"); // A - EXPEDIA rolls into OTA
-        assertSegment(report.getSegments().get(4), 2, 3, "1600.00", "800.00"); // G - two segments, 3 guests counted once
+        assertThat(report.getSegments().get(4).getRoomNights()).isZero(); // OTH - no OTHER booking in this fixture
+        assertSegment(report.getSegments().get(5), 2, 3, "1600.00", "800.00"); // G - two segments, 3 guests counted once
 
         MarketSegmentRow ota = report.getSegments().get(3);
         assertThat(ota.getRoomNightsPercent().get()).isEqualTo("25.00");
@@ -324,10 +326,10 @@ class ReportServiceTests extends AbstractIntegrationTest {
     }
 
     @Test
-    void marketSegment_emptyRange_returnsAllFiveSegmentsWithZerosAndNullRatios() {
+    void marketSegment_emptyRange_returnsAllSixSegmentsWithZerosAndNullRatios() {
         MarketSegmentReport report = reportService.marketSegment("2034-11-01", "2034-11-02");
 
-        assertThat(report.getSegments()).hasSize(5);
+        assertThat(report.getSegments()).hasSize(6);
         for (MarketSegmentRow row : concatSegments(report.getSegments(), report.getTotal())) {
             assertThat(row.getRoomNights()).isZero();
             assertThat(row.getGuests()).isZero();
@@ -338,6 +340,36 @@ class ReportServiceTests extends AbstractIntegrationTest {
             assertThat(row.getAverageRate().get()).isNull();
         }
         assertThat(reportService.topProduction("2034-11-01", "2034-11-02").getProducers()).isEmpty();
+    }
+
+    /**
+     * Channel OTHER splits by origin. A SiteMinder import with OTHER is an OTA SiteMinder named in
+     * a way no channel value covers - still an online agent. A staff-entered OTHER (every staff
+     * booking from before the channel field) is "not recorded" and must not be credited to OTA -
+     * it gets the sixth segment, OTH. The total is the same either way; only the split moves.
+     */
+    @Test
+    void marketSegment_otherChannel_siteMinderStaysOta_staffEnteredGoesToOth() {
+        persistProducerStay(BookingChannel.EXPEDIA, BookingPurpose.STANDARD, 2, 0, BookingStatus.CONFIRMED, "2034-05-10", "2034-05-11", "1000.00");
+        persistProducerStay(BookingChannel.OTHER, BookingPurpose.STANDARD, 1, 0, BookingStatus.CONFIRMED, "2034-05-10", "2034-05-12", "1800.00");
+        BookingEntity fromSiteMinder = persistBooking(null, BookingStatus.CONFIRMED, "2034-05-10", "2034-05-11", "1200.00");
+        fromSiteMinder.setChannel(BookingChannel.OTHER);
+        fromSiteMinder.setSource(BookingSource.SITEMINDER);
+        fromSiteMinder.setExternalReference("SM-" + UUID.randomUUID());
+        fromSiteMinder.setAdults(2);
+        bookingRepository.saveAndFlush(fromSiteMinder);
+        persistSegment(fromSiteMinder, units.get(1), "2034-05-10", "2034-05-11", "1200.00");
+
+        MarketSegmentReport report = reportService.marketSegment("2034-05-10", "2034-05-11");
+
+        MarketSegmentRow ota = report.getSegments().get(3);
+        MarketSegmentRow oth = report.getSegments().get(4);
+        assertThat(ota.getSegment()).isEqualTo(MarketSegment.OTA);
+        assertThat(oth.getSegment()).isEqualTo(MarketSegment.OTH);
+        assertSegment(ota, 2, 4, "2200.00", "1100.00"); // Expedia + the SiteMinder OTHER
+        assertSegment(oth, 2, 1, "1800.00", "900.00"); // the staff-entered OTHER only
+        assertSegment(report.getTotal(), 4, 5, "4000.00", "1000.00");
+        assertThat(oth.getRevenuePercent().get()).isEqualTo("45.00");
     }
 
     @Test

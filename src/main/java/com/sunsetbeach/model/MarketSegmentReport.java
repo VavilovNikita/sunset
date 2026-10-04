@@ -99,7 +99,7 @@ public class MarketSegmentReport {
   }
 
   /**
-   * Always all five segments, in the order COM, DIR, HFO, OTA, WLK.
+   * Always all six segments, in the order COM, DIR, HFO, OTA, OTH, WLK.
    * @return segments
    */
   @NotNull @Valid 

@@ -6086,9 +6086,18 @@ paths:
 
 
         **Segment.** `COM` - `purpose` is `COMPLIMENTARY`. `HFO` (house folio) - `purpose` is
-        `HOUSE_USE`. Otherwise by `channel`: `OTA` for `BOOKING_COM`, `AIRBNB`, `AGODA`, `EXPEDIA`
-        and `OTHER`; `WLK` for `WALK_IN`; `DIR` for `DIRECT` and `PHONE`. It is the same grouping
+        `HOUSE_USE`. Otherwise by `channel`: `OTA` for `BOOKING_COM`, `AIRBNB`, `AGODA`, `EXPEDIA`,
+        and for `OTHER` on a booking imported from SiteMinder (an OTA SiteMinder showed under a name
+        this system has no channel value for); `OTH` for every other `OTHER` booking - entered by
+        staff, including every staff booking made before `channel` existed, whose real channel was
+        never recorded; `WLK` for `WALK_IN`; `DIR` for `DIRECT` and `PHONE`. It is the same grouping
         as `GET /reports/top-production`, one level up.
+
+
+        **Six segments, not the legacy sheet's five.** The Z360 layout this mirrors has no
+        "unknown" line, and this report used to fold staff-entered `OTHER` into `OTA` to keep its
+        five rows - which credited online agents with bookings that never came through one. `OTH`
+        moves those room-nights and that revenue out of `OTA`; the total is unchanged.
 
 
         **What counts** is the same population as `GET /reports/top-production` and
@@ -6099,8 +6108,8 @@ paths:
         count of parties, not guest-nights.
 
 
-        All five segments are always returned, in the order `COM`, `DIR`, `HFO`, `OTA`, `WLK`,
-        zero rows included. The `*Percent` fields are each segment's share of `total`, null when
+        All six segments are always returned, in the order `COM`, `DIR`, `HFO`, `OTA`, `OTH`,
+        `WLK`, zero rows included. The `*Percent` fields are each segment's share of `total`, null when
         the total is zero. `averageRate` is revenue / room-nights, null when no room-night was
         sold.
       parameters:
@@ -6166,7 +6175,7 @@ paths:
 
         **Columns.** `arrival`/`departure` are the whole booking's `checkIn`/`checkOut`, not the
         current segment's (after a relocation they differ). `marketSegment` is the same
-        `COM`/`DIR`/`HFO`/`OTA`/`WLK` rollup as `GET /reports/market-segment`. The booking id is
+        `COM`/`DIR`/`HFO`/`OTA`/`OTH`/`WLK` rollup as `GET /reports/market-segment`. The booking id is
         the reservation reference - there is no separate reservation number.
 
 
@@ -16025,10 +16034,11 @@ components:
 
     MarketSegment:
       type: string
-      enum: [COM, DIR, HFO, OTA, WLK]
+      enum: [COM, DIR, HFO, OTA, OTH, WLK]
       description: >
         `COM` complimentary, `DIR` direct (`DIRECT`/`PHONE`), `HFO` house use, `OTA` online
-        travel agents and other third parties, `WLK` walk-in. Derived from a booking's
+        travel agents (including a SiteMinder-imported `OTHER`), `OTH` other / not recorded (a
+        staff-entered `OTHER` booking), `WLK` walk-in. Derived from a booking's
         `purpose` and `channel`, never stored - see `GET /reports/market-segment`.
 
     MarketSegmentReport:
@@ -16044,7 +16054,7 @@ components:
           pattern: '^\d{4}-\d{2}-\d{2}$'
         segments:
           type: array
-          description: Always all five segments, in the order COM, DIR, HFO, OTA, WLK.
+          description: Always all six segments, in the order COM, DIR, HFO, OTA, OTH, WLK.
           items:
             $ref: "#/components/schemas/MarketSegmentRow"
         total:

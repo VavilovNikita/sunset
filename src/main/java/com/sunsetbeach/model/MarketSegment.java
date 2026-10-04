@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * `COM` complimentary, `DIR` direct (`DIRECT`/`PHONE`), `HFO` house use, `OTA` online travel agents and other third parties, `WLK` walk-in. Derived from a booking's `purpose` and `channel`, never stored - see `GET /reports/market-segment`. 
+ * `COM` complimentary, `DIR` direct (`DIRECT`/`PHONE`), `HFO` house use, `OTA` online travel agents (including a SiteMinder-imported `OTHER`), `OTH` other / not recorded (a staff-entered `OTHER` booking), `WLK` walk-in. Derived from a booking's `purpose` and `channel`, never stored - see `GET /reports/market-segment`. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -29,6 +29,8 @@ public enum MarketSegment {
   HFO("HFO"),
   
   OTA("OTA"),
+  
+  OTH("OTH"),
   
   WLK("WLK");
 
