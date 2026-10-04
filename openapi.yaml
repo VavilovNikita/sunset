@@ -6885,6 +6885,16 @@ paths:
         on or before `date`.
 
 
+        **`unpaidOverstayNights`** on a missed departure is a warning, not a charge: the nights a
+        guest still `CHECKED_IN` past `checkOut` (`OverstayRule`) has stayed from `checkOut`
+        through `date`, the same overstay nights the room reports count as occupied at zero
+        revenue - so for the same night(s) it matches what `GET /reports/occupancy` and the
+        manager report count for this guest. Nothing posts, prices or changes the booking; the
+        front desk agrees a rate with the guest and extends the stay (`PATCH
+        /bookings/{id}/schedule`), which prices those nights. Like the lists themselves it reads
+        the overstay as it is now, so it is `0` once the guest is checked out.
+
+
         Both lists reflect the bookings' state *now*, not as it was on `date` - reviewing a past
         date shows what is still unresolved with a date on or before it, not a historical snapshot.
 
@@ -15801,7 +15811,7 @@ components:
     NightAuditBooking:
       type: object
       description: One booking on a night-audit list - just enough to recognise it and open it.
-      required: [id, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus]
+      required: [id, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus, unpaidOverstayNights]
       properties:
         id:
           type: string
@@ -15825,6 +15835,13 @@ components:
           $ref: "#/components/schemas/BookingStatus"
         occupancyStatus:
           $ref: "#/components/schemas/OccupancyStatus"
+        unpaidOverstayNights:
+          type: integer
+          minimum: 0
+          description: >
+            Nights this guest has stayed past `checkOut` with nothing agreed or charged for them,
+            from `checkOut` through `date` inclusive - see `GET /night-audit`. Always `0` on
+            `missedArrivals`, and `0` for a guest whose `checkOut` is today (due out, not overdue).
 
     NightAuditClosure:
       type: object

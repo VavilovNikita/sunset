@@ -52,6 +52,7 @@ public class NightAuditService {
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
     private final ReportService reportService;
+    private final OverstayRule overstayRule;
     private final AuditLogService auditLogService;
     private final Clock clock;
 
@@ -62,6 +63,7 @@ public class NightAuditService {
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             ReportService reportService,
+            OverstayRule overstayRule,
             AuditLogService auditLogService,
             Clock clock) {
         this.bookingRepository = bookingRepository;
@@ -70,6 +72,7 @@ public class NightAuditService {
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.reportService = reportService;
+        this.overstayRule = overstayRule;
         this.auditLogService = auditLogService;
         this.clock = clock;
     }
@@ -84,8 +87,8 @@ public class NightAuditService {
         String iso = day.toString();
         return new NightAudit(
                 iso,
-                toBookingDtos(missedArrivals(day)),
-                toBookingDtos(missedDepartures(day)),
+                toBookingDtos(missedArrivals(day), day),
+                toBookingDtos(missedDepartures(day), day),
                 reportService.occupancy(iso, iso).getTotal(),
                 nightAuditRepository.findByDate(day).map(this::toClosureDto).orElse(null));
     }
@@ -144,17 +147,30 @@ public class NightAuditService {
         }
     }
 
-    /** Room type and unit names in two batched lookups, not a lazy load per booking. */
-    private List<NightAuditBooking> toBookingDtos(List<BookingEntity> bookings) {
+    /**
+     * Room type and unit names in two batched lookups, not a lazy load per booking.
+     *
+     * <p>{@code unpaidOverstayNights} is {@link OverstayRule.Overstay#nightsIn} over
+     * {@code [checkOut, day]} - the same count the room reports occupy at zero revenue, never a
+     * second computation of it. A warning only: nothing is charged or changed here.
+     */
+    private List<NightAuditBooking> toBookingDtos(List<BookingEntity> bookings, LocalDate day) {
+        if (bookings.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Long> unpaidNights = overstayRule.current().stream()
+                .collect(Collectors.toMap(OverstayRule.Overstay::bookingId, o -> o.nightsIn(o.from(), day.plusDays(1))));
         Map<String, String> roomNames = roomRepository.findAllById(bookings.stream().map(BookingEntity::getRoomId).distinct().toList())
                 .stream().collect(Collectors.toMap(RoomEntity::getId, RoomEntity::getName));
         Map<String, String> unitLabels = roomUnitRepository.findAllById(
                         bookings.stream().map(BookingEntity::getRoomUnitId).filter(Objects::nonNull).distinct().toList())
                 .stream().collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
-        return bookings.stream().map(b -> toBookingDto(b, roomNames.get(b.getRoomId()), unitLabels.get(b.getRoomUnitId()))).toList();
+        return bookings.stream()
+                .map(b -> toBookingDto(b, roomNames.get(b.getRoomId()), unitLabels.get(b.getRoomUnitId()), unpaidNights.getOrDefault(b.getId(), 0L)))
+                .toList();
     }
 
-    private static NightAuditBooking toBookingDto(BookingEntity booking, String roomName, String unitLabel) {
+    private static NightAuditBooking toBookingDto(BookingEntity booking, String roomName, String unitLabel, long unpaidOverstayNights) {
         return new NightAuditBooking(
                 booking.getId(),
                 booking.getGuestName(),
@@ -163,7 +179,8 @@ public class NightAuditService {
                 booking.getCheckIn().toString(),
                 booking.getCheckOut().toString(),
                 booking.getStatus(),
-                booking.getOccupancyStatus());
+                booking.getOccupancyStatus(),
+                Math.toIntExact(unpaidOverstayNights));
     }
 
     private NightAuditClosure toClosureDto(NightAuditEntity entity) {

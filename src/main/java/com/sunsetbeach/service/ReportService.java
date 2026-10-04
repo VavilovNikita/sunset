@@ -217,8 +217,8 @@ public class ReportService {
             slices.add(new SegmentInRange(segment, inRange, prorated));
         }
         for (OverstayRule.Overstay overstay : overstayRule.current()) {
-            if (!overstay.overlaps(range.from(), rangeEnd)) continue;
-            long inRange = ChronoUnit.DAYS.between(max(overstay.from(), range.from()), min(overstay.toExclusive(), rangeEnd));
+            long inRange = overstay.nightsIn(range.from(), rangeEnd);
+            if (inRange == 0) continue;
             slices.add(new SegmentInRange(overstay.lastSegment(), inRange, BigDecimal.ZERO));
         }
         return slices;

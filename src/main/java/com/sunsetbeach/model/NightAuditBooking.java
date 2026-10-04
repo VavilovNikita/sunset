@@ -39,6 +39,8 @@ public class NightAuditBooking {
 
   private OccupancyStatus occupancyStatus;
 
+  private Integer unpaidOverstayNights;
+
   public NightAuditBooking() {
     super();
   }
@@ -46,7 +48,7 @@ public class NightAuditBooking {
   /**
    * Constructor with only required parameters
    */
-  public NightAuditBooking(String id, String guestName, String roomName, String roomUnitLabel, String checkIn, String checkOut, BookingStatus status, OccupancyStatus occupancyStatus) {
+  public NightAuditBooking(String id, String guestName, String roomName, String roomUnitLabel, String checkIn, String checkOut, BookingStatus status, OccupancyStatus occupancyStatus, Integer unpaidOverstayNights) {
     this.id = id;
     this.guestName = guestName;
     this.roomName = roomName;
@@ -55,6 +57,7 @@ public class NightAuditBooking {
     this.checkOut = checkOut;
     this.status = status;
     this.occupancyStatus = occupancyStatus;
+    this.unpaidOverstayNights = unpaidOverstayNights;
   }
 
   public NightAuditBooking id(String id) {
@@ -209,6 +212,26 @@ public class NightAuditBooking {
     this.occupancyStatus = occupancyStatus;
   }
 
+  public NightAuditBooking unpaidOverstayNights(Integer unpaidOverstayNights) {
+    this.unpaidOverstayNights = unpaidOverstayNights;
+    return this;
+  }
+
+  /**
+   * Nights this guest has stayed past `checkOut` with nothing agreed or charged for them, from `checkOut` through `date` inclusive - see `GET /night-audit`. Always `0` on `missedArrivals`, and `0` for a guest whose `checkOut` is today (due out, not overdue). 
+   * minimum: 0
+   * @return unpaidOverstayNights
+   */
+  @NotNull @Min(0) 
+  @JsonProperty("unpaidOverstayNights")
+  public Integer getUnpaidOverstayNights() {
+    return unpaidOverstayNights;
+  }
+
+  public void setUnpaidOverstayNights(Integer unpaidOverstayNights) {
+    this.unpaidOverstayNights = unpaidOverstayNights;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -225,12 +248,13 @@ public class NightAuditBooking {
         Objects.equals(this.checkIn, nightAuditBooking.checkIn) &&
         Objects.equals(this.checkOut, nightAuditBooking.checkOut) &&
         Objects.equals(this.status, nightAuditBooking.status) &&
-        Objects.equals(this.occupancyStatus, nightAuditBooking.occupancyStatus);
+        Objects.equals(this.occupancyStatus, nightAuditBooking.occupancyStatus) &&
+        Objects.equals(this.unpaidOverstayNights, nightAuditBooking.unpaidOverstayNights);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus);
+    return Objects.hash(id, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus, unpaidOverstayNights);
   }
 
   @Override
@@ -245,6 +269,7 @@ public class NightAuditBooking {
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
+    sb.append("    unpaidOverstayNights: ").append(toIndentedString(unpaidOverstayNights)).append("\n");
     sb.append("}");
     return sb.toString();
   }

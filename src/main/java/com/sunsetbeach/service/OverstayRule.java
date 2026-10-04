@@ -70,6 +70,17 @@ public class OverstayRule {
         public boolean overlaps(LocalDate checkIn, LocalDate checkOut) {
             return from.isBefore(checkOut) && toExclusive.isAfter(checkIn);
         }
+
+        /**
+         * Overstay nights inside {@code [rangeFrom, rangeToExclusive)}, {@code 0} if none. The one
+         * count of them: the room reports' zero-revenue slice and the night audit's unpaid-nights
+         * warning both read it, so they can't disagree about how many nights a guest overstayed.
+         */
+        public long nightsIn(LocalDate rangeFrom, LocalDate rangeToExclusive) {
+            LocalDate start = from.isAfter(rangeFrom) ? from : rangeFrom;
+            LocalDate end = toExclusive.isBefore(rangeToExclusive) ? toExclusive : rangeToExclusive;
+            return start.isBefore(end) ? ChronoUnit.DAYS.between(start, end) : 0;
+        }
     }
 
     private final BookingRepository bookingRepository;

@@ -18,6 +18,8 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CalendarBooking;
 import com.sunsetbeach.model.InHouseRow;
 import com.sunsetbeach.model.ManagerReportDay;
+import com.sunsetbeach.model.NightAudit;
+import com.sunsetbeach.model.NightAuditBooking;
 import com.sunsetbeach.model.OccupancyReportRow;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.RoomTypeDailyAvailability;
@@ -75,6 +77,7 @@ class OverstayRuleTests extends AbstractIntegrationTest {
     @Autowired private BookingService bookingService;
     @Autowired private BookingOccupancyService occupancyService;
     @Autowired private ReportService reportService;
+    @Autowired private NightAuditService nightAuditService;
     @Autowired private RoomRepository roomRepository;
     @Autowired private RoomUnitRepository roomUnitRepository;
     @Autowired private BookingRepository bookingRepository;
@@ -256,6 +259,49 @@ class OverstayRuleTests extends AbstractIntegrationTest {
         assertThat(today).contains(overdue.getId()).doesNotContain(departedOnTime.getId());
         assertThat(spaWindow).contains(overdue.getId());
         assertThat(nextWeek).doesNotContain(overdue.getId());
+    }
+
+    /**
+     * The night audit's "unpaid nights" warning is the overstay the room reports occupy at zero
+     * revenue, counted through the reviewed date - not "days overdue", which skips the checkOut
+     * night the guest also stayed. Checked against occupancy over the same nights so the two can't drift.
+     */
+    @Test
+    void nightAudit_warnsUnpaidOverstayNights_matchingWhatTheReportsCount() {
+        BookingEntity overdue = persistStay(OccupancyStatus.CHECKED_IN, "2033-03-10", "2033-03-15");
+        BookingEntity onTime = persistStay(OccupancyStatus.CHECKED_IN, "2033-03-18", "2033-03-22");
+        BookingEntity dueOutToday = persistStay(OccupancyStatus.CHECKED_IN, "2033-03-17", "2033-03-20");
+
+        NightAudit audit = nightAuditService.get(TODAY.toString());
+
+        assertThat(departure(audit, overdue).getUnpaidOverstayNights()).isEqualTo(6); // 15..20
+        OccupancyReportRow overstayNights = reportService.occupancy("2033-03-15", "2033-03-20").getRooms().stream()
+                .filter(r -> room.getId().equals(r.getRoomId().orElse(null))).findFirst().orElseThrow();
+        // 15..20 in this room type: the overstay's 6, plus the agreed 18-20 and 17-19 of the other two.
+        assertThat(overstayNights.getRoomNightsSold() - 3 - 3).isEqualTo(departure(audit, overdue).getUnpaidOverstayNights());
+        // Reviewing an earlier date counts through that date only.
+        assertThat(departure(nightAuditService.get("2033-03-17"), overdue).getUnpaidOverstayNights()).isEqualTo(3);
+
+        assertThat(audit.getMissedDepartures().stream().map(NightAuditBooking::getId)).doesNotContain(onTime.getId());
+        // Due out today is listed as a missed departure, but nothing is overdue yet.
+        assertThat(departure(audit, dueOutToday).getUnpaidOverstayNights()).isZero();
+    }
+
+    @Test
+    void nightAudit_checkedOutGuest_noLongerWarns() {
+        BookingEntity overdue = persistStay(OccupancyStatus.CHECKED_IN, "2033-03-10", "2033-03-15");
+        assertThat(departure(nightAuditService.get(TODAY.toString()), overdue).getUnpaidOverstayNights()).isEqualTo(6);
+
+        BookingEntity reloaded = bookingRepository.findById(overdue.getId()).orElseThrow();
+        reloaded.setOccupancyStatus(OccupancyStatus.CHECKED_OUT);
+        bookingRepository.saveAndFlush(reloaded);
+
+        assertThat(nightAuditService.get(TODAY.toString()).getMissedDepartures().stream().map(NightAuditBooking::getId))
+                .doesNotContain(overdue.getId());
+    }
+
+    private static NightAuditBooking departure(NightAudit audit, BookingEntity booking) {
+        return audit.getMissedDepartures().stream().filter(b -> b.getId().equals(booking.getId())).findFirst().orElseThrow();
     }
 
     private BookingEntity insertStaff(String checkIn, String checkOut, String roomUnitId) {
