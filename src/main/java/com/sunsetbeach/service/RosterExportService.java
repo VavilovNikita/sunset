@@ -488,6 +488,10 @@ public class RosterExportService {
             cell.setCellStyle(headerStyle);
         }
 
+        // Collected first, written by day: "what went wrong on the 3rd" reads better than one
+        // person's whole month, and the date strings are ISO so they sort as dates. The sort is
+        // stable, so within a day the name-then-type order the loop produced is kept.
+        List<String[]> rows = new java.util.ArrayList<>();
         int rowIndex = 1;
         for (String employeeId : employeeIds) {
             String name = employees.get(employeeId).getName();
@@ -506,24 +510,32 @@ public class RosterExportService {
                 if (entry == null) {
                     // Union membership guarantees dayPunches is non-empty here - a date with
                     // neither an entry nor a punch was never added to `dates` at all.
-                    rowIndex = writeAnomalyRow(sheet, rowIndex, name, date, "UNSCHEDULED",
+                    rowIndex = writeAnomalyRow(rows, rowIndex, name, date, "UNSCHEDULED",
                             dayPunches.size() + " punch(es) recorded with no counts-as-worked roster entry that day");
                 } else if (dayPunches.isEmpty()) {
                     // A day that hasn't happened yet (or is still going) can't have been missed.
                     if (!date.isBefore(today)) continue;
-                    rowIndex = writeAnomalyRow(sheet, rowIndex, name, date, "MISSED",
+                    rowIndex = writeAnomalyRow(rows, rowIndex, name, date, "MISSED",
                             "Scheduled " + shiftCodesById.get(entry.getShiftCodeId()).getCode() + " - no punches recorded");
                     continue;
                 } else {
-                    rowIndex = writeLateAndLeftEarlyRows(sheet, rowIndex, name, date, shiftCodesById.get(entry.getShiftCodeId()), dayPunches);
+                    rowIndex = writeLateAndLeftEarlyRows(rows, rowIndex, name, date, shiftCodesById.get(entry.getShiftCodeId()), dayPunches);
                 }
 
                 // Today's lone punch is someone still in the house, not a missed clock-out.
                 if (dayPunches.size() % 2 != 0 && date.isBefore(today)) {
-                    rowIndex = writeAnomalyRow(sheet, rowIndex, name, date, "INCOMPLETE", dayPunches.size() + " punch(es) recorded - an odd count");
+                    rowIndex = writeAnomalyRow(rows, rowIndex, name, date, "INCOMPLETE", dayPunches.size() + " punch(es) recorded - an odd count");
                 }
             }
         }
+
+        rows.sort(java.util.Comparator.comparing((String[] r) -> r[1]));
+        int out = 1;
+        for (String[] r : rows) {
+            Row row = sheet.createRow(out++);
+            for (int c = 0; c < r.length; c++) row.createCell(c).setCellValue(r[c]);
+        }
+        if (!rows.isEmpty()) sheet.setAutoFilter(new CellRangeAddress(0, rows.size(), 0, 3));
 
         sheet.setColumnWidth(0, 24 * 256);
         sheet.setColumnWidth(1, 12 * 256);
@@ -534,7 +546,7 @@ public class RosterExportService {
 
     /** Only reached when both an entry and at least one punch exist that day - see {@link #writeLateAndAnomaliesSheet}. */
     private int writeLateAndLeftEarlyRows(
-            XSSFSheet sheet, int rowIndex, String employeeName, LocalDate date, ShiftCodeEntity shiftCode, List<AttendancePunchEntity> dayPunches) {
+            List<String[]> rows, int rowIndex, String employeeName, LocalDate date, ShiftCodeEntity shiftCode, List<AttendancePunchEntity> dayPunches) {
         List<LocalTime[]> intervals = new java.util.ArrayList<>();
         if (shiftCode.getStartTime1() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime1(), shiftCode.getEndTime1()});
         if (shiftCode.getStartTime2() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime2(), shiftCode.getEndTime2()});
@@ -550,24 +562,20 @@ public class RosterExportService {
 
             long lateMinutes = Duration.between(start, inTime).toMinutes();
             if (lateMinutes > 0) {
-                rowIndex = writeAnomalyRow(sheet, rowIndex, employeeName, date, "LATE",
+                rowIndex = writeAnomalyRow(rows, rowIndex, employeeName, date, "LATE",
                         lateMinutes + " min late for the " + start.format(TIME_FORMAT) + " shift (clocked in " + inTime.format(TIME_FORMAT) + ")");
             }
             long earlyMinutes = Duration.between(outTime, end).toMinutes();
             if (earlyMinutes > 0) {
-                rowIndex = writeAnomalyRow(sheet, rowIndex, employeeName, date, "LEFT_EARLY",
+                rowIndex = writeAnomalyRow(rows, rowIndex, employeeName, date, "LEFT_EARLY",
                         earlyMinutes + " min left early from the " + end.format(TIME_FORMAT) + " shift (clocked out " + outTime.format(TIME_FORMAT) + ")");
             }
         }
         return rowIndex;
     }
 
-    private int writeAnomalyRow(XSSFSheet sheet, int rowIndex, String employeeName, LocalDate date, String type, String detail) {
-        Row row = sheet.createRow(rowIndex);
-        row.createCell(0).setCellValue(employeeName);
-        row.createCell(1).setCellValue(date.toString());
-        row.createCell(2).setCellValue(type);
-        row.createCell(3).setCellValue(detail);
+    private int writeAnomalyRow(List<String[]> rows, int rowIndex, String employeeName, LocalDate date, String type, String detail) {
+        rows.add(new String[] {employeeName, date.toString(), type, detail});
         return rowIndex + 1;
     }
 

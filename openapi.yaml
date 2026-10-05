@@ -9308,7 +9308,7 @@ paths:
         month with an odd punch count. "Arrivals & departures": an employee x day matrix for the
         month - each cell is that day's punches as IN-OUT pairs (`07:01-16:05`, several pairs on
         separate lines, `IN-?` for an unpaired punch, a trailing `*` on a manually entered time) -
-        the same positional pairing Summary's totals are computed from. "Late & anomalies" never
+        the same positional pairing Summary's totals are computed from. "Late & anomalies" is sorted by date, then employee, and never
         reports a scheduled day as MISSED until that day is over, nor today's lone punch as
         INCOMPLETE (that person is still in the house); the Summary's incomplete count follows the
         same rule. No money: the hotel's
