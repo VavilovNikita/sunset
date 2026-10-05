@@ -455,7 +455,7 @@ public class RosterExportService {
      *
      * <ul>
      *   <li>entry, no punches at all -&gt; {@code MISSED}.
-     *   <li>no entry, punches exist -&gt; {@code UNSCHEDULED}.
+     *   <li>no entry, punches exist -&gt; nothing reported (no {@code UNSCHEDULED} row).
      *   <li>entry and punches both exist -&gt; that day's punches are paired ({@link
      *       AttendancePunchPairing#pairs}, the same positional pairing {@link
      *       #actualsTotalsFor} sums minutes from) and matched, in order, to the shift code's own
@@ -471,7 +471,7 @@ public class RosterExportService {
      * <p>{@code INCOMPLETE} (an odd punch count that day) is checked independently of the three
      * cases above, off the same day's punches, whether or not there's an entry - the identical rule
      * {@link #actualsTotalsFor} already uses for the Summary sheet's "Incomplete days" column, so a
-     * day can carry both an {@code UNSCHEDULED} row and an {@code INCOMPLETE} row.
+     * day with no entry can still carry an {@code INCOMPLETE} row.
      */
     private void writeLateAndAnomaliesSheet(
             XSSFWorkbook workbook, List<String> employeeIds, Map<String, UserEntity> employees,
@@ -508,10 +508,9 @@ public class RosterExportService {
                 List<AttendancePunchEntity> dayPunches = punchesByDate.getOrDefault(date, List.of());
 
                 if (entry == null) {
-                    // Union membership guarantees dayPunches is non-empty here - a date with
-                    // neither an entry nor a punch was never added to `dates` at all.
-                    rowIndex = writeAnomalyRow(rows, rowIndex, name, date, "UNSCHEDULED",
-                            dayPunches.size() + " punch(es) recorded with no counts-as-worked roster entry that day");
+                    // Punches with no roster entry are deliberately not reported (no UNSCHEDULED
+                    // row) - they are all visible on the Arrivals & departures sheet already.
+                    // Only the odd-punch-count check below still applies to such a day.
                 } else if (dayPunches.isEmpty()) {
                     // A day that hasn't happened yet (or is still going) can't have been missed.
                     if (!date.isBefore(today)) continue;

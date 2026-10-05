@@ -403,12 +403,9 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         // MANUAL punches carry a trailing "*" in the matrix.
         assertThat(cellText(matrixRow, date.getDayOfMonth())).isEqualTo("09:00*-17:00*");
 
-        // Same fact ("punches with no counts-as-worked roster entry") surfaces as an anomaly row too.
+        // Punches with no roster entry are not an anomaly row (no UNSCHEDULED type any more).
         XSSFSheet anomalies = workbook.getSheetAt(2);
-        List<Row> anomalyRows = punchRowsForEmployee(anomalies, employee.getName());
-        assertThat(anomalyRows).hasSize(1);
-        assertThat(cellText(anomalyRows.get(0), 1)).isEqualTo(date.toString());
-        assertThat(cellText(anomalyRows.get(0), 2)).isEqualTo("UNSCHEDULED");
+        assertThat(punchRowsForEmployee(anomalies, employee.getName())).isEmpty();
     }
 
     /** An odd punch count - the day contributes nothing to worked minutes and the lone punch never pairs with a neighboring day's punch. */
@@ -438,15 +435,13 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         assertThat(cellText(matrixRow, incompleteDay.getDayOfMonth())).isEqualTo("09:00*-?");
         assertThat(cellText(matrixRow, completeDay.getDayOfMonth())).isEqualTo("09:00*-17:00*");
 
-        // Neither day has a roster entry (none was created above), so both are UNSCHEDULED too -
-        // the incomplete day carries both an UNSCHEDULED row and its own INCOMPLETE row.
+        // Neither day has a roster entry (none was created above), which is not reported on its
+        // own - only the incomplete day's odd punch count is.
         XSSFSheet anomalies = workbook.getSheetAt(2);
         List<Row> anomalyRows = punchRowsForEmployee(anomalies, employee.getName());
-        assertThat(anomalyRows).hasSize(3);
-        assertThat(anomalyRows.stream().filter(r -> incompleteDay.toString().equals(cellText(r, 1))).map(r -> cellText(r, 2)))
-                .containsExactlyInAnyOrder("UNSCHEDULED", "INCOMPLETE");
-        assertThat(anomalyRows.stream().filter(r -> completeDay.toString().equals(cellText(r, 1))).map(r -> cellText(r, 2)))
-                .containsExactly("UNSCHEDULED");
+        assertThat(anomalyRows).hasSize(1);
+        assertThat(cellText(anomalyRows.get(0), 1)).isEqualTo(incompleteDay.toString());
+        assertThat(cellText(anomalyRows.get(0), 2)).isEqualTo("INCOMPLETE");
     }
 
     @Test
