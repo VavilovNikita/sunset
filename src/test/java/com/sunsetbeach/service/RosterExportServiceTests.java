@@ -376,7 +376,8 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         assertThat(numeric(row, 5)).isEqualTo(0); // Incomplete days
 
         XSSFSheet punches = workbook.getSheetAt(1);
-        assertThat(punchRowsForEmployee(punches, employee.getName())).isEmpty();
+        Row matrixRow = punches.getRow(rowIndexOfEmployee(punches, employee.getName()));
+        assertThat(cellText(matrixRow, date.getDayOfMonth())).isNullOrEmpty();
     }
 
     @Test
@@ -398,11 +399,9 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         assertThat(numeric(row, 4)).isEqualTo(8); // Hours worked
 
         XSSFSheet punches = workbook.getSheetAt(1);
-        List<Row> rows = punchRowsForEmployee(punches, employee.getName());
-        assertThat(rows).hasSize(2);
-        assertThat(cellText(rows.get(0), 2)).isEqualTo("IN");
-        assertThat(cellText(rows.get(1), 2)).isEqualTo("OUT");
-        assertThat(cellText(rows.get(0), 4)).isEqualTo("MANUAL");
+        Row matrixRow = punches.getRow(rowIndexOfEmployee(punches, employee.getName()));
+        // MANUAL punches carry a trailing "*" in the matrix.
+        assertThat(cellText(matrixRow, date.getDayOfMonth())).isEqualTo("09:00*-17:00*");
 
         // Same fact ("punches with no counts-as-worked roster entry") surfaces as an anomaly row too.
         XSSFSheet anomalies = workbook.getSheetAt(2);
@@ -435,10 +434,9 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         assertThat(numeric(row, 5)).isEqualTo(1); // Incomplete days
 
         XSSFSheet punches = workbook.getSheetAt(1);
-        List<Row> rows = punchRowsForEmployee(punches, employee.getName());
-        assertThat(rows).hasSize(3);
-        assertThat(cellText(rows.get(0), 1)).isEqualTo(incompleteDay.toString());
-        assertThat(cellText(rows.get(0), 2)).isEqualTo("IN");
+        Row matrixRow = punches.getRow(rowIndexOfEmployee(punches, employee.getName()));
+        assertThat(cellText(matrixRow, incompleteDay.getDayOfMonth())).isEqualTo("09:00*-?");
+        assertThat(cellText(matrixRow, completeDay.getDayOfMonth())).isEqualTo("09:00*-17:00*");
 
         // Neither day has a roster entry (none was created above), so both are UNSCHEDULED too -
         // the incomplete day carries both an UNSCHEDULED row and its own INCOMPLETE row.
@@ -518,6 +516,40 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
 
         assertThat(rows).hasSize(1);
         assertThat(cellText(rows.get(0), 2)).isEqualTo("MISSED");
+    }
+
+    /** The clock is pinned to 2028-01-01, so a month after it is entirely in the future. */
+    @Test
+    void exportActuals_lateAndAnomalies_scheduledDayInTheFuture_isNotMissed() {
+        UserEntity mgr = createEmployee(null, "Manager");
+        UserEntity employee = createEmployee(StaffArea.RESTAURANT, "Future");
+        ShiftCode code = createCode(ShiftCodeKind.MORNING, true, "09:00", "17:00");
+        LocalDate future = LocalDate.of(2028, 3, 3);
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), future.toString(), code.getId()), mgr.getId());
+
+        XSSFSheet anomalies = exportActualsWorkbook(2028, 3).getSheetAt(2);
+
+        assertThat(punchRowsForEmployee(anomalies, employee.getName())).isEmpty();
+    }
+
+    @Test
+    void exportActuals_lateAndAnomalies_scheduledToday_notMissedYet_pastDayIs() {
+        UserEntity mgr = createEmployee(null, "Manager");
+        UserEntity employee = createEmployee(StaffArea.RESTAURANT, "Today");
+        ShiftCode code = createCode(ShiftCodeKind.MORNING, true, "09:00", "17:00");
+        LocalDate today = LocalDate.of(2028, 1, 1);
+        LocalDate yesterday = today.minusDays(1);
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), today.toString(), code.getId()), mgr.getId());
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), yesterday.toString(), code.getId()), mgr.getId());
+
+        XSSFWorkbook workbook = exportActualsWorkbook(2027, 12);
+        List<Row> december = punchRowsForEmployee(workbook.getSheetAt(2), employee.getName());
+        assertThat(december).hasSize(1);
+        assertThat(cellText(december.get(0), 1)).isEqualTo(yesterday.toString());
+        assertThat(cellText(december.get(0), 2)).isEqualTo("MISSED");
+
+        XSSFWorkbook january = exportActualsWorkbook(2028, 1);
+        assertThat(punchRowsForEmployee(january.getSheetAt(2), employee.getName())).isEmpty();
     }
 
     @Test

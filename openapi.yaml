@@ -9305,9 +9305,13 @@ paths:
         day with no fixed hours, `PH` doesn't count at all, same as before this export reported
         real attendance); Days present/Hours worked are real punches, paired consecutive IN/OUT
         per day the same way `GET /attendance/summary` does; Incomplete days counts days that
-        month with an odd punch count. "Arrivals & departures": one row per punch that month
-        across every employee in scope, sorted by employee then punch time - the raw log Summary's
-        totals are computed from, not pre-paired into sessions here. No money: the hotel's
+        month with an odd punch count. "Arrivals & departures": an employee x day matrix for the
+        month - each cell is that day's punches as IN-OUT pairs (`07:01-16:05`, several pairs on
+        separate lines, `IN-?` for an unpaired punch, a trailing `*` on a manually entered time) -
+        the same positional pairing Summary's totals are computed from. "Late & anomalies" never
+        reports a scheduled day as MISSED until that day is over, nor today's lone punch as
+        INCOMPLETE (that person is still in the house); the Summary's incomplete count follows the
+        same rule. No money: the hotel's
         accountant keeps pay calculation off-system (everyone is currently on a monthly salary
         held in a sheet this system has never seen, and there are no part-timers), so this export
         reports only the underlying facts and leaves the arithmetic where it already lives.

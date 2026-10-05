@@ -301,6 +301,7 @@ public class RosterExportService {
 
         // Ordered by employeeUserId then punchAt (see the repository method's own javadoc) - each
         // group's own list below stays punchAt-sorted for free, exactly what same-day pairing needs.
+        LocalDate today = LocalDate.now(clock);
         List<AttendancePunchEntity> punches =
                 attendancePunchRepository.findByPunchAtBetweenOrderByEmployeeUserIdAscPunchAtAsc(from.atStartOfDay(), to.plusDays(1).atStartOfDay());
         Map<String, List<AttendancePunchEntity>> punchesByEmployee = punches.stream().collect(Collectors.groupingBy(AttendancePunchEntity::getEmployeeUserId));
@@ -314,9 +315,9 @@ public class RosterExportService {
         List<String> orderedEmployeeIds = employeeIds.stream().sorted((a, b) -> employees.get(a).getName().compareTo(employees.get(b).getName())).toList();
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
-            writeActualsSummarySheet(workbook, orderedEmployeeIds, employees, assignedByEmployee, shiftCodesById, punchesByEmployee);
-            writeActualsPunchSheet(workbook, orderedEmployeeIds, employees, punchesByEmployee);
-            writeLateAndAnomaliesSheet(workbook, orderedEmployeeIds, employees, assignedByEmployee, shiftCodesById, punchesByEmployee);
+            writeActualsSummarySheet(workbook, orderedEmployeeIds, employees, assignedByEmployee, shiftCodesById, punchesByEmployee, today);
+            writeActualsPunchSheet(workbook, ym, orderedEmployeeIds, employees, punchesByEmployee);
+            writeLateAndAnomaliesSheet(workbook, orderedEmployeeIds, employees, assignedByEmployee, shiftCodesById, punchesByEmployee, today);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
@@ -334,7 +335,7 @@ public class RosterExportService {
     private void writeActualsSummarySheet(
             XSSFWorkbook workbook, List<String> employeeIds, Map<String, UserEntity> employees,
             Map<String, List<RosterEntryEntity>> assignedByEmployee, Map<String, ShiftCodeEntity> shiftCodesById,
-            Map<String, List<AttendancePunchEntity>> punchesByEmployee) {
+            Map<String, List<AttendancePunchEntity>> punchesByEmployee, LocalDate today) {
         XSSFSheet sheet = workbook.createSheet("Summary");
         XSSFCellStyle headerStyle = boldStyle(workbook);
 
@@ -348,7 +349,7 @@ public class RosterExportService {
 
         int rowIndex = 1;
         for (String employeeId : employeeIds) {
-            ActualsTotals totals = actualsTotalsFor(assignedByEmployee.get(employeeId), shiftCodesById, punchesByEmployee.get(employeeId));
+            ActualsTotals totals = actualsTotalsFor(assignedByEmployee.get(employeeId), shiftCodesById, punchesByEmployee.get(employeeId), today);
             Row row = sheet.createRow(rowIndex++);
             row.createCell(0).setCellValue(employees.get(employeeId).getName());
             row.createCell(1).setCellValue(totals.daysAssigned());
@@ -365,41 +366,85 @@ public class RosterExportService {
         sheet.createFreezePane(0, 1);
     }
 
+    /**
+     * Employee x day matrix instead of a raw log: one row per employee, one column per day of the
+     * month, each cell that day's punches as {@code IN-OUT} pairs ({@code 07:01-16:05}), several
+     * pairs on separate lines, an unpaired trailing punch as {@code IN-?}. A time typed in by a
+     * manager rather than read off the scanner carries a trailing {@code *}. Same positional
+     * pairing as everywhere else ({@link AttendancePunchPairing}), so the matrix can't disagree
+     * with the Summary's hours.
+     */
     private void writeActualsPunchSheet(
-            XSSFWorkbook workbook, List<String> employeeIds, Map<String, UserEntity> employees,
+            XSSFWorkbook workbook, YearMonth ym, List<String> employeeIds, Map<String, UserEntity> employees,
             Map<String, List<AttendancePunchEntity>> punchesByEmployee) {
         XSSFSheet sheet = workbook.createSheet("Arrivals & departures");
         XSSFCellStyle headerStyle = boldStyle(workbook);
+        headerStyle.setAlignment(HorizontalAlignment.CENTER);
+        XSSFCellStyle cellStyle = workbook.createCellStyle();
+        cellStyle.setAlignment(HorizontalAlignment.CENTER);
+        cellStyle.setVerticalAlignment(org.apache.poi.ss.usermodel.VerticalAlignment.CENTER);
+        cellStyle.setWrapText(true);
+        cellStyle.setBorderBottom(BorderStyle.HAIR);
+        cellStyle.setBorderRight(BorderStyle.HAIR);
 
-        String[] columns = {"Employee", "Date", "Direction", "Time", "Source", "Note"};
+        int days = ym.lengthOfMonth();
         Row header = sheet.createRow(0);
-        for (int i = 0; i < columns.length; i++) {
-            Cell cell = header.createCell(i);
-            cell.setCellValue(columns[i]);
+        Cell nameHeader = header.createCell(0);
+        nameHeader.setCellValue("Employee");
+        nameHeader.setCellStyle(headerStyle);
+        for (int day = 1; day <= days; day++) {
+            Cell cell = header.createCell(day);
+            cell.setCellValue(day + "\n" + ym.atDay(day).getDayOfWeek().getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH));
             cell.setCellStyle(headerStyle);
         }
+        header.setHeightInPoints(30);
 
+        XSSFCellStyle nameStyle = boldStyle(workbook);
         int rowIndex = 1;
         for (String employeeId : employeeIds) {
-            String name = employees.get(employeeId).getName();
-            for (AttendancePunchEntity punch : punchesByEmployee.getOrDefault(employeeId, List.of())) {
-                Row row = sheet.createRow(rowIndex++);
-                row.createCell(0).setCellValue(name);
-                row.createCell(1).setCellValue(punch.getPunchAt().toLocalDate().toString());
-                row.createCell(2).setCellValue(punch.getDirection().getValue());
-                row.createCell(3).setCellValue(punch.getPunchAt().toLocalTime().format(TIME_FORMAT));
-                row.createCell(4).setCellValue(punch.getSource().getValue());
-                row.createCell(5).setCellValue(punch.getNote() != null ? punch.getNote() : "");
+            Row row = sheet.createRow(rowIndex++);
+            Cell nameCell = row.createCell(0);
+            nameCell.setCellValue(employees.get(employeeId).getName());
+            nameCell.setCellStyle(nameStyle);
+
+            Map<LocalDate, List<AttendancePunchEntity>> byDate = punchesByEmployee.getOrDefault(employeeId, List.of()).stream()
+                    .collect(Collectors.groupingBy(p -> p.getPunchAt().toLocalDate()));
+            int maxLines = 1;
+            for (int day = 1; day <= days; day++) {
+                Cell cell = row.createCell(day);
+                cell.setCellStyle(cellStyle);
+                List<AttendancePunchEntity> dayPunches = byDate.get(ym.atDay(day));
+                if (dayPunches == null) continue;
+                String text = punchCellText(dayPunches);
+                cell.setCellValue(text);
+                maxLines = Math.max(maxLines, text.split("\n").length);
             }
+            row.setHeightInPoints(15f * maxLines);
         }
 
-        sheet.setColumnWidth(0, 24 * 256);
-        sheet.setColumnWidth(1, 12 * 256);
-        sheet.setColumnWidth(2, 12 * 256);
-        sheet.setColumnWidth(3, 10 * 256);
-        sheet.setColumnWidth(4, 12 * 256);
-        sheet.setColumnWidth(5, 30 * 256);
-        sheet.createFreezePane(0, 1);
+        Row legend = sheet.createRow(rowIndex + 1);
+        legend.createCell(0).setCellValue("IN-OUT per day; IN-? = no matching OUT; * = entered manually, not scanned");
+
+        sheet.setColumnWidth(0, 18 * 256);
+        for (int day = 1; day <= days; day++) {
+            sheet.setColumnWidth(day, 13 * 256);
+        }
+        sheet.createFreezePane(1, 1);
+    }
+
+    private static String punchCellText(List<AttendancePunchEntity> dayPunches) {
+        List<String> parts = new java.util.ArrayList<>();
+        for (int i = 0; i < dayPunches.size(); i += 2) {
+            String in = punchTime(dayPunches.get(i));
+            String out = i + 1 < dayPunches.size() ? punchTime(dayPunches.get(i + 1)) : "?";
+            parts.add(in + "-" + out);
+        }
+        return String.join("\n", parts);
+    }
+
+    private static String punchTime(AttendancePunchEntity punch) {
+        String time = punch.getPunchAt().toLocalTime().format(TIME_FORMAT);
+        return punch.getSource() == com.sunsetbeach.model.PunchSource.MANUAL ? time + "*" : time;
     }
 
     /**
@@ -431,7 +476,7 @@ public class RosterExportService {
     private void writeLateAndAnomaliesSheet(
             XSSFWorkbook workbook, List<String> employeeIds, Map<String, UserEntity> employees,
             Map<String, List<RosterEntryEntity>> assignedByEmployee, Map<String, ShiftCodeEntity> shiftCodesById,
-            Map<String, List<AttendancePunchEntity>> punchesByEmployee) {
+            Map<String, List<AttendancePunchEntity>> punchesByEmployee, LocalDate today) {
         XSSFSheet sheet = workbook.createSheet("Late & anomalies");
         XSSFCellStyle headerStyle = boldStyle(workbook);
 
@@ -464,6 +509,8 @@ public class RosterExportService {
                     rowIndex = writeAnomalyRow(sheet, rowIndex, name, date, "UNSCHEDULED",
                             dayPunches.size() + " punch(es) recorded with no counts-as-worked roster entry that day");
                 } else if (dayPunches.isEmpty()) {
+                    // A day that hasn't happened yet (or is still going) can't have been missed.
+                    if (!date.isBefore(today)) continue;
                     rowIndex = writeAnomalyRow(sheet, rowIndex, name, date, "MISSED",
                             "Scheduled " + shiftCodesById.get(entry.getShiftCodeId()).getCode() + " - no punches recorded");
                     continue;
@@ -471,7 +518,8 @@ public class RosterExportService {
                     rowIndex = writeLateAndLeftEarlyRows(sheet, rowIndex, name, date, shiftCodesById.get(entry.getShiftCodeId()), dayPunches);
                 }
 
-                if (dayPunches.size() % 2 != 0) {
+                // Today's lone punch is someone still in the house, not a missed clock-out.
+                if (dayPunches.size() % 2 != 0 && date.isBefore(today)) {
                     rowIndex = writeAnomalyRow(sheet, rowIndex, name, date, "INCOMPLETE", dayPunches.size() + " punch(es) recorded - an odd count");
                 }
             }
@@ -532,7 +580,8 @@ public class RosterExportService {
      * class reads {@code punchesByEmployee}/{@code assignedByEmployee}.
      */
     private ActualsTotals actualsTotalsFor(
-            List<RosterEntryEntity> assignedEntries, Map<String, ShiftCodeEntity> shiftCodesById, List<AttendancePunchEntity> employeePunches) {
+            List<RosterEntryEntity> assignedEntries, Map<String, ShiftCodeEntity> shiftCodesById, List<AttendancePunchEntity> employeePunches,
+            LocalDate today) {
         List<RosterEntryEntity> assigned = assignedEntries == null ? List.of() : assignedEntries;
         BigDecimal hoursAssigned = BigDecimal.ZERO;
         for (RosterEntryEntity entry : assigned) {
@@ -544,8 +593,9 @@ public class RosterExportService {
 
         int incompleteDays = 0;
         int workedMinutes = 0;
-        for (List<AttendancePunchEntity> dayPunches : byDay.values()) {
-            if (dayPunches.size() % 2 != 0) {
+        for (Map.Entry<LocalDate, List<AttendancePunchEntity>> day : byDay.entrySet()) {
+            List<AttendancePunchEntity> dayPunches = day.getValue();
+            if (dayPunches.size() % 2 != 0 && day.getKey().isBefore(today)) {
                 incompleteDays++;
             }
             workedMinutes += AttendancePunchPairing.sumWorkedMinutes(dayPunches);
