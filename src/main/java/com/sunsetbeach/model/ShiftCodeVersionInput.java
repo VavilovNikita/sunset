@@ -19,11 +19,13 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Body of &#x60;POST /shift-codes/{id}/versions&#x60;. No &#x60;staffArea&#x60;, &#x60;code&#x60; or &#x60;effectiveFrom&#x60; - the first two are the edited code&#39;s own, the last is always today. The interval fields and &#x60;displayColor&#x60; are nullable and so left out of &#x60;required&#x60; (see CLAUDE.md&#39;s Code generation section); omitting one means \&quot;none\&quot; (an OP/PH-style code with no hours, or no colour), not \&quot;keep the old value\&quot; - the form sends every field. 
+ * Body of &#x60;POST /shift-codes/{id}/versions&#x60;. No &#x60;staffArea&#x60; or &#x60;code&#x60; - they are the edited code&#39;s own. &#x60;effectiveFrom&#x60; is optional (today when omitted). The interval fields and &#x60;displayColor&#x60; are nullable and so left out of &#x60;required&#x60; (see CLAUDE.md&#39;s Code generation section); omitting one means \&quot;none\&quot; (an OP/PH-style code with no hours, or no colour), not \&quot;keep the old value\&quot; - the form sends every field. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class ShiftCodeVersionInput {
+
+  private String effectiveFrom;
 
   private ShiftCodeKind kind;
 
@@ -52,6 +54,25 @@ public class ShiftCodeVersionInput {
     this.kind = kind;
     this.countsAsWorked = countsAsWorked;
     this.isPaid = isPaid;
+  }
+
+  public ShiftCodeVersionInput effectiveFrom(String effectiveFrom) {
+    this.effectiveFrom = effectiveFrom;
+    return this;
+  }
+
+  /**
+   * First day the new terms apply, `YYYY-MM-DD`. Defaults to today.
+   * @return effectiveFrom
+   */
+  @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") 
+  @JsonProperty("effectiveFrom")
+  public String getEffectiveFrom() {
+    return effectiveFrom;
+  }
+
+  public void setEffectiveFrom(String effectiveFrom) {
+    this.effectiveFrom = effectiveFrom;
   }
 
   public ShiftCodeVersionInput kind(ShiftCodeKind kind) {
@@ -215,7 +236,8 @@ public class ShiftCodeVersionInput {
       return false;
     }
     ShiftCodeVersionInput shiftCodeVersionInput = (ShiftCodeVersionInput) o;
-    return Objects.equals(this.kind, shiftCodeVersionInput.kind) &&
+    return Objects.equals(this.effectiveFrom, shiftCodeVersionInput.effectiveFrom) &&
+        Objects.equals(this.kind, shiftCodeVersionInput.kind) &&
         equalsNullable(this.startTime1, shiftCodeVersionInput.startTime1) &&
         equalsNullable(this.endTime1, shiftCodeVersionInput.endTime1) &&
         equalsNullable(this.startTime2, shiftCodeVersionInput.startTime2) &&
@@ -231,7 +253,7 @@ public class ShiftCodeVersionInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(kind, hashCodeNullable(startTime1), hashCodeNullable(endTime1), hashCodeNullable(startTime2), hashCodeNullable(endTime2), countsAsWorked, isPaid, hashCodeNullable(displayColor));
+    return Objects.hash(effectiveFrom, kind, hashCodeNullable(startTime1), hashCodeNullable(endTime1), hashCodeNullable(startTime2), hashCodeNullable(endTime2), countsAsWorked, isPaid, hashCodeNullable(displayColor));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -245,6 +267,7 @@ public class ShiftCodeVersionInput {
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class ShiftCodeVersionInput {\n");
+    sb.append("    effectiveFrom: ").append(toIndentedString(effectiveFrom)).append("\n");
     sb.append("    kind: ").append(toIndentedString(kind)).append("\n");
     sb.append("    startTime1: ").append(toIndentedString(startTime1)).append("\n");
     sb.append("    endTime1: ").append(toIndentedString(endTime1)).append("\n");

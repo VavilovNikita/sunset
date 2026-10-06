@@ -8163,24 +8163,32 @@ paths:
     post:
       operationId: createShiftCodeVersion
       tags: [Roster]
-      summary: Edit an existing shift code - saved as a new version effective today
+      summary: Edit an existing shift code - saved as a new version, effective today unless a date is given
       description: >
         Requires MANAGER or above, same as `POST /shift-codes`. The edit action on the shift-code
         screen: `id` is the code's current (active) version; `staffArea` and `code` stay as they
         are, every other term (hours, `countsAsWorked`, `isPaid`, `kind`, `displayColor`) comes from
         the body. Not an in-place edit - same versioning as `POST /shift-codes`: the current row is
-        retired and a new one takes over, `effectiveFrom` = today in the hotel's own zone.
+        retired and a new one takes over, starting on the body's `effectiveFrom` (today in the
+        hotel's own zone when omitted). The date may be in the past or the future, but not before
+        the code's first version (400) and not before the current version's own start (409 - the
+        edit only ever extends the end of the history, it doesn't insert into its middle).
 
-        Unlike `POST /shift-codes`, existing roster entries follow the edit from today on: every
-        `RosterEntry` dated today or later that points at any version of this `(staffArea, code)`
+        Unlike `POST /shift-codes`, existing roster entries follow the edit from `effectiveFrom`
+        on: every `RosterEntry` dated that day or later that points at any version of this
+        `(staffArea, code)`
         is moved to the new version, and so is every `EmployeePattern.defaultShiftCode` pointing at
         one (a pattern may only use an active code, and `POST /roster/generate` would otherwise keep
-        stamping the retired one). Entries dated before today keep the version they had, so
-        coverage, totals and the actuals export for past days still read the old terms.
+        stamping the retired one). Entries dated before `effectiveFrom` keep the version they had, so
+        coverage, totals and the actuals export for those days still read the old terms. A past
+        `effectiveFrom` therefore recalculates the days from it up to today.
 
-        Editing the same code a second time on the same day amends today's version in place rather
-        than creating a second one (two versions can't start on the same date), as long as no
-        entry dated before today points at it - otherwise 409.
+        An `effectiveFrom` equal to the current version's own start amends that version in place
+        rather than creating a second one (two versions can't start on the same date) - this is how
+        a same-day second edit, or a correction of an older version, works. Entries from that date
+        on read the new terms. Refused with 409 if an entry dated before `effectiveFrom` points at
+        the version, since it would change without being covered by the new date. A future
+        `effectiveFrom` still makes the new row the code's current one at once.
       requestBody:
         required: true
         content:
@@ -8195,7 +8203,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ShiftCode"
         "400":
-          description: An interval is malformed, or `kind` doesn't match the hours / `countsAsWorked` (e.g. `ABSENCE` that counts as worked).
+          description: An interval is malformed, `kind` doesn't match the hours / `countsAsWorked` (e.g. `ABSENCE` that counts as worked), or `effectiveFrom` is not a date or is before the code's first version.
           content:
             application/json:
               schema:
@@ -8212,8 +8220,9 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
           description: >
-            `id` is a retired version (edit the current one instead), or today's version is
-            already referenced by an entry dated before today.
+            `id` is a retired version (edit the current one instead), `effectiveFrom` is before the
+            current version's own start, or it equals that start and an entry dated before it
+            already points at the version.
           content:
             application/json:
               schema:
@@ -14785,13 +14794,17 @@ components:
     ShiftCodeVersionInput:
       type: object
       description: >
-        Body of `POST /shift-codes/{id}/versions`. No `staffArea`, `code` or `effectiveFrom` - the
-        first two are the edited code's own, the last is always today. The interval fields and
+        Body of `POST /shift-codes/{id}/versions`. No `staffArea` or `code` - they are the edited
+        code's own. `effectiveFrom` is optional (today when omitted). The interval fields and
         `displayColor` are nullable and so left out of `required` (see CLAUDE.md's Code generation
         section); omitting one means "none" (an OP/PH-style code with no hours, or no colour), not
         "keep the old value" - the form sends every field.
       required: [kind, countsAsWorked, isPaid]
       properties:
+        effectiveFrom:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: First day the new terms apply, `YYYY-MM-DD`. Defaults to today.
         kind:
           $ref: "#/components/schemas/ShiftCodeKind"
         startTime1:

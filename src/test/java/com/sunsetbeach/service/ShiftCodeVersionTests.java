@@ -40,7 +40,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
- * {@code POST /shift-codes/{id}/versions} - editing a code as a new version effective today. The
+ * {@code POST /shift-codes/{id}/versions} - editing a code as a new version, effective today or an
+ * explicit date (past or future). The
  * case that prompted it: PH was set up with countsAsWorked=false, so coverage never counted it;
  * after editing it, days from today on read the new terms and earlier days keep the old ones.
  * "Today" is a fixed {@link Clock}, never the wall clock.
@@ -208,5 +209,106 @@ class ShiftCodeVersionTests extends AbstractIntegrationTest {
         assertThat(edited.getStaffArea().get()).isEqualTo(StaffArea.KITCHEN);
         assertThat(edited.getStartTime1().get()).isEqualTo("08:00");
         assertThat(employeePatternRepository.findById(cook.getId()).orElseThrow().getDefaultShiftCodeId()).isEqualTo(edited.getId());
+    }
+
+    private ShiftCode createCodeFrom(String effectiveFrom) {
+        String code = "D" + UUID.randomUUID().toString().substring(0, 6);
+        createdCodes.add(code);
+        return shiftCodeService.create(new ShiftCodeCreateInput(code, ShiftCodeKind.ABSENCE, false, true, effectiveFrom), manager().getId());
+    }
+
+    @Test
+    void pastEffectiveDate_recalculatesDaysFromThatDate_earlierDaysKeepOldTerms() {
+        ShiftCode ph = createCodeFrom("2031-06-01");
+        UserEntity joy = createUser(Role.WAITER, StaffArea.FRONT_OFFICE);
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-06-09", ph.getId()), manager().getId());
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-06-10", ph.getId()), manager().getId());
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-06-14", ph.getId()), manager().getId());
+
+        ShiftCode edited = shiftCodeService.createVersion(ph.getId(), openScheduleWorked().effectiveFrom("2031-06-10"), manager().getId());
+
+        assertThat(edited.getEffectiveFrom()).isEqualTo("2031-06-10");
+        assertThat(edited.getId()).isNotEqualTo(ph.getId());
+        assertThat(entryCodeId(joy.getId(), "2031-06-09")).isEqualTo(ph.getId());
+        assertThat(entryCodeId(joy.getId(), "2031-06-10")).isEqualTo(edited.getId());
+        assertThat(entryCodeId(joy.getId(), "2031-06-14")).isEqualTo(edited.getId());
+        assertThat(shiftCodeRepository.findById(ph.getId()).orElseThrow().isActive()).isFalse();
+    }
+
+    @Test
+    void futureEffectiveDate_leavesDaysBeforeItOnTheOldVersion() {
+        ShiftCode ph = createPhLikeCode();
+        UserEntity joy = createUser(Role.WAITER, StaffArea.FRONT_OFFICE);
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-06-20", ph.getId()), manager().getId());
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-06-25", ph.getId()), manager().getId());
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-06-26", ph.getId()), manager().getId());
+
+        ShiftCode edited = shiftCodeService.createVersion(ph.getId(), openScheduleWorked().effectiveFrom("2031-06-25"), manager().getId());
+
+        assertThat(edited.getEffectiveFrom()).isEqualTo("2031-06-25");
+        assertThat(entryCodeId(joy.getId(), "2031-06-20")).isEqualTo(ph.getId());
+        assertThat(entryCodeId(joy.getId(), "2031-06-25")).isEqualTo(edited.getId());
+        assertThat(entryCodeId(joy.getId(), "2031-06-26")).isEqualTo(edited.getId());
+    }
+
+    @Test
+    void omittedEffectiveDate_stillMeansToday() {
+        ShiftCode ph = createPhLikeCode();
+
+        assertThat(shiftCodeService.createVersion(ph.getId(), openScheduleWorked(), manager().getId()).getEffectiveFrom()).isEqualTo(TODAY);
+    }
+
+    /** The PH case: a version already starts on the chosen date - it is replaced, not duplicated. */
+    @Test
+    void dateOfTheCurrentVersion_replacesItInPlace_andItsDaysReadTheNewTerms() {
+        ShiftCode ph = createCodeFrom("2031-06-10");
+        UserEntity joy = createUser(Role.WAITER, StaffArea.FRONT_OFFICE);
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-06-10", ph.getId()), manager().getId());
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-06-12", ph.getId()), manager().getId());
+
+        ShiftCode replaced = shiftCodeService.createVersion(ph.getId(), openScheduleWorked().effectiveFrom("2031-06-10"), manager().getId());
+
+        assertThat(replaced.getId()).isEqualTo(ph.getId());
+        assertThat(replaced.getCountsAsWorked()).isTrue();
+        assertThat(shiftCodeRepository.findAll().stream().filter(c -> c.getCode().equals(ph.getCode()))).hasSize(1);
+        assertThat(entryCodeId(joy.getId(), "2031-06-12")).isEqualTo(ph.getId());
+    }
+
+    @Test
+    void dateOfTheCurrentVersion_isRefusedWhenAnEarlierDayUsesIt() {
+        ShiftCode ph = createCodeFrom("2031-06-10");
+        UserEntity joy = createUser(Role.WAITER, StaffArea.FRONT_OFFICE);
+        rosterService.createEntry(new RosterEntryCreateInput(joy.getId(), "2031-06-05", ph.getId()), manager().getId());
+
+        assertThatThrownBy(() -> shiftCodeService.createVersion(ph.getId(), openScheduleWorked().effectiveFrom("2031-06-10"), manager().getId()))
+                .isInstanceOf(ConflictException.class);
+        assertThat(shiftCodeRepository.findById(ph.getId()).orElseThrow().isCountsAsWorked()).isFalse();
+    }
+
+    @Test
+    void dateBeforeTheFirstVersion_isRefused_andNothingChanges() {
+        ShiftCode ph = createCodeFrom("2031-06-10");
+
+        assertThatThrownBy(() -> shiftCodeService.createVersion(ph.getId(), openScheduleWorked().effectiveFrom("2031-06-09"), manager().getId()))
+                .isInstanceOf(BadRequestException.class);
+        assertThat(shiftCodeRepository.findById(ph.getId()).orElseThrow().isActive()).isTrue();
+        assertThat(shiftCodeRepository.findAll().stream().filter(c -> c.getCode().equals(ph.getCode()))).hasSize(1);
+    }
+
+    @Test
+    void dateBetweenTheFirstAndTheCurrentVersion_isRefused() {
+        ShiftCode ph = createCodeFrom("2031-06-01");
+        ShiftCode second = shiftCodeService.createVersion(ph.getId(), openScheduleWorked().effectiveFrom("2031-06-10"), manager().getId());
+
+        assertThatThrownBy(() -> shiftCodeService.createVersion(second.getId(), openScheduleWorked().effectiveFrom("2031-06-05"), manager().getId()))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void malformedDate_isABadRequest() {
+        ShiftCode ph = createPhLikeCode();
+
+        assertThatThrownBy(() -> shiftCodeService.createVersion(ph.getId(), openScheduleWorked().effectiveFrom("10/03/2031"), manager().getId()))
+                .isInstanceOf(BadRequestException.class);
     }
 }

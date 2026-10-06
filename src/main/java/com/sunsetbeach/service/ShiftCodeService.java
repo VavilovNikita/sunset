@@ -158,16 +158,32 @@ public class ShiftCodeService {
     /**
      * {@code POST /shift-codes/{id}/versions} - the shift-code screen's edit action. Same
      * versioning as {@link #create} (the current row is retired, a new one takes over, nothing is
-     * edited in place), with {@code effectiveFrom} fixed to today on the shared {@link Clock}, and
-     * one addition {@code create} doesn't have: entries dated today or later, and employee
-     * patterns, that point at any version of this {@code (staffArea, code)} move to the new
-     * version. Earlier entries keep theirs, so past days still read the terms they were planned
-     * under. Entries are re-pointed through the entity (not a bulk UPDATE) so their own
-     * {@code updatedAt} moves - the grid re-import's staleness check reads it.
+     * edited in place), with {@code effectiveFrom} taken from the input - today on the shared
+     * {@link Clock} when omitted - and one addition {@code create} doesn't have: entries dated
+     * from {@code effectiveFrom} on, and employee patterns, that point at any version of this
+     * {@code (staffArea, code)} move to the new version. Earlier entries keep theirs, so days
+     * before the effective date still read the terms they were planned under. Entries are
+     * re-pointed through the entity (not a bulk UPDATE) so their own {@code updatedAt} moves - the
+     * grid re-import's staleness check reads it.
      *
-     * <p>A second edit on the same day can't add another row (one version per start date, V57's
-     * unique index), so it amends today's version instead - safe only while no entry dated before
-     * today points at it, since that entry would otherwise be silently reinterpreted.
+     * <p>The date may be in the past or the future, with three limits:
+     * <ul>
+     *   <li>Not before the code's first version - nothing governs days before it (400).
+     *   <li>Not before the current version's own start (409). Landing inside an older version's
+     *       range would mean inserting into, or deleting from, the middle of the history; this
+     *       method only ever extends its end.
+     *   <li>Equal to the current version's start: that version is amended in place (one version
+     *       per start date, V57's unique index), so the same day's second edit, or a correction
+     *       of a version that started earlier, doesn't leave two rows with one date. Entries
+     *       from that date on read the new terms - a past date rewrites those days, which is
+     *       what the caller asked for. Safe only while no entry dated <em>before</em> the date
+     *       points at the version, since that one would be reinterpreted without being covered
+     *       by the new date (409).
+     * </ul>
+     *
+     * <p>A future date leaves days before it on the current version, but the new row is already
+     * the code's current (active) one, so the shift-code list and a pattern's default code show
+     * it from now on.
      */
     @Transactional
     public ShiftCode createVersion(String id, ShiftCodeVersionInput input, String actorUserId) {
@@ -183,20 +199,33 @@ public class ShiftCodeService {
         validateKindShape(input.getKind(), start1, start2, input.getCountsAsWorked());
 
         LocalDate today = LocalDate.now(clock);
+        LocalDate effectiveFrom = parseEffectiveFrom(input.getEffectiveFrom(), today);
+        LocalDate firstStart = shiftCodeRepository.findByStaffAreaAndCode(current.getStaffArea(), current.getCode()).stream()
+                .map(ShiftCodeEntity::getEffectiveFrom)
+                .min(Comparator.naturalOrder())
+                .orElse(current.getEffectiveFrom());
+        if (effectiveFrom.isBefore(firstStart)) {
+            throw new BadRequestException("\"" + current.getCode() + "\" was first defined effective " + firstStart + " - a new version can't start before that");
+        }
+        if (effectiveFrom.isBefore(current.getEffectiveFrom())) {
+            throw new ConflictException("\"" + current.getCode() + "\" already has a version starting " + current.getEffectiveFrom()
+                    + " - a new version can start on that date (replacing it) or later, not before it");
+        }
         String before = describeTerms(current);
 
         ShiftCodeEntity target;
-        if (current.getEffectiveFrom().isBefore(today)) {
+        if (current.getEffectiveFrom().isBefore(effectiveFrom)) {
             current.setActive(false);
             shiftCodeRepository.save(current);
             target = new ShiftCodeEntity();
             target.setStaffArea(current.getStaffArea());
             target.setCode(current.getCode());
-            target.setEffectiveFrom(today);
+            target.setEffectiveFrom(effectiveFrom);
             target.setCreatedByUserId(actorUserId);
         } else {
-            if (rosterEntryRepository.existsByShiftCodeIdAndDateBefore(current.getId(), today)) {
-                throw new ConflictException("\"" + current.getCode() + "\" was already changed today and that version is used on earlier days - try again tomorrow");
+            if (rosterEntryRepository.existsByShiftCodeIdAndDateBefore(current.getId(), effectiveFrom)) {
+                throw new ConflictException("\"" + current.getCode() + "\" version from " + effectiveFrom
+                        + " is already used on earlier days - replacing it would change them too");
             }
             target = current;
         }
@@ -217,7 +246,7 @@ public class ShiftCodeService {
         int movedEntries = 0;
         int movedPatterns = 0;
         if (!otherVersionIds.isEmpty()) {
-            List<RosterEntryEntity> entries = rosterEntryRepository.findByShiftCodeIdInAndDateGreaterThanEqual(otherVersionIds, today);
+            List<RosterEntryEntity> entries = rosterEntryRepository.findByShiftCodeIdInAndDateGreaterThanEqual(otherVersionIds, effectiveFrom);
             entries.forEach(e -> e.setShiftCodeId(saved.getId()));
             rosterEntryRepository.saveAllAndFlush(entries);
             movedEntries = entries.size();
@@ -231,11 +260,21 @@ public class ShiftCodeService {
                 AuditAction.SHIFT_CODE_VERSIONED,
                 AuditEntityType.SHIFT_CODE,
                 saved.getId(),
-                "Changed code \"" + saved.getCode() + "\" from " + today + ": " + before + " -> " + describeTerms(saved)
-                        + "; moved " + movedEntries + " roster entries (today on) and " + movedPatterns + " employee patterns to it");
+                "Changed code \"" + saved.getCode() + "\" from " + effectiveFrom + (effectiveFrom.isBefore(today) ? " (a past date - days from then on were recalculated)" : "")
+                        + ": " + before + " -> " + describeTerms(saved)
+                        + "; moved " + movedEntries + " roster entries (" + effectiveFrom + " on) and " + movedPatterns + " employee patterns to it");
 
         String creatorEmail = userRepository.findById(saved.getCreatedByUserId()).map(UserEntity::getEmail).orElse(null);
         return toDtoForApi(saved, creatorEmail);
+    }
+
+    private static LocalDate parseEffectiveFrom(String value, LocalDate today) {
+        if (value == null) return today;
+        try {
+            return LocalDate.parse(value);
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new BadRequestException("effectiveFrom must be a date like 2026-10-03");
+        }
     }
 
     private static String describeTerms(ShiftCodeEntity e) {
