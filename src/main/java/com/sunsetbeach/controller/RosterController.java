@@ -1,6 +1,7 @@
 package com.sunsetbeach.controller;
 
 import com.sunsetbeach.api.RosterApi;
+import com.sunsetbeach.model.AttendanceDayCorrectionInput;
 import com.sunsetbeach.model.AttendanceDaySummary;
 import com.sunsetbeach.model.AttendancePunch;
 import com.sunsetbeach.model.AttendancePunchCreateInput;
@@ -196,8 +197,13 @@ public class RosterController implements RosterApi {
     }
 
     @Override
-    public ResponseEntity<List<AttendancePunch>> listAttendancePunches(String employeeUserId, String from, String to) {
-        return ResponseEntity.ok(attendanceService.list(employeeUserId, java.time.LocalDate.parse(from), java.time.LocalDate.parse(to)));
+    public ResponseEntity<List<AttendancePunch>> listAttendancePunches(String employeeUserId, String from, String to, Boolean includeVoided) {
+        return ResponseEntity.ok(attendanceService.list(employeeUserId, java.time.LocalDate.parse(from), java.time.LocalDate.parse(to), Boolean.TRUE.equals(includeVoided)));
+    }
+
+    @Override
+    public ResponseEntity<List<AttendancePunch>> correctAttendanceDay(AttendanceDayCorrectionInput attendanceDayCorrectionInput) {
+        return ResponseEntity.ok(attendanceService.correctDay(attendanceDayCorrectionInput, callerId()));
     }
 
     @Override

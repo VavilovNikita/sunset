@@ -10,8 +10,16 @@ import org.springframework.data.repository.query.Param;
 
 public interface AttendancePunchRepository extends JpaRepository<AttendancePunchEntity, String> {
 
+    /** Every punch including voided ones - only the history view wants that; every other reader uses the {@code Live} variants below. */
     List<AttendancePunchEntity> findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(
             String employeeUserId, LocalDateTime from, LocalDateTime to);
+
+    /** Live (non-voided) punches only - what pairing, reports, direction and debounce all count. */
+    List<AttendancePunchEntity> findByEmployeeUserIdAndPunchAtBetweenAndVoidedAtIsNullOrderByPunchAt(
+            String employeeUserId, LocalDateTime from, LocalDateTime to);
+
+    /** {@link #findByPunchAtBetweenOrderByEmployeeUserIdAscPunchAtAsc} without voided punches. */
+    List<AttendancePunchEntity> findByPunchAtBetweenAndVoidedAtIsNullOrderByEmployeeUserIdAscPunchAtAsc(LocalDateTime from, LocalDateTime to);
 
     /**
      * Every employee's punches in a range, not one employee's - the actuals export (unlike {@code

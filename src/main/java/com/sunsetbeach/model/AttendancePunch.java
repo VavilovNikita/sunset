@@ -50,6 +50,15 @@ public class AttendancePunch {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
 
+  private String correctionId;
+
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private OffsetDateTime voidedAt;
+
+  private String voidedByEmail;
+
+  private String voidReason;
+
   public AttendancePunch() {
     super();
   }
@@ -257,6 +266,82 @@ public class AttendancePunch {
     this.createdAt = createdAt;
   }
 
+  public AttendancePunch correctionId(String correctionId) {
+    this.correctionId = correctionId;
+    return this;
+  }
+
+  /**
+   * Set on a punch recorded by `PUT /attendance/day`; every punch of one correction shares it.
+   * @return correctionId
+   */
+  
+  @JsonProperty("correctionId")
+  public String getCorrectionId() {
+    return correctionId;
+  }
+
+  public void setCorrectionId(String correctionId) {
+    this.correctionId = correctionId;
+  }
+
+  public AttendancePunch voidedAt(OffsetDateTime voidedAt) {
+    this.voidedAt = voidedAt;
+    return this;
+  }
+
+  /**
+   * Present only on a voided punch (only returned with `includeVoided=true`): replaced by a correction, no longer counted anywhere, kept as history. 
+   * @return voidedAt
+   */
+  @Valid 
+  @JsonProperty("voidedAt")
+  public OffsetDateTime getVoidedAt() {
+    return voidedAt;
+  }
+
+  public void setVoidedAt(OffsetDateTime voidedAt) {
+    this.voidedAt = voidedAt;
+  }
+
+  public AttendancePunch voidedByEmail(String voidedByEmail) {
+    this.voidedByEmail = voidedByEmail;
+    return this;
+  }
+
+  /**
+   * Get voidedByEmail
+   * @return voidedByEmail
+   */
+  
+  @JsonProperty("voidedByEmail")
+  public String getVoidedByEmail() {
+    return voidedByEmail;
+  }
+
+  public void setVoidedByEmail(String voidedByEmail) {
+    this.voidedByEmail = voidedByEmail;
+  }
+
+  public AttendancePunch voidReason(String voidReason) {
+    this.voidReason = voidReason;
+    return this;
+  }
+
+  /**
+   * Get voidReason
+   * @return voidReason
+   */
+  
+  @JsonProperty("voidReason")
+  public String getVoidReason() {
+    return voidReason;
+  }
+
+  public void setVoidReason(String voidReason) {
+    this.voidReason = voidReason;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -275,7 +360,11 @@ public class AttendancePunch {
         Objects.equals(this.source, attendancePunch.source) &&
         equalsNullable(this.recordedByEmail, attendancePunch.recordedByEmail) &&
         equalsNullable(this.note, attendancePunch.note) &&
-        Objects.equals(this.createdAt, attendancePunch.createdAt);
+        Objects.equals(this.createdAt, attendancePunch.createdAt) &&
+        Objects.equals(this.correctionId, attendancePunch.correctionId) &&
+        Objects.equals(this.voidedAt, attendancePunch.voidedAt) &&
+        Objects.equals(this.voidedByEmail, attendancePunch.voidedByEmail) &&
+        Objects.equals(this.voidReason, attendancePunch.voidReason);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -284,7 +373,7 @@ public class AttendancePunch {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, employeeUserId, employeeName, employeeEmail, punchAt, direction, source, hashCodeNullable(recordedByEmail), hashCodeNullable(note), createdAt);
+    return Objects.hash(id, employeeUserId, employeeName, employeeEmail, punchAt, direction, source, hashCodeNullable(recordedByEmail), hashCodeNullable(note), createdAt, correctionId, voidedAt, voidedByEmail, voidReason);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -308,6 +397,10 @@ public class AttendancePunch {
     sb.append("    recordedByEmail: ").append(toIndentedString(recordedByEmail)).append("\n");
     sb.append("    note: ").append(toIndentedString(note)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
+    sb.append("    correctionId: ").append(toIndentedString(correctionId)).append("\n");
+    sb.append("    voidedAt: ").append(toIndentedString(voidedAt)).append("\n");
+    sb.append("    voidedByEmail: ").append(toIndentedString(voidedByEmail)).append("\n");
+    sb.append("    voidReason: ").append(toIndentedString(voidReason)).append("\n");
     sb.append("}");
     return sb.toString();
   }

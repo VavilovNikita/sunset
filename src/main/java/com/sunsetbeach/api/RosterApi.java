@@ -5,6 +5,7 @@
  */
 package com.sunsetbeach.api;
 
+import com.sunsetbeach.model.AttendanceDayCorrectionInput;
 import com.sunsetbeach.model.AttendanceDaySummary;
 import com.sunsetbeach.model.AttendancePunch;
 import com.sunsetbeach.model.AttendancePunchCreateInput;
@@ -202,6 +203,61 @@ public interface RosterApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"sourceTo\" : \"sourceTo\", \"month\" : { \"entries\" : [ { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"date\" : \"date\", \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"shiftCode\" : { \"staffArea\" : \"\", \"suggestedKind\" : \"\", \"code\" : \"code\", \"kind\" : \"\", \"countsAsWorked\" : true, \"active\" : true, \"endTime1\" : \"endTime1\", \"createdByEmail\" : \"createdByEmail\", \"isPaid\" : true, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"endTime2\" : \"endTime2\", \"startTime2\" : \"startTime2\", \"startTime1\" : \"startTime1\", \"id\" : \"id\", \"displayColor\" : \"displayColor\", \"effectiveFrom\" : \"effectiveFrom\", \"suggestedColor\" : \"suggestedColor\" }, \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"locked\" : true, \"employeeUserId\" : \"employeeUserId\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ], \"month\" : 6, \"year\" : 0, \"employees\" : [ { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" }, { \"staffArea\" : \"\", \"name\" : \"name\", \"active\" : true, \"id\" : \"id\", \"email\" : \"email\" } ], \"coverageWarnings\" : [ { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 }, { \"staffArea\" : \"ADMIN\", \"date\" : \"date\", \"workingCount\" : 1, \"minimumWorking\" : 5 } ] }, \"skippedNoCurrentCode\" : 1, \"created\" : 0, \"skippedExisting\" : 6, \"sourceFrom\" : \"sourceFrom\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PUT /attendance/day : Replace one employee&#39;s punches for one day, keeping the old ones as history
+     * Requires MANAGER or above. The one way to fix a day: change a time, add or drop a punch, clear the day, or roll it back to an earlier version (send that version&#39;s times again). &#x60;times&#x60; is the complete list of the day&#39;s punches in the hotel&#39;s own zone (&#x60;HH:mm&#x60;, strictly increasing); directions are not sent - they alternate &#x60;IN&#x60;, &#x60;OUT&#x60;, &#x60;IN&#x60;, ... in time order, the same positional rule every report pairs by. An empty list clears the day. Nothing is deleted or edited in place, so the correction can&#39;t be used to hide anything: every live punch of that day is *voided* (it stays in the table, flagged with who voided it, when, and the &#x60;reason&#x60;) and the new times are recorded as &#x60;MANUAL&#x60; punches carrying the same &#x60;reason&#x60; and a shared &#x60;correctionId&#x60;. A scanner punch voided this way is never re-ingested by the next poll. Voided punches count in no report, summary or today board. A time later than now is refused, like &#x60;POST /attendance&#x60;. &#x60;reason&#x60; is required. Sending the times the day already has is a 400 rather than an empty correction. Audited as &#x60;ATTENDANCE_DAY_CORRECTED&#x60;, with the before and after times and the reason. 
+     *
+     * @param attendanceDayCorrectionInput  (required)
+     * @return The day&#39;s live punches after the correction, oldest first. (status code 200)
+     *         or Missing reason, malformed or non-increasing times, a time in the future, or nothing changed. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     *         or No such employee. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.PUT,
+        value = "/attendance/day",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<List<AttendancePunch>> correctAttendanceDay(
+         @Valid @RequestBody AttendanceDayCorrectionInput attendanceDayCorrectionInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"voidedByEmail\" : \"voidedByEmail\", \"voidReason\" : \"voidReason\", \"employeeEmail\" : \"employeeEmail\", \"source\" : \"MANUAL\", \"correctionId\" : \"correctionId\", \"recordedByEmail\" : \"recordedByEmail\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\" }, { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"voidedByEmail\" : \"voidedByEmail\", \"voidReason\" : \"voidReason\", \"employeeEmail\" : \"employeeEmail\", \"source\" : \"MANUAL\", \"correctionId\" : \"correctionId\", \"recordedByEmail\" : \"recordedByEmail\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\" } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -754,7 +810,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"date\" : \"date\", \"workedMinutes\" : 0, \"punches\" : [ { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"source\" : \"MANUAL\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\", \"recordedByEmail\" : \"recordedByEmail\" }, { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"source\" : \"MANUAL\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\", \"recordedByEmail\" : \"recordedByEmail\" } ], \"incomplete\" : true, \"shiftCode\" : \"\", \"plannedIntervals\" : [ { \"startTime\" : \"startTime\", \"endTime\" : \"endTime\" }, { \"startTime\" : \"startTime\", \"endTime\" : \"endTime\" } ] }, { \"date\" : \"date\", \"workedMinutes\" : 0, \"punches\" : [ { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"source\" : \"MANUAL\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\", \"recordedByEmail\" : \"recordedByEmail\" }, { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"source\" : \"MANUAL\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\", \"recordedByEmail\" : \"recordedByEmail\" } ], \"incomplete\" : true, \"shiftCode\" : \"\", \"plannedIntervals\" : [ { \"startTime\" : \"startTime\", \"endTime\" : \"endTime\" }, { \"startTime\" : \"startTime\", \"endTime\" : \"endTime\" } ] } ]";
+                    String exampleString = "[ { \"date\" : \"date\", \"workedMinutes\" : 0, \"punches\" : [ { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"voidedByEmail\" : \"voidedByEmail\", \"voidReason\" : \"voidReason\", \"employeeEmail\" : \"employeeEmail\", \"source\" : \"MANUAL\", \"correctionId\" : \"correctionId\", \"recordedByEmail\" : \"recordedByEmail\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\" }, { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"voidedByEmail\" : \"voidedByEmail\", \"voidReason\" : \"voidReason\", \"employeeEmail\" : \"employeeEmail\", \"source\" : \"MANUAL\", \"correctionId\" : \"correctionId\", \"recordedByEmail\" : \"recordedByEmail\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\" } ], \"incomplete\" : true, \"shiftCode\" : \"\", \"plannedIntervals\" : [ { \"startTime\" : \"startTime\", \"endTime\" : \"endTime\" }, { \"startTime\" : \"startTime\", \"endTime\" : \"endTime\" } ] }, { \"date\" : \"date\", \"workedMinutes\" : 0, \"punches\" : [ { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"voidedByEmail\" : \"voidedByEmail\", \"voidReason\" : \"voidReason\", \"employeeEmail\" : \"employeeEmail\", \"source\" : \"MANUAL\", \"correctionId\" : \"correctionId\", \"recordedByEmail\" : \"recordedByEmail\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\" }, { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"voidedByEmail\" : \"voidedByEmail\", \"voidReason\" : \"voidReason\", \"employeeEmail\" : \"employeeEmail\", \"source\" : \"MANUAL\", \"correctionId\" : \"correctionId\", \"recordedByEmail\" : \"recordedByEmail\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\" } ], \"incomplete\" : true, \"shiftCode\" : \"\", \"plannedIntervals\" : [ { \"startTime\" : \"startTime\", \"endTime\" : \"endTime\" }, { \"startTime\" : \"startTime\", \"endTime\" : \"endTime\" } ] } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -941,11 +997,12 @@ public interface RosterApi {
 
     /**
      * GET /attendance : List raw attendance punches
-     * Requires MANAGER or above. The raw stream, not paired sessions - see &#x60;AttendancePunch&#x60;&#39;s own description for why a split shift&#39;s four punches need no special handling here. 
+     * Requires MANAGER or above. The raw stream, not paired sessions - see &#x60;AttendancePunch&#x60;&#39;s own description for why a split shift&#39;s four punches need no special handling here. Punches are never deleted or edited; a correction (&#x60;PUT /attendance/day&#x60;) *voids* the old ones and records new ones. By default only the live (non-voided) punches are returned - what every report counts. With &#x60;includeVoided&#x3D;true&#x60; the voided ones come back too, each carrying who voided it, when and why, so the history of a day can be shown. 
      *
      * @param employeeUserId  (required)
      * @param from  (required)
      * @param to  (required)
+     * @param includeVoided  (optional, default to false)
      * @return Every punch for this employee in the range, oldest first. (status code 200)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
@@ -959,12 +1016,13 @@ public interface RosterApi {
     default ResponseEntity<List<AttendancePunch>> listAttendancePunches(
         @NotNull  @Valid @RequestParam(value = "employeeUserId", required = true) String employeeUserId,
         @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = true) String from,
-        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = true) String to
+        @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = true) String to,
+         @Valid @RequestParam(value = "includeVoided", required = false, defaultValue = "false") Boolean includeVoided
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"source\" : \"MANUAL\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\", \"recordedByEmail\" : \"recordedByEmail\" }, { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"source\" : \"MANUAL\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\", \"recordedByEmail\" : \"recordedByEmail\" } ]";
+                    String exampleString = "[ { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"voidedByEmail\" : \"voidedByEmail\", \"voidReason\" : \"voidReason\", \"employeeEmail\" : \"employeeEmail\", \"source\" : \"MANUAL\", \"correctionId\" : \"correctionId\", \"recordedByEmail\" : \"recordedByEmail\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\" }, { \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"voidedByEmail\" : \"voidedByEmail\", \"voidReason\" : \"voidReason\", \"employeeEmail\" : \"employeeEmail\", \"source\" : \"MANUAL\", \"correctionId\" : \"correctionId\", \"recordedByEmail\" : \"recordedByEmail\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -1429,7 +1487,7 @@ public interface RosterApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeEmail\" : \"employeeEmail\", \"id\" : \"id\", \"source\" : \"MANUAL\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\", \"recordedByEmail\" : \"recordedByEmail\" }";
+                    String exampleString = "{ \"employeeName\" : \"employeeName\", \"note\" : \"note\", \"voidedByEmail\" : \"voidedByEmail\", \"voidReason\" : \"voidReason\", \"employeeEmail\" : \"employeeEmail\", \"source\" : \"MANUAL\", \"correctionId\" : \"correctionId\", \"recordedByEmail\" : \"recordedByEmail\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"id\" : \"id\", \"punchAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"employeeUserId\" : \"employeeUserId\", \"direction\" : \"IN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

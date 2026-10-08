@@ -8893,6 +8893,11 @@ paths:
       description: >
         Requires MANAGER or above. The raw stream, not paired sessions - see `AttendancePunch`'s
         own description for why a split shift's four punches need no special handling here.
+
+        Punches are never deleted or edited; a correction (`PUT /attendance/day`) *voids* the old
+        ones and records new ones. By default only the live (non-voided) punches are returned -
+        what every report counts. With `includeVoided=true` the voided ones come back too, each
+        carrying who voided it, when and why, so the history of a day can be shown.
       parameters:
         - name: employeeUserId
           in: query
@@ -8911,6 +8916,12 @@ paths:
           schema:
             type: string
             pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: includeVoided
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: Every punch for this employee in the range, oldest first.
@@ -8954,6 +8965,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AttendancePunch"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such employee.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /attendance/day:
+    put:
+      operationId: correctAttendanceDay
+      tags: [Roster]
+      summary: Replace one employee's punches for one day, keeping the old ones as history
+      description: >
+        Requires MANAGER or above. The one way to fix a day: change a time, add or drop a punch,
+        clear the day, or roll it back to an earlier version (send that version's times again).
+        `times` is the complete list of the day's punches in the hotel's own zone (`HH:mm`, strictly
+        increasing); directions are not sent - they alternate `IN`, `OUT`, `IN`, ... in time order,
+        the same positional rule every report pairs by. An empty list clears the day.
+
+        Nothing is deleted or edited in place, so the correction can't be used to hide anything:
+        every live punch of that day is *voided* (it stays in the table, flagged with who voided
+        it, when, and the `reason`) and the new times are recorded as `MANUAL` punches carrying the
+        same `reason` and a shared `correctionId`. A scanner punch voided this way is never
+        re-ingested by the next poll. Voided punches count in no report, summary or today board.
+        A time later than now is refused, like `POST /attendance`. `reason` is required.
+        Sending the times the day already has is a 400 rather than an empty correction.
+        Audited as `ATTENDANCE_DAY_CORRECTED`, with the before and after times and the reason.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttendanceDayCorrectionInput"
+      responses:
+        "200":
+          description: The day's live punches after the correction, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AttendancePunch"
+        "400":
+          description: Missing reason, malformed or non-increasing times, a time in the future, or nothing changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -14297,6 +14360,7 @@ components:
         - STAFF_AREA_COVERAGE_RULE_CHANGED
         - ATTENDANCE_PUNCH_RECORDED
         - ATTENDANCE_PUNCH_CORRECTED
+        - ATTENDANCE_DAY_CORRECTED
         - EMPLOYEE_PAY_RATE_CHANGED
         - ROSTER_ACTUALS_EXPORTED
         - ROSTER_MONTH_IMPORTED
@@ -15684,6 +15748,42 @@ components:
         createdAt:
           type: string
           format: date-time
+        correctionId:
+          type: string
+          description: Set on a punch recorded by `PUT /attendance/day`; every punch of one correction shares it.
+        voidedAt:
+          type: string
+          format: date-time
+          description: >
+            Present only on a voided punch (only returned with `includeVoided=true`): replaced by
+            a correction, no longer counted anywhere, kept as history.
+        voidedByEmail:
+          type: string
+        voidReason:
+          type: string
+
+    AttendanceDayCorrectionInput:
+      type: object
+      description: Body of `PUT /attendance/day`.
+      required: [employeeUserId, date, times, reason]
+      properties:
+        employeeUserId:
+          type: string
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The hotel-local calendar day being corrected.
+        times:
+          type: array
+          maxItems: 12
+          items:
+            type: string
+            pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: Every punch of that day, `HH:mm` hotel time, strictly increasing. Empty clears the day.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
 
     AttendancePunchCreateInput:
       type: object

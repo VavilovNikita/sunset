@@ -8,6 +8,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.TimestampFormat;
+import com.sunsetbeach.model.AttendanceDayCorrectionInput;
 import com.sunsetbeach.model.AttendanceDaySummary;
 import com.sunsetbeach.model.AttendancePunch;
 import com.sunsetbeach.model.AttendancePunchCreateInput;
@@ -91,13 +92,109 @@ public class AttendanceService {
         this.punchDebounceWindow = Duration.ofMinutes(punchDebounceMinutes);
     }
 
-    @Transactional(readOnly = true)
     public List<AttendancePunch> list(String employeeUserId, LocalDate from, LocalDate to) {
+        return list(employeeUserId, from, to, false);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AttendancePunch> list(String employeeUserId, LocalDate from, LocalDate to, boolean includeVoided) {
         UserEntity employee = userRepository.findById(employeeUserId).orElseThrow(() -> new NotFoundException("Employee not found"));
-        List<AttendancePunchEntity> entities =
-                attendancePunchRepository.findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employeeUserId, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
-        Map<String, String> recorderEmails = resolveEmails(entities.stream().map(AttendancePunchEntity::getRecordedByUserId).filter(java.util.Objects::nonNull).distinct().toList());
-        return entities.stream().map(e -> toDto(e, employee, recorderEmails.get(e.getRecordedByUserId()))).toList();
+        List<AttendancePunchEntity> entities = includeVoided
+                ? attendancePunchRepository.findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employeeUserId, from.atStartOfDay(), to.plusDays(1).atStartOfDay())
+                : attendancePunchRepository.findByEmployeeUserIdAndPunchAtBetweenAndVoidedAtIsNullOrderByPunchAt(employeeUserId, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+        return toDtos(entities, employee);
+    }
+
+    private List<AttendancePunch> toDtos(List<AttendancePunchEntity> entities, UserEntity employee) {
+        Map<String, String> emails = resolveEmails(entities.stream()
+                .flatMap(e -> java.util.stream.Stream.of(e.getRecordedByUserId(), e.getVoidedByUserId()))
+                .filter(java.util.Objects::nonNull).distinct().toList());
+        return entities.stream().map(e -> toDto(e, employee, emails.get(e.getRecordedByUserId()), emails.get(e.getVoidedByUserId()))).toList();
+    }
+
+    /**
+     * {@code PUT /attendance/day} - replaces one employee's punches for one hotel-local day, with
+     * the old ones kept as history. See that endpoint's openapi description for the contract. All
+     * of it is one transaction: either every old punch is voided and every new one recorded, or
+     * nothing changes. Times arrive as {@code HH:mm} <em>hotel</em> time and are combined with the
+     * date here, on the server, so what a manager's own device clock or time zone says never
+     * enters into it. Directions are not trusted from the caller - they alternate IN/OUT in time
+     * order, the same positional rule {@link AttendancePunchPairing} reads them by.
+     *
+     * <p>Every live punch of the day is voided and re-recorded even when only one time changed:
+     * a day's versions then stay clean sets (what a correction replaced / what it recorded), which
+     * is what lets the history be shown, and rolled back to, as whole versions. The cost is that
+     * an untouched scanner punch reappears as a {@code MANUAL} copy; the original stays, voided,
+     * with its source and device.
+     */
+    @Transactional
+    public List<AttendancePunch> correctDay(AttendanceDayCorrectionInput input, String actorUserId) {
+        UserEntity employee = userRepository.findById(input.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found"));
+        UserEntity actor = userRepository.findById(actorUserId).orElseThrow(() -> new NotFoundException("Actor not found"));
+        String reason = input.getReason() == null ? "" : input.getReason().trim();
+        if (reason.isEmpty()) {
+            throw ValidationException.field("reason", "Say why the day is being corrected");
+        }
+        LocalDate day;
+        try {
+            day = LocalDate.parse(input.getDate());
+        } catch (java.time.format.DateTimeParseException e) {
+            throw ValidationException.field("date", "date must look like 2026-10-05");
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        List<LocalDateTime> newTimes = new ArrayList<>();
+        for (String time : input.getTimes()) {
+            LocalDateTime at = day.atTime(LocalTime.parse(time));
+            if (!newTimes.isEmpty() && !at.isAfter(newTimes.get(newTimes.size() - 1))) {
+                throw ValidationException.field("times", "Times must be in increasing order, with no repeats");
+            }
+            if (at.isAfter(now)) {
+                throw ValidationException.field("times", "A punch can't be recorded in the future");
+            }
+            newTimes.add(at);
+        }
+
+        List<AttendancePunchEntity> current = attendancePunchRepository
+                .findByEmployeeUserIdAndPunchAtBetweenAndVoidedAtIsNullOrderByPunchAt(employee.getId(), day.atStartOfDay(), day.plusDays(1).atStartOfDay());
+        List<LocalDateTime> currentMinutes = current.stream().map(p -> p.getPunchAt().truncatedTo(java.time.temporal.ChronoUnit.MINUTES)).toList();
+        if (currentMinutes.equals(newTimes)) {
+            throw ValidationException.field("times", "These are already the day's punches - nothing to correct");
+        }
+
+        String correctionId = java.util.UUID.randomUUID().toString();
+        LocalDateTime voidedAt = TimestampFormat.nowUtc(clock);
+        for (AttendancePunchEntity punch : current) {
+            punch.voidBy(actorUserId, correctionId, reason, voidedAt);
+        }
+        attendancePunchRepository.saveAll(current);
+
+        List<AttendancePunchEntity> recorded = new ArrayList<>();
+        for (int i = 0; i < newTimes.size(); i++) {
+            AttendancePunchEntity entity = new AttendancePunchEntity();
+            entity.setEmployeeUserId(employee.getId());
+            entity.setPunchAt(newTimes.get(i));
+            entity.setDirection(i % 2 == 0 ? PunchDirection.IN : PunchDirection.OUT);
+            entity.setSource(PunchSource.MANUAL);
+            entity.setRecordedByUserId(actorUserId);
+            entity.setNote(reason);
+            entity.setCorrectionId(correctionId);
+            recorded.add(entity);
+        }
+        List<AttendancePunchEntity> saved = attendancePunchRepository.saveAllAndFlush(recorded);
+
+        auditLogService.record(
+                AuditAction.ATTENDANCE_DAY_CORRECTED,
+                AuditEntityType.ATTENDANCE_PUNCH,
+                correctionId,
+                "Corrected " + employee.getName() + "'s punches on " + day + ": " + describeTimes(current.stream().map(AttendancePunchEntity::getPunchAt).toList())
+                        + " -> " + describeTimes(newTimes) + " (" + current.size() + " voided, " + saved.size() + " recorded). Reason: " + reason);
+
+        return toDtos(saved, employee);
+    }
+
+    private static String describeTimes(List<LocalDateTime> times) {
+        return times.isEmpty() ? "no punches" : times.stream().map(t -> t.toLocalTime().format(TIME_FORMAT)).collect(Collectors.joining(", "));
     }
 
     /**
@@ -126,7 +223,7 @@ public class AttendanceService {
         }
         LocalDate day = punchAt.toLocalDate();
         long priorCountToday = attendancePunchRepository
-                .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), day.atStartOfDay(), day.plusDays(1).atStartOfDay())
+                .findByEmployeeUserIdAndPunchAtBetweenAndVoidedAtIsNullOrderByPunchAt(employee.getId(), day.atStartOfDay(), day.plusDays(1).atStartOfDay())
                 .size();
         boolean closesAnIncompleteDay = priorCountToday % 2 == 1;
 
@@ -207,7 +304,7 @@ public class AttendanceService {
 
         LocalDate day = deviceTimestamp.toLocalDate();
         List<AttendancePunchEntity> dayPunches = attendancePunchRepository
-                .findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employee.getId(), day.atStartOfDay(), day.plusDays(1).atStartOfDay());
+                .findByEmployeeUserIdAndPunchAtBetweenAndVoidedAtIsNullOrderByPunchAt(employee.getId(), day.atStartOfDay(), day.plusDays(1).atStartOfDay());
 
         if (!dayPunches.isEmpty()) {
             AttendancePunchEntity mostRecent = dayPunches.get(dayPunches.size() - 1);
@@ -257,8 +354,8 @@ public class AttendanceService {
                 shiftCodeRepository.findAllById(entries.stream().map(RosterEntryEntity::getShiftCodeId).distinct().toList()).stream()
                         .collect(Collectors.toMap(ShiftCodeEntity::getId, s -> s));
 
-        List<AttendancePunchEntity> punches =
-                attendancePunchRepository.findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt(employeeUserId, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+        List<AttendancePunchEntity> punches = attendancePunchRepository
+                .findByEmployeeUserIdAndPunchAtBetweenAndVoidedAtIsNullOrderByPunchAt(employeeUserId, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
         Map<LocalDate, List<AttendancePunchEntity>> punchesByDate = punches.stream().collect(Collectors.groupingBy(p -> p.getPunchAt().toLocalDate()));
         Map<String, String> recorderEmails = resolveEmails(punches.stream().map(AttendancePunchEntity::getRecordedByUserId).filter(java.util.Objects::nonNull).distinct().toList());
 
@@ -331,7 +428,7 @@ public class AttendanceService {
         List<RosterEntryEntity> workingEntries = entries.stream().filter(e -> shiftCodesById.get(e.getShiftCodeId()).isCountsAsWorked()).toList();
 
         List<AttendancePunchEntity> punches = attendancePunchRepository
-                .findByPunchAtBetweenOrderByEmployeeUserIdAscPunchAtAsc(today.atStartOfDay(), today.plusDays(1).atStartOfDay());
+                .findByPunchAtBetweenAndVoidedAtIsNullOrderByEmployeeUserIdAscPunchAtAsc(today.atStartOfDay(), today.plusDays(1).atStartOfDay());
         Map<String, List<AttendancePunchEntity>> punchesByEmployee = punches.stream().collect(Collectors.groupingBy(AttendancePunchEntity::getEmployeeUserId));
 
         Set<String> rosteredToday = entries.stream().map(RosterEntryEntity::getEmployeeUserId).collect(Collectors.toSet());
@@ -456,6 +553,10 @@ public class AttendanceService {
     }
 
     private AttendancePunch toDto(AttendancePunchEntity e, UserEntity employee, String recordedByEmail) {
+        return toDto(e, employee, recordedByEmail, null);
+    }
+
+    private AttendancePunch toDto(AttendancePunchEntity e, UserEntity employee, String recordedByEmail, String voidedByEmail) {
         // punchAt is clock-zone wall-clock (see recordPunch), so it's zoned, not toUtc()-labeled;
         // createdAt is Hibernate-populated UTC, which is exactly what toUtc() is for.
         AttendancePunch dto = new AttendancePunch(
@@ -467,6 +568,14 @@ public class AttendanceService {
         }
         if (e.getNote() != null) {
             dto.note(e.getNote());
+        }
+        if (e.getCorrectionId() != null) {
+            dto.correctionId(e.getCorrectionId());
+        }
+        if (e.isVoided()) {
+            dto.voidedAt(TimestampFormat.toUtc(e.getVoidedAt()));
+            dto.voidReason(e.getVoidReason());
+            if (voidedByEmail != null) dto.voidedByEmail(voidedByEmail);
         }
         return dto;
     }

@@ -52,6 +52,19 @@ public class AttendancePunchEntity {
     @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
+    // Set on the punches a PUT /attendance/day correction recorded.
+    private String correctionId;
+
+    // Void columns: all set or all null (V134). A voided punch is kept as history and counted
+    // nowhere. voidedAt is UTC wall-clock like every timestamp column (TimestampFormat.nowUtc).
+    private LocalDateTime voidedAt;
+
+    private String voidedByUserId;
+
+    private String voidedByCorrectionId;
+
+    private String voidReason;
+
     public String getId() {
         return id;
     }
@@ -122,5 +135,41 @@ public class AttendancePunchEntity {
 
     public void setEnrollmentNumber(Integer enrollmentNumber) {
         this.enrollmentNumber = enrollmentNumber;
+    }
+
+    public String getCorrectionId() {
+        return correctionId;
+    }
+
+    public void setCorrectionId(String correctionId) {
+        this.correctionId = correctionId;
+    }
+
+    public LocalDateTime getVoidedAt() {
+        return voidedAt;
+    }
+
+    public String getVoidedByUserId() {
+        return voidedByUserId;
+    }
+
+    public String getVoidedByCorrectionId() {
+        return voidedByCorrectionId;
+    }
+
+    public String getVoidReason() {
+        return voidReason;
+    }
+
+    public boolean isVoided() {
+        return voidedAt != null;
+    }
+
+    /** The only edit a punch ever gets: marked replaced, with who/when/why. Never un-voided. */
+    public void voidBy(String userId, String correctionId, String reason, LocalDateTime at) {
+        this.voidedAt = at;
+        this.voidedByUserId = userId;
+        this.voidedByCorrectionId = correctionId;
+        this.voidReason = reason;
     }
 }

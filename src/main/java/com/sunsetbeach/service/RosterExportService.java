@@ -303,7 +303,7 @@ public class RosterExportService {
         // group's own list below stays punchAt-sorted for free, exactly what same-day pairing needs.
         LocalDate today = LocalDate.now(clock);
         List<AttendancePunchEntity> punches =
-                attendancePunchRepository.findByPunchAtBetweenOrderByEmployeeUserIdAscPunchAtAsc(from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+                attendancePunchRepository.findByPunchAtBetweenAndVoidedAtIsNullOrderByEmployeeUserIdAscPunchAtAsc(from.atStartOfDay(), to.plusDays(1).atStartOfDay());
         Map<String, List<AttendancePunchEntity>> punchesByEmployee = punches.stream().collect(Collectors.groupingBy(AttendancePunchEntity::getEmployeeUserId));
 
         // Union, not just who's scheduled - a punch with no roster entry is exactly the anomaly

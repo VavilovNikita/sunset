@@ -197,6 +197,14 @@ Run the whole suite, not only new classes.
 
 These are deliberately two different words, not "roster" for both a plan and its own record: the whole point of that module is comparing what was planned against what happened, and one word for both would make that comparison unsayable — there'd be no way to ask "does the roster match attendance" without the question answering itself by definition. Keeping all three words - shift, roster, attendance - apart is what keeps that comparison a real question with a real answer, instead of a tautology.
 
+## Attendance corrections
+
+**A punch is never edited or deleted - a correction voids it.** `PUT /attendance/day` (`AttendanceService#correctDay`) replaces one employee's one hotel-local day: every live punch is flagged voided (`voidedAt`, `voidedByUserId`, `voidReason`, `voidedByCorrectionId`, V134) and the new times are recorded as `MANUAL` punches sharing a `correctionId`. The void is the only mutation a punch row ever gets, so a mistake - or tampering - leaves the earlier record behind. A day's versions stay clean sets (what a correction replaced / what it recorded), which is why the whole day is voided and re-recorded even when one time changed, and why rolling back is just another correction sending the earlier times.
+
+**Every reader of punches asks for the live ones** (`...AndVoidedAtIsNull...` repository methods): summary, today board, the actuals export, recordPunch's parity count and the scanner's direction/debounce checks. Only `GET /attendance?includeVoided=true` (the history view) reads the unfiltered `findByEmployeeUserIdAndPunchAtBetweenOrderByPunchAt`. The scanner idempotency check (`existsByDeviceIdAndEnrollmentNumberAndPunchAt`) and the watermark deliberately still see voided rows - otherwise the next poll would re-ingest a punch someone had just corrected away.
+
+**The correction takes `HH:mm` hotel times and a date, never an instant.** The server combines them (the manager's device zone can't matter), and directions are derived (IN, OUT, IN, ...) rather than trusted from the caller, the same positional rule `AttendancePunchPairing` reads by. A reason is required.
+
 ## Roster schedule import
 
 `RosterImportService` reads the hotel's own hand-built Excel schedule (one sheet per month, named like `Sep26`) and turns it into `RosterEntry` rows - `POST /roster/import/preview` is a dry run (parses and resolves, writes nothing, not even a mapping), `POST /roster/import/name-mappings` and `.../color-mappings` are the only calls that record a mapping, `POST /roster/import/commit` is the only one that writes entries. ADMIN only - stricter than the rest of Roster's MANAGER floor, because it can create `User` accounts, the one thing `/users/**` itself is also hard-restricted to ADMIN for.
