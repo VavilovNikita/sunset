@@ -1,0 +1,15 @@
+[Unit]
+Description=Import SiteMinder reservations into Sunset Beach
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/sunsetbeach/tools/siteminder-agent
+# .env lives in WorkingDirectory (chmod 600, not in git); the agent reads it itself.
+ExecStart=/usr/bin/node src/run.js
+# Single-run job: give a hung browser a hard ceiling instead of blocking tomorrow's run.
+TimeoutStartSec=15min
+# Non-zero exit (login failed, layout changed, rows failed) shows up as a failed unit:
+#   systemctl status siteminder-agent.service ; tail logs/agent.log
+# Add OnFailure= to a notification unit if you want an active alert.

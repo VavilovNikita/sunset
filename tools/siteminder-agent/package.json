@@ -1,0 +1,18 @@
+{
+  "name": "siteminder-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reads the SiteMinder extranet Reservations tab and posts each reservation to the sunset backend import endpoint.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/run.js",
+    "login": "node src/run.js --login",
+    "dump": "node src/run.js --dump",
+    "dry-run": "node src/run.js --dry-run",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}
