@@ -35,18 +35,47 @@ test('window crosses month and year boundaries and takes extra query params', ()
 
 const REAL_HEADERS = ['Booking reference', 'Guest names', 'Check-in', 'Check-out', 'Channel', 'Room', 'Booked-on date', 'Modified-on date', 'Cancelled-on date', 'Booking status', 'Occupancy', 'Total price'];
 
-test('the real SiteMinder formats parse: DD.MM.YYYY, "2 - 0 - 0", Booked, glued currency + amount', () => {
-  const row = ['SM-77', 'Jane Doe', '02.10.2026', '05.10.2026', 'Booking.com', 'Garden Villa', '01.09.2026, 08:47 PM', '09.09.2026, 10:00 AM', '', 'Booked', '2 - 1 - 0', 'THB7416.00'];
+test('the real SiteMinder formats parse: MM.DD.YYYY, "2 - 0 - 0", Booked, glued currency + amount', () => {
+  const row = ['SM-77', 'Jane Doe', '08.28.2026', '08.30.2026', 'Booking.com', 'Garden Villa', '07.15.2026, 08:47 PM', '08.20.2026, 10:00 AM', '', 'Booked', '2 - 1 - 0', 'THB7416.00'];
   const { reservations, errors } = parseReservations({ headers: REAL_HEADERS, rows: [row] });
   assert.deepEqual(errors, []);
   const r = reservations[0];
-  assert.deepEqual([r.checkIn, r.checkOut, r.status], ['2026-10-02', '2026-10-05', 'BOOKED']);
-  assert.equal(r.bookedAt, '2026-09-01T20:47:00+07:00');
-  assert.equal(r.modifiedAt, '2026-09-09T10:00:00+07:00');
+  assert.deepEqual([r.checkIn, r.checkOut, r.status], ['2026-08-28', '2026-08-30', 'BOOKED']);
+  assert.equal(r.bookedAt, '2026-07-15T20:47:00+07:00');
+  assert.equal(r.modifiedAt, '2026-08-20T10:00:00+07:00');
   assert.deepEqual([r.adults, r.children, r.infants], [2, 1, 0]);
   assert.equal(r.totalPrice, '7416.00');
   assert.equal(r.currency, 'THB');
   assert.equal(r.roomTypeName, 'Garden Villa');
+});
+
+// Regression: "invalid date 2026-30-8" - a cell like 08.30.2026 was read day-first. A day above 12 is the
+// only hard evidence of field order, so the table decides it, and ambiguous dates fall back to a stated default.
+test('numeric date order is detected from any date above 12 in the table', () => {
+  const mk = (checkIn, checkOut) => ['SM-1', 'A B', checkIn, checkOut, 'Direct', 'Villa', '01.02.2026', '', '', 'Booked', '1 - 0 - 0', 'THB 100.00'];
+  const one = (row, opts) => parseReservations({ headers: REAL_HEADERS, rows: [row] }, opts);
+  // 08.30.2026 can only be Aug 30 -> month-first, and the ambiguous 08.05.2026 in the same table follows it
+  const mdy = one(mk('08.05.2026', '08.30.2026'));
+  assert.deepEqual(mdy.errors, []);
+  assert.deepEqual([mdy.reservations[0].checkIn, mdy.reservations[0].checkOut], ['2026-08-05', '2026-08-30']);
+  // 30.08.2026 can only be 30 Aug -> day-first, even though the default is month-first
+  const dmy = one(mk('05.08.2026', '30.08.2026'));
+  assert.deepEqual([dmy.reservations[0].checkIn, dmy.reservations[0].checkOut], ['2026-08-05', '2026-08-30']);
+  // evidence from a different column (booked-on) counts too
+  const viaBooked = one(['SM-1', 'A B', '05.08.2026', '06.08.2026', 'Direct', 'Villa', '30.07.2026', '', '', 'Booked', '1 - 0 - 0', 'THB 1.00']);
+  assert.equal(viaBooked.reservations[0].checkIn, '2026-08-05');
+  // both readings in one table: the format changed under us, do not guess
+  assert.throws(() => parseReservations({ headers: REAL_HEADERS, rows: [mk('30.08.2026', '08.30.2026')] }), /contradict/);
+});
+
+test('all-ambiguous dates use the configured default and say so', () => {
+  const row = ['SM-1', 'A B', '02.10.2026', '05.10.2026', 'Direct', 'Villa', '01.09.2026', '', '', 'Booked', '1 - 0 - 0', 'THB 100.00'];
+  let assumed = null;
+  const def = parseReservations({ headers: REAL_HEADERS, rows: [row] }, { onAssumedDateOrder: (o) => { assumed = o; } });
+  assert.equal(assumed, 'mdy');
+  assert.equal(def.reservations[0].checkIn, '2026-02-10');
+  const d = parseReservations({ headers: REAL_HEADERS, rows: [row] }, { dateOrder: 'dmy' });
+  assert.equal(d.reservations[0].checkIn, '2026-10-02');
 });
 
 test('the textless occupancy header ("-  -", icons only) is found by its position', () => {
@@ -82,7 +111,7 @@ test('scrapeTable pages through the window and treats "no reservations" as empty
   let chromium;
   try { ({ chromium } = await import('playwright')); const b = await chromium.launch(); await b.close(); } catch { t.skip('Chromium not installed'); return; }
   const { scrapeTable } = await import('../src/browser.js');
-  const row = (n) => `<tr><td>SM-${n}</td><td>Guest ${n}</td><td>12.10.2026</td><td>13.10.2026</td><td>Direct</td><td>Villa</td><td>01.10.2026, 08:47 PM</td><td>09.10.2026, 10:00 AM</td><td></td><td>Booked</td><td>2 - 0 - 0</td><td><span>THB</span><span>1000.00</span></td></tr>`;
+  const row = (n) => `<tr><td>SM-${n}</td><td>Guest ${n}</td><td>10.12.2026</td><td>10.13.2026</td><td>Direct</td><td>Villa</td><td>10.01.2026, 08:47 PM</td><td>10.09.2026, 10:00 AM</td><td></td><td>Booked</td><td>2 - 0 - 0</td><td><span>THB</span><span>1000.00</span></td></tr>`;
   const table = (rows) => `<table><thead><tr>${REAL_HEADERS.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');

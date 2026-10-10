@@ -48,7 +48,8 @@ test('guests in a single cell', () => {
 test('date, money and name helpers', () => {
   assert.equal(parseDate('Mon, 12 Oct 2026'), '2026-10-12');
   assert.equal(parseDate('Oct 12, 2026'), '2026-10-12');
-  assert.equal(parseDate('12/10/2026'), '2026-10-12');
+  assert.equal(parseDate('12/10/2026', 'dmy'), '2026-10-12');
+  assert.equal(parseDate('12/10/2026', 'mdy'), '2026-12-10');
   assert.throws(() => parseDate('31 Feb 2026'));
   assert.equal(parseDateTime('01 Oct 2026 2:05 PM', '+07:00'), '2026-10-01T14:05:00+07:00');
   assert.deepEqual(parseMoney('THB 1,234'), { totalPrice: '1234.00', currency: 'THB' });

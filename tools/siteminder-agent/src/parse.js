@@ -55,6 +55,7 @@ export function mapColumns(headers) {
 }
 
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+const NUMERIC_DATE = /(\d{1,2})[./](\d{1,2})[./](\d{4})/;
 const pad = (n) => String(n).padStart(2, '0');
 
 function ymd(y, m, d) {
@@ -63,8 +64,12 @@ function ymd(y, m, d) {
   return `${y}-${pad(m)}-${pad(d)}`;
 }
 
-/** Date text -> YYYY-MM-DD. Accepts 2026-10-12, 12 Oct 2026, Oct 12, 2026, Mon 12 Oct 2026, 12/10/2026 (day first). */
-export function parseDate(text) {
+/**
+ * Date text -> YYYY-MM-DD. Accepts 2026-10-12, 12 Oct 2026, Oct 12, 2026, Mon 12 Oct 2026, and the
+ * all-numeric forms 08.30.2026 / 08/30/2026, whose field order is `order` ('mdy' | 'dmy'): the text
+ * alone can't say (02.10.2026), so parseReservations settles it from the whole table first.
+ */
+export function parseDate(text, order = 'mdy') {
   const s = text.trim();
   let m;
   if ((m = s.match(/(\d{4})-(\d{2})-(\d{2})/))) return ymd(+m[1], +m[2], +m[3]);
@@ -76,14 +81,13 @@ export function parseDate(text) {
     const mo = MONTHS[m[1].toLowerCase()];
     if (mo) return ymd(+m[3], mo, +m[2]);
   }
-  // DD.MM.YYYY is SiteMinder's own format (confirmed on the live page); 12/10/2026 is read day-first too.
-  if ((m = s.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/))) return ymd(+m[3], +m[2], +m[1]);
+  if ((m = s.match(NUMERIC_DATE))) return order === 'dmy' ? ymd(+m[3], +m[2], +m[1]) : ymd(+m[3], +m[1], +m[2]);
   throw new RowError(`unrecognised date "${text}"`);
 }
 
 /** Date+time text -> ISO date-time with offset. Time defaults to 00:00 when absent. */
-export function parseDateTime(text, tzOffset) {
-  const date = parseDate(text);
+export function parseDateTime(text, tzOffset, order = 'mdy') {
+  const date = parseDate(text, order);
   const t = text.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?/i);
   let h = 0, min = 0, sec = 0;
   if (t) {
@@ -156,12 +160,37 @@ function guestCounts(cell, map) {
 }
 
 /**
+ * Field order of the all-numeric dates in this table. A first number above 12 can only be a day
+ * (dmy), a second number above 12 only a day (mdy); one table showing both is a layout error. When every
+ * date is ambiguous (all days <= 12) there is no evidence, so `fallback` decides - and the caller is told.
+ */
+export function detectDateOrder(table, map, fallback = 'mdy') {
+  const cols = ['checkIn', 'checkOut', 'bookedAt', 'modifiedAt', 'cancelledAt'].map((f) => map[f]).filter((i) => i !== undefined);
+  let dmy = 0, mdy = 0;
+  for (const row of table.rows) {
+    for (const i of cols) {
+      const m = (row[i] ?? '').match(NUMERIC_DATE);
+      if (!m) continue;
+      if (+m[1] > 12) dmy++;
+      if (+m[2] > 12) mdy++;
+    }
+  }
+  if (dmy && mdy) throw new LayoutError(`Numeric dates in this table contradict each other (${dmy} read only as day-first, ${mdy} only as month-first) - the date format changed`);
+  if (dmy) return { order: 'dmy', evidence: true };
+  if (mdy) return { order: 'mdy', evidence: true };
+  return { order: fallback, evidence: false };
+}
+
+/**
  * @param {{headers: string[], rows: string[][]}} table
  * @returns {{reservations: object[], errors: {row: number, message: string}[]}}
  *   A bad row is reported and skipped; a bad layout throws LayoutError.
  */
-export function parseReservations(table, { tzOffset = '+07:00' } = {}) {
+export function parseReservations(table, { tzOffset = '+07:00', dateOrder = 'mdy', onAssumedDateOrder } = {}) {
   const map = mapColumns(table.headers);
+  const detected = detectDateOrder(table, map, dateOrder);
+  const order = detected.order;
+  if (!detected.evidence && table.rows.some((r) => r.some((c) => NUMERIC_DATE.test(c)))) onAssumedDateOrder?.(order);
   const reservations = [];
   const errors = [];
   table.rows.forEach((cells, idx) => {
@@ -176,19 +205,19 @@ export function parseReservations(table, { tzOffset = '+07:00' } = {}) {
         reference,
         status,
         ...parseName(cell(map.guest)),
-        checkIn: parseDate(cell(map.checkIn)),
-        checkOut: parseDate(cell(map.checkOut)),
+        checkIn: parseDate(cell(map.checkIn), order),
+        checkOut: parseDate(cell(map.checkOut), order),
         roomTypeName: cell(map.roomType),
         ...guestCounts(cell, map),
         totalPrice,
         channel: cell(map.channel),
-        bookedAt: parseDateTime(cell(map.bookedAt), tzOffset),
+        bookedAt: parseDateTime(cell(map.bookedAt), tzOffset, order),
       };
       if (!r.roomTypeName) throw new RowError('empty room type');
       if (!r.channel) throw new RowError('empty channel');
       if (currency) r.currency = currency;
-      if (map.modifiedAt !== undefined && cell(map.modifiedAt)) r.modifiedAt = parseDateTime(cell(map.modifiedAt), tzOffset);
-      if (map.cancelledAt !== undefined && cell(map.cancelledAt)) r.cancelledAt = parseDateTime(cell(map.cancelledAt), tzOffset);
+      if (map.modifiedAt !== undefined && cell(map.modifiedAt)) r.modifiedAt = parseDateTime(cell(map.modifiedAt), tzOffset, order);
+      if (map.cancelledAt !== undefined && cell(map.cancelledAt)) r.cancelledAt = parseDateTime(cell(map.cancelledAt), tzOffset, order);
       // The backend orders versions by the latest of these timestamps; a cancelled row
       // without any cancel time would otherwise look stale against its own booking time.
       if (status === 'CANCELLED' && !r.cancelledAt) r.cancelledAt = r.modifiedAt ?? r.bookedAt;

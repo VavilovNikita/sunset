@@ -53,7 +53,11 @@ async function main() {
 
   let parsed;
   try {
-    parsed = table.headers ? parseReservations(table, { tzOffset: cfg.tzOffset }) : { reservations: [], errors: [] };
+    parsed = table.headers ? parseReservations(table, {
+      tzOffset: cfg.tzOffset,
+      dateOrder: cfg.dateOrder,
+      onAssumedDateOrder: (o) => log.warn(`All numeric dates are ambiguous (every day <= 12); assuming ${o === 'mdy' ? 'MM.DD.YYYY' : 'DD.MM.YYYY'}. Verify one date against the SiteMinder screen.`),
+    }) : { reservations: [], errors: [] };
   } catch (e) {
     if (e instanceof LayoutError) { log.error(`LAYOUT CHANGED: ${e.message}`); return 4; }
     throw e;

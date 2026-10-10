@@ -39,6 +39,8 @@ export function loadConfig({ needSiteMinder = true, lookbackDays } = {}) {
     extraQuery: env.SM_EXTRA_QUERY || '',
     tableSelector: env.SM_TABLE_SELECTOR || 'table',
     maxPages: Number(env.SM_MAX_PAGES || 50),
+    // Only used when every numeric date in the table is ambiguous (all days <= 12); otherwise detected.
+    dateOrder: env.SM_DATE_ORDER === 'dmy' ? 'dmy' : 'mdy',
     tzOffset: env.SM_TZ_OFFSET || '+07:00',
     importUrl: env.SUNSET_IMPORT_URL,
     integrationKey: env.SUNSET_INTEGRATION_KEY,
