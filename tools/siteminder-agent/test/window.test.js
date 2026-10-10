@@ -49,6 +49,20 @@ test('the real SiteMinder formats parse: MM.DD.YYYY, "2 - 0 - 0", Booked, glued 
   assert.equal(r.roomTypeName, 'Garden Villa');
 });
 
+// Regression: an unmodified / uncancelled booking shows "-" in those date cells ("unrecognised date \"-\"").
+test('placeholder dashes in optional date cells mean no date', () => {
+  for (const dash of ['-', '–', '—', ' - ', 'N/A']) {
+    const row = ['SM-1', 'Jane Doe', '08.28.2026', '08.30.2026', 'Direct', 'Villa', '07.15.2026, 08:47 PM', dash, dash, 'Booked', '2 - 0 - 0', 'THB 100.00'];
+    const { reservations, errors } = parseReservations({ headers: REAL_HEADERS, rows: [row] });
+    assert.deepEqual(errors, [], `dash ${JSON.stringify(dash)}`);
+    assert.equal(reservations[0].modifiedAt, undefined);
+    assert.equal(reservations[0].cancelledAt, undefined);
+  }
+  // but a dash where a date is required stays an error
+  const bad = ['SM-1', 'Jane Doe', '-', '08.30.2026', 'Direct', 'Villa', '07.15.2026', '', '', 'Booked', '2 - 0 - 0', 'THB 100.00'];
+  assert.equal(parseReservations({ headers: REAL_HEADERS, rows: [bad] }).errors.length, 1);
+});
+
 // Regression: "invalid date 2026-30-8" - a cell like 08.30.2026 was read day-first. A day above 12 is the
 // only hard evidence of field order, so the table decides it, and ambiguous dates fall back to a stated default.
 test('numeric date order is detected from any date above 12 in the table', () => {

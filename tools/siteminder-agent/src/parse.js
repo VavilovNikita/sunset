@@ -56,6 +56,8 @@ export function mapColumns(headers) {
 
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 const NUMERIC_DATE = /(\d{1,2})[./](\d{1,2})[./](\d{4})/;
+/** Empty, or a placeholder dash (-, –, —) / n/a. */
+const isBlank = (v) => !v || /^[-–—\s]*$|^n\/?a$/i.test(v);
 const pad = (n) => String(n).padStart(2, '0');
 
 function ymd(y, m, d) {
@@ -216,8 +218,12 @@ export function parseReservations(table, { tzOffset = '+07:00', dateOrder = 'mdy
       if (!r.roomTypeName) throw new RowError('empty room type');
       if (!r.channel) throw new RowError('empty channel');
       if (currency) r.currency = currency;
-      if (map.modifiedAt !== undefined && cell(map.modifiedAt)) r.modifiedAt = parseDateTime(cell(map.modifiedAt), tzOffset, order);
-      if (map.cancelledAt !== undefined && cell(map.cancelledAt)) r.cancelledAt = parseDateTime(cell(map.cancelledAt), tzOffset, order);
+      // An empty optional date is shown as "-" on the page.
+      const optionalDateTime = (i) => (isBlank(cell(i)) ? undefined : parseDateTime(cell(i), tzOffset, order));
+      const modifiedAt = optionalDateTime(map.modifiedAt);
+      const cancelledAt = optionalDateTime(map.cancelledAt);
+      if (modifiedAt) r.modifiedAt = modifiedAt;
+      if (cancelledAt) r.cancelledAt = cancelledAt;
       // The backend orders versions by the latest of these timestamps; a cancelled row
       // without any cancel time would otherwise look stale against its own booking time.
       if (status === 'CANCELLED' && !r.cancelledAt) r.cancelledAt = r.modifiedAt ?? r.bookedAt;

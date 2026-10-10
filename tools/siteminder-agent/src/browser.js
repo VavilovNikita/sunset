@@ -46,7 +46,7 @@ async function challengeText(page) {
  */
 export async function ensureOnReservations(cfg, page, context, { headed, log }) {
   await page.goto(reservationsUrl(cfg, 1), { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
   if (!(await isLoginPage(page))) {
     log.info('Saved session is still valid');
     return;
@@ -54,7 +54,7 @@ export async function ensureOnReservations(cfg, page, context, { headed, log }) 
   log.info('Session missing or expired - logging in (two-step: username, then password)');
   await doLogin(cfg, page, { headed, log });
   await page.goto(reservationsUrl(cfg, 1), { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
   if (await isLoginPage(page)) throw new LoginError('Logged in, but the Reservations URL still redirects to a login page');
   await saveSession(cfg, context);
   log.info('Step 6/6: session saved');
@@ -190,8 +190,8 @@ export async function scrapeTable(cfg, page, log) {
   let previousFirst = null;
   for (let p = 1; p <= cfg.maxPages; p++) {
     if (p > 1) {
+      // A fresh document; the wait below is for the table or the "no reservations" text, not for network idle.
       await page.goto(reservationsUrl(cfg, p), { waitUntil: 'domcontentloaded' });
-      await page.waitForLoadState('networkidle').catch(() => {});
     }
     try {
       await table.or(empty).waitFor({ state: 'visible', timeout: 20_000 });
