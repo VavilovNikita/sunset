@@ -108,7 +108,7 @@ public class OrderCreateInput {
   }
 
   /**
-   * Lines to add in the same transaction, exactly as `POST /orders/{id}/items` would add them. The POS screens send the first line here instead of creating the order when a table is tapped: an order only comes into existence with something on it, so opening a free table and walking away leaves no empty order behind and the table stays free. Optional - the spa billing door and room service still create first and add after. 
+   * Lines to add in the same transaction, exactly as `POST /orders/{id}/items` would add them. The POS screens send the first line here instead of creating the order when a table is tapped: an order only comes into existence with something on it, so opening a free table and walking away leaves no empty order behind and the table stays free. Optional only for the spa billing door (which sends `spaAppointmentId`) and room service (a booking, no table), which still create first and add after. An order for a restaurant, bar or other non-spa table (`tableId` set) must come with at least one item here - an empty one only holds the table busy - and is a 400 otherwise. A spa-zone table is exempt, for the same create-first reason as the spa door. 
    * @return items
    */
   @Valid 

@@ -28,4 +28,6 @@ public interface OrderRepository extends JpaRepository<OrderEntity, String>, Jpa
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from OrderEntity o where o.id = :id")
     Optional<OrderEntity> findByIdForUpdate(@Param("id") String id);
+
+    java.util.List<com.sunsetbeach.entity.OrderEntity> findByStatus(com.sunsetbeach.model.OrderStatus status);
 }

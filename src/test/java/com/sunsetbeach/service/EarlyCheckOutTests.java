@@ -78,8 +78,9 @@ class EarlyCheckOutTests extends AbstractIntegrationTest {
     }
 
     private Booking checkedInStay(LocalDate checkIn, LocalDate checkOut) {
-        Booking booking = bookingService.createBooking(
-                new BookingCreateInput(room.getId(), "Early Guest", "guest@example.com", "+66800000000", checkIn.toString(), checkOut.toString(), 1));
+        // Staff creation: the public form refuses a check-in in the past, and a stay that already started is back-entry.
+        Booking booking = bookingService.createStaffBooking(new com.sunsetbeach.model.StaffBookingCreateInput(
+                room.getId(), "Early Guest", checkIn.toString(), checkOut.toString(), com.sunsetbeach.model.BookingChannel.WALK_IN, 1));
         bookingService.assignRoomUnit(booking.getId(), new RoomUnitAssignmentInput().roomUnitId(unit.getId()));
         occupancyService.checkIn(booking.getId());
         return bookingService.getById(booking.getId());

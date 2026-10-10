@@ -2206,6 +2206,9 @@ paths:
       tags: [Bookings]
       summary: Create a booking (public — guest-facing, no session required)
       description: >
+        Public limits, all 400: `checkIn` can't be in the past, a stay is at most 90 nights, and
+        adults + children can't exceed the room type's `capacity`.
+
         Intentionally unauthenticated: guests are not logged in. The server
         recomputes `totalPrice` from `Room.basePrice`/`RatePlan` and
         re-validates availability itself inside a `Serializable` transaction
@@ -2629,6 +2632,10 @@ paths:
       tags: [Bookings]
       summary: Create a booking as staff (front-desk / walk-in), optionally assigning a room immediately
       description: >
+        Limits (see also `POST /bookings`): a stay is at most 90 nights (400). A booking that
+        starts before today is back-entry and needs MANAGER or above (a lower role gets 403). A
+        party larger than the room sleeps is accepted with `Booking.warning` set, not refused.
+
         Requires CASHIER or above. Distinct from the public `POST /bookings` guest-inquiry flow:
         no new-booking notification email is sent, guest email/phone are optional (a walk-in may
         not have one on hand), and if `roomUnitId` is given the room is assigned in the same
@@ -12246,6 +12253,14 @@ components:
         updatedAt:
           type: string
           format: date-time
+        warning:
+          type: string
+          description: >
+            Present only on the response to `POST /bookings/staff`, when the booking was accepted
+            but front desk should look twice - today only a party larger than the room type
+            sleeps (adults + children over `Room.capacity`; an extra bed is a real thing staff do,
+            so it warns, where the public `POST /bookings` refuses). Never stored, never present on
+            any other read.
 
     BookingCreateInput:
       type: object
@@ -13732,7 +13747,11 @@ components:
             them. The POS screens send the first line here instead of creating the order when a
             table is tapped: an order only comes into existence with something on it, so opening a
             free table and walking away leaves no empty order behind and the table stays free.
-            Optional - the spa billing door and room service still create first and add after.
+            Optional only for the spa billing door (which sends `spaAppointmentId`) and room service
+            (a booking, no table), which still create first and add after. An order for a
+            restaurant, bar or other non-spa table (`tableId` set) must come with at least one item
+            here - an empty one only holds the table busy - and is a 400 otherwise. A spa-zone table
+            is exempt, for the same create-first reason as the spa door.
         spaAppointmentId:
           type: string
           nullable: true

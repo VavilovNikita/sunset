@@ -42,6 +42,7 @@ class OrderEmptyAndCashTenderedTests extends AbstractIntegrationTest {
     @Autowired private PaymentRepository paymentRepository;
     @Autowired private MenuItemRepository menuItemRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private com.sunsetbeach.repository.TableRepository tableRepository;
 
     private UserEntity cashier;
     private MenuItemEntity menuItem;
@@ -64,6 +65,42 @@ class OrderEmptyAndCashTenderedTests extends AbstractIntegrationTest {
         menuItem = menuItemRepository.saveAndFlush(newMenuItem);
 
         shiftService.open(cashier.getId(), new ShiftOpenInput());
+    }
+
+    private String aTableId() {
+        com.sunsetbeach.entity.TableEntity table = new com.sunsetbeach.entity.TableEntity();
+        table.setZone(com.sunsetbeach.model.Zone.RESTAURANT);
+        table.setLabel("T-" + UUID.randomUUID());
+        table.setCapacity(4);
+        table.setShape(com.sunsetbeach.model.TableShape.SQUARE);
+        table.setActive(true);
+        return tableRepository.saveAndFlush(table).getId();
+    }
+
+    /** An empty order for a table only holds it busy - the order starts with its first line. */
+    @Test
+    void create_forATable_withNoItems_isRefused() {
+        String tableId = aTableId();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> orderService.create(new OrderCreateInput().tableId(tableId), cashier.getId()))
+                .isInstanceOf(com.sunsetbeach.error.ValidationException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> orderService.create(new OrderCreateInput().tableId(tableId).items(List.of()), cashier.getId()))
+                .isInstanceOf(com.sunsetbeach.error.ValidationException.class);
+    }
+
+    @Test
+    void create_forATable_withAnItem_isFine() {
+        Order order = orderService.create(new OrderCreateInput().tableId(aTableId()).items(List.of(new OrderItemInput(menuItem.getId(), 1))), cashier.getId());
+
+        assertThat(order.getItems()).hasSize(1);
+    }
+
+    /** Room service (a booking, no table) and a plain tab still create first and add after. */
+    @Test
+    void create_withoutATable_withNoItems_stillWorks() {
+        Order tab = orderService.create(new OrderCreateInput().guestName("Walk-in"), cashier.getId());
+
+        assertThat(tab.getItems()).isEmpty();
     }
 
     @Test

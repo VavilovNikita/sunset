@@ -50,6 +50,7 @@ public class OrderPrintingService {
     private final TableRepository tableRepository;
     private final UserRepository userRepository;
     private final Clock clock;
+    private final VatSettingsService vatSettingsService;
 
     public OrderPrintingService(
             PrintService printService,
@@ -57,8 +58,10 @@ public class OrderPrintingService {
             MenuItemRepository menuItemRepository,
             TableRepository tableRepository,
             UserRepository userRepository,
-            Clock clock) {
+            Clock clock,
+            VatSettingsService vatSettingsService) {
         this.clock = clock;
+        this.vatSettingsService = vatSettingsService;
         this.printService = printService;
         this.printJobMapper = printJobMapper;
         this.menuItemRepository = menuItemRepository;
@@ -290,6 +293,10 @@ public class OrderPrintingService {
         }
         b.divider();
         b.twoColumn("TOTAL", PriceFormat.asDecimalString(total));
+        // Every price here already includes VAT, so this is a breakdown of the total, not an
+        // addition to it - the same figure the ledger and Z410 take out of the same gross.
+        BigDecimal vatRate = vatSettingsService.currentRate();
+        b.twoColumn("incl. VAT " + vatRate.stripTrailingZeros().toPlainString() + "%", PriceFormat.asDecimalString(RevenueClassification.vatInside(total, vatRate)));
 
         if (payment != null) {
             b.divider();

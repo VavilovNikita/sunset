@@ -97,6 +97,8 @@ public class Booking {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime updatedAt;
 
+  private String warning;
+
   public Booking() {
     super();
   }
@@ -694,6 +696,25 @@ public class Booking {
     this.updatedAt = updatedAt;
   }
 
+  public Booking warning(String warning) {
+    this.warning = warning;
+    return this;
+  }
+
+  /**
+   * Present only on the response to `POST /bookings/staff`, when the booking was accepted but front desk should look twice - today only a party larger than the room type sleeps (adults + children over `Room.capacity`; an extra bed is a real thing staff do, so it warns, where the public `POST /bookings` refuses). Never stored, never present on any other read. 
+   * @return warning
+   */
+  
+  @JsonProperty("warning")
+  public String getWarning() {
+    return warning;
+  }
+
+  public void setWarning(String warning) {
+    this.warning = warning;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -731,12 +752,13 @@ public class Booking {
         Objects.equals(this.cancellationReason, booking.cancellationReason) &&
         Objects.equals(this.segments, booking.segments) &&
         Objects.equals(this.createdAt, booking.createdAt) &&
-        Objects.equals(this.updatedAt, booking.updatedAt);
+        Objects.equals(this.updatedAt, booking.updatedAt) &&
+        Objects.equals(this.warning, booking.warning);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
   }
 
   @Override
@@ -772,6 +794,7 @@ public class Booking {
     sb.append("    segments: ").append(toIndentedString(segments)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
+    sb.append("    warning: ").append(toIndentedString(warning)).append("\n");
     sb.append("}");
     return sb.toString();
   }

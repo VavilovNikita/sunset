@@ -259,7 +259,7 @@ class RoomServiceOrderingServiceTests extends AbstractIntegrationTest {
         table.setCapacity(4);
         table.setActive(true);
         table = tableRepository.saveAndFlush(table);
-        Order tableOrder = orderService.create(new OrderCreateInput().bookingId(bookingId).tableId(table.getId()), null);
+        Order tableOrder = orderService.create(new OrderCreateInput().bookingId(bookingId).tableId(table.getId()).items(oneMojito()), null);
 
         assertThatThrownBy(() -> roomServiceOrderingService.getById(GUEST_EMAIL, tableOrder.getId()))
                 .isInstanceOf(NotFoundException.class);

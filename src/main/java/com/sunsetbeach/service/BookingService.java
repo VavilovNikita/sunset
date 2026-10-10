@@ -9,6 +9,7 @@ import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
+import com.sunsetbeach.error.ForbiddenException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.SqlStates;
@@ -60,6 +61,8 @@ import com.sunsetbeach.security.StaffPrincipal;
 import jakarta.persistence.criteria.Predicate;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.temporal.ChronoUnit;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -122,7 +125,9 @@ public class BookingService {
             GuestLinkService guestLinkService,
             LedgerService ledgerService,
             OverstayRule overstayRule,
-            ShiftRepository shiftRepository) {
+            ShiftRepository shiftRepository,
+            Clock clock) {
+        this.clock = clock;
         this.shiftRepository = shiftRepository;
         this.overstayRule = overstayRule;
         this.roomRepository = roomRepository;
@@ -142,6 +147,22 @@ public class BookingService {
         this.ledgerService = ledgerService;
     }
 
+    private final Clock clock;
+
+    /**
+     * The longest stay a new booking may have. Nobody books a hotel room for 1000 nights on
+     * purpose; a typo in the year does, and it blocks the room for all of them. Longer stays are
+     * booked in parts. Applies to public and staff creation, not to a SiteMinder import (the
+     * guest already agreed that stay on the OTA) or to extending a stay afterwards.
+     */
+    static final int MAX_NEW_STAY_NIGHTS = 90;
+
+    private static void requireReasonableLength(LocalDate checkIn, LocalDate checkOut) {
+        if (ChronoUnit.DAYS.between(checkIn, checkOut) > MAX_NEW_STAY_NIGHTS) {
+            throw ValidationException.field("checkOut", "A stay can be at most " + MAX_NEW_STAY_NIGHTS + " nights - book a longer one in parts");
+        }
+    }
+
     private List<BookingSegmentEntity> loadSegments(String bookingId) {
         return segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
     }
@@ -152,8 +173,16 @@ public class BookingService {
         if (!checkIn.isBefore(checkOut)) {
             throw ValidationException.field("checkOut", "checkIn must be before checkOut");
         }
+        if (checkIn.isBefore(LocalDate.now(clock))) {
+            throw ValidationException.field("checkIn", "checkIn can't be in the past");
+        }
+        requireReasonableLength(checkIn, checkOut);
 
         RoomEntity room = roomRepository.findById(input.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        int partySize = input.getAdults() + childrenOrZero(input.getChildren());
+        if (room.getCapacity() != null && partySize > room.getCapacity()) {
+            throw ValidationException.field("adults", "This room sleeps at most " + room.getCapacity() + " guests (adults and children together)");
+        }
 
         BookingEntity saved;
         try {
@@ -204,11 +233,25 @@ public class BookingService {
      * booking itself - see {@link BookingWriter#insertStaff}.
      */
     public Booking createStaffBooking(StaffBookingCreateInput input) {
+        return createStaffBooking(input, true);
+    }
+
+    /**
+     * {@code mayBackdate}: a booking that starts before today is back-entry (a walk-in logged
+     * afterwards, a missed phone booking) - real, but a manager's call, so a cashier or waiter is
+     * refused. The controller passes the caller's answer; direct callers (tests, jobs) default to
+     * allowed.
+     */
+    public Booking createStaffBooking(StaffBookingCreateInput input, boolean mayBackdate) {
         LocalDate checkIn = LocalDate.parse(input.getCheckIn());
         LocalDate checkOut = LocalDate.parse(input.getCheckOut());
         if (!checkIn.isBefore(checkOut)) {
             throw ValidationException.field("checkOut", "checkIn must be before checkOut");
         }
+        if (!mayBackdate && checkIn.isBefore(LocalDate.now(clock))) {
+            throw new ForbiddenException("Only a manager can create a booking that starts in the past");
+        }
+        requireReasonableLength(checkIn, checkOut);
 
         RoomEntity room = roomRepository.findById(input.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         String roomUnitId = input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
@@ -248,7 +291,12 @@ public class BookingService {
                 saved.getId(),
                 "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + checkIn + " to " + checkOut + ")"
                         + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : ""));
-        return bookingMapper.toDto(saved, room, assignedUnit, guest, loadSegments(saved.getId()));
+        Booking dto = bookingMapper.toDto(saved, room, assignedUnit, guest, loadSegments(saved.getId()));
+        int partySize = input.getAdults() + childrenOrZero(input.getChildren());
+        if (room.getCapacity() != null && partySize > room.getCapacity()) {
+            dto.warning(partySize + " guests in a room that sleeps " + room.getCapacity() + " - check an extra bed is arranged");
+        }
+        return dto;
     }
 
     /**
@@ -288,6 +336,7 @@ public class BookingService {
         if (!checkIn.isBefore(checkOut)) {
             throw ValidationException.field("checkOut", "checkIn must be before checkOut");
         }
+        requireReasonableLength(checkIn, checkOut);
         RoomEntity room = roomRepository.findById(input.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         String roomUnitId = input.getRoomUnitId() != null && input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
         BookingWriter.ScheduleQuote quote = bookingWriter.quoteStaff(room, checkIn, checkOut, roomUnitId);

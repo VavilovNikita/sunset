@@ -170,6 +170,15 @@ public class OrderService {
         if (bookingId != null && !bookingRepository.existsById(bookingId)) {
             throw new NotFoundException("Booking not found");
         }
+        // A table's order comes into existence with its first line: an empty one only holds the
+        // table busy. The spa billing door (spaAppointmentId) and room service (a booking, no
+        // table) still create first and add after, and so does an order on a spa-zone table (the spa
+        // auto-link matches the order by when it was opened, then the treatment is added), so none
+        // of them are asked for a line.
+        boolean noItems = input.getItems() == null || input.getItems().isEmpty();
+        if (tableId != null && noItems && input.getSpaAppointmentId().orElse(null) == null && !isSpaTable(tableId)) {
+            throw ValidationException.field("items", "An order for a table starts with its first item");
+        }
 
         OrderEntity entity = new OrderEntity();
         entity.setTableId(tableId);
@@ -196,6 +205,10 @@ public class OrderService {
         }
 
         return toDto(saved, List.of());
+    }
+
+    private boolean isSpaTable(String tableId) {
+        return tableRepository.findById(tableId).map(t -> t.getZone() == com.sunsetbeach.model.Zone.SPA).orElse(false);
     }
 
     /**

@@ -153,6 +153,20 @@ public class ShiftService {
         if (shift.getStatus() == ShiftStatus.CLOSED) {
             throw new ConflictException("Shift is already closed");
         }
+        // An OPEN order with no lines is an abandoned tap, not unpaid business (a table's order is
+        // created with its first line, so these only come from the spa/room-service doors or from
+        // a last line being deleted). Cancelling them here, on the record, is what keeps one of them
+        // from blocking the close with the 409 below until somebody finds and cancels it by hand.
+        for (OrderEntity open : orderRepository.findByStatus(OrderStatus.OPEN)) {
+            if (!orderItemRepository.existsByOrderId(open.getId())) {
+                open.setStatus(OrderStatus.CANCELLED);
+                orderRepository.save(open);
+                auditLogService.record(
+                        AuditAction.ORDER_CANCELLED, AuditEntityType.ORDER, open.getId(), "Empty order cancelled automatically when the shift was closed");
+            }
+        }
+        orderRepository.flush();
+
         // Orders don't carry a shiftId (only Payments do), so there's no way to scope this
         // check to "orders opened during this shift" - it's a system-wide gate: don't let the
         // register close while there's still unpaid business anywhere in the POS.

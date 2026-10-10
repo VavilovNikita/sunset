@@ -353,8 +353,9 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
         TableEntity restaurantTable = createRestaurantTable();
         MenuItemEntity kitchenItem = createKitchenItem();
 
-        Order order = orderService.create(new OrderCreateInput().tableId(restaurantTable.getId()), createReceptionist().getId());
-        billTreatment(order.getId(), kitchenItem);
+        // A restaurant table's order starts with its first line.
+        Order order = orderService.create(
+                new OrderCreateInput().tableId(restaurantTable.getId()).items(List.of(new OrderItemInput(kitchenItem.getId(), 1))), createReceptionist().getId());
 
         assertThat(order.getId()).isNotNull();
     }
@@ -369,9 +370,9 @@ class OrderSpaAppointmentLinkTests extends AbstractIntegrationTest {
         Booking booking = createBooking(LocalDate.now().plusDays(300));
         SpaAppointmentEntity appointment = persistAppointment(createSpaTable(), booking, treatment, therapist, receptionist, todayAt(11, 0), 60);
 
-        Order order = orderService.create(new OrderCreateInput().tableId(restaurantTable.getId()), receptionist.getId());
-        // Even billing a treatment-department item doesn't matter here - the zone gate on the order's own table rules it out first.
-        billTreatment(order.getId(), treatment);
+        // Even a treatment-department item doesn't matter here - the zone gate on the order's own table rules it out first.
+        Order order = orderService.create(
+                new OrderCreateInput().tableId(restaurantTable.getId()).items(List.of(new OrderItemInput(treatment.getId(), 1))), receptionist.getId());
 
         assertThat(order.getId()).isNotNull();
         assertThat(orderIdOf(appointment)).isNull();

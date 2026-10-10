@@ -143,8 +143,9 @@ class TodayBoardClockTests extends AbstractIntegrationTest {
         unit.setActive(true);
         unit = roomUnitRepository.saveAndFlush(unit);
 
-        Booking booking = bookingService.createBooking(
-                new BookingCreateInput(room.getId(), "Guest", "guest@example.com", "+66800000000", checkIn.toString(), checkOut.toString(), 1));
+        // Staff creation: the public form refuses a check-in in the past, and the board needs stays that already started.
+        Booking booking = bookingService.createStaffBooking(new com.sunsetbeach.model.StaffBookingCreateInput(
+                room.getId(), "Guest", checkIn.toString(), checkOut.toString(), com.sunsetbeach.model.BookingChannel.WALK_IN, 1));
         return bookingService.assignRoomUnit(booking.getId(), new RoomUnitAssignmentInput().roomUnitId(unit.getId()));
     }
 }

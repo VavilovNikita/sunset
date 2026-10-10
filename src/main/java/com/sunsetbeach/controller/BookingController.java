@@ -111,7 +111,7 @@ public class BookingController implements BookingsApi {
 
     @Override
     public ResponseEntity<Booking> createStaffBooking(StaffBookingCreateInput staffBookingCreateInput) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.createStaffBooking(staffBookingCreateInput));
+        return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.createStaffBooking(staffBookingCreateInput, callerMayBackdate()));
     }
 
     @Override
@@ -218,5 +218,12 @@ public class BookingController implements BookingsApi {
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename("bookings.csv").build().toString())
                 .body(csv);
+    }
+
+    /** Back-entry of a booking that already started is MANAGER+ (explicit roles - never an ordinal). */
+    private static boolean callerMayBackdate() {
+        Object principal = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return principal instanceof com.sunsetbeach.security.StaffPrincipal staff
+                && (staff.role() == com.sunsetbeach.model.Role.MANAGER || staff.role() == com.sunsetbeach.model.Role.ADMIN);
     }
 }

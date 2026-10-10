@@ -770,6 +770,8 @@ class PrintingTests extends AbstractIntegrationTest {
             assertThat(copy.getSummary()).startsWith("Guest receipt copy");
             String text = decode(copy);
             assertThat(text).contains("GUEST RECEIPT - COPY").contains("2x Caesar Salad").contains("200.00").contains("Payment: Cash");
+            // 200.00 already includes 7% VAT: 200 x 7 / 107 = 13.08 - a breakdown, never added on top.
+            assertThat(text).contains("incl. VAT 7%").contains("13.08");
         }
     }
 

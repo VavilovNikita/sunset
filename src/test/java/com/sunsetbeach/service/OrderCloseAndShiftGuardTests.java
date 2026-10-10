@@ -102,9 +102,10 @@ class OrderCloseAndShiftGuardTests extends AbstractIntegrationTest {
     @Test
     void closeShift_blockedByUnrelatedOpenOrderAnywhereInTheSystem() {
         Shift shift = shiftService.open(cashier.getId(), new ShiftOpenInput());
-        // Deliberately unrelated to this shift/cashier: a bare OPEN order opened by nobody in
-        // particular, just to prove the guard isn't scoped to this shift.
-        Order unrelatedOrder = orderService.create(new OrderCreateInput(), cashier.getId());
+        // Deliberately unrelated to this shift/cashier: an OPEN order (with a line - an empty one is
+        // cancelled by the close itself, see the next test) opened by nobody in particular, just to
+        // prove the guard isn't scoped to this shift.
+        Order unrelatedOrder = openOrderWithOneItem(1);
         assertThat(unrelatedOrder.getStatus()).isEqualTo(OrderStatus.OPEN);
 
         assertThatThrownBy(() -> shiftService.close(shift.getId(), new ShiftCloseInput())).isInstanceOf(ConflictException.class);
@@ -113,6 +114,17 @@ class OrderCloseAndShiftGuardTests extends AbstractIntegrationTest {
 
         Shift closed = shiftService.close(shift.getId(), new ShiftCloseInput());
         assertThat(closed.getId()).isEqualTo(shift.getId());
+    }
+
+    @Test
+    void closeShift_cancelsAbandonedEmptyOpenOrders_insteadOfBlockingOnThem() {
+        Shift shift = shiftService.open(cashier.getId(), new ShiftOpenInput());
+        Order empty = orderService.create(new OrderCreateInput().guestName("Abandoned tap"), cashier.getId());
+
+        Shift closed = shiftService.close(shift.getId(), new ShiftCloseInput());
+
+        assertThat(closed.getStatus()).isEqualTo(com.sunsetbeach.model.ShiftStatus.CLOSED);
+        assertThat(orderService.getById(empty.getId()).getStatus()).isEqualTo(OrderStatus.CANCELLED);
     }
 
     // --- Issue 2: Payment.amount is always Order.total, never client-supplied ---

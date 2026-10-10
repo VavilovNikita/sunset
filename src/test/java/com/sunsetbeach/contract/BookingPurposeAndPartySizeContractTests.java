@@ -147,13 +147,13 @@ class BookingPurposeAndPartySizeContractTests extends AbstractIntegrationTest {
     @Test
     void publicBooking_storesGivenChildren() throws Exception {
         String roomId = createRoom();
-        String body = postPublic(publicBody(roomId, ",\"adults\":1,\"children\":3"))
+        String body = postPublic(publicBody(roomId, ",\"adults\":1,\"children\":1"))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         JsonNode booking = objectMapper.readTree(body);
         createdBookingIds.add(booking.get("id").asText());
 
-        assertThat(booking.get("children").asInt()).isEqualTo(3);
+        assertThat(booking.get("children").asInt()).isEqualTo(1);
     }
 
     // --- POST /bookings/staff ------------------------------------------------------------------

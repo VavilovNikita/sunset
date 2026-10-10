@@ -385,9 +385,11 @@ class OrderCloseSpaAppointmentLinkTests extends AbstractIntegrationTest {
         SpaAppointmentEntity appointment = persistAppointment(createSpaTable(), booking, treatment, therapist, LocalTime.of(11, 0), 60);
         openShift();
 
-        Order order = openOrder(restaurantTable.getId());
-        // Even billing a treatment-department item doesn't matter here - the zone gate on the order's own table rules it out first.
-        bill(order.getId(), treatment);
+        // A restaurant table's order starts with its first line. Even a treatment-department item
+        // doesn't matter here - the zone gate on the order's own table rules it out first.
+        Order order = orderService.create(
+                new OrderCreateInput().tableId(restaurantTable.getId()).items(List.of(new OrderItemInput(treatment.getId(), 1))), cashierId);
+        createdOrderIds.add(order.getId());
         Order closed = closeRoomCharge(order.getId(), booking.getId());
 
         assertThat(closed.getStatus()).isEqualTo(OrderStatus.PAID);
