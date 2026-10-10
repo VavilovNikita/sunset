@@ -1,3 +1,5 @@
+import { mapRoomTypes, ROOM_TYPE_MAP } from '../src/roomTypeMap.js';
+import { parseReservations } from '../src/parse.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addRoomMapping } from '../scripts/add-room-mapping.mjs';
@@ -35,4 +37,22 @@ test('running twice changes nothing; a different existing target is refused', as
 
 test('an unknown or ambiguous room name lists what exists', async () => {
   await assert.rejects(addRoomMapping({ ...args, roomName: 'Sunset Terrace Room', fetchImpl: fakeApi().fetchImpl }), /found 0.*Sunset Terrace Room ABF/);
+});
+
+const HEADERS = ['Booking reference', 'Guest names', 'Check-in', 'Check-out', 'Channel', 'Room', 'Booked-on date', 'Modified-on date', 'Cancelled-on date', 'Booking status', '-  -', 'Total price'];
+const row = (ref, room) => [ref, 'Jane Doe', '08.28.2026', '08.30.2026', 'Direct', room, '07.15.2026', '-', '-', 'Booked', '2 - 0 - 0', 'THB 6266.88'];
+
+test('the room name SiteMinder shows is translated to the sunset room type before sending', () => {
+  const parsed = parseReservations({ headers: HEADERS, rows: [row('A1', '1 x Sunset Room with Terrace'), row('A2', '1 x  sunset room WITH terrace ')] });
+  const { reservations, unmapped } = mapRoomTypes(parsed.reservations);
+  assert.deepEqual(unmapped, []);
+  assert.deepEqual(reservations.map((r) => r.roomTypeName), ['Sunset Terrace Room ABF', 'Sunset Terrace Room ABF']);
+  assert.equal(ROOM_TYPE_MAP['Sunset Room with Terrace'], 'Sunset Terrace Room ABF');
+});
+
+test('an unknown room name is skipped and reported, never passed on; the known ones still go', () => {
+  const parsed = parseReservations({ headers: HEADERS, rows: [row('A1', '1 x Sunset Room with Terrace'), row('A2', '1 x Mystery Villa')] });
+  const { reservations, unmapped } = mapRoomTypes(parsed.reservations);
+  assert.deepEqual(reservations.map((r) => r.reference), ['A1']);
+  assert.deepEqual(unmapped, [{ reference: 'A2', roomTypeName: 'Mystery Villa' }]);
 });

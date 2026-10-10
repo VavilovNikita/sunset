@@ -4,6 +4,7 @@ import { createLogger } from './log.js';
 import { parseReservations, LayoutError } from './parse.js';
 import { importAll, loadSeen, saveSeen } from './importer.js';
 import { reservationsUrl } from './url.js';
+import { mapRoomTypes } from './roomTypeMap.js';
 
 const args = new Set(process.argv.slice(2));
 const loginOnly = args.has('--login');
@@ -63,14 +64,19 @@ async function main() {
     throw e;
   }
   for (const err of parsed.errors) log.error(`Row ${err.row} could not be parsed: ${err.message}`);
-  if (parsed.reservations.length === 0 && parsed.errors.length === 0) {
+  // Room names are translated here, with the agent's own list; an unknown name is never sent to the backend.
+  const roomMapped = mapRoomTypes(parsed.reservations);
+  parsed.reservations = roomMapped.reservations;
+  const unmapped = roomMapped.unmapped;
+  for (const u of unmapped) log.error(`${u.reference}: unmapped room type: "${u.roomTypeName}", skipped - add it to src/roomTypeMap.js`);
+  if (parsed.reservations.length === 0 && parsed.errors.length === 0 && unmapped.length === 0) {
     // SiteMinder said "no reservations" (or the table was empty) for this window: normal on a quiet day.
     log.info('No reservations modified in this window');
   }
   if (dryRun) {
-    log.info(`Dry run: ${parsed.reservations.length} reservations parsed, ${parsed.errors.length} unparseable rows. Nothing sent.`);
+    log.info(`Dry run: ${parsed.reservations.length} reservations parsed, ${parsed.errors.length} unparseable rows, ${unmapped.length} skipped for unmapped room type. Nothing sent.`);
     for (const r of parsed.reservations) log.info(`  ${r.reference} ${r.status} ${r.checkIn}..${r.checkOut} ${r.roomTypeName} ${r.totalPrice}`);
-    return parsed.errors.length ? 1 : 0;
+    return parsed.errors.length || unmapped.length ? 1 : 0;
   }
 
   const seen = loadSeen(cfg.stateDir);
@@ -80,11 +86,11 @@ async function main() {
   } finally {
     saveSeen(cfg.stateDir, seen);
   }
-  const failed = stats.failed + parsed.errors.length;
+  const failed = stats.failed + parsed.errors.length + unmapped.length;
   log.info(
     `SUMMARY found=${stats.found} created=${stats.created} updated=${stats.updated} cancelled=${stats.cancelled} ` +
     `unchanged=${stats.unchanged} skipped_by_backend=${stats.skippedBackend} duplicates_skipped_locally=${stats.skippedLocal} ` +
-    `failed=${stats.failed} unparseable_rows=${parsed.errors.length}`);
+    `failed=${stats.failed} unparseable_rows=${parsed.errors.length} unmapped_room_type=${unmapped.length}`);
   return failed ? 1 : 0;
 }
 

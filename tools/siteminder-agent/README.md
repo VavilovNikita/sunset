@@ -16,8 +16,7 @@ Docker image. It shares only the HTTP contract.
   modified and cancelled ones), not only "new" ones - filtering to new would lose cancellations and edits.
 - `state/seen.json` (reference -> hash of the last accepted payload) only avoids re-posting reservations
   that haven't changed. Failures (400/409/5xx) are not remembered and are retried next run. Deleting the file is harmless.
-- **Room type mapping is not here.** The raw SiteMinder name is sent; an unmapped name comes back as 400 on
-  `roomTypeName` and is logged verbatim - add it under *SiteMinder room type mappings* (MANAGER+) and the next run picks it up.
+- **Room names are translated in the agent** (`src/roomTypeMap.js`, see *Room types*).
 - Prices are SiteMinder's total (the one sanctioned exception in CLAUDE.md "Money"). Non-THB amounts are rejected by the backend.
 
 ## Setup on the server
@@ -48,17 +47,12 @@ the wording there. If the page has several tables set `SM_TABLE_SELECTOR`.
 `npm run dump` saves `dump/reservations.html` + a screenshot (contains guest data; delete afterwards), and
 `npm run dry-run` parses and prints without sending anything.
 
-## Mapping a new room type
+## Room types
 
-Mappings are data (`SiteMinderRoomTypeMapping`, MANAGER+ API), not a migration, and the admin UI has no screen for
-them yet. To add one without hand-copying ids (set `SUNSET_STAFF_EMAIL` / `SUNSET_STAFF_PASSWORD` for a MANAGER or ADMIN login first):
-
-```bash
-node scripts/add-room-mapping.mjs "Sunset Room with Terrace" "Sunset Terrace Room ABF"
-```
-
-It finds the room type by name, creates the mapping, and does nothing if the same mapping already exists. Use the name
-exactly as in the Room column but without the `1 x ` prefix (what the import log shows after `roomTypeName`).
+`src/roomTypeMap.js` is the list of SiteMinder room names (as in the Room column, without the `1 x ` prefix) and the sunset
+room type each one means. The agent sends the sunset name. A name that isn't in the list is **not sent**: it is logged as
+`unmapped room type: "<name>", skipped`, the run exits 1, and the other reservations still go. To add a type, add one line to
+that file (case and repeated spaces don't matter) and run again; skipped reservations are picked up on the next run.
 
 ## Which reservations are read
 
