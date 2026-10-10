@@ -45,6 +45,14 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
+                        // The servlet container re-dispatches every sendError()/uncaught exception
+                        // to /error as a second, ERROR-type request - which, without this, the
+                        // rules below reject as unauthenticated, so a malformed JSON body or an
+                        // unexpected exception reached the client as "401 Unauthorized" instead of
+                        // its real 400/500 (and the admin UI reads a 401 as "session expired").
+                        // Only the container's own error dispatch matches; a real request to
+                        // /error is still a REQUEST dispatch and falls through to the rules.
+                        .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
                         .requestMatchers("/actuator/health/**").permitAll()
                         .requestMatchers("/public/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()

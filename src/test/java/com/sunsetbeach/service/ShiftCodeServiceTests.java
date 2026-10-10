@@ -71,6 +71,22 @@ class ShiftCodeServiceTests extends AbstractIntegrationTest {
         return saved;
     }
 
+    /** Used to hit the unique index and come back as a generic 500. */
+    @Test
+    void create_sameCodeAndSameStartDateAsAnExistingVersion_isAConflict_andChangesNothing() {
+        UserEntity manager = createManager();
+        String code = "DUP" + UUID.randomUUID().toString().substring(0, 5);
+        ShiftCode first = shiftCodeService.create(
+                new ShiftCodeCreateInput(code, ShiftCodeKind.ABSENCE, false, true, "2020-01-01"), manager.getId());
+        createdShiftCodeIds.add(first.getId());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> shiftCodeService.create(
+                        new ShiftCodeCreateInput(code, ShiftCodeKind.ABSENCE, false, false, "2020-01-01"), manager.getId()))
+                .isInstanceOf(com.sunsetbeach.error.ConflictException.class);
+
+        org.assertj.core.api.Assertions.assertThat(shiftCodeRepository.findById(first.getId()).orElseThrow().isActive()).isTrue();
+    }
+
     @Test
     void create_newVersion_retiresThePreviousOneButKeepsItById() {
         UserEntity manager = createManager();

@@ -237,8 +237,8 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         RoomUnitEntity blocked = persistUnit("210");
         RoomUnitBlockEntity block = new RoomUnitBlockEntity();
         block.setRoomUnitId(blocked.getId());
-        block.setFromDate(LocalDate.now().minusDays(1));
-        block.setToDate(LocalDate.now().plusDays(3));
+        block.setFromDate(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).minusDays(1));
+        block.setToDate(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).plusDays(3));
         block.setReason("AC is leaking");
         roomUnitBlockRepository.saveAndFlush(block);
 
@@ -260,8 +260,8 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
 
         RoomUnitBlockEntity block = new RoomUnitBlockEntity();
         block.setRoomUnitId(unit.getId());
-        block.setFromDate(LocalDate.now());
-        block.setToDate(LocalDate.now());
+        block.setFromDate(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")));
+        block.setToDate(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")));
         block.setReason("Flooded");
         roomUnitBlockRepository.saveAndFlush(block);
 
@@ -276,8 +276,8 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         RoomUnitEntity unit = persistUnit("212");
         RoomUnitBlockEntity pastBlock = new RoomUnitBlockEntity();
         pastBlock.setRoomUnitId(unit.getId());
-        pastBlock.setFromDate(LocalDate.now().minusDays(10));
-        pastBlock.setToDate(LocalDate.now().minusDays(5));
+        pastBlock.setFromDate(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).minusDays(10));
+        pastBlock.setToDate(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).minusDays(5));
         pastBlock.setReason("Past maintenance");
         roomUnitBlockRepository.saveAndFlush(pastBlock);
 
@@ -296,8 +296,8 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         booking.setGuestName("Somchai");
         booking.setGuestEmail("guest@example.com");
         booking.setGuestPhone("+66800000000");
-        booking.setCheckIn(LocalDate.now().minusDays(1));
-        booking.setCheckOut(LocalDate.now().plusDays(2));
+        booking.setCheckIn(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).minusDays(1));
+        booking.setCheckOut(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).plusDays(2));
         booking.setTotalPrice(new BigDecimal("1000.00"));
         booking.setStatus(BookingStatus.CONFIRMED);
         booking.setOccupancyStatus(OccupancyStatus.CHECKED_IN);
@@ -353,7 +353,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         RoomUnitEntity unit = persistUnit("215");
         com.sunsetbeach.model.MaintenanceTask task = maintenanceTaskService.create(unit.getId(), "AC is leaking", List.of(), staffUserId);
         maintenanceTaskService.addBlock(
-                task.getId(), new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().toString(), LocalDate.now().plusDays(5).toString(), "AC repair"), staffUserId);
+                task.getId(), new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).toString(), LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).plusDays(5).toString(), "AC repair"), staffUserId);
 
         com.sunsetbeach.model.PropertyMapMaintenanceTask dto = findUnit(unit.getId()).getOpenMaintenanceTask();
 
@@ -370,7 +370,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         // past, simulating exactly the "room silently back on sale, still broken" scenario.
         maintenanceTaskService.addBlock(
                 task.getId(),
-                new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().minusDays(10).toString(), LocalDate.now().minusDays(1).toString(), "AC repair"),
+                new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).minusDays(10).toString(), LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).minusDays(1).toString(), "AC repair"),
                 staffUserId);
 
         com.sunsetbeach.model.PropertyMapMaintenanceTask dto = findUnit(unit.getId()).getOpenMaintenanceTask();
@@ -387,7 +387,7 @@ class PropertyMapServiceTests extends AbstractIntegrationTest {
         com.sunsetbeach.model.MaintenanceTask expiredBlockTask = maintenanceTaskService.create(unit.getId(), "AC is leaking", List.of(), staffUserId);
         maintenanceTaskService.addBlock(
                 expiredBlockTask.getId(),
-                new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now().minusDays(10).toString(), LocalDate.now().minusDays(1).toString(), "AC repair"),
+                new com.sunsetbeach.model.RoomUnitBlockInput(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).minusDays(10).toString(), LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).minusDays(1).toString(), "AC repair"),
                 staffUserId);
 
         com.sunsetbeach.model.PropertyMapMaintenanceTask dto = findUnit(unit.getId()).getOpenMaintenanceTask();

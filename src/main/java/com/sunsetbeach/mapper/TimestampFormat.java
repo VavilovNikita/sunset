@@ -51,4 +51,14 @@ public final class TimestampFormat {
     public static String readable(LocalDateTime value) {
         return value.truncatedTo(ChronoUnit.SECONDS).format(READABLE) + " UTC";
     }
+
+    /**
+     * What goes on a printed ticket, receipt or Z report: the hotel's own wall-clock, no zone
+     * suffix - the people reading paper at the kitchen pass or the till are on hotel time, and a
+     * "17:30 UTC" at 00:30 local reads as the wrong hour. {@code utcValue} is a UTC timestamp
+     * column or {@link #nowUtc}; files and exports keep {@link #readable}'s explicit UTC.
+     */
+    public static String readableHotel(LocalDateTime utcValue, Clock clock) {
+        return inHotelZone(utcValue, clock).truncatedTo(ChronoUnit.SECONDS).format(READABLE);
+    }
 }

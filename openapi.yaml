@@ -8152,6 +8152,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/ForbiddenManagerPlus"
+        "409":
+          description: A version of this `(staffArea, code)` already starts on `effectiveFrom` (one version per start date). Use `POST /shift-codes/{id}/versions` to change it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /shift-codes/{id}/versions:
     parameters:

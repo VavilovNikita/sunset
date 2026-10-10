@@ -22,7 +22,7 @@ PII redaction in `toString()` is not manual any more: mark a property `x-sensiti
 
 ## Migrations
 
-**The schema cannot be built from migrations alone.** `V1` is an intentional no-op: the original tables were created by Prisma before this backend existed, and Flyway adopts that schema via `baseline-on-migrate`. Never drop the database expecting migrations to recreate it. Tests bootstrap from a committed baseline dump instead.
+**A database that already exists is adopted, an empty one is built.** `V1` is an intentional no-op: the original tables were created by Prisma before this backend existed, and Flyway adopts that schema via `baseline-on-migrate`. `V1_1__prisma_baseline_schema.sql` recreates that Prisma-era schema for a genuinely empty database, so V2 onward apply unmodified: an empty Postgres goes through every migration to the current version and passes `ddl-auto=validate` (verified from scratch at V134 - 135 migrations, no errors). Don't edit V1/V1_1 to "tidy" this. Tests still bootstrap from a committed baseline dump (`test-db-baseline.sql`), purely as a speed optimisation.
 
 **`ALTER TYPE ... ADD VALUE` and any DML using the new value must be in separate migration files.** PostgreSQL forbids using a freshly added enum value in the same transaction, and Flyway wraps each migration in one. See V2/V3 (new `Role` values) and V6/V7 (new `PrintDocumentType` value, then a backfill — V6's own comment explains the split).
 

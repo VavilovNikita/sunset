@@ -234,7 +234,7 @@ public class ShiftService {
         EscPosBuilder b = new EscPosBuilder(codepage);
         b.center(true).bold(true).line("Z-REPORT").bold(false).center(false);
         b.line("Shift #" + shortId(shift.getId()));
-        b.line("Closed: " + TimestampFormat.readable(shift.getClosedAt()));
+        b.line("Closed: " + TimestampFormat.readableHotel(shift.getClosedAt(), clock));
         b.divider();
         b.twoColumn("Cash", PriceFormat.asDecimalString(totals.cash()));
         b.twoColumn("Card", PriceFormat.asDecimalString(totals.card()));
