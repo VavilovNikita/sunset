@@ -49,6 +49,20 @@ test('the real SiteMinder formats parse: DD.MM.YYYY, "2 - 0 - 0", Booked, glued 
   assert.equal(r.roomTypeName, 'Garden Villa');
 });
 
+test('the textless occupancy header ("-  -", icons only) is found by its position', () => {
+  const headers = REAL_HEADERS.map((h) => (h === 'Occupancy' ? '-  -' : h));
+  const row = ['SM-7', 'Jane Doe', '02.10.2026', '05.10.2026', 'Direct', 'Villa', '01.09.2026, 08:47 PM', '', '', 'Booked', '2 - 1 - 0', 'THB 7416.00'];
+  const { reservations, errors } = parseReservations({ headers, rows: [row] });
+  assert.deepEqual(errors, []);
+  assert.deepEqual([reservations[0].adults, reservations[0].children, reservations[0].infants], [2, 1, 0]);
+  // an unrelated textless column elsewhere (say, an actions column) must not be mistaken for it
+  const withActions = [...headers, ''];
+  assert.equal(parseReservations({ headers: withActions, rows: [[...row, '']] }).reservations[0].adults, 2);
+  // two candidates between status and total: ambiguous, so a layout error instead of a guess
+  const ambiguous = [...headers.slice(0, 10), '', ...headers.slice(10)];
+  assert.throws(() => parseReservations({ headers: ambiguous, rows: [] }), /missing column\(s\): adults/);
+});
+
 test('currency may also be spaced or separated by a line break; a foreign currency is passed on for the backend to reject', () => {
   const mk = (total) => parseReservations({ headers: REAL_HEADERS, rows: [['SM-1', 'A B', '02.10.2026', '03.10.2026', 'Direct', 'Villa', '01.09.2026', '', '', 'Booked', '1 - 0 - 0', total]] }).reservations[0];
   assert.deepEqual([mk('THB 7,416.00').totalPrice, mk('THB 7,416.00').currency], ['7416.00', 'THB']);

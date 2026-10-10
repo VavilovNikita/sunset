@@ -37,6 +37,15 @@ export function mapColumns(headers) {
       if (i >= 0) { map[field] = i; break; }
     }
   }
+  // SiteMinder's Occupancy header has no text, only people icons, so its text is just "-  -" (normalizes
+  // to ""). With no named occupancy column, take the one textless header sitting between "Booking status"
+  // and "Total price"; if that isn't exactly one column, say so rather than pick.
+  if (map.adults === undefined && map.guests === undefined && map.status !== undefined && map.total !== undefined) {
+    const textless = normalized
+      .map((h, i) => (h === '' && i > map.status && i < map.total ? i : -1))
+      .filter((i) => i >= 0);
+    if (textless.length === 1) map.guests = textless[0];
+  }
   const missing = REQUIRED.filter((f) => map[f] === undefined);
   if (map.adults === undefined && map.guests === undefined) missing.push('adults');
   if (missing.length) {
