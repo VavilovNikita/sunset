@@ -12,7 +12,7 @@ const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const COLUMNS = {
   reference: ['reservation id', 'reservation number', 'reservation no', 'booking id', 'booking reference', 'booking number', 'reference', 'confirmation number'],
   status: ['status', 'reservation status', 'booking status'],
-  guest: ['guest name', 'guest', 'name', 'lead guest', 'main guest'],
+  guest: ['guest names', 'guest name', 'guest', 'name', 'lead guest', 'main guest'],
   checkIn: ['check in', 'checkin', 'arrival', 'arrival date', 'check in date'],
   checkOut: ['check out', 'checkout', 'departure', 'departure date', 'check out date'],
   roomType: ['room type', 'room', 'room name', 'room type name'],
@@ -22,9 +22,9 @@ const COLUMNS = {
   guests: ['guests', 'pax', 'occupancy', 'guests adults children'],
   total: ['total', 'total price', 'total amount', 'total rate', 'grand total', 'price'],
   channel: ['channel', 'source', 'booking channel', 'distribution channel'],
-  bookedAt: ['booked on', 'booked', 'booking date', 'created', 'created on', 'date booked'],
-  modifiedAt: ['modified on', 'modified', 'last modified', 'updated on'],
-  cancelledAt: ['cancelled on', 'canceled on', 'cancelled', 'cancellation date'],
+  bookedAt: ['booked on date', 'booked on', 'booked', 'booking date', 'created', 'created on', 'date booked'],
+  modifiedAt: ['modified on date', 'modified on', 'modified', 'last modified', 'updated on'],
+  cancelledAt: ['cancelled on date', 'cancelled on', 'canceled on', 'canceled on date', 'cancelled', 'cancellation date'],
 };
 const REQUIRED = ['reference', 'status', 'guest', 'checkIn', 'checkOut', 'roomType', 'total', 'channel', 'bookedAt'];
 

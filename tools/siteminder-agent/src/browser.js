@@ -1,6 +1,7 @@
 import { mkdirSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
+import { reservationsUrl } from './url.js';
 
 export class LoginError extends Error {}
 export class ScrapeError extends Error {}
@@ -44,7 +45,7 @@ async function challengeText(page) {
  * keyboard to finish; headless, it fails with a clear message instead of hanging.
  */
 export async function ensureOnReservations(cfg, page, context, { headed, log }) {
-  await page.goto(cfg.reservationsUrl, { waitUntil: 'domcontentloaded' });
+  await page.goto(reservationsUrl(cfg, 1), { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => {});
   if (!(await isLoginPage(page))) {
     log.info('Saved session is still valid');
@@ -52,7 +53,7 @@ export async function ensureOnReservations(cfg, page, context, { headed, log }) 
   }
   log.info('Session missing or expired - logging in (two-step: username, then password)');
   await doLogin(cfg, page, { headed, log });
-  await page.goto(cfg.reservationsUrl, { waitUntil: 'domcontentloaded' });
+  await page.goto(reservationsUrl(cfg, 1), { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => {});
   if (await isLoginPage(page)) throw new LoginError('Logged in, but the Reservations URL still redirects to a login page');
   await saveSession(cfg, context);
@@ -175,43 +176,44 @@ async function waitFor(page, locator, timeoutMs, log, label) {
   return false;
 }
 
-/** Reads the largest table matching the selector, following the "next page" control if configured. */
+/**
+ * Reads the reservations window page by page via the `page` query parameter (more reliable than
+ * clicking a "next" control). Stops at the first page with no rows, or one that repeats the previous
+ * page's first row (a server that ignores `page`). Returns headers=null when SiteMinder shows its
+ * "no reservations" message instead of a table - an empty window is normal, not a failure.
+ */
 export async function scrapeTable(cfg, page, log) {
+  const table = page.locator(cfg.tableSelector).first();
+  const empty = page.getByText(/no reservations/i).first();
   let headers = null;
   const rows = [];
+  let previousFirst = null;
   for (let p = 1; p <= cfg.maxPages; p++) {
-    try {
-      await page.locator(cfg.tableSelector).first().waitFor({ state: 'visible', timeout: 20_000 });
-    } catch {
-      throw new ScrapeError(`No table matching "${cfg.tableSelector}" appeared on ${page.url()} - the page layout changed or the session landed on another screen`);
+    if (p > 1) {
+      await page.goto(reservationsUrl(cfg, p), { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle').catch(() => {});
     }
+    try {
+      await table.or(empty).waitFor({ state: 'visible', timeout: 20_000 });
+    } catch {
+      throw new ScrapeError(`Neither a table matching "${cfg.tableSelector}" nor a "no reservations" message appeared on ${page.url().split('?')[0]} - the page layout changed or the session landed on another screen`);
+    }
+    if (!(await table.isVisible())) { log.info(`Page ${p}: SiteMinder shows no reservations`); break; }
     const t = await page.$$eval(cfg.tableSelector, (tables) => {
       const text = (el) => (el.innerText ?? el.textContent ?? '').trim();
-      const best = tables
-        .map((tb) => ({ tb, n: tb.querySelectorAll('tr').length }))
-        .sort((a, b) => b.n - a.n)[0];
+      const best = tables.map((tb) => ({ tb, n: tb.querySelectorAll('tr').length })).sort((a, b) => b.n - a.n)[0];
       const trs = [...best.tb.querySelectorAll('tr')];
       const headRow = best.tb.querySelector('thead tr') ?? trs.find((tr) => tr.querySelector('th')) ?? trs[0];
       const body = trs.filter((tr) => tr !== headRow && !tr.querySelector('th'));
       return { headers: [...headRow.children].map(text), rows: body.map((tr) => [...tr.children].map(text)) };
     });
     headers ??= t.headers;
-    rows.push(...t.rows);
     log.info(`Page ${p}: ${t.rows.length} rows`);
-    if (!cfg.nextSelector) break;
-    const next = page.locator(cfg.nextSelector).first();
-    if ((await next.count()) === 0 || !(await next.isEnabled()) || !(await next.isVisible())) break;
-    const before = JSON.stringify(t.rows[0] ?? []);
-    await next.click();
-    await page.waitForLoadState('networkidle').catch(() => {});
-    await page.waitForTimeout(1000);
-    const after = await page.$$eval(cfg.tableSelector, (tbs) => {
-      const tb = tbs.sort((a, b) => b.querySelectorAll('tr').length - a.querySelectorAll('tr').length)[0];
-      const tr = [...tb.querySelectorAll('tr')].find((r) => !r.querySelector('th'));
-      return tr ? [...tr.children].map((c) => (c.innerText ?? '').trim()) : [];
-    });
-    // Same first row after the click: the control did nothing, stop rather than loop to maxPages.
-    if (JSON.stringify(after) === before) break;
+    if (t.rows.length === 0) break;
+    const first = JSON.stringify(t.rows[0]);
+    if (first === previousFirst) { log.warn(`Page ${p} repeats page ${p - 1} - the page parameter is not being honoured, stopping`); break; }
+    previousFirst = first;
+    rows.push(...t.rows);
   }
   return { headers, rows };
 }

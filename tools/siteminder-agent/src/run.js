@@ -3,23 +3,29 @@ import { loadConfig, ConfigError } from './config.js';
 import { createLogger } from './log.js';
 import { parseReservations, LayoutError } from './parse.js';
 import { importAll, loadSeen, saveSeen } from './importer.js';
+import { reservationsUrl } from './url.js';
 
 const args = new Set(process.argv.slice(2));
 const loginOnly = args.has('--login');
 const dump = args.has('--dump');
 const dryRun = args.has('--dry-run');
+// --lookback=30: widen the "modified" window for this run (e.g. to prove parsing on a quiet day).
+const lookbackArg = process.argv.slice(2).find((a) => a.startsWith('--lookback='));
 let fileLog = null;
 
 async function main() {
   let cfg;
   try {
-    cfg = loadConfig({ needSiteMinder: true });
+    cfg = loadConfig({ needSiteMinder: true, lookbackDays: lookbackArg ? Number(lookbackArg.split('=')[1]) : undefined });
   } catch (e) {
     if (e instanceof ConfigError) { console.error(`CONFIG ERROR: ${e.message}`); return 2; }
     throw e;
   }
   const log = fileLog = createLogger(cfg.logFile);
   log.info(`Run started${loginOnly ? ' (login only)' : dryRun ? ' (dry run)' : dump ? ' (dump)' : ''}`);
+
+  const w = new URL(reservationsUrl(cfg)).searchParams;
+  log.info(`Window (${w.get('dateType')}): ${w.get('fromDate')} .. ${w.get('toDate')}, pageSize ${cfg.pageSize}`);
 
   // Playwright is imported lazily so config errors surface even if browsers aren't installed yet.
   const { openBrowser, ensureOnReservations, scrapeTable, dumpPage, saveSession, LoginError, ScrapeError } = await import('./browser.js');
@@ -47,15 +53,15 @@ async function main() {
 
   let parsed;
   try {
-    parsed = parseReservations(table, { tzOffset: cfg.tzOffset });
+    parsed = table.headers ? parseReservations(table, { tzOffset: cfg.tzOffset }) : { reservations: [], errors: [] };
   } catch (e) {
     if (e instanceof LayoutError) { log.error(`LAYOUT CHANGED: ${e.message}`); return 4; }
     throw e;
   }
   for (const err of parsed.errors) log.error(`Row ${err.row} could not be parsed: ${err.message}`);
   if (parsed.reservations.length === 0 && parsed.errors.length === 0) {
-    // An empty table is plausible on a quiet day, but also what a silently broken page looks like.
-    log.warn('The Reservations table had no rows');
+    // SiteMinder said "no reservations" (or the table was empty) for this window: normal on a quiet day.
+    log.info('No reservations modified in this window');
   }
   if (dryRun) {
     log.info(`Dry run: ${parsed.reservations.length} reservations parsed, ${parsed.errors.length} unparseable rows. Nothing sent.`);

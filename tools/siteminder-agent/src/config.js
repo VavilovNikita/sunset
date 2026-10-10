@@ -18,20 +18,26 @@ function loadDotEnv() {
 
 export class ConfigError extends Error {}
 
-export function loadConfig({ needSiteMinder = true } = {}) {
+export function loadConfig({ needSiteMinder = true, lookbackDays } = {}) {
   loadDotEnv();
   const env = process.env;
   const required = ['SUNSET_IMPORT_URL', 'SUNSET_INTEGRATION_KEY'];
-  if (needSiteMinder) required.push('SM_LOGIN_URL', 'SM_USERNAME', 'SM_PASSWORD', 'SM_RESERVATIONS_URL');
+  if (needSiteMinder) required.push('SM_LOGIN_URL', 'SM_USERNAME', 'SM_PASSWORD');
+  if (env.SM_RESERVATIONS_URL) console.warn('NOTE: SM_RESERVATIONS_URL is ignored - the URL is built per run with fresh dates; remove it from .env');
   const missing = required.filter((k) => !env[k]);
   if (missing.length) throw new ConfigError(`Missing required settings: ${missing.join(', ')}`);
   return {
     loginUrl: env.SM_LOGIN_URL,
     username: env.SM_USERNAME,
     password: env.SM_PASSWORD,
-    reservationsUrl: env.SM_RESERVATIONS_URL,
+    // The search URL is built per run (src/url.js); SM_RESERVATIONS_URL (old static, dated URL) is no longer read.
+    reservationsBase: env.SM_RESERVATIONS_BASE || 'https://platform.siteminder.com/reservations',
+    propertyId: env.SM_PROPERTY_ID || '455c0edf-8114-11e5-8827-02b1347ffa5b',
+    hotelTimeZone: env.SM_HOTEL_TZ || 'Asia/Bangkok',
+    lookbackDays: lookbackDays ?? Number(env.SM_LOOKBACK_DAYS || 3),
+    pageSize: Number(env.SM_PAGE_SIZE || 10),
+    extraQuery: env.SM_EXTRA_QUERY || '',
     tableSelector: env.SM_TABLE_SELECTOR || 'table',
-    nextSelector: env.SM_NEXT_SELECTOR || '',
     maxPages: Number(env.SM_MAX_PAGES || 50),
     tzOffset: env.SM_TZ_OFFSET || '+07:00',
     importUrl: env.SUNSET_IMPORT_URL,

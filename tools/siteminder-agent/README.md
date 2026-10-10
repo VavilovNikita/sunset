@@ -44,9 +44,17 @@ npm run login        # opens a window, fills credentials, waits up to 5 min for 
 
 I could not see the live extranet while writing this. Columns are matched by **header text** (`src/parse.js`,
 `COLUMNS`), so if the table uses other wording the run stops with `LAYOUT CHANGED: ... Headers seen: ...` - add
-the wording there. If the page has several tables or pagination set `SM_TABLE_SELECTOR` / `SM_NEXT_SELECTOR`.
+the wording there. If the page has several tables set `SM_TABLE_SELECTOR`.
 `npm run dump` saves `dump/reservations.html` + a screenshot (contains guest data; delete afterwards), and
 `npm run dry-run` parses and prints without sending anything.
+
+## Which reservations are read
+
+The search URL is built on every run (`src/url.js`): `dateType=ModifiedAt`, `fromDate` = today minus
+`SM_LOOKBACK_DAYS` (default 3, covers a few missed days), `toDate` = tomorrow, both in hotel time
+(Asia/Bangkok), paged with `page` / `pageSize` until an empty page. An empty window is normal
+("Looks like there are no reservations" is not an error). To prove parsing on a quiet day:
+`node src/run.js --dry-run --lookback=60`.
 
 ## Schedule
 
