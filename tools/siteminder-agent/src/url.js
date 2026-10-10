@@ -23,6 +23,9 @@ export function reservationsUrl(cfg, page = 1, now = new Date()) {
     toDate: dateInZone(now, cfg.hotelTimeZone, 1),
     page: String(page),
     pageSize: String(cfg.pageSize),
+    // Confirmed on the live page. A stable order matters: pages are read one by one.
+    sortBy: 'checkInDate',
+    sortOrder: 'asc',
   });
   // sortBy / sortOrder (and anything else SiteMinder's own URL carries) go in verbatim.
   if (cfg.extraQuery) for (const [k, v] of new URLSearchParams(cfg.extraQuery)) q.set(k, v);

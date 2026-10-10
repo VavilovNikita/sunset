@@ -22,6 +22,8 @@ test('window is computed in hotel time, not UTC', () => {
   assert.equal(u.searchParams.get('toDate'), '2026-10-12');
   assert.equal(u.searchParams.get('page'), '2');
   assert.equal(u.searchParams.get('pageSize'), '10');
+  assert.equal(u.searchParams.get('sortBy'), 'checkInDate');
+  assert.equal(u.searchParams.get('sortOrder'), 'asc');
 });
 
 test('window crosses month and year boundaries and takes extra query params', () => {
@@ -33,13 +35,32 @@ test('window crosses month and year boundaries and takes extra query params', ()
 
 const REAL_HEADERS = ['Booking reference', 'Guest names', 'Check-in', 'Check-out', 'Channel', 'Room', 'Booked-on date', 'Modified-on date', 'Cancelled-on date', 'Booking status', 'Occupancy', 'Total price'];
 
-test('the headers SiteMinder really shows are all recognised', () => {
-  const row = ['SM-77', 'Jane Doe', '12 Oct 2026', '15 Oct 2026', 'Booking.com', 'Garden Villa', '01 Oct 2026 14:05', '09 Oct 2026 10:00', '', 'Confirmed', '2 Adults, 1 Child', '฿12,500.00'];
+test('the real SiteMinder formats parse: DD.MM.YYYY, "2 - 0 - 0", Booked, glued currency + amount', () => {
+  const row = ['SM-77', 'Jane Doe', '02.10.2026', '05.10.2026', 'Booking.com', 'Garden Villa', '01.09.2026, 08:47 PM', '09.09.2026, 10:00 AM', '', 'Booked', '2 - 1 - 0', 'THB7416.00'];
   const { reservations, errors } = parseReservations({ headers: REAL_HEADERS, rows: [row] });
   assert.deepEqual(errors, []);
-  assert.equal(reservations[0].modifiedAt, '2026-10-09T10:00:00+07:00');
-  assert.equal(reservations[0].children, 1);
-  assert.equal(reservations[0].roomTypeName, 'Garden Villa');
+  const r = reservations[0];
+  assert.deepEqual([r.checkIn, r.checkOut, r.status], ['2026-10-02', '2026-10-05', 'BOOKED']);
+  assert.equal(r.bookedAt, '2026-09-01T20:47:00+07:00');
+  assert.equal(r.modifiedAt, '2026-09-09T10:00:00+07:00');
+  assert.deepEqual([r.adults, r.children, r.infants], [2, 1, 0]);
+  assert.equal(r.totalPrice, '7416.00');
+  assert.equal(r.currency, 'THB');
+  assert.equal(r.roomTypeName, 'Garden Villa');
+});
+
+test('currency may also be spaced or separated by a line break; a foreign currency is passed on for the backend to reject', () => {
+  const mk = (total) => parseReservations({ headers: REAL_HEADERS, rows: [['SM-1', 'A B', '02.10.2026', '03.10.2026', 'Direct', 'Villa', '01.09.2026', '', '', 'Booked', '1 - 0 - 0', total]] }).reservations[0];
+  assert.deepEqual([mk('THB 7,416.00').totalPrice, mk('THB 7,416.00').currency], ['7416.00', 'THB']);
+  assert.equal(mk('THB\n7416.00').totalPrice, '7416.00');
+  assert.equal(mk('USD 99.00').currency, 'USD');
+});
+
+test('an occupancy with no adults, or a status we do not know, is a reported row error', () => {
+  const base = ['SM-1', 'A B', '02.10.2026', '03.10.2026', 'Direct', 'Villa', '01.09.2026', '', '', 'Booked', '1 - 0 - 0', 'THB 100.00'];
+  const bad = (i, v) => { const r = [...base]; r[i] = v; return parseReservations({ headers: REAL_HEADERS, rows: [r] }); };
+  assert.equal(bad(10, '0 - 2 - 0').errors.length, 1);
+  assert.match(bad(9, 'Pending review').errors[0].message, /unrecognised status "Pending review"/);
 });
 
 // End to end through real Chromium against a local stand-in for the Reservations page.
@@ -47,7 +68,7 @@ test('scrapeTable pages through the window and treats "no reservations" as empty
   let chromium;
   try { ({ chromium } = await import('playwright')); const b = await chromium.launch(); await b.close(); } catch { t.skip('Chromium not installed'); return; }
   const { scrapeTable } = await import('../src/browser.js');
-  const row = (n) => `<tr><td>SM-${n}</td><td>Guest ${n}</td><td>12 Oct 2026</td><td>13 Oct 2026</td><td>Direct</td><td>Villa</td><td>01 Oct 2026</td><td>09 Oct 2026</td><td></td><td>Confirmed</td><td>2 Adults</td><td>฿1,000.00</td></tr>`;
+  const row = (n) => `<tr><td>SM-${n}</td><td>Guest ${n}</td><td>12.10.2026</td><td>13.10.2026</td><td>Direct</td><td>Villa</td><td>01.10.2026, 08:47 PM</td><td>09.10.2026, 10:00 AM</td><td></td><td>Booked</td><td>2 - 0 - 0</td><td><span>THB</span><span>1000.00</span></td></tr>`;
   const table = (rows) => `<table><thead><tr>${REAL_HEADERS.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
@@ -66,7 +87,10 @@ test('scrapeTable pages through the window and treats "no reservations" as empty
     await page.goto(reservationsUrl(c, 1));
     const got = await scrapeTable(c, page, log);
     assert.equal(got.rows.length, 3);
-    assert.equal(parseReservations(got).reservations.length, 3);
+    const parsed = parseReservations(got);
+    assert.deepEqual(parsed.errors, []);
+    assert.equal(parsed.reservations.length, 3);
+    assert.equal(parsed.reservations[0].totalPrice, '1000.00');
 
     const e = { ...c, propertyId: 'empty' };
     await page.goto(reservationsUrl(e, 1));

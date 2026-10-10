@@ -67,7 +67,8 @@ export function parseDate(text) {
     const mo = MONTHS[m[1].toLowerCase()];
     if (mo) return ymd(+m[3], mo, +m[2]);
   }
-  if ((m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/))) return ymd(+m[3], +m[2], +m[1]);
+  // DD.MM.YYYY is SiteMinder's own format (confirmed on the live page); 12/10/2026 is read day-first too.
+  if ((m = s.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/))) return ymd(+m[3], +m[2], +m[1]);
   throw new RowError(`unrecognised date "${text}"`);
 }
 
@@ -110,7 +111,8 @@ export function parseName(text) {
 
 /** "฿12,500.00" / "THB 12,500" / "12500" -> { totalPrice: "12500.00", currency? } */
 export function parseMoney(text) {
-  const cur = text.match(/\b([A-Z]{3})\b/);
+  // Currency and amount can be separate elements, so their text may be glued together ("THB7416.00").
+  const cur = text.match(/(?<![A-Za-z])([A-Z]{3})(?![A-Za-z])/);
   const num = text.replace(/,/g, '').match(/\d+(?:\.\d+)?/);
   if (!num) throw new RowError(`unrecognised amount "${text}"`);
   return { totalPrice: Number(num[0]).toFixed(2), currency: cur ? cur[1] : undefined };
@@ -129,6 +131,12 @@ function guestCounts(cell, map) {
       children: map.children !== undefined && cell(map.children) ? count(cell(map.children), 'child') : 0,
       infants: map.infants !== undefined && cell(map.infants) ? count(cell(map.infants), 'infant') : 0,
     };
+  }
+  // SiteMinder's Occupancy cell: "2 - 0 - 0" = adults - children - infants (order assumed, not confirmed)
+  const dashed = cell(map.guests).match(/^(\d+)\s*-\s*(\d+)\s*-\s*(\d+)$/);
+  if (dashed) {
+    if (+dashed[1] < 1) throw new RowError(`occupancy "${cell(map.guests)}" has no adults`);
+    return { adults: +dashed[1], children: +dashed[2], infants: +dashed[3] };
   }
   // single "Guests" cell, e.g. "2 Adults, 1 Child, 1 Infant"
   const g = cell(map.guests);
