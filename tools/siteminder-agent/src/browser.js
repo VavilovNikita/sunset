@@ -79,6 +79,35 @@ async function describeScreen(page) {
   return `url=${page.url().split('?')[0]} inputs=[${d.inputs}] checkboxes=[${d.checkboxes}] buttons=[${d.buttons}] iframes=[${frames}] errors=[${d.errors}]`;
 }
 
+/**
+ * "Remember me" lengthens the session the agent reuses, but login works without it. The input is
+ * a custom component (a styled span sits on top and intercepts the click), so click its label
+ * first, then fall back to a forced check. Any failure is a warning, never a failed login.
+ */
+async function tickRemember(page, log) {
+  try {
+    const box = page.locator('input[type="checkbox"][id*="remember" i], input[type="checkbox"][name*="remember" i]').first();
+    if (!(await box.isVisible().catch(() => false))) { log.info('No "remember me" checkbox on this page'); return; }
+    if (await box.isChecked()) return;
+    const id = await box.getAttribute('id');
+    const attempts = [
+      ['label', () => page.locator(id ? `label[for="${id}"]` : 'label:has(input[type="checkbox"])').first().click({ timeout: 3000 })],
+      ['forced check', () => box.check({ force: true, timeout: 3000 })],
+    ];
+    for (const [how, act] of attempts) {
+      try {
+        await act();
+        if (await box.isChecked()) { log.info(`Ticked "remember me" (${how})`); return; }
+      } catch (e) {
+        log.warn(`"remember me" via ${how} failed: ${e.message.split('\n')[0]}`);
+      }
+    }
+    log.warn('Could not tick "remember me" - continuing without it');
+  } catch (e) {
+    log.warn(`"remember me" skipped: ${e.message.split('\n')[0]}`);
+  }
+}
+
 async function submit(page, field) {
   const button = page.locator(SUBMIT_BUTTON).first();
   if (await button.isVisible().catch(() => false)) await button.click();
@@ -107,12 +136,7 @@ async function doLogin(cfg, page, { headed, log }) {
   try { await user.waitFor({ state: 'visible', timeout: 20_000 }); } catch { await fail('username field not found on the login page'); }
   log.info('Step 2/6: found username field, filling and submitting');
   await user.fill(cfg.username);
-  // "Remember me" (id login-remember on the username page) lengthens the session the agent will reuse.
-  const remember = page.locator('input[type="checkbox"][id*="remember" i], input[type="checkbox"][name*="remember" i]').first();
-  if (await remember.isVisible().catch(() => false) && !(await remember.isChecked())) {
-    await remember.check();
-    log.info('Ticked "remember me"');
-  }
+  await tickRemember(page, log);
   await submit(page, user);
 
   log.info('Step 3/6: waiting for the password field');
