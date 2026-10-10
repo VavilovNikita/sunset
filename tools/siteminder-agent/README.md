@@ -16,7 +16,7 @@ Docker image. It shares only the HTTP contract.
   modified and cancelled ones), not only "new" ones - filtering to new would lose cancellations and edits.
 - `state/seen.json` (reference -> hash of the last accepted payload) only avoids re-posting reservations
   that haven't changed. Failures (400/409/5xx) are not remembered and are retried next run. Deleting the file is harmless.
-- **Room names are translated in the agent** (`src/roomTypeMap.js`, see *Room types*).
+- **Room names are translated in the agent** (keyword rules in `src/roomTypeMap.js`, see *Room types*).
 - Prices are SiteMinder's total (the one sanctioned exception in CLAUDE.md "Money"). Non-THB amounts are rejected by the backend.
 
 ## Setup on the server
@@ -49,10 +49,12 @@ the wording there. If the page has several tables set `SM_TABLE_SELECTOR`.
 
 ## Room types
 
-`src/roomTypeMap.js` is the list of SiteMinder room names (as in the Room column, without the `1 x ` prefix) and the sunset
-room type each one means. The agent sends the sunset name. A name that isn't in the list is **not sent**: it is logged as
-`unmapped room type: "<name>", skipped`, the run exits 1, and the other reservations still go. To add a type, add one line to
-that file (case and repeated spaces don't matter) and run again; skipped reservations are picked up on the next run.
+SiteMinder's Room column is a rate-plan description ("... Non smoking - 484210218"), not a room type name, so
+`src/roomTypeMap.js` classifies it with an ordered list of keyword rules (case-insensitive, first match wins) and the agent
+sends the resulting sunset room type name. A string no rule matches is **not sent**: it is logged as
+`unmapped room type: "<name>", skipped - add a rule to src/roomTypeMap.js`, the run exits 1, and the other reservations still go.
+To support a new type, add a rule and run again; skipped reservations are picked up on the next run. Rules come from real
+SiteMinder strings (`test/roomTypes.test.js`), not from the "Rooms and rates" catalogue.
 
 ## Which reservations are read
 

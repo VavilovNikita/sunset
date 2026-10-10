@@ -1,4 +1,4 @@
-import { mapRoomTypes, ROOM_TYPE_MAP } from '../src/roomTypeMap.js';
+import { mapRoomTypes, classifyRoomType } from '../src/roomTypeMap.js';
 import { parseReservations } from '../src/parse.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -47,7 +47,6 @@ test('the room name SiteMinder shows is translated to the sunset room type befor
   const { reservations, unmapped } = mapRoomTypes(parsed.reservations);
   assert.deepEqual(unmapped, []);
   assert.deepEqual(reservations.map((r) => r.roomTypeName), ['Sunset Terrace Room ABF', 'Sunset Terrace Room ABF']);
-  assert.equal(ROOM_TYPE_MAP['Sunset Room with Terrace'], 'Sunset Terrace Room ABF');
 });
 
 test('an unknown room name is skipped and reported, never passed on; the known ones still go', () => {

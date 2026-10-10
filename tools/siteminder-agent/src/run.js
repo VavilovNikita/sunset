@@ -68,7 +68,7 @@ async function main() {
   const roomMapped = mapRoomTypes(parsed.reservations);
   parsed.reservations = roomMapped.reservations;
   const unmapped = roomMapped.unmapped;
-  for (const u of unmapped) log.error(`${u.reference}: unmapped room type: "${u.roomTypeName}", skipped - add it to src/roomTypeMap.js`);
+  for (const u of unmapped) log.error(`${u.reference}: unmapped room type: "${u.roomTypeName}", skipped - add a rule to src/roomTypeMap.js`);
   if (parsed.reservations.length === 0 && parsed.errors.length === 0 && unmapped.length === 0) {
     // SiteMinder said "no reservations" (or the table was empty) for this window: normal on a quiet day.
     log.info('No reservations modified in this window');
