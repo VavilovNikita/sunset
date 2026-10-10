@@ -104,6 +104,18 @@ export function parseDateTime(text, tzOffset, order = 'mdy') {
   return `${date}T${pad(h)}:${pad(min)}:${pad(sec)}${off}`;
 }
 
+/**
+ * SiteMinder's Room cell is "<quantity> x <room type>", e.g. "1 x Sunset Room with Terrace". The quantity is not
+ * part of the name the backend maps. A reservation of several rooms can't be one booking of one room type, so
+ * it is reported for a person instead of being imported as a single room.
+ */
+export function parseRoom(text) {
+  const m = text.match(/^(\d+)\s*[x×]\s*(.+)$/i);
+  if (!m) return text;
+  if (+m[1] !== 1) throw new RowError(`reservation has ${m[1]} rooms ("${text}") - multi-room reservations are not imported automatically`);
+  return m[2].trim();
+}
+
 export function parseStatus(text) {
   const n = norm(text);
   if (/cancel/.test(n)) return 'CANCELLED';
@@ -209,7 +221,7 @@ export function parseReservations(table, { tzOffset = '+07:00', dateOrder = 'mdy
         ...parseName(cell(map.guest)),
         checkIn: parseDate(cell(map.checkIn), order),
         checkOut: parseDate(cell(map.checkOut), order),
-        roomTypeName: cell(map.roomType),
+        roomTypeName: parseRoom(cell(map.roomType)),
         ...guestCounts(cell, map),
         totalPrice,
         channel: cell(map.channel),

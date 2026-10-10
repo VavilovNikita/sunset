@@ -178,13 +178,14 @@ async function waitFor(page, locator, timeoutMs, log, label) {
 
 /**
  * Reads the reservations window page by page via the `page` query parameter (more reliable than
- * clicking a "next" control). Stops at the first page with no rows, or one that repeats the previous
+ * clicking a "next" control). Stops at the first page with no data rows, a short page, or one that repeats the previous
  * page's first row (a server that ignores `page`). Returns headers=null when SiteMinder shows its
  * "no reservations" message instead of a table - an empty window is normal, not a failure.
  */
 export async function scrapeTable(cfg, page, log) {
   const table = page.locator(cfg.tableSelector).first();
   const empty = page.getByText(/no reservations/i).first();
+  const hasData = (row) => row.some((cell) => cell.trim());
   let headers = null;
   const rows = [];
   let previousFirst = null;
@@ -198,24 +199,43 @@ export async function scrapeTable(cfg, page, log) {
     } catch {
       throw new ScrapeError(`Neither a table matching "${cfg.tableSelector}" nor a "no reservations" message appeared on ${page.url().split('?')[0]} - the page layout changed or the session landed on another screen`);
     }
-    if (!(await table.isVisible())) { log.info(`Page ${p}: SiteMinder shows no reservations`); break; }
-    const t = await page.$$eval(cfg.tableSelector, (tables) => {
-      const text = (el) => (el.innerText ?? el.textContent ?? '').trim();
-      const best = tables.map((tb) => ({ tb, n: tb.querySelectorAll('tr').length })).sort((a, b) => b.n - a.n)[0];
-      const trs = [...best.tb.querySelectorAll('tr')];
-      const headRow = best.tb.querySelector('thead tr') ?? trs.find((tr) => tr.querySelector('th')) ?? trs[0];
-      const body = trs.filter((tr) => tr !== headRow && !tr.querySelector('th'));
-      return { headers: [...headRow.children].map(text), rows: body.map((tr) => [...tr.children].map(text)) };
-    });
+    // The table appears before its data does: until the list has loaded, SiteMinder shows a full page of
+    // blank placeholder rows (seen live: "10 rows" on a page past the end, none with any text). Wait for a row
+    // with real text or for the "no reservations" message, and never count placeholder rows.
+    const deadline = Date.now() + 15_000;
+    let t = null;
+    let real = [];
+    for (;;) {
+      t = (await table.isVisible()) ? await readTable(page, cfg.tableSelector) : null;
+      real = t ? t.rows.filter(hasData) : [];
+      if (real.length || !t || (await empty.isVisible()) || Date.now() > deadline) break;
+      await page.waitForTimeout(300);
+    }
+    if (!t || real.length === 0) {
+      log.info(`Page ${p}: no reservations${t ? ` (${t.rows.length} placeholder rows)` : ''}`);
+      break;
+    }
     headers ??= t.headers;
-    log.info(`Page ${p}: ${t.rows.length} rows`);
-    if (t.rows.length === 0) break;
-    const first = JSON.stringify(t.rows[0]);
+    log.info(`Page ${p}: ${real.length} reservations`);
+    const first = JSON.stringify(real[0]);
     if (first === previousFirst) { log.warn(`Page ${p} repeats page ${p - 1} - the page parameter is not being honoured, stopping`); break; }
     previousFirst = first;
-    rows.push(...t.rows);
+    rows.push(...real);
+    // A short page is the last one; this also saves a request (and a placeholder page) after it.
+    if (real.length < cfg.pageSize) break;
   }
   return { headers, rows };
+}
+
+async function readTable(page, selector) {
+  return page.$$eval(selector, (tables) => {
+    const text = (el) => (el.innerText ?? el.textContent ?? '').trim();
+    const best = tables.map((tb) => ({ tb, n: tb.querySelectorAll('tr').length })).sort((a, b) => b.n - a.n)[0];
+    const trs = [...best.tb.querySelectorAll('tr')];
+    const headRow = best.tb.querySelector('thead tr') ?? trs.find((tr) => tr.querySelector('th')) ?? trs[0];
+    const body = trs.filter((tr) => tr !== headRow && !tr.querySelector('th'));
+    return { headers: [...headRow.children].map(text), rows: body.map((tr) => [...tr.children].map(text)) };
+  });
 }
 
 export { dumpPage } from './dump.js';

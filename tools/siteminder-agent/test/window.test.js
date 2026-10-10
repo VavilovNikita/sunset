@@ -50,6 +50,13 @@ test('the real SiteMinder formats parse: MM.DD.YYYY, "2 - 0 - 0", Booked, glued 
 });
 
 // Regression: an unmodified / uncancelled booking shows "-" in those date cells ("unrecognised date \"-\"").
+test('the "1 x " quantity prefix is not part of the room type name; several rooms are a reported row', () => {
+  const mk = (room) => parseReservations({ headers: REAL_HEADERS, rows: [['SM-1', 'A B', '08.28.2026', '08.30.2026', 'Direct', room, '07.15.2026', '-', '-', 'Booked', '1 - 0 - 0', 'THB 100.00']] });
+  assert.equal(mk('1 x Sunset Room with Terrace').reservations[0].roomTypeName, 'Sunset Room with Terrace');
+  assert.equal(mk('Sunset Room with Terrace').reservations[0].roomTypeName, 'Sunset Room with Terrace');
+  assert.match(mk('2 x Sunset Room with Terrace').errors[0].message, /2 rooms/);
+});
+
 test('placeholder dashes in optional date cells mean no date', () => {
   for (const dash of ['-', '–', '—', ' - ', 'N/A']) {
     const row = ['SM-1', 'Jane Doe', '08.28.2026', '08.30.2026', 'Direct', 'Villa', '07.15.2026, 08:47 PM', dash, dash, 'Booked', '2 - 0 - 0', 'THB 100.00'];
@@ -154,6 +161,52 @@ test('scrapeTable pages through the window and treats "no reservations" as empty
     const none = await scrapeTable(e, page, log);
     assert.equal(none.headers, null);
     assert.deepEqual(none.rows, []);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+
+// Regression from the live page: the table renders first with a page of blank placeholder rows
+// ("Page 2: 10 rows", none with text) and fills in - or turns into "no reservations" - afterwards.
+test('placeholder rows are never counted, and a short page ends the scan', async (t) => {
+  let chromium;
+  try { ({ chromium } = await import('playwright')); const b = await chromium.launch(); await b.close(); } catch { t.skip('Chromium not installed'); return; }
+  const { scrapeTable } = await import('../src/browser.js');
+  const blank = '<tr>' + '<td></td>'.repeat(REAL_HEADERS.length) + '</tr>';
+  const real = '<tr><td>SM-1</td><td>Jane Doe</td><td>08.28.2026</td><td>08.30.2026</td><td>Direct</td><td>Villa</td><td>07.15.2026</td><td>-</td><td>-</td><td>Booked</td><td>2 - 0 - 0</td><td>THB 100.00</td></tr>';
+  const head = `<thead><tr>${REAL_HEADERS.map((h) => `<th>${h}</th>`).join('')}</tr></thead>`;
+  const requested = [];
+  const server = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    requested.push(Number(u.searchParams.get('page')));
+    res.setHeader('content-type', 'text/html');
+    const page = Number(u.searchParams.get('page'));
+    // page 1: placeholders, real row 600ms later. later pages: placeholders, then "no reservations" 400ms later.
+    const fill = page === 1
+      ? `document.querySelector('tbody').innerHTML = ${JSON.stringify(real)}`
+      : `document.body.innerHTML = '<h2>Looks like there are no reservations</h2>'`;
+    res.end(`<body><table>${head}<tbody>${blank.repeat(10)}</tbody></table><script>setTimeout(() => { ${fill} }, ${page === 1 ? 600 : 400})</script></body>`);
+  }).listen(0);
+  const browser = await chromium.launch();
+  const log = { info() {}, warn() {}, error() {} };
+  try {
+    const page = await browser.newPage();
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const c = { ...cfg, reservationsBase: `${base}/r`, tableSelector: 'table', maxPages: 10, pageSize: 10 };
+    await page.goto(reservationsUrl(c, 1));
+    const got = await scrapeTable(c, page, log);
+    assert.equal(got.rows.length, 1, 'only the real row, not 1 + 10 placeholders');
+    assert.equal(parseReservations(got).reservations.length, 1);
+    assert.deepEqual(requested, [1], 'a short first page is the last page');
+
+    // a full page followed by a page that only ever has placeholders then "no reservations"
+    requested.length = 0;
+    const c2 = { ...c, pageSize: 1 };
+    await page.goto(reservationsUrl(c2, 1));
+    const got2 = await scrapeTable(c2, page, log);
+    assert.equal(got2.rows.length, 1);
+    assert.deepEqual(requested, [1, 2]);
   } finally {
     await browser.close();
     server.close();
