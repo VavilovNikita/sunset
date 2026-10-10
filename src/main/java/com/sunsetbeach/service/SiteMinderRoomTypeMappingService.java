@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.SiteMinderRoomTypeMappingEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -48,6 +49,34 @@ public class SiteMinderRoomTypeMappingService {
     @Transactional(readOnly = true)
     public Optional<RoomEntity> findMappedRoom(String siteMinderRoomType) {
         return mappingRepository.findByName(normalizeName(siteMinderRoomType)).flatMap(m -> roomRepository.findById(m.getRoomId()));
+    }
+
+    /**
+     * The room type a name sent by the import means: an explicit mapping first (a manager's alias wins,
+     * even over a room type that happens to carry the same name), otherwise the room type whose own name
+     * matches, ignoring case and runs of spaces - so a sender that already uses this system's names needs
+     * no mapping rows at all. Empty if neither finds anything.
+     *
+     * <p>{@code Room.name} isn't unique in the database, so a name shared by two room types matches
+     * neither of them: guessing which one a booking belongs to would put it, and its price, in the wrong
+     * room. That is rejected with its own message; an explicit mapping resolves it.
+     */
+    @Transactional(readOnly = true)
+    public Optional<RoomEntity> resolveRoom(String name) {
+        Optional<RoomEntity> mapped = findMappedRoom(name);
+        if (mapped.isPresent()) {
+            return mapped;
+        }
+        String wanted = normalizeName(name);
+        List<RoomEntity> sameName = roomRepository.findAll().stream()
+                .filter(r -> r.getName() != null && normalizeName(r.getName()).equalsIgnoreCase(wanted))
+                .toList();
+        if (sameName.size() > 1) {
+            throw ValidationException.field(
+                    "roomTypeName",
+                    "More than one room type is named \"" + wanted + "\", so it can't be matched by name - add it under SiteMinder room type mappings.");
+        }
+        return sameName.stream().findFirst();
     }
 
     @Transactional(readOnly = true)

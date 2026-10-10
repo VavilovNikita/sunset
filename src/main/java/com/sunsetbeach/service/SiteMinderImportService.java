@@ -289,7 +289,7 @@ public class SiteMinderImportService {
     // --- Input ---------------------------------------------------------------------------------
 
     private RoomEntity requireMappedRoom(String siteMinderRoomType) {
-        return mappingService.findMappedRoom(siteMinderRoomType).orElseThrow(() -> ValidationException.field(
+        return mappingService.resolveRoom(siteMinderRoomType).orElseThrow(() -> ValidationException.field(
                 "roomTypeName",
                 "SiteMinder room type \"" + siteMinderRoomType + "\" isn't mapped to a room type - add it under SiteMinder room type mappings."));
     }

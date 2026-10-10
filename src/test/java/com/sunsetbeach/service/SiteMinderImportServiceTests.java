@@ -471,6 +471,45 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
     }
 
     @Test
+    void aNameThatIsExactlyARoomTypes_needsNoMappingRow() {
+        RoomEntity room = room(2);
+        String reference = newReference();
+
+        // Different case and spacing from the stored name, and no mapping exists for it.
+        importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, "  " + room.getName().toUpperCase().replace(" ", "  ") + " "));
+
+        assertThat(bookingFor(reference).getRoomId()).isEqualTo(room.getId());
+        assertThat(mappingRepository.findAll().stream().filter(m -> room.getId().equals(m.getRoomId()))).isEmpty();
+    }
+
+    @Test
+    void anExplicitMapping_beatsAnExactNameMatch() {
+        RoomEntity sameNamed = room(2);
+        RoomEntity aliasTarget = room(2);
+        // A manager's alias: the name that is also a real room type's name is deliberately pointed elsewhere.
+        mappingService.create(new SiteMinderRoomTypeMappingInput(sameNamed.getName(), aliasTarget.getId()));
+        String reference = newReference();
+
+        importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, sameNamed.getName()));
+
+        assertThat(bookingFor(reference).getRoomId()).isEqualTo(aliasTarget.getId());
+    }
+
+    @Test
+    void aNameSharedByTwoRoomTypes_isRejectedRatherThanGuessed() {
+        RoomEntity first = room(2);
+        RoomEntity second = room(2);
+        second.setName(first.getName());
+        roomRepository.saveAndFlush(second);
+        String reference = newReference();
+
+        assertThatThrownBy(() -> importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, first.getName())))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        e -> assertThat(e.getFieldErrors().get("roomTypeName")).singleElement().asString().contains("More than one room type"));
+        assertThat(bookingsWithReference(reference)).isZero();
+    }
+
+    @Test
     void noAvailability_isAConflict_andCreatesNothing() {
         String roomType = mapped(room(1));
         importService.importReservation(reservation(newReference(), SiteMinderReservationStatus.BOOKED, roomType));
