@@ -216,11 +216,4 @@ export async function scrapeTable(cfg, page, log) {
   return { headers, rows };
 }
 
-/** --dump: save what the page looks like so selectors/headers can be tuned without guessing. */
-export async function dumpPage(cfg, page, log) {
-  mkdirSync(cfg.dumpDir, { recursive: true });
-  const html = join(cfg.dumpDir, 'reservations.html');
-  writeFileSync(html, await page.content(), { mode: 0o600 });
-  await page.screenshot({ path: join(cfg.dumpDir, 'reservations.png'), fullPage: true });
-  log.info(`Dumped page to ${cfg.dumpDir} (contains guest data - delete when done)`);
-}
+export { dumpPage } from './dump.js';

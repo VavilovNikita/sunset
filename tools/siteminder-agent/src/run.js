@@ -34,7 +34,11 @@ async function main() {
       await saveSession(cfg, context);
     } catch (e) {
       if (e instanceof LoginError) { log.error(`LOGIN FAILED: ${e.message}`); return 3; }
-      if (e instanceof ScrapeError) { log.error(`SCRAPE FAILED: ${e.message}`); return 4; }
+      if (e instanceof ScrapeError) {
+        log.error(`SCRAPE FAILED: ${e.message}`);
+        try { await dumpPage(cfg, page, log); } catch (d) { log.warn(`Could not dump the page: ${d.message}`); }
+        return 4;
+      }
       throw e;
     }
   } finally {
