@@ -48,6 +48,18 @@ the wording there. If the page has several tables set `SM_TABLE_SELECTOR`.
 `npm run dump` saves `dump/reservations.html` + a screenshot (contains guest data; delete afterwards), and
 `npm run dry-run` parses and prints without sending anything.
 
+## Mapping a new room type
+
+Mappings are data (`SiteMinderRoomTypeMapping`, MANAGER+ API), not a migration, and the admin UI has no screen for
+them yet. To add one without hand-copying ids (set `SUNSET_STAFF_EMAIL` / `SUNSET_STAFF_PASSWORD` for a MANAGER or ADMIN login first):
+
+```bash
+node scripts/add-room-mapping.mjs "Sunset Room with Terrace" "Sunset Terrace Room ABF"
+```
+
+It finds the room type by name, creates the mapping, and does nothing if the same mapping already exists. Use the name
+exactly as in the Room column but without the `1 x ` prefix (what the import log shows after `roomTypeName`).
+
 ## Which reservations are read
 
 The search URL is built on every run (`src/url.js`): `dateType=ModifiedAt`, `fromDate` = today minus

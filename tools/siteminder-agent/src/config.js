@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Minimal .env reader (KEY=VALUE, # comments); real environment variables win. */
-function loadDotEnv() {
+export function loadDotEnv() {
   const file = resolve(root, '.env');
   if (!existsSync(file)) return;
   for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
