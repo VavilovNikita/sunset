@@ -8,6 +8,7 @@ const SEEN = [
   ['Jacuzzi Room with Sea View Non smoking - 484210223', 'Sunset Jacuzzi Seaview Room ABF'],
   ['Terrace Room Non smoking - 484210218', 'Sunset Terrace Room ABF'],
   ['Beachfront Jacuzzi Villa', 'Beachfront Jacuzzi Pool Villa ABF'],
+  ['Sunset Sea View With Bathtub - Non-refundable - Breakfast included - Domestic', 'Sunset Jacuzzi Seaview Room ABF'],
   ['Sunset Room with Terrace', 'Sunset Terrace Room ABF'],
   ['Sunset Terrace Room ABF', 'Sunset Terrace Room ABF'],
 ];
@@ -28,7 +29,7 @@ test('more specific rules win: jacuzzi before plain, beachfront before the rest'
   assert.equal(classifyRoomType('Garden Jacuzzi Villa ABF'), 'Garden Jacuzzi Villa ABF');
   assert.equal(classifyRoomType('Jacuzzi Terrace Room'), 'Sunset Jacuzzi Terrace Room');
   assert.equal(classifyRoomType('Seaview Jacuzzi Room'), 'Sunset Jacuzzi Seaview Room ABF');
-  assert.equal(classifyRoomType('Jacuzzi Room with Bathtub'), 'Sunset Jacuzzi Seaview Room ABF');
+  assert.equal(classifyRoomType('Sea View Room with Bathtub'), 'Sunset Jacuzzi Seaview Room ABF');
   // beachfront outranks a jacuzzi/seaview mention elsewhere in the string
   assert.equal(classifyRoomType('Beachfront Villa with Sea View'), 'Beachfront Villa');
 });
@@ -40,8 +41,15 @@ test('"Sunset Jacuzzi Deluxe" is intentionally unmapped, as is anything unknown'
   assert.equal(classifyRoomType(''), null);
 });
 
-test('a bare "Sea View ... Bathtub" with no jacuzzi has no rule yet', () => {
-  assert.equal(classifyRoomType('Sunset Sea View With Bathtub - Non-refundable - Breakfast included - Domestic'), null);
+test('sea view alone, or bathtub / jacuzzi without sea view, still has no rule', () => {
+  assert.equal(classifyRoomType('Sunset Sea View Room - Domestic'), null);
+  assert.equal(classifyRoomType('Room with Bathtub'), null);
+  assert.equal(classifyRoomType('Jacuzzi Room'), null);
+});
+
+test('beachfront and garden still outrank the sea view + bathtub rule', () => {
+  assert.equal(classifyRoomType('Beachfront Sea View Villa with Bathtub'), 'Beachfront Villa');
+  assert.equal(classifyRoomType('Garden Sea View Villa with Bathtub'), 'Garden Villa ABF');
 });
 
 test('multi-room reservations are still rejected on their own, before classification', () => {

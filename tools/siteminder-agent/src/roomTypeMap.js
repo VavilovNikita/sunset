@@ -12,7 +12,7 @@
 //
 // Deliberately NOT covered: "Sunset Jacuzzi Deluxe". It is unclear which sunset room type that is (it is
 // neither seaview nor terrace in its name), so it stays unmapped until a real example shows what it should be.
-// "Sea View" / "Bathtub" without "jacuzzi" is likewise unmapped for now (only the jacuzzi seaview type is known).
+// "Sea View" with neither "jacuzzi" nor "bathtub", and "Bathtub"/"Jacuzzi" without sea view, are likewise unmapped.
 
 const has = (name, ...words) => words.every((w) => name.includes(w));
 const hasAny = (name, ...words) => words.some((w) => name.includes(w));
@@ -22,7 +22,8 @@ export const ROOM_TYPE_RULES = [
   { test: (n) => has(n, 'beachfront'), result: 'Beachfront Villa' },
   { test: (n) => has(n, 'garden', 'jacuzzi'), result: 'Garden Jacuzzi Villa ABF' },
   { test: (n) => has(n, 'garden'), result: 'Garden Villa ABF' },
-  { test: (n) => hasAny(n, 'sea view', 'seaview', 'bathtub') && has(n, 'jacuzzi'), result: 'Sunset Jacuzzi Seaview Room ABF' },
+  // A bathtub counts as the jacuzzi variant when the string also says sea view ("Sea View With Bathtub").
+  { test: (n) => hasAny(n, 'sea view', 'seaview') && hasAny(n, 'jacuzzi', 'bathtub'), result: 'Sunset Jacuzzi Seaview Room ABF' },
   { test: (n) => has(n, 'terrace', 'jacuzzi'), result: 'Sunset Jacuzzi Terrace Room' },
   { test: (n) => has(n, 'terrace'), result: 'Sunset Terrace Room ABF' },
 ];
