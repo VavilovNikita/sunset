@@ -50,43 +50,105 @@ export async function ensureOnReservations(cfg, page, context, { headed, log }) 
     log.info('Saved session is still valid');
     return;
   }
-  log.info('Session missing or expired - logging in');
-  await page.goto(cfg.loginUrl, { waitUntil: 'domcontentloaded' });
-
-  const user = page.locator('input[type="email"], input[name*="user" i], input[name*="email" i], input[id*="user" i], input[id*="email" i], input[type="text"]').first();
-  const pass = page.locator('input[type="password"]').first();
-  try {
-    await user.waitFor({ state: 'visible', timeout: 15_000 });
-    await user.fill(cfg.username);
-    if (!(await pass.isVisible())) {
-      // Two-step form: username first, password on the next screen.
-      await page.keyboard.press('Enter');
-      await pass.waitFor({ state: 'visible', timeout: 15_000 });
-    }
-    await pass.fill(cfg.password);
-    await pass.press('Enter');
-  } catch (e) {
-    throw new LoginError(`Could not find/fill the login form at ${cfg.loginUrl} - SiteMinder's login page layout may have changed (${e.message.split('\n')[0]})`);
-  }
-
-  const deadline = Date.now() + (headed ? 5 * 60_000 : 30_000);
-  while (Date.now() < deadline) {
-    await page.waitForTimeout(1500);
-    if (!(await isLoginPage(page)) && !(await challengeText(page))) break;
-    const challenge = await challengeText(page);
-    if (challenge && !headed) {
-      throw new LoginError(`SiteMinder asked for "${challenge}". Run "npm run login" once on a machine with a display (headed) to pass it and save the session.`);
-    }
-    if (challenge && headed) console.log(`Waiting for you to complete "${challenge}" in the browser window...`);
-  }
-  if (await isLoginPage(page)) {
-    throw new LoginError('Login did not complete - wrong username/password, an account lock, or an unrecognised challenge');
-  }
+  log.info('Session missing or expired - logging in (two-step: username, then password)');
+  await doLogin(cfg, page, { headed, log });
   await page.goto(cfg.reservationsUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => {});
   if (await isLoginPage(page)) throw new LoginError('Logged in, but the Reservations URL still redirects to a login page');
   await saveSession(cfg, context);
-  log.info('Login OK, session saved');
+  log.info('Step 6/6: session saved');
+}
+
+const USER_FIELD = 'input[type="email"], input[name*="user" i], input[name*="email" i], input[id*="user" i], input[id*="email" i], input[type="text"]';
+const PASS_FIELD = 'input[type="password"]';
+const SUBMIT_BUTTON = 'button[type="submit"], input[type="submit"]';
+
+/** What is on screen right now, for the log when a step stalls. No field values, no credentials. */
+async function describeScreen(page) {
+  const d = await page.evaluate(() => {
+    const vis = (el) => !!(el.offsetWidth || el.offsetHeight);
+    const q = (s) => [...document.querySelectorAll(s)].filter(vis);
+    return {
+      inputs: q('input').map((i) => `${i.type}${i.name ? `[${i.name}]` : ''}`),
+      checkboxes: q('input[type="checkbox"]').map((i) => (i.labels?.[0]?.innerText || i.name || 'unlabelled').trim()),
+      buttons: q('button, input[type="submit"]').map((b) => (b.innerText || b.value || '').trim()).filter(Boolean),
+      errors: q('[role="alert"], .error, [class*="error" i]').map((e) => e.innerText.trim()).filter(Boolean).slice(0, 3),
+    };
+  }).catch(() => ({ inputs: [], checkboxes: [], buttons: [], errors: [] }));
+  const frames = await page.locator('iframe').evaluateAll((fs) => fs.map((f) => f.src.split('?')[0])).catch(() => []);
+  return `url=${page.url().split('?')[0]} inputs=[${d.inputs}] checkboxes=[${d.checkboxes}] buttons=[${d.buttons}] iframes=[${frames}] errors=[${d.errors}]`;
+}
+
+async function submit(page, field) {
+  const button = page.locator(SUBMIT_BUTTON).first();
+  if (await button.isVisible().catch(() => false)) await button.click();
+  else await field.press('Enter');
+}
+
+/**
+ * Two screens: authx.siteminder.com/login asks for the username only; after submitting it moves
+ * to /login/password for the password. The second step is awaited by the password field
+ * appearing, not by matching the URL. Every step is logged so a stall shows where it stopped.
+ * Headed: a captcha/2FA/extra prompt at any step is left to the person for up to 5 minutes.
+ * Headless: the same situation fails immediately with a description of what was on screen.
+ */
+async function doLogin(cfg, page, { headed, log }) {
+  const patience = headed ? 5 * 60_000 : 30_000;
+  const fail = async (what) => {
+    log.error(`Login stalled at: ${what}. Screen: ${await describeScreen(page)}`);
+    throw new LoginError(`${what}${headed ? '' : ' (run "npm run login" headed to finish it by hand)'}`);
+  };
+
+  log.info(`Step 1/6: opening ${cfg.loginUrl}`);
+  await page.goto(cfg.loginUrl, { waitUntil: 'domcontentloaded' });
+  const user = page.locator(USER_FIELD).first();
+  const pass = page.locator(PASS_FIELD).first();
+
+  try { await user.waitFor({ state: 'visible', timeout: 20_000 }); } catch { await fail('username field not found on the login page'); }
+  log.info('Step 2/6: found username field, filling and submitting');
+  await user.fill(cfg.username);
+  // "Remember me" (id login-remember on the username page) lengthens the session the agent will reuse.
+  const remember = page.locator('input[type="checkbox"][id*="remember" i], input[type="checkbox"][name*="remember" i]').first();
+  if (await remember.isVisible().catch(() => false) && !(await remember.isChecked())) {
+    await remember.check();
+    log.info('Ticked "remember me"');
+  }
+  await submit(page, user);
+
+  log.info('Step 3/6: waiting for the password field');
+  if (!(await waitFor(page, pass, patience, log, 'password field'))) await fail('password field never appeared after the username step');
+  log.info(`Step 4/6: found password field (${await describeScreen(page)}), filling and submitting`);
+  await pass.fill(cfg.password);
+  await submit(page, pass);
+
+  log.info('Step 5/6: waiting for login to finish');
+  const deadline = Date.now() + patience;
+  let lastNote = '';
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(1500);
+    const challenge = await challengeText(page);
+    if (!challenge && !(await isLoginPage(page))) return;
+    const note = challenge ? `challenge "${challenge}"` : 'still on a login screen';
+    if (note !== lastNote) { log.warn(`${note}. Screen: ${await describeScreen(page)}`); lastNote = note; }
+    if (challenge && !headed) await fail(`SiteMinder asked for "${challenge}"`);
+  }
+  await fail(headed ? 'timed out (5 min) waiting for the manual step to finish' : 'login did not complete - wrong credentials, account lock or an unrecognised prompt');
+}
+
+/** Waits for a locator, logging (once) when something other than the field is blocking the way. */
+async function waitFor(page, locator, timeoutMs, log, label) {
+  const deadline = Date.now() + timeoutMs;
+  let noted = false;
+  while (Date.now() < deadline) {
+    if (await locator.isVisible().catch(() => false)) return true;
+    if (!noted && Date.now() > deadline - timeoutMs + 5000) {
+      noted = true;
+      log.warn(`${label} not there after 5s. Screen: ${await describeScreen(page)}`);
+      if (timeoutMs > 60_000) log.warn('Headed mode: complete whatever the page asks for in the browser window.');
+    }
+    await page.waitForTimeout(500);
+  }
+  return false;
 }
 
 /** Reads the largest table matching the selector, following the "next page" control if configured. */
