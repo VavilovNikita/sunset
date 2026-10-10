@@ -2,6 +2,7 @@ package com.sunsetbeach.controller;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -120,6 +121,34 @@ class PublicAndStaffAccessTests {
     void publicRoomsList_withoutToken_isOk() throws Exception {
         when(roomService.list()).thenReturn(List.of(sampleRoom()));
         mockMvc.perform(get("/public/rooms")).andExpect(status().isOk());
+    }
+
+    /**
+     * The container re-dispatches a sendError() to /error as an ERROR-type request; before that
+     * dispatch was permitted, a malformed body reached an authenticated manager as "401
+     * Unauthorized" - which the admin UI reads as an expired session.
+     */
+    @Test
+    void malformedJsonBody_fromAnAuthenticatedStaffer_isA400_notA401() throws Exception {
+        mockMvc.perform(post("/rooms")
+                        .header("Authorization", managerBearerToken())
+                        .contentType("application/json")
+                        .content("{bad"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void integerOverflowInBody_isA400_notA401() throws Exception {
+        mockMvc.perform(post("/rooms")
+                        .header("Authorization", managerBearerToken())
+                        .contentType("application/json")
+                        .content("{\"name\":\"Suite\",\"description\":\"A room with a long description\",\"capacity\":99999999999,\"basePrice\":100}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void malformedJsonBody_withoutToken_isStillUnauthorized() throws Exception {
+        mockMvc.perform(post("/rooms").contentType("application/json").content("{bad")).andExpect(status().isUnauthorized());
     }
 
     @Test

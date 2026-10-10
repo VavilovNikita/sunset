@@ -127,7 +127,7 @@ public class OrderPrintingService {
                 b.center(true).bold(true).line("*** VOID ***").bold(false).center(false);
                 b.line(describeLocation(order));
                 b.line(orderLabel(order));
-                b.line("Time: " + TimestampFormat.readable(TimestampFormat.nowUtc(clock)));
+                b.line("Time: " + TimestampFormat.readableHotel(TimestampFormat.nowUtc(clock), clock));
                 b.divider();
                 b.line(voided.getQuantity() + "x " + (menuItem != null ? menuItem.getName() : "Unknown item"));
                 if (voided.getNote() != null && !voided.getNote().isBlank()) {
@@ -247,7 +247,7 @@ public class OrderPrintingService {
                 .center(false);
         b.line(describeLocation(order));
         b.line(orderLabel(order));
-        b.line("Time: " + TimestampFormat.readable(TimestampFormat.nowUtc(clock)));
+        b.line("Time: " + TimestampFormat.readableHotel(TimestampFormat.nowUtc(clock), clock));
         b.line("Waiter: " + resolveWaiterLabel(order.getOpenedByUserId()));
         b.divider();
         for (OrderItemEntity item : items) {
@@ -278,7 +278,7 @@ public class OrderPrintingService {
         b.center(true).bold(true).line(title).bold(false).center(false);
         b.line(describeLocation(order));
         b.line(orderLabel(order) + " (ref " + shortId(order.getId()) + ")");
-        b.line("Time: " + TimestampFormat.readable(TimestampFormat.nowUtc(clock)));
+        b.line("Time: " + TimestampFormat.readableHotel(TimestampFormat.nowUtc(clock), clock));
         b.divider();
         BigDecimal total = BigDecimal.ZERO;
         for (OrderItemEntity item : items) {

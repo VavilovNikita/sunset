@@ -11,7 +11,9 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
+import java.time.format.DateTimeParseException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.validation.FieldError;
@@ -88,6 +90,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorMessage> handleBadRequest(Exception ex) {
         String message = ex instanceof MissingServletRequestPartException ? "No files provided" : ex.getMessage();
         return ResponseEntity.badRequest().body(new ErrorMessage(message));
+    }
+
+    /** A body that isn't valid JSON (or has a value of the wrong type or out of range, e.g. an int overflow). */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorMessage> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        return ResponseEntity.badRequest().body(new ErrorMessage("The request body is not valid JSON, or a value in it is the wrong type or out of range"));
+    }
+
+    /** A date that matches the YYYY-MM-DD pattern but isn't a real day (2026-02-30), or an unparsable time. */
+    @ExceptionHandler(DateTimeParseException.class)
+    public ResponseEntity<ErrorMessage> handleUnparsableDate(DateTimeParseException ex) {
+        return ResponseEntity.badRequest().body(new ErrorMessage("Invalid date or time: " + ex.getParsedString()));
     }
 
     @ExceptionHandler(ConstraintViolationException.class)

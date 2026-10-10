@@ -271,7 +271,7 @@ public class PrinterService {
                 .bold(true)
                 .line("TEST PAGE")
                 .bold(false)
-                .line(TimestampFormat.readable(TimestampFormat.nowUtc(clock)))
+                .line(TimestampFormat.readableHotel(TimestampFormat.nowUtc(clock), clock))
                 .center(false)
                 .divider()
                 .line("If you can read this, the host, port, and codepage are configured correctly.")

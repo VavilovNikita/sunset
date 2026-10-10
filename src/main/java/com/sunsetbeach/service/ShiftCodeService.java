@@ -120,6 +120,15 @@ public class ShiftCodeService {
         validateIntervals(start1, end1, start2, end2);
         validateKindShape(input.getKind(), start1, start2, input.getCountsAsWorked());
 
+        // One version per start date (V57's unique index): say so, with the way out, instead of
+        // letting the insert hit the index and surface as a generic 500.
+        LocalDate effectiveFrom = LocalDate.parse(input.getEffectiveFrom());
+        if (shiftCodeRepository.findByStaffAreaAndCode(input.getStaffArea(), input.getCode()).stream()
+                .anyMatch(v -> v.getEffectiveFrom().equals(effectiveFrom))) {
+            throw new ConflictException("\"" + input.getCode() + "\" already has a version starting " + effectiveFrom
+                    + " - edit that code instead (a new version, or the same start date to replace it), or pick a different date");
+        }
+
         // Retires the current version of this exact (staffArea, code) pair, if one exists - the
         // new row takes over for anything created from here on, every RosterEntry already
         // pointing at the old one keeps meaning what it meant.
@@ -138,7 +147,7 @@ public class ShiftCodeService {
         entity.setEndTime2(end2);
         entity.setCountsAsWorked(input.getCountsAsWorked());
         entity.setPaid(input.getIsPaid());
-        entity.setEffectiveFrom(LocalDate.parse(input.getEffectiveFrom()));
+        entity.setEffectiveFrom(effectiveFrom);
         entity.setCreatedByUserId(actorUserId);
 
         ShiftCodeEntity saved = shiftCodeRepository.saveAndFlush(entity);

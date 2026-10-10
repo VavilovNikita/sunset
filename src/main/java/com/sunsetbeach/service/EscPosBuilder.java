@@ -34,8 +34,19 @@ public final class EscPosBuilder {
     }
 
     public EscPosBuilder text(String s) {
-        out.writeBytes(s.getBytes(charset));
+        out.writeBytes(asciiPunctuation(s).getBytes(charset));
         return this;
+    }
+
+    /**
+     * The receipt code pages (PC437, TIS-620) have no em/en dash, curly quotes or ellipsis, and
+     * encoding one gives a literal "?" on paper ("Restaurant ? T1"). Those come from our own
+     * wording and from menu text typed in a word processor, so they are swapped for their ASCII
+     * look-alikes before encoding. Anything else unencodable is still the charset's call.
+     */
+    static String asciiPunctuation(String s) {
+        return s.replace('\u2014', '-').replace('\u2013', '-').replace('\u2018', '\'').replace('\u2019', '\'')
+                .replace('\u201C', '"').replace('\u201D', '"').replace("\u2026", "...").replace('\u00A0', ' ');
     }
 
     public EscPosBuilder line(String s) {

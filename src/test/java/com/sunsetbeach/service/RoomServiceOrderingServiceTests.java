@@ -114,8 +114,8 @@ class RoomServiceOrderingServiceTests extends AbstractIntegrationTest {
         booking.setGuestName("Somchai");
         booking.setGuestEmail(guestEmail);
         booking.setGuestPhone("+66800000000");
-        booking.setCheckIn(LocalDate.now().minusDays(1));
-        booking.setCheckOut(LocalDate.now().plusDays(2));
+        booking.setCheckIn(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).minusDays(1));
+        booking.setCheckOut(LocalDate.now(java.time.ZoneId.of("Asia/Bangkok")).plusDays(2));
         booking.setTotalPrice(new BigDecimal("3000.00"));
         booking.setStatus(BookingStatus.CONFIRMED);
         booking.setOccupancyStatus(occupancyStatus);
@@ -185,14 +185,17 @@ class RoomServiceOrderingServiceTests extends AbstractIntegrationTest {
     }
 
     @Test
-    void secondRound_whileStillCheckedIn_succeeds_andMergesWithExistingLine() {
+    void secondRound_whileStillCheckedIn_succeeds_asAnotherLine_becauseTheFirstWasAlreadySent() {
         String bookingId = checkedInBooking(GUEST_EMAIL);
         GuestOrderView first = roomServiceOrderingService.submit(GUEST_EMAIL, bookingId, oneMojito());
 
         GuestOrderView second = roomServiceOrderingService.addItems(GUEST_EMAIL, first.getId(), oneMojito());
 
-        assertThat(second.getItems()).hasSize(1);
-        assertThat(second.getItems().get(0).getQuantity()).isEqualTo(2);
+        // The first round's line is already on the kitchen's paper (sentAt set), and a sent line is
+        // never bumped on-screen with no matching change on that paper - so the second round is its
+        // own line (and its own delta ticket), not a merge. Only an unsent line merges.
+        assertThat(second.getItems()).hasSize(2);
+        assertThat(second.getItems()).allSatisfy(item -> assertThat(item.getQuantity()).isEqualTo(1));
         assertThat(second.getTotal()).isEqualTo("300.00");
     }
 
