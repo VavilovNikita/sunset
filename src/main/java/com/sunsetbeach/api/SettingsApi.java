@@ -8,6 +8,10 @@ package com.sunsetbeach.api;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.LifecycleEmailSettings;
 import com.sunsetbeach.model.LifecycleEmailSettingsUpdateInput;
+import com.sunsetbeach.model.PrintAttemptResult;
+import com.sunsetbeach.model.ReceiptPreview;
+import com.sunsetbeach.model.ReceiptSettings;
+import com.sunsetbeach.model.ReceiptSettingsInput;
 import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.ValidationError;
 import com.sunsetbeach.model.VatSettings;
@@ -34,6 +38,47 @@ public interface SettingsApi {
     default Optional<NativeWebRequest> getRequest() {
         return Optional.empty();
     }
+
+    /**
+     * DELETE /settings/receipt/logo : Remove the receipt logo
+     * Requires &#x60;ADMIN&#x60;. Also turns &#x60;showLogo&#x60; off. Removing a logo that isn&#39;t there is not an error.
+     *
+     * @return The settings, now with &#x60;hasLogo&#x60; false. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.DELETE,
+        value = "/settings/receipt/logo",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<ReceiptSettings> deleteReceiptLogo(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"hasLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 0, \"showVatLine\" : true, \"totalSize\" : 6, \"receiptTitle\" : \"receiptTitle\", \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 31, \"prebillTitle\" : \"prebillTitle\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
 
     /**
      * GET /settings/lifecycle-emails : Read the lifecycle email settings
@@ -77,6 +122,47 @@ public interface SettingsApi {
 
 
     /**
+     * GET /settings/receipt : Read how the guest receipt and pre-bill look
+     * Requires &#x60;ADMIN&#x60;, like every &#x60;/settings/_*&#x60; route. See &#x60;ReceiptSettings&#x60;. 
+     *
+     * @return The current receipt layout. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/settings/receipt",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<ReceiptSettings> getReceiptSettings(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"hasLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 0, \"showVatLine\" : true, \"totalSize\" : 6, \"receiptTitle\" : \"receiptTitle\", \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 31, \"prebillTitle\" : \"prebillTitle\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * GET /settings/vat : Read the VAT rate
      * Requires an authenticated session with role &#x60;ADMIN&#x60;, same as every &#x60;/settings/_*&#x60; route. A MANAGER doesn&#39;t need this to read the rate: &#x60;GET /reports/revenue-statistic&#x60; returns the rate it computed with. See &#x60;VatSettings&#x60;. 
      *
@@ -97,6 +183,96 @@ public interface SettingsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"vatRate\" : \"vatRate\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /settings/receipt/preview : Render a sample receipt from a layout that is not saved yet
+     * Requires &#x60;ADMIN&#x60;. Renders a fixed sample order (two lines, VAT, paid in cash) with the layout in the body and the stored logo, and returns the lines exactly as the printer would lay them out - the same code that builds the real receipt&#39;s bytes produces this, so what wraps, truncates or fits in 32/42/56 columns here is what happens on paper. Nothing is saved and nothing is printed. 
+     *
+     * @param receiptSettingsInput  (required)
+     * @return The rendered sample. (status code 200)
+     *         or Same validation as &#x60;PUT /settings/receipt&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/settings/receipt/preview",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<ReceiptPreview> previewReceipt(
+         @Valid @RequestBody ReceiptSettingsInput receiptSettingsInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"logoWidthDots\" : 1, \"columns\" : 0, \"logoPngBase64\" : \"logoPngBase64\", \"lines\" : [ { \"fontB\" : true, \"size\" : 6, \"center\" : true, \"text\" : \"text\", \"bold\" : true }, { \"fontB\" : true, \"size\" : 6, \"center\" : true, \"text\" : \"text\", \"bold\" : true } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * POST /settings/receipt/test-print : Print a sample receipt on the cashier printer with the saved layout
+     * Requires &#x60;ADMIN&#x60;. The only way to see the real thing - paper width, density and the logo bitmap depend on the printer. Prints the same sample as the preview using the *saved* settings, through the normal print queue (so it appears under print jobs and retries like any other). &#x60;attempted&#x60; is false when there is no active CASHIER printer. 
+     *
+     * @return The print attempt. (status code 201)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/settings/receipt/test-print",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<PrintAttemptResult> testPrintReceipt(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"attempted\" : true, \"job\" : { \"summary\" : \"summary\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastError\" : \"lastError\", \"dismissNote\" : \"dismissNote\", \"documentType\" : \"KITCHEN_TICKET\", \"printerId\" : \"printerId\", \"id\" : \"id\", \"dismissedByUserId\" : \"dismissedByUserId\", \"dismissedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"PENDING\", \"attempts\" : 0, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -167,6 +343,55 @@ public interface SettingsApi {
 
 
     /**
+     * PUT /settings/receipt : Change how the guest receipt and pre-bill look
+     * Requires &#x60;ADMIN&#x60;. Takes effect on the next receipt or pre-bill printed; receipts already queued keep the bytes they were built with (a print job replays its payload). The logo is not part of this body - see &#x60;PUT /settings/receipt/logo&#x60;. Recorded in the audit log (&#x60;RECEIPT_SETTINGS_UPDATED&#x60;) naming the fields that changed; an unchanged PUT records nothing. 
+     *
+     * @param receiptSettingsInput  (required)
+     * @return The saved layout. (status code 200)
+     *         or A title is empty or over 24 characters, header/footer text has more than 6 lines or a line over 48 characters, or a size/percentage is out of range. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.PUT,
+        value = "/settings/receipt",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<ReceiptSettings> updateReceiptSettings(
+         @Valid @RequestBody ReceiptSettingsInput receiptSettingsInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"hasLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 0, \"showVatLine\" : true, \"totalSize\" : 6, \"receiptTitle\" : \"receiptTitle\", \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 31, \"prebillTitle\" : \"prebillTitle\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * PUT /settings/vat : Change the VAT rate
      * Requires an authenticated session with role &#x60;ADMIN&#x60; - MANAGER included is a 403. Takes effect on the next report request; nothing is cached and no deploy or restart is needed. The rate is not versioned: every report computes with the rate stored at the moment it is requested, for its whole range. Recorded in the audit log (&#x60;VAT_SETTINGS_UPDATED&#x60;) with the old and new rate; an unchanged value records nothing. 
      *
@@ -195,6 +420,55 @@ public interface SettingsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PUT /settings/receipt/logo : Upload (or replace) the receipt logo
+     * Requires &#x60;ADMIN&#x60;. A JPEG, PNG or WebP (content-sniffed, 8MB cap - &#x60;ImageUploadValidator&#x60;). It is flattened onto white, converted to grayscale and scaled down to at most 576 dots wide and 400 dots high - the most any receipt printer here can use - and stored in that form; the printed bitmap is derived from it at the paper width and &#x60;logoWidthPercent&#x60; in force when printing, dithered to pure black and white. Does not change &#x60;showLogo&#x60;. 
+     *
+     * @param file  (required)
+     * @return The settings, now with &#x60;hasLogo&#x60; true. (status code 200)
+     *         or Not a JPEG/PNG/WebP, too large, or not decodable as an image. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.PUT,
+        value = "/settings/receipt/logo",
+        produces = { "application/json" },
+        consumes = { "multipart/form-data" }
+    )
+    
+    default ResponseEntity<ReceiptSettings> uploadReceiptLogo(
+         @RequestPart(value = "file", required = true) MultipartFile file
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"hasLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 0, \"showVatLine\" : true, \"totalSize\" : 6, \"receiptTitle\" : \"receiptTitle\", \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 31, \"prebillTitle\" : \"prebillTitle\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

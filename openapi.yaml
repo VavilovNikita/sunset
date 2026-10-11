@@ -7073,6 +7073,171 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /settings/receipt:
+    get:
+      operationId: getReceiptSettings
+      tags: [Settings]
+      summary: Read how the guest receipt and pre-bill look
+      description: >
+        Requires `ADMIN`, like every `/settings/*` route. See `ReceiptSettings`.
+      responses:
+        "200":
+          description: The current receipt layout.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: updateReceiptSettings
+      tags: [Settings]
+      summary: Change how the guest receipt and pre-bill look
+      description: >
+        Requires `ADMIN`. Takes effect on the next receipt or pre-bill printed; receipts already
+        queued keep the bytes they were built with (a print job replays its payload). The logo is
+        not part of this body - see `PUT /settings/receipt/logo`. Recorded in the audit log
+        (`RECEIPT_SETTINGS_UPDATED`) naming the fields that changed; an unchanged PUT records nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiptSettingsInput"
+      responses:
+        "200":
+          description: The saved layout.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptSettings"
+        "400":
+          description: A title is empty or over 24 characters, header/footer text has more than 6 lines or a line over 48 characters, or a size/percentage is out of range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /settings/receipt/preview:
+    post:
+      operationId: previewReceipt
+      tags: [Settings]
+      summary: Render a sample receipt from a layout that is not saved yet
+      description: >
+        Requires `ADMIN`. Renders a fixed sample order (two lines, VAT, paid in cash) with the
+        layout in the body and the stored logo, and returns the lines exactly as the printer
+        would lay them out - the same code that builds the real receipt's bytes produces this, so
+        what wraps, truncates or fits in 32/42/56 columns here is what happens on paper. Nothing
+        is saved and nothing is printed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiptSettingsInput"
+      responses:
+        "200":
+          description: The rendered sample.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptPreview"
+        "400":
+          description: Same validation as `PUT /settings/receipt`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /settings/receipt/logo:
+    put:
+      operationId: uploadReceiptLogo
+      tags: [Settings]
+      summary: Upload (or replace) the receipt logo
+      description: >
+        Requires `ADMIN`. A JPEG or PNG (content-sniffed, 8MB cap - `ImageUploadValidator`; WebP
+        is accepted elsewhere in the app but the JVM here has no WebP decoder, so it is a 400).
+        It is flattened onto white, converted to grayscale and scaled down to at most 576 dots
+        wide and 400 dots high - the most any receipt printer here can use - and stored in that
+        form; the printed bitmap is derived from it at the paper width and `logoWidthPercent` in
+        force when printing, dithered to pure black and white. Does not change `showLogo`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        "200":
+          description: The settings, now with `hasLogo` true.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptSettings"
+        "400":
+          description: Not a JPEG/PNG, too large, or not decodable as an image.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    delete:
+      operationId: deleteReceiptLogo
+      tags: [Settings]
+      summary: Remove the receipt logo
+      description: Requires `ADMIN`. Also turns `showLogo` off. Removing a logo that isn't there is not an error.
+      responses:
+        "200":
+          description: The settings, now with `hasLogo` false.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /settings/receipt/test-print:
+    post:
+      operationId: testPrintReceipt
+      tags: [Settings]
+      summary: Print a sample receipt on the cashier printer with the saved layout
+      description: >
+        Requires `ADMIN`. The only way to see the real thing - paper width, density and the logo
+        bitmap depend on the printer. Prints the same sample as the preview using the *saved*
+        settings, through the normal print queue (so it appears under print jobs and retries like
+        any other). `attempted` is false when there is no active CASHIER printer.
+      responses:
+        "201":
+          description: The print attempt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrintAttemptResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /settings/vat:
     get:
       operationId: getVatSettings
@@ -12575,6 +12740,163 @@ components:
           minimum: 1
           maximum: 120
 
+    ReceiptPaperWidth:
+      type: string
+      enum: [MM58, MM80]
+      description: >
+        Roll width. `MM80` prints 42 columns in Font A / 56 in Font B and a 576-dot logo; `MM58`
+        prints 32 / 42 columns and a 384-dot logo.
+
+    ReceiptBodyFont:
+      type: string
+      enum: [A, B]
+      description: >
+        The printer's own built-in font for body text - A is the larger, B the smaller and denser.
+        A thermal printer has no arbitrary fonts: these two, magnified 1x or 2x and optionally
+        bold, are everything ESC/POS offers. (Thai text uses the printer's Thai code page, in
+        whichever of the two the printer renders it.)
+
+    ReceiptSettings:
+      type: object
+      description: >
+        How the guest receipt and the pre-bill look on paper (never the kitchen/bar tickets or the
+        Z report, which are working documents). One row, seeded with what the printer produced
+        before this existed - 80mm, Font A, bold centered title, no header/footer/logo, every
+        optional line on - so nothing changes until an admin edits it. `headerText`/`footerText`
+        are up to 6 lines of up to 48 characters each, printed centered; a line longer than the
+        columns the paper and font give is wrapped by the renderer. Characters outside the
+        printer's code page print as `?`.
+      required: [paperWidth, bodyFont, receiptTitle, prebillTitle, titleSize, totalSize, totalBold, headerText, headerBold, footerText, showOrderNumber, showTime, showVatLine, showPaymentMethod, showLogo, logoWidthPercent, hasLogo, updatedAt]
+      properties:
+        paperWidth:
+          $ref: "#/components/schemas/ReceiptPaperWidth"
+        bodyFont:
+          $ref: "#/components/schemas/ReceiptBodyFont"
+        receiptTitle:
+          type: string
+          description: Printed bold and centered at the top of a receipt (" - COPY" is appended on a reprint). 1-24 characters.
+        prebillTitle:
+          type: string
+          description: Same, for the pre-bill. 1-24 characters.
+        titleSize:
+          type: integer
+          enum: [1, 2]
+        totalSize:
+          type: integer
+          enum: [1, 2]
+        totalBold:
+          type: boolean
+        headerText:
+          type: string
+          description: Under the logo, above the title - hotel name, address, phone, tax id. Newline-separated.
+        headerBold:
+          type: boolean
+        footerText:
+          type: string
+          description: Last lines, e.g. a thank-you or opening hours. Newline-separated.
+        showOrderNumber:
+          type: boolean
+        showTime:
+          type: boolean
+        showVatLine:
+          type: boolean
+          description: The "incl. VAT x%" line under the total - a breakdown of the total, never added to it.
+        showPaymentMethod:
+          type: boolean
+          description: The payment method / room-charge block on a paid receipt.
+        showLogo:
+          type: boolean
+          description: Only has an effect when a logo has been uploaded (`hasLogo`).
+        logoWidthPercent:
+          type: integer
+          minimum: 20
+          maximum: 100
+          description: Width of the printed logo as a share of the paper's dot width.
+        hasLogo:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+
+    ReceiptSettingsInput:
+      type: object
+      description: Body of `PUT /settings/receipt` and `POST /settings/receipt/preview` - every field of `ReceiptSettings` except `hasLogo`/`updatedAt`.
+      required: [paperWidth, bodyFont, receiptTitle, prebillTitle, titleSize, totalSize, totalBold, headerText, headerBold, footerText, showOrderNumber, showTime, showVatLine, showPaymentMethod, showLogo, logoWidthPercent]
+      properties:
+        paperWidth:
+          $ref: "#/components/schemas/ReceiptPaperWidth"
+        bodyFont:
+          $ref: "#/components/schemas/ReceiptBodyFont"
+        receiptTitle:
+          type: string
+        prebillTitle:
+          type: string
+        titleSize:
+          type: integer
+          enum: [1, 2]
+        totalSize:
+          type: integer
+          enum: [1, 2]
+        totalBold:
+          type: boolean
+        headerText:
+          type: string
+        headerBold:
+          type: boolean
+        footerText:
+          type: string
+        showOrderNumber:
+          type: boolean
+        showTime:
+          type: boolean
+        showVatLine:
+          type: boolean
+        showPaymentMethod:
+          type: boolean
+        showLogo:
+          type: boolean
+        logoWidthPercent:
+          type: integer
+          minimum: 20
+          maximum: 100
+
+    ReceiptPreviewLine:
+      type: object
+      required: [text, center, bold, size, fontB]
+      properties:
+        text:
+          type: string
+        center:
+          type: boolean
+        bold:
+          type: boolean
+        size:
+          type: integer
+          description: 1 or 2 - the glyph magnification this line prints at.
+        fontB:
+          type: boolean
+          description: True when the line prints in the printer's smaller Font B.
+
+    ReceiptPreview:
+      type: object
+      description: >
+        A rendered sample receipt. `columns` is the line width in Font A/B characters at 1x for
+        the paper and font chosen; a 2x line holds half as many. `logoPngBase64` is the logo as
+        it will print - black and white, at its printed size in dots (`logoWidthDots` wide) -
+        and absent when there is no logo or `showLogo` is off.
+      required: [columns, lines]
+      properties:
+        columns:
+          type: integer
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReceiptPreviewLine"
+        logoPngBase64:
+          type: string
+        logoWidthDots:
+          type: integer
+
     VatSettings:
       type: object
       description: >
@@ -14386,6 +14708,8 @@ components:
         - ATTENDANCE_PUNCH_RECORDED
         - ATTENDANCE_PUNCH_CORRECTED
         - ATTENDANCE_DAY_CORRECTED
+        - RECEIPT_SETTINGS_UPDATED
+        - RECEIPT_LOGO_CHANGED
         - EMPLOYEE_PAY_RATE_CHANGED
         - ROSTER_ACTUALS_EXPORTED
         - ROSTER_MONTH_IMPORTED

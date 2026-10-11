@@ -8,7 +8,8 @@ import java.nio.charset.Charset;
  * Minimal ESC/POS byte-stream builder - just enough control codes to lay out the four
  * documents this app prints (kitchen/bar tickets, pre-bills, guest receipts, Z-reports) plus a
  * test page: init, code-page selection, bold, centering, and a paper cut. Not a general ESC/POS
- * library - there is no image/barcode/QR support because nothing here needs it.
+ * library - no barcode/QR support because nothing here needs it. The guest receipt additionally
+ * uses font selection, 2x magnification and a raster logo ({@link ReceiptRenderer}).
  */
 public final class EscPosBuilder {
 
@@ -25,6 +26,32 @@ public final class EscPosBuilder {
 
     public EscPosBuilder bold(boolean on) {
         out.writeBytes(new byte[] {0x1B, 0x45, (byte) (on ? 1 : 0)}); // ESC E n
+        return this;
+    }
+
+    /** ESC M n - the printer's built-in Font A (the default) or the smaller Font B. */
+    public EscPosBuilder fontB(boolean on) {
+        out.writeBytes(new byte[] {0x1B, 0x4D, (byte) (on ? 1 : 0)});
+        return this;
+    }
+
+    /** GS ! n - glyph magnification: 1 is normal, 2 doubles both width and height. */
+    public EscPosBuilder size(int magnification) {
+        out.writeBytes(new byte[] {0x1D, 0x21, (byte) (magnification >= 2 ? 0x11 : 0x00)});
+        return this;
+    }
+
+    /**
+     * GS v 0 - a 1-bit raster image, {@code widthBytes} * 8 dots wide, row-major, MSB first, a
+     * set bit printing black. Positioned by the current alignment like text.
+     */
+    public EscPosBuilder raster(int widthBytes, int heightDots, byte[] packed) {
+        out.writeBytes(new byte[] {
+            0x1D, 0x76, 0x30, 0x00,
+            (byte) (widthBytes & 0xFF), (byte) (widthBytes >> 8),
+            (byte) (heightDots & 0xFF), (byte) (heightDots >> 8)
+        });
+        out.writeBytes(packed);
         return this;
     }
 

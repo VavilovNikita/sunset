@@ -61,6 +61,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.sunsetbeach.model.ReceiptSettings;
+import com.sunsetbeach.model.ReceiptSettingsInput;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -83,6 +85,9 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional
 class PrintingTests extends AbstractIntegrationTest {
+
+    @Autowired
+    private ReceiptSettingsService receiptSettingsService;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -772,6 +777,29 @@ class PrintingTests extends AbstractIntegrationTest {
             assertThat(text).contains("GUEST RECEIPT - COPY").contains("2x Caesar Salad").contains("200.00").contains("Payment: Cash");
             // 200.00 already includes 7% VAT: 200 x 7 / 107 = 13.08 - a breakdown, never added on top.
             assertThat(text).contains("incl. VAT 7%").contains("13.08");
+        }
+    }
+
+    @Test
+    void printReceipt_followsTheAdminsReceiptLayout() throws IOException {
+        try (FakePrinter fake = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.CASHIER, fake.port());
+            ReceiptSettings current = receiptSettingsService.get();
+            receiptSettingsService.update(new ReceiptSettingsInput(
+                    current.getPaperWidth(), current.getBodyFont(), "TAX INVOICE", current.getPrebillTitle(),
+                    ReceiptSettingsInput.TitleSizeEnum.NUMBER_1, ReceiptSettingsInput.TotalSizeEnum.NUMBER_1, false,
+                    "Sunset Beach Resort", true, "Thank you!", false, true, false, true, false, 60));
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 2)));
+            shiftService.open(cashier.getId(), new ShiftOpenInput());
+            orderService.close(order.getId(), new CloseOrderInput(PaymentMethod.CASH), cashier.getId());
+
+            PrintAttemptResult result = orderService.printReceipt(order.getId());
+            String text = decode(printJobRepository.findById(result.getJob().getId()).orElseThrow());
+
+            assertThat(text).contains("Sunset Beach Resort").contains("TAX INVOICE - COPY").contains("Thank you!")
+                    .contains("2x Caesar Salad").contains("Payment: Cash");
+            assertThat(text).doesNotContain("GUEST RECEIPT").doesNotContain("(ref").doesNotContain("incl. VAT");
         }
     }
 
