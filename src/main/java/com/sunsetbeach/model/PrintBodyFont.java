@@ -16,19 +16,19 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Roll width. `MM80` prints 42 columns in Font A / 56 in Font B and a 576-dot logo; `MM58` prints 32 / 42 columns and a 384-dot logo. 
+ * The printer's own built-in font for body text - A is the larger, B the smaller and denser. A thermal printer has no arbitrary fonts: these two, magnified 1x or 2x and optionally bold, are everything ESC/POS offers. (Thai text uses the printer's Thai code page, in whichever of the two the printer renders it.) 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
-public enum ReceiptPaperWidth {
+public enum PrintBodyFont {
   
-  MM58("MM58"),
+  A("A"),
   
-  MM80("MM80");
+  B("B");
 
   private String value;
 
-  ReceiptPaperWidth(String value) {
+  PrintBodyFont(String value) {
     this.value = value;
   }
 
@@ -43,8 +43,8 @@ public enum ReceiptPaperWidth {
   }
 
   @JsonCreator
-  public static ReceiptPaperWidth fromValue(String value) {
-    for (ReceiptPaperWidth b : ReceiptPaperWidth.values()) {
+  public static PrintBodyFont fromValue(String value) {
+    for (PrintBodyFont b : PrintBodyFont.values()) {
       if (b.value.equals(value)) {
         return b;
       }

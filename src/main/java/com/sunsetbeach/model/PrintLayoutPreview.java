@@ -4,7 +4,7 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.sunsetbeach.model.ReceiptPreviewLine;
+import com.sunsetbeach.model.PrintPreviewLine;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -18,34 +18,34 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A rendered sample receipt. &#x60;columns&#x60; is the line width in Font A/B characters at 1x for the paper and font chosen; a 2x line holds half as many. &#x60;logoPngBase64&#x60; is the logo as it will print - black and white, at its printed size in dots (&#x60;logoWidthDots&#x60; wide) - and absent when there is no logo or &#x60;showLogo&#x60; is off. 
+ * A rendered sample document. &#x60;columns&#x60; is the line width in Font A/B characters at 1x for the paper and font chosen; a 2x line holds half as many. &#x60;logoPngBase64&#x60; is the logo as it will print - black and white, at its printed size in dots (&#x60;logoWidthDots&#x60; wide) - and absent when there is no logo, &#x60;showLogo&#x60; is off or the document never prints it. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
-public class ReceiptPreview {
+public class PrintLayoutPreview {
 
   private Integer columns;
 
   @Valid
-  private List<@Valid ReceiptPreviewLine> lines = new ArrayList<>();
+  private List<@Valid PrintPreviewLine> lines = new ArrayList<>();
 
   private String logoPngBase64;
 
   private Integer logoWidthDots;
 
-  public ReceiptPreview() {
+  public PrintLayoutPreview() {
     super();
   }
 
   /**
    * Constructor with only required parameters
    */
-  public ReceiptPreview(Integer columns, List<@Valid ReceiptPreviewLine> lines) {
+  public PrintLayoutPreview(Integer columns, List<@Valid PrintPreviewLine> lines) {
     this.columns = columns;
     this.lines = lines;
   }
 
-  public ReceiptPreview columns(Integer columns) {
+  public PrintLayoutPreview columns(Integer columns) {
     this.columns = columns;
     return this;
   }
@@ -64,12 +64,12 @@ public class ReceiptPreview {
     this.columns = columns;
   }
 
-  public ReceiptPreview lines(List<@Valid ReceiptPreviewLine> lines) {
+  public PrintLayoutPreview lines(List<@Valid PrintPreviewLine> lines) {
     this.lines = lines;
     return this;
   }
 
-  public ReceiptPreview addLinesItem(ReceiptPreviewLine linesItem) {
+  public PrintLayoutPreview addLinesItem(PrintPreviewLine linesItem) {
     if (this.lines == null) {
       this.lines = new ArrayList<>();
     }
@@ -83,15 +83,15 @@ public class ReceiptPreview {
    */
   @NotNull @Valid 
   @JsonProperty("lines")
-  public List<@Valid ReceiptPreviewLine> getLines() {
+  public List<@Valid PrintPreviewLine> getLines() {
     return lines;
   }
 
-  public void setLines(List<@Valid ReceiptPreviewLine> lines) {
+  public void setLines(List<@Valid PrintPreviewLine> lines) {
     this.lines = lines;
   }
 
-  public ReceiptPreview logoPngBase64(String logoPngBase64) {
+  public PrintLayoutPreview logoPngBase64(String logoPngBase64) {
     this.logoPngBase64 = logoPngBase64;
     return this;
   }
@@ -110,7 +110,7 @@ public class ReceiptPreview {
     this.logoPngBase64 = logoPngBase64;
   }
 
-  public ReceiptPreview logoWidthDots(Integer logoWidthDots) {
+  public PrintLayoutPreview logoWidthDots(Integer logoWidthDots) {
     this.logoWidthDots = logoWidthDots;
     return this;
   }
@@ -137,11 +137,11 @@ public class ReceiptPreview {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    ReceiptPreview receiptPreview = (ReceiptPreview) o;
-    return Objects.equals(this.columns, receiptPreview.columns) &&
-        Objects.equals(this.lines, receiptPreview.lines) &&
-        Objects.equals(this.logoPngBase64, receiptPreview.logoPngBase64) &&
-        Objects.equals(this.logoWidthDots, receiptPreview.logoWidthDots);
+    PrintLayoutPreview printLayoutPreview = (PrintLayoutPreview) o;
+    return Objects.equals(this.columns, printLayoutPreview.columns) &&
+        Objects.equals(this.lines, printLayoutPreview.lines) &&
+        Objects.equals(this.logoPngBase64, printLayoutPreview.logoPngBase64) &&
+        Objects.equals(this.logoWidthDots, printLayoutPreview.logoWidthDots);
   }
 
   @Override
@@ -152,7 +152,7 @@ public class ReceiptPreview {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class ReceiptPreview {\n");
+    sb.append("class PrintLayoutPreview {\n");
     sb.append("    columns: ").append(toIndentedString(columns)).append("\n");
     sb.append("    lines: ").append(toIndentedString(lines)).append("\n");
     sb.append("    logoPngBase64: ").append(toIndentedString(logoPngBase64)).append("\n");

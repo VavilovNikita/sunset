@@ -14,11 +14,11 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * ReceiptPreviewLine
+ * PrintPreviewLine
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
-public class ReceiptPreviewLine {
+public class PrintPreviewLine {
 
   private String text;
 
@@ -30,14 +30,14 @@ public class ReceiptPreviewLine {
 
   private Boolean fontB;
 
-  public ReceiptPreviewLine() {
+  public PrintPreviewLine() {
     super();
   }
 
   /**
    * Constructor with only required parameters
    */
-  public ReceiptPreviewLine(String text, Boolean center, Boolean bold, Integer size, Boolean fontB) {
+  public PrintPreviewLine(String text, Boolean center, Boolean bold, Integer size, Boolean fontB) {
     this.text = text;
     this.center = center;
     this.bold = bold;
@@ -45,7 +45,7 @@ public class ReceiptPreviewLine {
     this.fontB = fontB;
   }
 
-  public ReceiptPreviewLine text(String text) {
+  public PrintPreviewLine text(String text) {
     this.text = text;
     return this;
   }
@@ -64,7 +64,7 @@ public class ReceiptPreviewLine {
     this.text = text;
   }
 
-  public ReceiptPreviewLine center(Boolean center) {
+  public PrintPreviewLine center(Boolean center) {
     this.center = center;
     return this;
   }
@@ -83,7 +83,7 @@ public class ReceiptPreviewLine {
     this.center = center;
   }
 
-  public ReceiptPreviewLine bold(Boolean bold) {
+  public PrintPreviewLine bold(Boolean bold) {
     this.bold = bold;
     return this;
   }
@@ -102,7 +102,7 @@ public class ReceiptPreviewLine {
     this.bold = bold;
   }
 
-  public ReceiptPreviewLine size(Integer size) {
+  public PrintPreviewLine size(Integer size) {
     this.size = size;
     return this;
   }
@@ -121,7 +121,7 @@ public class ReceiptPreviewLine {
     this.size = size;
   }
 
-  public ReceiptPreviewLine fontB(Boolean fontB) {
+  public PrintPreviewLine fontB(Boolean fontB) {
     this.fontB = fontB;
     return this;
   }
@@ -148,12 +148,12 @@ public class ReceiptPreviewLine {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    ReceiptPreviewLine receiptPreviewLine = (ReceiptPreviewLine) o;
-    return Objects.equals(this.text, receiptPreviewLine.text) &&
-        Objects.equals(this.center, receiptPreviewLine.center) &&
-        Objects.equals(this.bold, receiptPreviewLine.bold) &&
-        Objects.equals(this.size, receiptPreviewLine.size) &&
-        Objects.equals(this.fontB, receiptPreviewLine.fontB);
+    PrintPreviewLine printPreviewLine = (PrintPreviewLine) o;
+    return Objects.equals(this.text, printPreviewLine.text) &&
+        Objects.equals(this.center, printPreviewLine.center) &&
+        Objects.equals(this.bold, printPreviewLine.bold) &&
+        Objects.equals(this.size, printPreviewLine.size) &&
+        Objects.equals(this.fontB, printPreviewLine.fontB);
   }
 
   @Override
@@ -164,7 +164,7 @@ public class ReceiptPreviewLine {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class ReceiptPreviewLine {\n");
+    sb.append("class PrintPreviewLine {\n");
     sb.append("    text: ").append(toIndentedString(text)).append("\n");
     sb.append("    center: ").append(toIndentedString(center)).append("\n");
     sb.append("    bold: ").append(toIndentedString(bold)).append("\n");

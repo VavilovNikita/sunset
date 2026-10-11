@@ -15,6 +15,7 @@ import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.PrintDocumentType;
+import com.sunsetbeach.model.PrintLayoutDocument;
 import com.sunsetbeach.model.PrinterCodepage;
 import com.sunsetbeach.model.PrinterDepartment;
 import com.sunsetbeach.model.Zone;
@@ -52,7 +53,7 @@ public class OrderPrintingService {
     private final UserRepository userRepository;
     private final Clock clock;
     private final VatSettingsService vatSettingsService;
-    private final ReceiptSettingsService receiptSettingsService;
+    private final PrintLayoutService printLayoutService;
 
     public OrderPrintingService(
             PrintService printService,
@@ -62,9 +63,9 @@ public class OrderPrintingService {
             UserRepository userRepository,
             Clock clock,
             VatSettingsService vatSettingsService,
-            ReceiptSettingsService receiptSettingsService) {
+            PrintLayoutService printLayoutService) {
         this.clock = clock;
-        this.receiptSettingsService = receiptSettingsService;
+        this.printLayoutService = printLayoutService;
         this.vatSettingsService = vatSettingsService;
         this.printService = printService;
         this.printJobMapper = printJobMapper;
@@ -130,22 +131,21 @@ public class OrderPrintingService {
             PrintDocumentType documentType =
                     printerDepartment == PrinterDepartment.BAR ? PrintDocumentType.BAR_TICKET : PrintDocumentType.KITCHEN_TICKET;
             printService.findActivePrinter(printerDepartment).ifPresent(printer -> {
-                EscPosBuilder b = new EscPosBuilder(printer.getCodepage());
-                b.center(true).bold(true).line("*** VOID ***").bold(false).center(false);
-                b.line(describeLocation(order));
-                b.line(orderLabel(order));
-                b.line("Time: " + TimestampFormat.readableHotel(TimestampFormat.nowUtc(clock), clock));
-                b.divider();
-                b.line(voided.getQuantity() + "x " + (menuItem != null ? menuItem.getName() : "Unknown item"));
-                if (voided.getNote() != null && !voided.getNote().isBlank()) {
-                    b.line("   note: " + voided.getNote());
-                }
-                b.line("Reason: " + voided.getReason());
+                PrintRenderer.Rendered rendered = PrintRenderer.voided(
+                        printLayoutService.style(layoutOf(printerDepartment)),
+                        new PrintRenderer.VoidContent(
+                                new PrintRenderer.OrderHead(
+                                        describeLocation(order),
+                                        orderLabel(order),
+                                        "Time: " + TimestampFormat.readableHotel(TimestampFormat.nowUtc(clock), clock)),
+                                voided.getQuantity() + "x " + (menuItem != null ? menuItem.getName() : "Unknown item"),
+                                voided.getNote(),
+                                voided.getReason()));
                 printService.queue(
                         printer,
                         documentType,
                         (printerDepartment == PrinterDepartment.BAR ? "Bar void" : "Kitchen void") + " — " + orderLabel(order),
-                        b.cutAndBuild());
+                        PrintRenderer.toEscPos(rendered, printer.getCodepage()));
             });
         } catch (Exception e) {
             log.error("printVoidTicket failed for order {}", order.getId(), e);
@@ -161,7 +161,7 @@ public class OrderPrintingService {
             }
             Map<String, MenuItemEntity> menuItemsById = resolveMenuItems(items);
             byte[] payload = buildPriceListPayload(
-                    ReceiptRenderer.Kind.PREBILL, order, items, menuItemsById, printer.getCodepage(), null, null);
+                    PrintRenderer.ReceiptKind.PREBILL, order, items, menuItemsById, printer.getCodepage(), null, null);
             PrintJobEntity job = printService.queueAndAttempt(
                     printer, PrintDocumentType.PREBILL, "Pre-bill — " + orderLabel(order), payload);
             return new PrintAttemptResult(true).job(printJobMapper.toDto(job));
@@ -177,7 +177,7 @@ public class OrderPrintingService {
             printService.findActivePrinter(PrinterDepartment.CASHIER).ifPresent(printer -> {
                 Map<String, MenuItemEntity> menuItemsById = resolveMenuItems(items);
                 byte[] payload = buildPriceListPayload(
-                        ReceiptRenderer.Kind.RECEIPT, order, items, menuItemsById, printer.getCodepage(), payment, booking);
+                        PrintRenderer.ReceiptKind.RECEIPT, order, items, menuItemsById, printer.getCodepage(), payment, booking);
                 String summary = "Guest receipt — " + orderLabel(order) + " (" + describePayment(payment, booking) + ")";
                 printService.queue(printer, PrintDocumentType.GUEST_RECEIPT, summary, payload);
             });
@@ -197,7 +197,7 @@ public class OrderPrintingService {
                 return new PrintAttemptResult(false);
             }
             byte[] payload = buildPriceListPayload(
-                    ReceiptRenderer.Kind.RECEIPT_COPY, order, items, resolveMenuItems(items), printer.getCodepage(), payment, booking);
+                    PrintRenderer.ReceiptKind.RECEIPT_COPY, order, items, resolveMenuItems(items), printer.getCodepage(), payment, booking);
             String summary = "Guest receipt copy — " + orderLabel(order) + " (" + describePayment(payment, booking) + ")";
             PrintJobEntity job = printService.queueAndAttempt(printer, PrintDocumentType.GUEST_RECEIPT, summary, payload);
             return new PrintAttemptResult(true).job(printJobMapper.toDto(job));
@@ -246,26 +246,27 @@ public class OrderPrintingService {
             Map<String, MenuItemEntity> menuItemsById,
             PrinterCodepage codepage,
             PrinterDepartment department) {
-        EscPosBuilder b = new EscPosBuilder(codepage);
-        b.center(true)
-                .bold(true)
-                .line(department == PrinterDepartment.BAR ? "BAR TICKET" : "KITCHEN TICKET")
-                .bold(false)
-                .center(false);
-        b.line(describeLocation(order));
-        b.line(orderLabel(order));
-        b.line("Time: " + TimestampFormat.readableHotel(TimestampFormat.nowUtc(clock), clock));
-        b.line("Waiter: " + resolveWaiterLabel(order.getOpenedByUserId()));
-        b.divider();
+        List<PrintRenderer.TicketItem> ticketItems = new ArrayList<>();
         for (OrderItemEntity item : items) {
             MenuItemEntity menuItem = menuItemsById.get(item.getMenuItemId());
             String name = menuItem != null ? menuItem.getName() : "Unknown item";
-            b.line(item.getQuantity() + "x " + name);
-            if (item.getNote() != null && !item.getNote().isBlank()) {
-                b.line("   note: " + item.getNote());
-            }
+            ticketItems.add(new PrintRenderer.TicketItem(item.getQuantity() + "x " + name, item.getNote()));
         }
-        return b.cutAndBuild();
+        PrintRenderer.Rendered rendered = PrintRenderer.ticket(
+                printLayoutService.style(layoutOf(department)),
+                new PrintRenderer.TicketContent(
+                        new PrintRenderer.OrderHead(
+                                describeLocation(order),
+                                orderLabel(order),
+                                "Time: " + TimestampFormat.readableHotel(TimestampFormat.nowUtc(clock), clock)),
+                        "Waiter: " + resolveWaiterLabel(order.getOpenedByUserId()),
+                        ticketItems,
+                        null));
+        return PrintRenderer.toEscPos(rendered, codepage);
+    }
+
+    private static PrintLayoutDocument layoutOf(PrinterDepartment department) {
+        return department == PrinterDepartment.BAR ? PrintLayoutDocument.BAR_TICKET : PrintLayoutDocument.KITCHEN_TICKET;
     }
 
     /**
@@ -275,21 +276,21 @@ public class OrderPrintingService {
      * admin's {@code ReceiptSettings}; the layout itself is {@link ReceiptRenderer}'s.
      */
     private byte[] buildPriceListPayload(
-            ReceiptRenderer.Kind kind,
+            PrintRenderer.ReceiptKind kind,
             OrderEntity order,
             List<OrderItemEntity> items,
             Map<String, MenuItemEntity> menuItemsById,
             PrinterCodepage codepage,
             PaymentEntity payment,
             BookingEntity booking) {
-        List<ReceiptRenderer.Row> rows = new ArrayList<>();
+        List<PrintRenderer.Row> rows = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
         for (OrderItemEntity item : items) {
             MenuItemEntity menuItem = menuItemsById.get(item.getMenuItemId());
             String name = menuItem != null ? menuItem.getName() : "Unknown item";
             BigDecimal lineTotal = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
             total = total.add(lineTotal);
-            rows.add(new ReceiptRenderer.Row(item.getQuantity() + "x " + name, PriceFormat.asDecimalString(lineTotal)));
+            rows.add(new PrintRenderer.Row(item.getQuantity() + "x " + name, PriceFormat.asDecimalString(lineTotal)));
         }
         // Every price here already includes VAT, so this is a breakdown of the total, not an
         // addition to it - the same figure the ledger and Z410 take out of the same gross.
@@ -306,18 +307,21 @@ public class OrderPrintingService {
                 paymentLines = List.of("Payment: " + paymentMethodLabel(payment.getMethod()));
             }
         }
-        ReceiptRenderer.Content content = new ReceiptRenderer.Content(
-                describeLocation(order),
-                orderLabel(order) + " (ref " + shortId(order.getId()) + ")",
-                "Time: " + TimestampFormat.readableHotel(TimestampFormat.nowUtc(clock), clock),
+        PrintRenderer.ReceiptContent content = new PrintRenderer.ReceiptContent(
+                new PrintRenderer.OrderHead(
+                        describeLocation(order),
+                        orderLabel(order) + " (ref " + shortId(order.getId()) + ")",
+                        "Time: " + TimestampFormat.readableHotel(TimestampFormat.nowUtc(clock), clock)),
                 rows,
                 PriceFormat.asDecimalString(total),
                 "incl. VAT " + vatRate.stripTrailingZeros().toPlainString() + "%",
                 PriceFormat.asDecimalString(RevenueClassification.vatInside(total, vatRate)),
-                paymentLines);
-        ReceiptRenderer.Rendered rendered = ReceiptRenderer.render(
-                receiptSettingsService.style(), kind, content, receiptSettingsService.logoPng());
-        return ReceiptRenderer.toEscPos(rendered, codepage);
+                paymentLines,
+                null);
+        PrintLayoutDocument layout = kind == PrintRenderer.ReceiptKind.PREBILL ? PrintLayoutDocument.PREBILL : PrintLayoutDocument.RECEIPT;
+        PrintRenderer.Rendered rendered =
+                PrintRenderer.receipt(printLayoutService.style(layout), kind, content, printLayoutService.logoPng());
+        return PrintRenderer.toEscPos(rendered, codepage);
     }
 
     /** Also the {@code locationLabel} on a guest's {@code GuestOrderView} - same identifier a printed ticket shows staff. */

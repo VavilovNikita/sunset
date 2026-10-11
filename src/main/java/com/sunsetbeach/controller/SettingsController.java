@@ -4,13 +4,15 @@ import com.sunsetbeach.api.SettingsApi;
 import com.sunsetbeach.model.LifecycleEmailSettings;
 import com.sunsetbeach.model.LifecycleEmailSettingsUpdateInput;
 import com.sunsetbeach.model.PrintAttemptResult;
-import com.sunsetbeach.model.ReceiptPreview;
-import com.sunsetbeach.model.ReceiptSettings;
-import com.sunsetbeach.model.ReceiptSettingsInput;
+import com.sunsetbeach.model.PrintLayout;
+import com.sunsetbeach.model.PrintLayoutDocument;
+import com.sunsetbeach.model.PrintLayoutInput;
+import com.sunsetbeach.model.PrintLayoutPreview;
+import com.sunsetbeach.model.PrintLayouts;
 import com.sunsetbeach.model.VatSettings;
 import com.sunsetbeach.model.VatSettingsUpdateInput;
 import com.sunsetbeach.service.LifecycleEmailSettingsService;
-import com.sunsetbeach.service.ReceiptSettingsService;
+import com.sunsetbeach.service.PrintLayoutService;
 import com.sunsetbeach.service.VatSettingsService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,15 +23,15 @@ public class SettingsController implements SettingsApi {
 
     private final LifecycleEmailSettingsService lifecycleEmailSettingsService;
     private final VatSettingsService vatSettingsService;
-    private final ReceiptSettingsService receiptSettingsService;
+    private final PrintLayoutService printLayoutService;
 
     public SettingsController(
             LifecycleEmailSettingsService lifecycleEmailSettingsService,
             VatSettingsService vatSettingsService,
-            ReceiptSettingsService receiptSettingsService) {
+            PrintLayoutService printLayoutService) {
         this.lifecycleEmailSettingsService = lifecycleEmailSettingsService;
         this.vatSettingsService = vatSettingsService;
-        this.receiptSettingsService = receiptSettingsService;
+        this.printLayoutService = printLayoutService;
     }
 
     @Override
@@ -53,32 +55,32 @@ public class SettingsController implements SettingsApi {
     }
 
     @Override
-    public ResponseEntity<ReceiptSettings> getReceiptSettings() {
-        return ResponseEntity.ok(receiptSettingsService.get());
+    public ResponseEntity<PrintLayouts> getPrintLayouts() {
+        return ResponseEntity.ok(printLayoutService.list());
     }
 
     @Override
-    public ResponseEntity<ReceiptSettings> updateReceiptSettings(ReceiptSettingsInput input) {
-        return ResponseEntity.ok(receiptSettingsService.update(input));
+    public ResponseEntity<PrintLayout> updatePrintLayout(PrintLayoutDocument documentType, PrintLayoutInput input) {
+        return ResponseEntity.ok(printLayoutService.update(documentType, input));
     }
 
     @Override
-    public ResponseEntity<ReceiptPreview> previewReceipt(ReceiptSettingsInput input) {
-        return ResponseEntity.ok(receiptSettingsService.preview(input));
+    public ResponseEntity<PrintLayoutPreview> previewPrintLayout(PrintLayoutDocument documentType, PrintLayoutInput input) {
+        return ResponseEntity.ok(printLayoutService.preview(documentType, input));
     }
 
     @Override
-    public ResponseEntity<ReceiptSettings> uploadReceiptLogo(MultipartFile file) {
-        return ResponseEntity.ok(receiptSettingsService.setLogo(file));
+    public ResponseEntity<PrintLayouts> uploadPrintLogo(MultipartFile file) {
+        return ResponseEntity.ok(printLayoutService.setLogo(file));
     }
 
     @Override
-    public ResponseEntity<ReceiptSettings> deleteReceiptLogo() {
-        return ResponseEntity.ok(receiptSettingsService.removeLogo());
+    public ResponseEntity<PrintLayouts> deletePrintLogo() {
+        return ResponseEntity.ok(printLayoutService.removeLogo());
     }
 
     @Override
-    public ResponseEntity<PrintAttemptResult> testPrintReceipt() {
-        return ResponseEntity.status(201).body(receiptSettingsService.testPrint());
+    public ResponseEntity<PrintAttemptResult> testPrintLayout(PrintLayoutDocument documentType) {
+        return ResponseEntity.status(201).body(printLayoutService.testPrint(documentType));
     }
 }

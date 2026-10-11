@@ -9,9 +9,11 @@ import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.LifecycleEmailSettings;
 import com.sunsetbeach.model.LifecycleEmailSettingsUpdateInput;
 import com.sunsetbeach.model.PrintAttemptResult;
-import com.sunsetbeach.model.ReceiptPreview;
-import com.sunsetbeach.model.ReceiptSettings;
-import com.sunsetbeach.model.ReceiptSettingsInput;
+import com.sunsetbeach.model.PrintLayout;
+import com.sunsetbeach.model.PrintLayoutDocument;
+import com.sunsetbeach.model.PrintLayoutInput;
+import com.sunsetbeach.model.PrintLayoutPreview;
+import com.sunsetbeach.model.PrintLayouts;
 import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.ValidationError;
 import com.sunsetbeach.model.VatSettings;
@@ -40,26 +42,26 @@ public interface SettingsApi {
     }
 
     /**
-     * DELETE /settings/receipt/logo : Remove the receipt logo
-     * Requires &#x60;ADMIN&#x60;. Also turns &#x60;showLogo&#x60; off. Removing a logo that isn&#39;t there is not an error.
+     * DELETE /settings/print-layouts/logo : Remove the logo
+     * Requires &#x60;ADMIN&#x60;. Also turns &#x60;showLogo&#x60; off on every layout. Removing a logo that isn&#39;t there is not an error.
      *
-     * @return The settings, now with &#x60;hasLogo&#x60; false. (status code 200)
+     * @return The layouts, now with &#x60;hasLogo&#x60; false. (status code 200)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      */
     @RequestMapping(
         method = RequestMethod.DELETE,
-        value = "/settings/receipt/logo",
+        value = "/settings/print-layouts/logo",
         produces = { "application/json" }
     )
     
-    default ResponseEntity<ReceiptSettings> deleteReceiptLogo(
+    default ResponseEntity<PrintLayouts> deletePrintLogo(
         
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"hasLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 0, \"showVatLine\" : true, \"totalSize\" : 6, \"receiptTitle\" : \"receiptTitle\", \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 31, \"prebillTitle\" : \"prebillTitle\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"hasLogo\" : true, \"layouts\" : [ { \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -122,26 +124,26 @@ public interface SettingsApi {
 
 
     /**
-     * GET /settings/receipt : Read how the guest receipt and pre-bill look
-     * Requires &#x60;ADMIN&#x60;, like every &#x60;/settings/_*&#x60; route. See &#x60;ReceiptSettings&#x60;. 
+     * GET /settings/print-layouts : Read how every printed document looks
+     * Requires &#x60;ADMIN&#x60;, like every &#x60;/settings/_*&#x60; route. One layout per document (guest receipt, pre-bill, kitchen ticket, bar ticket, Z-report) plus whether the shared logo is uploaded. See &#x60;PrintLayout&#x60;. 
      *
-     * @return The current receipt layout. (status code 200)
+     * @return All five layouts, in the order receipt, pre-bill, kitchen, bar, Z-report. (status code 200)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      */
     @RequestMapping(
         method = RequestMethod.GET,
-        value = "/settings/receipt",
+        value = "/settings/print-layouts",
         produces = { "application/json" }
     )
     
-    default ResponseEntity<ReceiptSettings> getReceiptSettings(
+    default ResponseEntity<PrintLayouts> getPrintLayouts(
         
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"hasLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 0, \"showVatLine\" : true, \"totalSize\" : 6, \"receiptTitle\" : \"receiptTitle\", \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 31, \"prebillTitle\" : \"prebillTitle\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"hasLogo\" : true, \"layouts\" : [ { \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -204,24 +206,26 @@ public interface SettingsApi {
 
 
     /**
-     * POST /settings/receipt/preview : Render a sample receipt from a layout that is not saved yet
-     * Requires &#x60;ADMIN&#x60;. Renders a fixed sample order (two lines, VAT, paid in cash) with the layout in the body and the stored logo, and returns the lines exactly as the printer would lay them out - the same code that builds the real receipt&#39;s bytes produces this, so what wraps, truncates or fits in 32/42/56 columns here is what happens on paper. Nothing is saved and nothing is printed. 
+     * POST /settings/print-layouts/{documentType}/preview : Render a sample document from a layout that is not saved yet
+     * Requires &#x60;ADMIN&#x60;. Renders a fixed sample (a receipt or pre-bill with two lines, VAT and a cash payment; a ticket with two items and a note; a Z-report with sample figures) with the layout in the body and the stored logo, and returns the lines exactly as the printer would lay them out - the same code that builds the real document&#39;s bytes produces this, so what wraps, truncates or fits in the printer&#39;s columns here is what happens on paper. Every sample ends with a \&quot;sample\&quot; line so a test print is never mistaken for a real order. Nothing is saved and nothing is printed. 
      *
-     * @param receiptSettingsInput  (required)
+     * @param documentType  (required)
+     * @param printLayoutInput  (required)
      * @return The rendered sample. (status code 200)
-     *         or Same validation as &#x60;PUT /settings/receipt&#x60;. (status code 400)
+     *         or Same validation as &#x60;PUT /settings/print-layouts/{documentType}&#x60;. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      */
     @RequestMapping(
         method = RequestMethod.POST,
-        value = "/settings/receipt/preview",
+        value = "/settings/print-layouts/{documentType}/preview",
         produces = { "application/json" },
         consumes = { "application/json" }
     )
     
-    default ResponseEntity<ReceiptPreview> previewReceipt(
-         @Valid @RequestBody ReceiptSettingsInput receiptSettingsInput
+    default ResponseEntity<PrintLayoutPreview> previewPrintLayout(
+         @PathVariable("documentType") PrintLayoutDocument documentType,
+         @Valid @RequestBody PrintLayoutInput printLayoutInput
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
@@ -253,21 +257,22 @@ public interface SettingsApi {
 
 
     /**
-     * POST /settings/receipt/test-print : Print a sample receipt on the cashier printer with the saved layout
-     * Requires &#x60;ADMIN&#x60;. The only way to see the real thing - paper width, density and the logo bitmap depend on the printer. Prints the same sample as the preview using the *saved* settings, through the normal print queue (so it appears under print jobs and retries like any other). &#x60;attempted&#x60; is false when there is no active CASHIER printer. 
+     * POST /settings/print-layouts/{documentType}/test-print : Print a sample of one document with its saved layout
+     * Requires &#x60;ADMIN&#x60;. The only way to see the real thing - paper width, density and the logo bitmap depend on the printer. Prints the same sample as the preview using the *saved* layout, on the printer of the department that document goes to (kitchen ticket: KITCHEN, bar ticket: BAR, everything else: CASHIER), through the normal print queue so it appears under print jobs and retries like any other. &#x60;attempted&#x60; is false when that department has no active printer. 
      *
+     * @param documentType  (required)
      * @return The print attempt. (status code 201)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      */
     @RequestMapping(
         method = RequestMethod.POST,
-        value = "/settings/receipt/test-print",
+        value = "/settings/print-layouts/{documentType}/test-print",
         produces = { "application/json" }
     )
     
-    default ResponseEntity<PrintAttemptResult> testPrintReceipt(
-        
+    default ResponseEntity<PrintAttemptResult> testPrintLayout(
+         @PathVariable("documentType") PrintLayoutDocument documentType
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
@@ -343,29 +348,31 @@ public interface SettingsApi {
 
 
     /**
-     * PUT /settings/receipt : Change how the guest receipt and pre-bill look
-     * Requires &#x60;ADMIN&#x60;. Takes effect on the next receipt or pre-bill printed; receipts already queued keep the bytes they were built with (a print job replays its payload). The logo is not part of this body - see &#x60;PUT /settings/receipt/logo&#x60;. Recorded in the audit log (&#x60;RECEIPT_SETTINGS_UPDATED&#x60;) naming the fields that changed; an unchanged PUT records nothing. 
+     * PUT /settings/print-layouts/{documentType} : Change how one printed document looks
+     * Requires &#x60;ADMIN&#x60;. Takes effect on the next such document printed; jobs already queued keep the bytes they were built with (a print job replays its payload). A field the document doesn&#39;t use (a VAT line on a kitchen ticket) is stored but has no effect. Recorded in the audit log (&#x60;RECEIPT_SETTINGS_UPDATED&#x60;, the name predates the other documents) naming the document and the fields that changed; an unchanged PUT records nothing. 
      *
-     * @param receiptSettingsInput  (required)
+     * @param documentType  (required)
+     * @param printLayoutInput  (required)
      * @return The saved layout. (status code 200)
-     *         or A title is empty or over 24 characters, header/footer text has more than 6 lines or a line over 48 characters, or a size/percentage is out of range. (status code 400)
+     *         or The title is empty or over 24 characters, header/footer text has more than 6 lines or a line over 48 characters, or a size/percentage is out of range. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      */
     @RequestMapping(
         method = RequestMethod.PUT,
-        value = "/settings/receipt",
+        value = "/settings/print-layouts/{documentType}",
         produces = { "application/json" },
         consumes = { "application/json" }
     )
     
-    default ResponseEntity<ReceiptSettings> updateReceiptSettings(
-         @Valid @RequestBody ReceiptSettingsInput receiptSettingsInput
+    default ResponseEntity<PrintLayout> updatePrintLayout(
+         @PathVariable("documentType") PrintLayoutDocument documentType,
+         @Valid @RequestBody PrintLayoutInput printLayoutInput
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"hasLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 0, \"showVatLine\" : true, \"totalSize\" : 6, \"receiptTitle\" : \"receiptTitle\", \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 31, \"prebillTitle\" : \"prebillTitle\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -441,29 +448,29 @@ public interface SettingsApi {
 
 
     /**
-     * PUT /settings/receipt/logo : Upload (or replace) the receipt logo
-     * Requires &#x60;ADMIN&#x60;. A JPEG, PNG or WebP (content-sniffed, 8MB cap - &#x60;ImageUploadValidator&#x60;). It is flattened onto white, converted to grayscale and scaled down to at most 576 dots wide and 400 dots high - the most any receipt printer here can use - and stored in that form; the printed bitmap is derived from it at the paper width and &#x60;logoWidthPercent&#x60; in force when printing, dithered to pure black and white. Does not change &#x60;showLogo&#x60;. 
+     * PUT /settings/print-layouts/logo : Upload (or replace) the logo printed on the receipt and pre-bill
+     * Requires &#x60;ADMIN&#x60;. A JPEG or PNG (content-sniffed, 8MB cap - &#x60;ImageUploadValidator&#x60;; WebP is accepted elsewhere in the app but the JVM here has no WebP decoder, so it is a 400). It is flattened onto white, converted to gray and scaled down to at most 576 dots wide and 400 dots high - the most any receipt printer here can use - and stored in that form; the printed bitmap is derived from it at the paper width and &#x60;logoWidthPercent&#x60; of the layout printing it, dithered to pure black and white. Does not change any &#x60;showLogo&#x60;. 
      *
      * @param file  (required)
-     * @return The settings, now with &#x60;hasLogo&#x60; true. (status code 200)
-     *         or Not a JPEG/PNG/WebP, too large, or not decodable as an image. (status code 400)
+     * @return The layouts, now with &#x60;hasLogo&#x60; true. (status code 200)
+     *         or Not a JPEG/PNG, too large, or not decodable as an image. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      */
     @RequestMapping(
         method = RequestMethod.PUT,
-        value = "/settings/receipt/logo",
+        value = "/settings/print-layouts/logo",
         produces = { "application/json" },
         consumes = { "multipart/form-data" }
     )
     
-    default ResponseEntity<ReceiptSettings> uploadReceiptLogo(
+    default ResponseEntity<PrintLayouts> uploadPrintLogo(
          @RequestPart(value = "file", required = true) MultipartFile file
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"hasLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 0, \"showVatLine\" : true, \"totalSize\" : 6, \"receiptTitle\" : \"receiptTitle\", \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 31, \"prebillTitle\" : \"prebillTitle\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"hasLogo\" : true, \"layouts\" : [ { \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

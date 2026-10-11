@@ -61,8 +61,9 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import com.sunsetbeach.model.ReceiptSettings;
-import com.sunsetbeach.model.ReceiptSettingsInput;
+import com.sunsetbeach.model.PrintLayout;
+import com.sunsetbeach.model.PrintLayoutDocument;
+import com.sunsetbeach.model.PrintLayoutInput;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -87,7 +88,7 @@ import org.springframework.transaction.annotation.Transactional;
 class PrintingTests extends AbstractIntegrationTest {
 
     @Autowired
-    private ReceiptSettingsService receiptSettingsService;
+    private PrintLayoutService printLayoutService;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -780,15 +781,20 @@ class PrintingTests extends AbstractIntegrationTest {
         }
     }
 
+    private void changeLayout(PrintLayoutDocument doc, java.util.function.UnaryOperator<PrintLayoutInput> change) {
+        PrintLayout s = printLayoutService.list().getLayouts().stream().filter(l -> l.getDocumentType() == doc).findFirst().orElseThrow();
+        printLayoutService.update(doc, change.apply(new PrintLayoutInput(s.getPaperWidth(), s.getBodyFont(), s.getTitle(), s.getTitleSize(),
+                s.getHeaderText(), s.getHeaderBold(), s.getFooterText(), s.getShowLogo(), s.getLogoWidthPercent(), s.getShowTime(),
+                s.getItemSize(), s.getShowLocation(), s.getLocationSize(), s.getShowOrderNumber(), s.getShowWaiter(),
+                s.getShowItemNotes(), s.getShowVatLine(), s.getShowPaymentMethod(), s.getTotalSize(), s.getTotalBold())));
+    }
+
     @Test
     void printReceipt_followsTheAdminsReceiptLayout() throws IOException {
         try (FakePrinter fake = new FakePrinter()) {
             persistPrinter(PrinterDepartment.CASHIER, fake.port());
-            ReceiptSettings current = receiptSettingsService.get();
-            receiptSettingsService.update(new ReceiptSettingsInput(
-                    current.getPaperWidth(), current.getBodyFont(), "TAX INVOICE", current.getPrebillTitle(),
-                    ReceiptSettingsInput.TitleSizeEnum.NUMBER_1, ReceiptSettingsInput.TotalSizeEnum.NUMBER_1, false,
-                    "Sunset Beach Resort", true, "Thank you!", false, true, false, true, false, 60));
+            changeLayout(PrintLayoutDocument.RECEIPT, in -> in.title("TAX INVOICE").headerText("Sunset Beach Resort")
+                    .footerText("Thank you!").showOrderNumber(false).showVatLine(false));
             Order order = orderService.create(new OrderCreateInput(), cashier.getId());
             orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 2)));
             shiftService.open(cashier.getId(), new ShiftOpenInput());
@@ -800,6 +806,26 @@ class PrintingTests extends AbstractIntegrationTest {
             assertThat(text).contains("Sunset Beach Resort").contains("TAX INVOICE - COPY").contains("Thank you!")
                     .contains("2x Caesar Salad").contains("Payment: Cash");
             assertThat(text).doesNotContain("GUEST RECEIPT").doesNotContain("(ref").doesNotContain("incl. VAT");
+        }
+    }
+
+    @Test
+    void kitchenAndBarTickets_followTheirOwnLayouts() throws IOException {
+        try (FakePrinter kitchen = new FakePrinter(); FakePrinter bar = new FakePrinter()) {
+            persistPrinter(PrinterDepartment.KITCHEN, kitchen.port());
+            persistPrinter(PrinterDepartment.BAR, bar.port());
+            changeLayout(PrintLayoutDocument.KITCHEN_TICKET, in -> in.title("COOK THIS").showWaiter(false).itemSize(2));
+            Order order = orderService.create(new OrderCreateInput(), cashier.getId());
+            orderService.addItems(order.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1), new OrderItemInput(barItem.getId(), 1)));
+            sendOrder(order.getId());
+
+            List<PrintJobEntity> jobs = jobsFor(order.getId());
+            String kitchenText = decode(jobs.stream().filter(j -> j.getDocumentType() == PrintDocumentType.KITCHEN_TICKET).findFirst().orElseThrow());
+            String barText = decode(jobs.stream().filter(j -> j.getDocumentType() == PrintDocumentType.BAR_TICKET).findFirst().orElseThrow());
+
+            assertThat(kitchenText).contains("COOK THIS").doesNotContain("KITCHEN TICKET").doesNotContain("Waiter:").contains("1x Caesar Salad");
+            assertThat(kitchenText).contains("\u001d!\u0011"); // GS ! 0x11 - double-size items
+            assertThat(barText).contains("BAR TICKET").contains("Waiter:").doesNotContain("\u001d!\u0011");
         }
     }
 

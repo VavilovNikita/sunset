@@ -14,7 +14,7 @@ class ReceiptLogoTests {
 
     @Test
     void normalize_scalesDownToThePrinterMaximum_keepingProportions() throws Exception {
-        BufferedImage stored = ImageIO.read(new ByteArrayInputStream(ReceiptLogo.normalize(ReceiptRendererTests.png(2000, 1000, 0x336699))));
+        BufferedImage stored = ImageIO.read(new ByteArrayInputStream(ReceiptLogo.normalize(PrintRendererTests.png(2000, 1000, 0x336699))));
 
         assertThat(stored.getWidth()).isEqualTo(576);
         assertThat(stored.getHeight()).isEqualTo(288);
@@ -22,7 +22,7 @@ class ReceiptLogoTests {
 
     @Test
     void normalize_neverUpscalesASmallLogo() throws Exception {
-        BufferedImage stored = ImageIO.read(new ByteArrayInputStream(ReceiptLogo.normalize(ReceiptRendererTests.png(120, 60, 0x000000))));
+        BufferedImage stored = ImageIO.read(new ByteArrayInputStream(ReceiptLogo.normalize(PrintRendererTests.png(120, 60, 0x000000))));
 
         assertThat(stored.getWidth()).isEqualTo(120);
     }
@@ -41,7 +41,7 @@ class ReceiptLogoTests {
 
     @Test
     void blackLogo_printsEveryDot() throws Exception {
-        ReceiptLogo.Bitmap bitmap = ReceiptLogo.toBitmap(ReceiptLogo.normalize(ReceiptRendererTests.png(100, 50, 0x000000)), 384, 50);
+        ReceiptLogo.Bitmap bitmap = ReceiptLogo.toBitmap(ReceiptLogo.normalize(PrintRendererTests.png(100, 50, 0x000000)), 384, 50);
 
         assertThat(bitmap.widthDots()).isEqualTo(192);
         assertThat(bitmap.packed()).containsOnly((byte) 0xFF);
@@ -49,7 +49,7 @@ class ReceiptLogoTests {
 
     @Test
     void widthIsAMultipleOfEight_andHeightFollowsTheAspectRatio() throws Exception {
-        ReceiptLogo.Bitmap bitmap = ReceiptLogo.toBitmap(ReceiptLogo.normalize(ReceiptRendererTests.png(300, 150, 0x808080)), 576, 33);
+        ReceiptLogo.Bitmap bitmap = ReceiptLogo.toBitmap(ReceiptLogo.normalize(PrintRendererTests.png(300, 150, 0x808080)), 576, 33);
 
         assertThat(bitmap.widthDots() % 8).isZero();
         assertThat(bitmap.heightDots()).isBetween(bitmap.widthDots() / 2 - 1, bitmap.widthDots() / 2 + 1);
@@ -58,7 +58,7 @@ class ReceiptLogoTests {
 
     @Test
     void midGray_isDitheredToAMixOfBlackAndWhite() throws Exception {
-        ReceiptLogo.Bitmap bitmap = ReceiptLogo.toBitmap(ReceiptLogo.normalize(ReceiptRendererTests.png(200, 100, 0x808080)), 576, 50);
+        ReceiptLogo.Bitmap bitmap = ReceiptLogo.toBitmap(ReceiptLogo.normalize(PrintRendererTests.png(200, 100, 0x808080)), 576, 50);
 
         long black = 0;
         for (byte b : bitmap.packed()) black += Integer.bitCount(b & 0xFF);

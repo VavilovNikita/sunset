@@ -20,6 +20,7 @@ import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.PrintDocumentType;
+import com.sunsetbeach.model.PrintLayoutDocument;
 import com.sunsetbeach.model.PrinterCodepage;
 import com.sunsetbeach.model.PrinterDepartment;
 import com.sunsetbeach.model.Role;
@@ -82,6 +83,8 @@ public class ShiftService {
     private final AuditLogService auditLogService;
     private final Clock clock;
 
+    private final PrintLayoutService printLayoutService;
+
     public ShiftService(
             ShiftRepository shiftRepository,
             OrderRepository orderRepository,
@@ -96,8 +99,10 @@ public class ShiftService {
             ShiftMapper shiftMapper,
             PrintService printService,
             AuditLogService auditLogService,
+            PrintLayoutService printLayoutService,
             Clock clock) {
         this.clock = clock;
+        this.printLayoutService = printLayoutService;
         this.shiftRepository = shiftRepository;
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
@@ -245,32 +250,29 @@ public class ShiftService {
         BigDecimal expectedCash = expectedCash(shift, totals.cash(), folio);
         BigDecimal closingCounted = shift.getClosingCashCounted();
 
-        EscPosBuilder b = new EscPosBuilder(codepage);
-        b.center(true).bold(true).line("Z-REPORT").bold(false).center(false);
-        b.line("Shift #" + shortId(shift.getId()));
-        b.line("Closed: " + TimestampFormat.readableHotel(shift.getClosedAt(), clock));
-        b.divider();
-        b.twoColumn("Cash", PriceFormat.asDecimalString(totals.cash()));
-        b.twoColumn("Card", PriceFormat.asDecimalString(totals.card()));
-        b.twoColumn("Other", PriceFormat.asDecimalString(totals.other()));
-        b.twoColumn("Room charge (folio, not received)", PriceFormat.asDecimalString(totals.roomCharge()));
-        b.divider();
-        b.twoColumn("Received total", PriceFormat.asDecimalString(totals.receivedTotal()));
-        b.twoColumn("Payments", String.valueOf(totals.paymentCount()));
-        if (!folio.isEmpty()) {
-            b.divider();
-            b.twoColumn("Folio cash (reception)", PriceFormat.asDecimalString(folio.cash()));
-            b.twoColumn("Folio card", PriceFormat.asDecimalString(folio.card()));
-            b.twoColumn("Folio other", PriceFormat.asDecimalString(folio.other()));
-        }
-        b.divider();
-        b.twoColumn("Opening float", PriceFormat.asDecimalString(openingFloat));
-        b.twoColumn("Expected cash", PriceFormat.asDecimalString(expectedCash));
-        b.twoColumn("Counted cash", closingCounted != null ? PriceFormat.asDecimalString(closingCounted) : "—");
-        b.twoColumn(
-                "Discrepancy",
-                closingCounted != null ? PriceFormat.asDecimalString(closingCounted.subtract(expectedCash)) : "—");
-        return b.cutAndBuild();
+        PrintRenderer.Rendered rendered = PrintRenderer.report(
+                printLayoutService.style(PrintLayoutDocument.Z_REPORT),
+                ZReportContent.build(
+                        shortId(shift.getId()),
+                        TimestampFormat.readableHotel(shift.getClosedAt(), clock),
+                        PriceFormat.asDecimalString(totals.cash()),
+                        PriceFormat.asDecimalString(totals.card()),
+                        PriceFormat.asDecimalString(totals.other()),
+                        PriceFormat.asDecimalString(totals.roomCharge()),
+                        PriceFormat.asDecimalString(totals.receivedTotal()),
+                        String.valueOf(totals.paymentCount()),
+                        folio.isEmpty()
+                                ? null
+                                : new ZReportContent.Folio(
+                                        PriceFormat.asDecimalString(folio.cash()),
+                                        PriceFormat.asDecimalString(folio.card()),
+                                        PriceFormat.asDecimalString(folio.other())),
+                        PriceFormat.asDecimalString(openingFloat),
+                        PriceFormat.asDecimalString(expectedCash),
+                        closingCounted != null ? PriceFormat.asDecimalString(closingCounted) : "—",
+                        closingCounted != null ? PriceFormat.asDecimalString(closingCounted.subtract(expectedCash)) : "—",
+                        null));
+        return PrintRenderer.toEscPos(rendered, codepage);
     }
 
     @Transactional(readOnly = true)

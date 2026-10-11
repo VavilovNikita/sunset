@@ -16,19 +16,25 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * The printer's own built-in font for body text - A is the larger, B the smaller and denser. A thermal printer has no arbitrary fonts: these two, magnified 1x or 2x and optionally bold, are everything ESC/POS offers. (Thai text uses the printer's Thai code page, in whichever of the two the printer renders it.) 
+ * The documents whose look is configurable. `RECEIPT` is the guest receipt (and its reprint, titled with \" - COPY\" appended), `PREBILL` the pre-bill, `KITCHEN_TICKET` and `BAR_TICKET` the order tickets (their void tickets use the same layout with the fixed title \"*** VOID ***\"), `Z_REPORT` the shift-close report. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
-public enum ReceiptBodyFont {
+public enum PrintLayoutDocument {
   
-  A("A"),
+  RECEIPT("RECEIPT"),
   
-  B("B");
+  PREBILL("PREBILL"),
+  
+  KITCHEN_TICKET("KITCHEN_TICKET"),
+  
+  BAR_TICKET("BAR_TICKET"),
+  
+  Z_REPORT("Z_REPORT");
 
   private String value;
 
-  ReceiptBodyFont(String value) {
+  PrintLayoutDocument(String value) {
     this.value = value;
   }
 
@@ -43,8 +49,8 @@ public enum ReceiptBodyFont {
   }
 
   @JsonCreator
-  public static ReceiptBodyFont fromValue(String value) {
-    for (ReceiptBodyFont b : ReceiptBodyFont.values()) {
+  public static PrintLayoutDocument fromValue(String value) {
+    for (PrintLayoutDocument b : PrintLayoutDocument.values()) {
       if (b.value.equals(value)) {
         return b;
       }
