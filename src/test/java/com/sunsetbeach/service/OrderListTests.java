@@ -90,14 +90,19 @@ class OrderListTests extends AbstractIntegrationTest {
         return orderRepository.findById(saved.getId()).orElseThrow();
     }
 
+    /** A Bangkok wall-clock moment as the UTC wall-clock createdAt holds - a day is a hotel day (Asia/Bangkok). */
+    private static LocalDateTime bangkok(LocalDate day, int hour, int minute) {
+        return day.atTime(hour, minute).atZone(java.time.ZoneId.of("Asia/Bangkok")).withZoneSameInstant(java.time.ZoneOffset.UTC).toLocalDateTime();
+    }
+
     @Test
     void list_filtersByDateRange_boundedOnBothEndsInclusive() {
-        LocalDate from = LocalDate.now().minusDays(5);
-        LocalDate to = LocalDate.now().minusDays(3);
-        OrderEntity beforeRange = persistOrder(staffOne, from.minusDays(1).atTime(12, 0));
-        OrderEntity onFromDate = persistOrder(staffOne, from.atTime(0, 30));
-        OrderEntity onToDate = persistOrder(staffOne, to.atTime(23, 30));
-        OrderEntity afterRange = persistOrder(staffOne, to.plusDays(1).atTime(12, 0));
+        LocalDate from = LocalDate.of(2026, 3, 10);
+        LocalDate to = LocalDate.of(2026, 3, 12);
+        OrderEntity beforeRange = persistOrder(staffOne, bangkok(from.minusDays(1), 23, 30));
+        OrderEntity onFromDate = persistOrder(staffOne, bangkok(from, 0, 30));
+        OrderEntity onToDate = persistOrder(staffOne, bangkok(to, 23, 30));
+        OrderEntity afterRange = persistOrder(staffOne, bangkok(to.plusDays(1), 0, 30));
 
         List<String> ids = orderService.list(null, null, from, to, null, null).stream()
                 .map(Order::getId)
@@ -142,6 +147,25 @@ class OrderListTests extends AbstractIntegrationTest {
         Order paid = orderService.getById(openedLongAgoPaidInRange.getId());
         assertThat(paid.getClosedAt().get().toLocalDateTime()).isEqualTo(LocalDateTime.of(2026, 2, 10, 13, 0));
         assertThat(orderService.getById(stillOpen.getId()).getClosedAt().get()).isNull();
+    }
+
+    /** The history by close date follows the same Bangkok day as the cash reports: paid at 02:00 Bangkok is that Bangkok day's, not the UTC day before's. */
+    @Test
+    void list_closedDateBasis_aPaymentAt0200Bangkok_belongsToThatBangkokDay() {
+        LocalDate day = LocalDate.of(2026, 4, 5);
+        ShiftEntity shift = new ShiftEntity();
+        shift.setOpenedByUserId(staffOne.getId());
+        shift.setOpeningCashFloat(BigDecimal.ZERO);
+        shift = shiftRepository.saveAndFlush(shift);
+        OrderEntity order = persistOrder(staffOne, bangkok(day.minusDays(1), 20, 0));
+        pay(order, shift, bangkok(day, 2, 0));
+
+        List<String> onTheDay = orderService.list(null, null, day, day, OrderDateBasis.CLOSED, null).stream().map(Order::getId).toList();
+        List<String> theDayBefore =
+                orderService.list(null, null, day.minusDays(1), day.minusDays(1), OrderDateBasis.CLOSED, null).stream().map(Order::getId).toList();
+
+        assertThat(onTheDay).contains(order.getId());
+        assertThat(theDayBefore).doesNotContain(order.getId());
     }
 
     private void pay(OrderEntity order, ShiftEntity shift, LocalDateTime paidAt) {

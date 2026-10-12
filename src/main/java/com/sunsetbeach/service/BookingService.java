@@ -109,6 +109,7 @@ public class BookingService {
     private final OverstayRule overstayRule;
     private final ShiftRepository shiftRepository;
     private final BookingFolioCalculator folioCalculator;
+    private final SpaBookingCancellationService spaBookingCancellation;
 
     public BookingService(
             RoomRepository roomRepository,
@@ -129,9 +130,11 @@ public class BookingService {
             OverstayRule overstayRule,
             ShiftRepository shiftRepository,
             BookingFolioCalculator folioCalculator,
+            SpaBookingCancellationService spaBookingCancellation,
             Clock clock) {
         this.clock = clock;
         this.folioCalculator = folioCalculator;
+        this.spaBookingCancellation = spaBookingCancellation;
         this.shiftRepository = shiftRepository;
         this.overstayRule = overstayRule;
         this.roomRepository = roomRepository;
@@ -393,6 +396,7 @@ public class BookingService {
         BookingEntity booking = bookingRepository.findByIdForUpdate(id).orElseThrow(() -> new NotFoundException("Booking not found"));
         BookingStatus oldStatus = booking.getStatus();
         String oldPaymentNote = booking.getPaymentNote();
+        requireNotArrivedToCancel(booking, input.getStatus());
         // PAID never writes money off on its own: what is still owed has to arrive with the request
         // as a payment, recorded here in the same transaction as the status change (see settleForPaid).
         if (input.getStatus() == BookingStatus.PAID && oldStatus != BookingStatus.PAID) {
@@ -455,6 +459,13 @@ public class BookingService {
             ledgerService.reverseBookingSettlement(saved);
         }
 
+        // A guest who is not coming must not keep a therapist and a spa table: same transaction, so
+        // a cancellation never commits with the treatments still booked. Paid spa is left alone and
+        // comes back as the response's warning.
+        String spaWarning = oldStatus != BookingStatus.CANCELLED && saved.getStatus() == BookingStatus.CANCELLED
+                ? spaBookingCancellation.onBookingCancelled(saved)
+                : null;
+
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         boolean statusChanged = oldStatus != saved.getStatus();
         // Only on a real status change - otherwise correcting the channel or payment note on a
@@ -504,7 +515,28 @@ public class BookingService {
                             + " in " + room.getName());
         }
 
-        return bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
+        Booking dto = bookingMapper.toDto(saved, room, findRoomUnit(saved.getRoomUnitId()), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
+        dto.setWarning(spaWarning);
+        return dto;
+    }
+
+    /**
+     * A guest who has arrived is not cancelled: once {@code CHECKED_IN} the stay is shortened and
+     * the guest checked out, and once {@code CHECKED_OUT} it happened. Allowing it would drop the
+     * room revenue and the folio of a stay that was lived, and (for a cancelled booking) release
+     * a room that has a guest in it. Only a real change into {@code CANCELLED} is refused -
+     * re-sending it to a booking that is already cancelled is a no-op, as it always was.
+     */
+    private static void requireNotArrivedToCancel(BookingEntity booking, BookingStatus requested) {
+        if (requested != BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.CANCELLED) {
+            return;
+        }
+        if (booking.getOccupancyStatus() == OccupancyStatus.CHECKED_IN) {
+            throw new ConflictException("This guest is checked in, so the booking can't be cancelled. Check the guest out (shortening the stay if they leave early) instead.");
+        }
+        if (booking.getOccupancyStatus() == OccupancyStatus.CHECKED_OUT) {
+            throw new ConflictException("This guest has already checked out, so the booking can't be cancelled.");
+        }
     }
 
     private static String partySize(int adults, int children) {
@@ -595,7 +627,13 @@ public class BookingService {
     public Booking getById(String id) {
         BookingEntity booking = bookingRepository.findById(id).orElseThrow(() -> new NotFoundException("Booking not found"));
         RoomEntity room = roomRepository.findById(booking.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
-        return bookingMapper.toDto(booking, room, findRoomUnit(booking.getRoomUnitId()), findGuest(booking.getGuestId()), loadSegments(id));
+        Booking dto = bookingMapper.toDto(booking, room, findRoomUnit(booking.getRoomUnitId()), findGuest(booking.getGuestId()), loadSegments(id));
+        // Not stored: read fresh each time, so the warning stays until staff have dealt with the
+        // paid spa appointment and goes away by itself afterwards.
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            dto.setWarning(spaBookingCancellation.paidLeftBehind(id));
+        }
+        return dto;
     }
 
     /** A guest's full stay history for {@code GET /guests/{id}} - see {@link GuestService#getDetail}. Same bulk-load shape as {@link #list}. */

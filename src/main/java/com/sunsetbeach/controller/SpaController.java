@@ -74,6 +74,11 @@ public class SpaController implements SpaApi {
     }
 
     @Override
+    public ResponseEntity<SpaAppointment> billMissingSpaTreatments(String id) {
+        return ResponseEntity.ok(spaAppointmentService.billMissingTreatments(id, callerId()));
+    }
+
+    @Override
     public ResponseEntity<SpaAppointment> swapSpaAppointmentTable(String id, SwapSpaAppointmentTableInput swapSpaAppointmentTableInput) {
         return ResponseEntity.ok(spaAppointmentService.swapTables(id, swapSpaAppointmentTableInput, callerId()));
     }

@@ -27,6 +27,7 @@ import com.sunsetbeach.security.StaffPrincipal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -88,8 +89,8 @@ public class NightAuditService {
         String iso = day.toString();
         return new NightAudit(
                 iso,
-                toBookingDtos(missedArrivals(day)),
-                toBookingDtos(missedDepartures(day)),
+                toBookingDtos(missedArrivals(day), null),
+                toBookingDtos(missedDepartures(day), day),
                 unpaidBalances(day),
                 reportService.occupancy(iso, iso).getTotal(),
                 nightAuditRepository.findByDate(day).map(this::toClosureDto).orElse(null));
@@ -141,7 +142,7 @@ public class NightAuditService {
         List<BookingEntity> candidates = bookingRepository.findStayOver(day, BookingStatus.CANCELLED, OccupancyStatus.CHECKED_OUT, OccupancyStatus.CHECKED_IN);
         Map<String, BookingFolioCalculator.FolioBreakdown> folios = folioCalculator.breakdowns(candidates);
         List<BookingEntity> owing = candidates.stream().filter(b -> folios.get(b.getId()).balanceDue().signum() > 0).toList();
-        List<NightAuditBooking> rows = toBookingDtos(owing);
+        List<NightAuditBooking> rows = toBookingDtos(owing, null);
         for (int i = 0; i < rows.size(); i++) {
             rows.get(i).balanceDue(PriceFormat.asDecimalString(folios.get(owing.get(i).getId()).balanceDue()));
         }
@@ -167,18 +168,37 @@ public class NightAuditService {
     }
 
     /** Room type and unit names in two batched lookups, not a lazy load per booking. */
-    private List<NightAuditBooking> toBookingDtos(List<BookingEntity> bookings) {
+    private List<NightAuditBooking> toBookingDtos(List<BookingEntity> bookings, LocalDate overstayDay) {
         Map<String, String> roomNames = roomRepository.findAllById(bookings.stream().map(BookingEntity::getRoomId).distinct().toList())
                 .stream().collect(Collectors.toMap(RoomEntity::getId, RoomEntity::getName));
         Map<String, String> unitLabels = roomUnitRepository.findAllById(
                         bookings.stream().map(BookingEntity::getRoomUnitId).filter(Objects::nonNull).distinct().toList())
                 .stream().collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
-        return bookings.stream().map(b -> toBookingDto(b, roomNames.get(b.getRoomId()), unitLabels.get(b.getRoomUnitId()))).toList();
+        return bookings.stream()
+                .map(b -> toBookingDto(b, roomNames.get(b.getRoomId()), unitLabels.get(b.getRoomUnitId()), overstayDay == null ? 0 : unpaidOverstayNights(b, overstayDay)))
+                .toList();
     }
 
-    private static NightAuditBooking toBookingDto(BookingEntity booking, String roomName, String unitLabel) {
+    /**
+     * The nights {@link OverstayRule} counts for a guest still checked in past {@code checkOut},
+     * from {@code checkOut} through the reviewed {@code day}, both ends included - one more than
+     * the "N days overdue" next to it, because the departure night itself was also stayed unpaid.
+     * Zero for a guest due out on or after {@code day}, and for anyone not checked in. Computed
+     * against the reviewed date rather than today so a past date shows what it would have shown.
+     */
+    static int unpaidOverstayNights(BookingEntity booking, LocalDate day) {
+        if (booking.getStatus() == BookingStatus.CANCELLED
+                || booking.getOccupancyStatus() != OccupancyStatus.CHECKED_IN
+                || !booking.getCheckOut().isBefore(day)) {
+            return 0;
+        }
+        return Math.toIntExact(ChronoUnit.DAYS.between(booking.getCheckOut(), day)) + 1;
+    }
+
+    private static NightAuditBooking toBookingDto(BookingEntity booking, String roomName, String unitLabel, int unpaidOverstayNights) {
         return new NightAuditBooking(
                 booking.getId(),
+                unpaidOverstayNights,
                 booking.getGuestName(),
                 roomName,
                 unitLabel,

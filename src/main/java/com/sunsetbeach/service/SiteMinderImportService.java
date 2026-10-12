@@ -14,6 +14,7 @@ import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingStatusInput;
+import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.SiteMinderImportAction;
 import com.sunsetbeach.model.SiteMinderImportResult;
 import com.sunsetbeach.model.SiteMinderReservationInput;
@@ -182,6 +183,15 @@ public class SiteMinderImportService {
             // cancellations by the booking's updatedAt, so touching an already-cancelled booking
             // on every poll would move its cancellation to whatever day the poll ran.
             return unchanged(booking.getId());
+        }
+        // The staff path refuses to cancel a guest who has arrived (409), and an import must not
+        // fail the poll on every cycle over it - report it and leave the decision to a person.
+        if (booking.getOccupancyStatus() == OccupancyStatus.CHECKED_IN || booking.getOccupancyStatus() == OccupancyStatus.CHECKED_OUT) {
+            log.warn("SiteMinder reservation {} is cancelled in SiteMinder but its booking {} is already {} here - not cancelled",
+                    r.reference(), booking.getId(), booking.getOccupancyStatus());
+            return skipped(booking.getId(), "Reservation " + r.reference() + " is cancelled in SiteMinder but the guest is already "
+                    + (booking.getOccupancyStatus() == OccupancyStatus.CHECKED_IN ? "checked in" : "checked out") + " here. "
+                    + "A booking of a guest who has arrived is never cancelled by an import - a person needs to look at it.");
         }
         bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CANCELLED));
         recordLastChangedAt(booking.getId(), r.lastChangedAt());

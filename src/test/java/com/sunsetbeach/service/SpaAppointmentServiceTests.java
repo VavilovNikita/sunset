@@ -300,11 +300,21 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
         assertThat(result.getWarning().get()).isNull();
     }
 
+    /**
+     * A guest in the house may be booked past their stay (they may be about to extend) and only gets
+     * the warning; a guest who has not arrived is refused outside the stay - see
+     * {@code SpaServerRulesTests}. The guest is marked in the house directly: the date is far in the
+     * future, and check-in is (rightly) refused before the arrival date.
+     */
     @Test
-    void create_dateAfterCheckOut_warnsButSucceeds() {
+    void create_dateAfterCheckOut_forAGuestInTheHouse_warnsButSucceeds() {
         LocalDate checkIn = LocalDate.now().plusDays(330);
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = createBooking(checkIn, checkOut);
+        bookingRepository.findById(booking.getId()).ifPresent(b -> {
+            b.setOccupancyStatus(com.sunsetbeach.model.OccupancyStatus.CHECKED_IN);
+            bookingRepository.saveAndFlush(b);
+        });
         TableEntity table = createSpaTable();
         MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
         UserEntity therapist = createTherapist();

@@ -117,6 +117,40 @@ class MaintenanceTaskBlockLiftingTests extends AbstractIntegrationTest {
         assertThat(isBlockedToday(today)).isFalse();
     }
 
+    /**
+     * The reported case: a block that already ended (5-9 Oct) on a task closed afterwards (10th or
+     * later) came out as 5-10 Oct, taking the room off sale again for a night that had been
+     * sellable. Closing a task only ever shortens its block.
+     */
+    @Test
+    void expiredBlock_closedLater_isNeverExtended_whetherItEndedYesterdayOrEarlier() {
+        LocalDate today = LocalDate.now(clock);
+        // Ended yesterday: "yesterday" is exactly its toDate - nothing to shorten, nothing to extend.
+        MaintenanceTask endedYesterday = createTaskWithBlock(today.minusDays(5), today.minusDays(1));
+        // Ended well before yesterday: plain "yesterday" would have pushed it forward to today-1.
+        MaintenanceTask endedEarlier = createTaskWithBlock(today.minusDays(9), today.minusDays(4));
+
+        String yesterdayBlockId = maintenanceTaskService.updateStatus(endedYesterday.getId(), MaintenanceTaskStatus.DONE).getBlockId().get();
+        String earlierBlockId = maintenanceTaskService.updateStatus(endedEarlier.getId(), MaintenanceTaskStatus.DONE).getBlockId().get();
+
+        assertThat(roomUnitBlockRepository.findById(yesterdayBlockId).orElseThrow().getToDate()).isEqualTo(today.minusDays(1));
+        assertThat(roomUnitBlockRepository.findById(earlierBlockId).orElseThrow().getToDate()).isEqualTo(today.minusDays(4));
+        assertThat(roomUnitBlockRepository.findById(earlierBlockId).orElseThrow().getFromDate()).isEqualTo(today.minusDays(9));
+        assertThat(isBlockedToday(today)).isFalse();
+    }
+
+    @Test
+    void blockThatHasNotStartedYet_isDeleted_neverWrittenBackwards() {
+        LocalDate today = LocalDate.now(clock);
+        MaintenanceTask task = createTaskWithBlock(today.plusDays(3), today.plusDays(6));
+        String blockId = task.getBlockId().get();
+
+        MaintenanceTask closed = maintenanceTaskService.updateStatus(task.getId(), MaintenanceTaskStatus.DONE);
+
+        assertThat(closed.getBlockId().get()).isNull();
+        assertThat(roomUnitBlockRepository.findById(blockId)).isEmpty();
+    }
+
     @Test
     void sameDayCase_blockCreatedAndClosedTheSameDay_isDeletedOutright_andRoomIsAvailableTodayPerAvailabilityEngine() {
         LocalDate today = LocalDate.now(clock);

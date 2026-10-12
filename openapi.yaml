@@ -2018,12 +2018,14 @@ paths:
         function half is not expressed as a role check: `FUNCTION_ENGINEER` is its own authority,
         unrelated to `RoleHierarchy` (see `SecurityConfig#roleHierarchy`'s own note on this).
         Forward-only - skipping `IN_PROGRESS` is allowed, going backward or repeating the current
-        status is not. Transitioning to `DONE`, when this task has a block, moves that block's
-        `toDate` to yesterday (today is still covered by an inclusive `toDate`, so the room must
-        not return to sale until the day after it's actually fixed) - or deletes the block
-        outright if yesterday is before the block's own `fromDate` (created and fixed the same
-        day, so it never covered a usable night). If the block was already removed by other means,
-        closing succeeds and touches no block.
+        status is not. Transitioning to `DONE`, when this task has a block, only ever shortens
+        that block: its `toDate` becomes `min(current toDate, yesterday)` (today is still covered
+        by an inclusive `toDate`, so the room must not return to sale until the day after it's
+        actually fixed) - never later than it already was, so closing a task whose block has
+        already expired (5-9 Oct, closed on the 11th) leaves it at 9 Oct. The block is deleted
+        outright if that date is before the block's own `fromDate` (created and fixed the same
+        day, or not started yet, so it never covered a usable night). If the block was already
+        removed by other means, closing succeeds and touches no block.
       requestBody:
         required: true
         content:
@@ -2300,6 +2302,15 @@ paths:
         of `channel`/`purpose`/`adults`/`children` is independent: omitted leaves it as it is,
         present sets it. Sends a guest-facing status-change email when the status actually changes
         to PAID or CANCELLED - never for a request that only touches the other fields.
+
+        A guest who has arrived is not cancelled: a change into `CANCELLED` while `occupancyStatus`
+        is `CHECKED_IN` or `CHECKED_OUT` is a 409 (check the guest out, or shorten the stay, instead).
+        Re-sending `CANCELLED` to a booking that is already cancelled is not a change and stays allowed.
+
+        Cancelling also cleans up the guest's spa: every `BOOKED` spa appointment of the booking is
+        cancelled, and the still-unpaid spa lines on the orders linked to them are taken off (an
+        order left with no lines is cancelled). Anything already paid is left exactly as it is, and
+        the response then carries `Booking.warning` naming it, so staff can refund and cancel by hand.
       requestBody:
         required: true
         content:
@@ -2308,7 +2319,7 @@ paths:
               $ref: "#/components/schemas/BookingStatusInput"
       responses:
         "200":
-          description: Updated booking.
+          description: Updated booking (with `warning` set when a paid spa appointment was left untouched).
           content:
             application/json:
               schema:
@@ -2333,7 +2344,8 @@ paths:
           description: >
             A change into `PAID` while money is still owed and the request carries no payment (or
             one for a different amount) - `BookingStatusInput.payment`. `PAID` never writes money
-            off on its own.
+            off on its own. Also: a change into `CANCELLED` for a booking that is `CHECKED_IN` or
+            `CHECKED_OUT`.
           content:
             application/json:
               schema:
@@ -4074,6 +4086,13 @@ paths:
         slot - enforced by a database exclusion constraint on each axis, not a check-then-write;
         a genuine race (two receptionists booking the same therapist at once) surfaces as 409 on
         whichever request loses, not a 500 or a silent double-booking.
+
+        Checked by the server, not left to the screen (and again by `PATCH /spa-appointments/{id}/schedule`):
+        the therapist must be active and hold the `THERAPIST` job function; the table must be in the
+        `SPA` zone (a restaurant table is refused); and the booking must be one the spa can serve on
+        that date - `CHECKED_IN`, or not yet arrived (`NEW`/`CONFIRMED`/`PAID`, not cancelled) with a
+        stay that covers `date` (`checkIn <= date <= checkOut`). A guest who has checked out, a
+        cancelled booking, and a not-yet-arrived booking for other dates are refused.
       requestBody:
         required: true
         content:
@@ -4088,7 +4107,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SpaAppointmentResult"
         "400":
-          description: Body failed validation, `treatmentMenuItemId` isn't a `SPA`-department item with a duration, or `startTime` falls outside opening hours / off the half-hour grid.
+          description: Body failed validation, `treatmentMenuItemId` isn't a `SPA`-department item with a duration, `startTime` falls outside opening hours / off the half-hour grid, the therapist is inactive or not a `THERAPIST`, the table isn't a `SPA`-zone table, or a not-yet-arrived booking's stay doesn't cover `date`.
           content:
             application/json:
               schema:
@@ -4104,7 +4123,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
-          description: The table or the therapist already has an overlapping BOOKED appointment.
+          description: The table or the therapist already has an overlapping BOOKED appointment, or the booking is cancelled or already checked out.
           content:
             application/json:
               schema:
@@ -4207,6 +4226,10 @@ paths:
         as they do for a fresh booking. Both apply to this update exactly as they apply to an
         insert; the 409 on a lost race is the same message `POST /spa-appointments` already
         gives, not a new one.
+
+        The same server-side checks as `POST /spa-appointments` run against the new values: the
+        therapist must be active with the `THERAPIST` job function, the table must be a `SPA`-zone
+        table, and the appointment's booking must still be servable on the new `date`.
       requestBody:
         required: true
         content:
@@ -4221,7 +4244,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SpaAppointment"
         "400":
-          description: '`startTime` isn''t on a slot boundary, the treatment would run past closing, or the appointment isn''t `BOOKED`.'
+          description: '`startTime` isn''t on a slot boundary, the treatment would run past closing, the appointment isn''t `BOOKED`, the therapist is inactive or not a `THERAPIST`, the table isn''t a `SPA`-zone table, or a not-yet-arrived booking''s stay doesn''t cover the new `date`.'
           content:
             application/json:
               schema:
@@ -4237,7 +4260,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
-          description: This table or this therapist already has an appointment overlapping the requested time.
+          description: This table or this therapist already has an appointment overlapping the requested time, or the booking is cancelled or already checked out.
           content:
             application/json:
               schema:
@@ -4402,7 +4425,9 @@ paths:
         (unlike adding) can only shrink the appointment's maintained `durationMinutes`, which can
         never create a new overlap, so this never risks a 409 and is allowed even on a
         `COMPLETED` row to correct an over-count. Refused (400) if this is the appointment's only
-        remaining treatment - an appointment cannot exist with zero; cancel it instead.
+        remaining treatment - an appointment cannot exist with zero; cancel it instead. Refused
+        (409) once the appointment's linked order is `PAID`: a treatment that was paid for is not
+        taken off the record afterwards (refund through the order instead).
       responses:
         "200":
           description: Updated appointment, with the treatment removed.
@@ -4422,6 +4447,58 @@ paths:
           $ref: "#/components/responses/ForbiddenCashierPlus"
         "404":
           description: Appointment not found, or treatmentId does not belong to this appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The appointment's linked order is already paid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /spa-appointments/{id}/bill-missing-treatments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: billMissingSpaTreatments
+      tags: [Spa]
+      summary: Add the treatments the linked order does not carry to that same order
+      description: >
+        Requires CASHIER or above. For a `COMPLETED` appointment whose linked order (`orderId`)
+        does not cover every treatment (`missingTreatmentNames` is not empty): adds exactly the
+        missing quantity of each treatment to that same order, in one action and one transaction,
+        through the ordinary order path (`POST /orders/{id}/items`) - so the price is the menu's
+        live price at this moment, like every other POS line. Nothing is charged here; the order is
+        then closed as usual. Returns the appointment with its refreshed `missingTreatmentNames`
+        (empty now).
+
+        409 when the appointment is not `COMPLETED`, has no linked order, the linked order is
+        `PAID` or `CANCELLED` (a closed order can't take lines), or nothing is missing.
+      responses:
+        "200":
+          description: The appointment after the missing treatments were added to its order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaAppointment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Appointment not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: See above - the appointment or its order is not in a state that can take the missing treatments.
           content:
             application/json:
               schema:
@@ -11278,10 +11355,10 @@ components:
         function or being deactivated while holding future `BOOKED` appointments does not cascade
         to this row automatically - `PATCH /users/{id}/active` / `PATCH /users/{id}/functions`
         instead return a warning listing the affected future appointments, the same warn-don't-
-        block shape as `RoomUnitBlockResult`. Cancelling/shortening/early-checking-out the named
-        booking has no equivalent warning today - nothing in this system cascades a booking-date
-        change to this row, and no write path checks for an affected future appointment the way
-        the therapist-side paths do. That gap is real, not yet closed.
+        block shape as `RoomUnitBlockResult`. Cancelling the named booking, by contrast, does
+        cascade: its `BOOKED` appointments are cancelled (see `PATCH /bookings/{id}/status`).
+        Shortening or early-checking-out the booking still has no equivalent warning today -
+        nothing cascades a booking-date change to this row. That gap is real, not yet closed.
       required:
         [
           id,
@@ -12490,11 +12567,14 @@ components:
         warning:
           type: string
           description: >
-            Present only on the response to `POST /bookings/staff`, when the booking was accepted
-            but front desk should look twice - today only a party larger than the room type
-            sleeps (adults + children over `Room.capacity`; an extra bed is a real thing staff do,
-            so it warns, where the public `POST /bookings` refuses). Never stored, never present on
-            any other read.
+            Present only on the response to `POST /bookings/staff`, `PATCH /bookings/{id}/status`
+            and `GET /bookings/{id}`, when front desk should look twice: on create, a party larger
+            than the room type sleeps (adults + children over `Room.capacity`; an extra bed is a real
+            thing staff do, so it warns, where the public `POST /bookings` refuses); on a cancelled
+            booking, a `BOOKED` spa appointment whose order is already paid, which the cancellation
+            left untouched (refund it and cancel the appointment by hand). Never stored: the
+            cancelled-booking warning is read fresh on each `GET /bookings/{id}`, so it goes away on
+            its own once the paid appointment is dealt with, and it is absent from lists.
 
     BookingCreateInput:
       type: object
@@ -16571,13 +16651,23 @@ components:
     NightAuditBooking:
       type: object
       description: One booking on a night-audit list - just enough to recognise it and open it.
-      required: [id, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus]
+      required: [id, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus, unpaidOverstayNights]
       properties:
         id:
           type: string
         balanceDue:
           type: string
           description: Decimal(10,2) string, `BookingFolio.balanceDue`. Present on every `unpaidBalances` row.
+        unpaidOverstayNights:
+          type: integer
+          minimum: 0
+          description: >
+            Nights a still-`CHECKED_IN` guest has stayed past `checkOut` with nothing agreed or
+            charged: `OverstayRule`'s nights `[checkOut, date]`, counted inclusively, so it is one
+            more than the days overdue shown next to it. `0` for a guest due out on `date` (the
+            departure night is still sellable), for anyone who is not checked in, and on every
+            `missedArrivals` and `unpaidBalances` row. A warning only - nothing is charged for
+            these nights and no revenue report counts them.
         guestName:
           type: string
           x-sensitive: true

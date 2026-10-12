@@ -27,6 +27,8 @@ public class NightAuditBooking {
 
   private String balanceDue;
 
+  private Integer unpaidOverstayNights;
+
   private String guestName;
 
   private String roomName;
@@ -48,8 +50,9 @@ public class NightAuditBooking {
   /**
    * Constructor with only required parameters
    */
-  public NightAuditBooking(String id, String guestName, String roomName, String roomUnitLabel, String checkIn, String checkOut, BookingStatus status, OccupancyStatus occupancyStatus) {
+  public NightAuditBooking(String id, Integer unpaidOverstayNights, String guestName, String roomName, String roomUnitLabel, String checkIn, String checkOut, BookingStatus status, OccupancyStatus occupancyStatus) {
     this.id = id;
+    this.unpaidOverstayNights = unpaidOverstayNights;
     this.guestName = guestName;
     this.roomName = roomName;
     this.roomUnitLabel = JsonNullable.of(roomUnitLabel);
@@ -95,6 +98,26 @@ public class NightAuditBooking {
 
   public void setBalanceDue(String balanceDue) {
     this.balanceDue = balanceDue;
+  }
+
+  public NightAuditBooking unpaidOverstayNights(Integer unpaidOverstayNights) {
+    this.unpaidOverstayNights = unpaidOverstayNights;
+    return this;
+  }
+
+  /**
+   * Nights a still-`CHECKED_IN` guest has stayed past `checkOut` with nothing agreed or charged: `OverstayRule`'s nights `[checkOut, date]`, counted inclusively, so it is one more than the days overdue shown next to it. `0` for a guest due out on `date` (the departure night is still sellable), for anyone who is not checked in, and on every `missedArrivals` and `unpaidBalances` row. A warning only - nothing is charged for these nights and no revenue report counts them. 
+   * minimum: 0
+   * @return unpaidOverstayNights
+   */
+  @NotNull @Min(0) 
+  @JsonProperty("unpaidOverstayNights")
+  public Integer getUnpaidOverstayNights() {
+    return unpaidOverstayNights;
+  }
+
+  public void setUnpaidOverstayNights(Integer unpaidOverstayNights) {
+    this.unpaidOverstayNights = unpaidOverstayNights;
   }
 
   public NightAuditBooking guestName(String guestName) {
@@ -241,6 +264,7 @@ public class NightAuditBooking {
     NightAuditBooking nightAuditBooking = (NightAuditBooking) o;
     return Objects.equals(this.id, nightAuditBooking.id) &&
         Objects.equals(this.balanceDue, nightAuditBooking.balanceDue) &&
+        Objects.equals(this.unpaidOverstayNights, nightAuditBooking.unpaidOverstayNights) &&
         Objects.equals(this.guestName, nightAuditBooking.guestName) &&
         Objects.equals(this.roomName, nightAuditBooking.roomName) &&
         Objects.equals(this.roomUnitLabel, nightAuditBooking.roomUnitLabel) &&
@@ -252,7 +276,7 @@ public class NightAuditBooking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, balanceDue, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus);
+    return Objects.hash(id, balanceDue, unpaidOverstayNights, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus);
   }
 
   @Override
@@ -261,6 +285,7 @@ public class NightAuditBooking {
     sb.append("class NightAuditBooking {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    balanceDue: ").append(toIndentedString(balanceDue)).append("\n");
+    sb.append("    unpaidOverstayNights: ").append(toIndentedString(unpaidOverstayNights)).append("\n");
     sb.append("    guestName: ").append("[REDACTED]").append("\n");
     sb.append("    roomName: ").append(toIndentedString(roomName)).append("\n");
     sb.append("    roomUnitLabel: ").append(toIndentedString(roomUnitLabel)).append("\n");

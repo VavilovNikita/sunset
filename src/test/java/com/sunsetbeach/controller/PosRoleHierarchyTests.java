@@ -1280,6 +1280,19 @@ class PosRoleHierarchyTests {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void billMissingSpaTreatments_withWaiterToken_isForbidden() throws Exception {
+        mockMvc.perform(post("/spa-appointments/appt-1/bill-missing-treatments").header("Authorization", token(Role.WAITER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void billMissingSpaTreatments_withCashierToken_isOk() throws Exception {
+        when(spaAppointmentService.billMissingTreatments(eq("appt-1"), anyString())).thenReturn(sampleSpaAppointment());
+        mockMvc.perform(post("/spa-appointments/appt-1/bill-missing-treatments").header("Authorization", token(Role.CASHIER)))
+                .andExpect(status().isOk());
+    }
+
     // --- Property map: viewing is CASHIER+ (same floor as GET /bookings/today), replacing the
     // background image is MANAGER+ (same floor as POST /rooms/{id}/images). ---
 

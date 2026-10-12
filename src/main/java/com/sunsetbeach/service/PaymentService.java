@@ -8,6 +8,7 @@ import com.sunsetbeach.model.PaymentsSummary;
 import com.sunsetbeach.repository.FolioPaymentRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,11 +22,21 @@ public class PaymentService {
 
     private final FolioPaymentRepository folioPaymentRepository;
 
-    public PaymentService(PaymentRepository paymentRepository, FolioPaymentRepository folioPaymentRepository) {
+    private final Clock clock;
+
+    public PaymentService(PaymentRepository paymentRepository, FolioPaymentRepository folioPaymentRepository, Clock clock) {
         this.paymentRepository = paymentRepository;
         this.folioPaymentRepository = folioPaymentRepository;
+        this.clock = clock;
     }
 
+    /**
+     * {@code from}/{@code to} are hotel-local days (Asia/Bangkok), but {@code createdAt} holds UTC
+     * wall-clock - so the window is Bangkok midnight to Bangkok midnight expressed in UTC
+     * ({@link ReportDateRange}, the same boundaries every {@code /reports/*} endpoint uses). Cut
+     * at UTC midnight instead, a payment taken at 02:00 Bangkok (19:00 UTC the day before) landed
+     * in yesterday's figures.
+     */
     @Transactional(readOnly = true)
     public PaymentsSummary getSummary(String from, String to) {
         LocalDate fromDate = LocalDate.parse(from);
@@ -34,8 +45,9 @@ public class PaymentService {
             throw ValidationException.field("to", "must be on or after from");
         }
 
-        LocalDateTime start = fromDate.atStartOfDay();
-        LocalDateTime endExclusive = toDate.plusDays(1).atStartOfDay();
+        ReportDateRange range = new ReportDateRange(fromDate, toDate);
+        LocalDateTime start = range.startUtc(clock.getZone());
+        LocalDateTime endExclusive = range.endUtcExclusive(clock.getZone());
         List<PaymentEntity> payments = paymentRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(start, endExclusive);
 
         PaymentAggregation.Totals totals = PaymentAggregation.aggregate(payments);

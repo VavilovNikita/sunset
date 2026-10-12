@@ -243,11 +243,62 @@ class MoneyAndIntegrityRulesTests extends AbstractIntegrationTest {
         mockMvc.perform(post("/orders/" + order.getId() + "/close").header("Authorization", cashierAAuth).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"method\":\"ROOM_CHARGE\",\"bookingId\":\"" + b.getId() + "\"}"))
                 .andExpect(status().isOk());
-        patchStatus(b.getId(), "{\"status\":\"CANCELLED\"}").andExpect(status().isOk());
+        // A guest who has arrived can no longer be cancelled through the API (see
+        // cancelling_aCheckedInBooking_is409 below). A booking cancelled after check-in, from
+        // before that rule, is the legacy shape whose balance is asserted here - so it is written
+        // the way that data was, directly.
+        BookingEntity legacy = reload(b.getId());
+        legacy.setStatus(BookingStatus.CANCELLED);
+        bookingRepository.saveAndFlush(legacy);
 
         JsonNode single = body(mockMvc.perform(get("/bookings/" + b.getId()).header("Authorization", adminAuth)).andExpect(status().isOk()));
         assertThat(single.get("status").asText()).isEqualTo("CANCELLED");
         assertThat(single.get("balanceDue").asText()).isEqualTo("300.00"); // the room is not charged; the bar tab is
+    }
+
+    // --- 1b. A guest who has arrived is not cancelled ------------------------------------------------
+
+    @Test
+    void cancelling_aCheckedInBooking_is409_andChangesNothing() throws Exception {
+        Booking b = booking(0);
+        occupancyService.checkIn(b.getId());
+
+        JsonNode error = body(patchStatus(b.getId(), "{\"status\":\"CANCELLED\"}").andExpect(status().isConflict()));
+
+        assertThat(error.get("error").asText()).contains("checked in");
+        assertThat(reload(b.getId()).getStatus()).isEqualTo(BookingStatus.NEW);
+    }
+
+    @Test
+    void cancelling_aCheckedOutBooking_is409() throws Exception {
+        Booking b = booking(0);
+        occupancyService.checkIn(b.getId());
+        occupancyService.checkOut(b.getId(), null);
+
+        JsonNode error = body(patchStatus(b.getId(), "{\"status\":\"CANCELLED\"}").andExpect(status().isConflict()));
+
+        assertThat(error.get("error").asText()).contains("checked out");
+        assertThat(reload(b.getId()).getStatus()).isEqualTo(BookingStatus.NEW);
+    }
+
+    @Test
+    void cancelling_aBookingThatHasNotArrived_stillWorks_andReSendingCancelledToACancelledOneIsANoOp() throws Exception {
+        Booking b = booking(3);
+
+        patchStatus(b.getId(), "{\"status\":\"CANCELLED\"}").andExpect(status().isOk());
+        patchStatus(b.getId(), "{\"status\":\"CANCELLED\"}").andExpect(status().isOk());
+
+        assertThat(reload(b.getId()).getStatus()).isEqualTo(BookingStatus.CANCELLED);
+    }
+
+    @Test
+    void otherChangesToACheckedInBooking_stillWork() throws Exception {
+        Booking b = booking(0);
+        occupancyService.checkIn(b.getId());
+
+        patchStatus(b.getId(), "{\"status\":\"CONFIRMED\"}").andExpect(status().isOk());
+
+        assertThat(reload(b.getId()).getStatus()).isEqualTo(BookingStatus.CONFIRMED);
     }
 
     @Test

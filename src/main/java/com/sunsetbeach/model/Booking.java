@@ -723,7 +723,7 @@ public class Booking {
   }
 
   /**
-   * Present only on the response to `POST /bookings/staff`, when the booking was accepted but front desk should look twice - today only a party larger than the room type sleeps (adults + children over `Room.capacity`; an extra bed is a real thing staff do, so it warns, where the public `POST /bookings` refuses). Never stored, never present on any other read. 
+   * Present only on the response to `POST /bookings/staff`, `PATCH /bookings/{id}/status` and `GET /bookings/{id}`, when front desk should look twice: on create, a party larger than the room type sleeps (adults + children over `Room.capacity`; an extra bed is a real thing staff do, so it warns, where the public `POST /bookings` refuses); on a cancelled booking, a `BOOKED` spa appointment whose order is already paid, which the cancellation left untouched (refund it and cancel the appointment by hand). Never stored: the cancelled-booking warning is read fresh on each `GET /bookings/{id}`, so it goes away on its own once the paid appointment is dealt with, and it is absent from lists. 
    * @return warning
    */
   

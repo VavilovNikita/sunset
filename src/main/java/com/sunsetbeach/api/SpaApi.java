@@ -103,16 +103,70 @@ public interface SpaApi {
 
 
     /**
+     * POST /spa-appointments/{id}/bill-missing-treatments : Add the treatments the linked order does not carry to that same order
+     * Requires CASHIER or above. For a &#x60;COMPLETED&#x60; appointment whose linked order (&#x60;orderId&#x60;) does not cover every treatment (&#x60;missingTreatmentNames&#x60; is not empty): adds exactly the missing quantity of each treatment to that same order, in one action and one transaction, through the ordinary order path (&#x60;POST /orders/{id}/items&#x60;) - so the price is the menu&#39;s live price at this moment, like every other POS line. Nothing is charged here; the order is then closed as usual. Returns the appointment with its refreshed &#x60;missingTreatmentNames&#x60; (empty now). 409 when the appointment is not &#x60;COMPLETED&#x60;, has no linked order, the linked order is &#x60;PAID&#x60; or &#x60;CANCELLED&#x60; (a closed order can&#39;t take lines), or nothing is missing. 
+     *
+     * @param id  (required)
+     * @return The appointment after the missing treatments were added to its order. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Appointment not found. (status code 404)
+     *         or See above - the appointment or its order is not in a state that can take the missing treatments. (status code 409)
+     */
+    @RequestMapping(
+        method = RequestMethod.POST,
+        value = "/spa-appointments/{id}/bill-missing-treatments",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<SpaAppointment> billMissingSpaTreatments(
+         @PathVariable("id") String id
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"date\" : \"date\", \"createdByUserId\" : \"createdByUserId\", \"orderId\" : \"orderId\", \"therapistEmail\" : \"therapistEmail\", \"cancelledByUserId\" : \"cancelledByUserId\", \"bookingId\" : \"bookingId\", \"treatments\" : [ { \"durationMinutes\" : 6, \"treatmentMenuItemId\" : \"treatmentMenuItemId\", \"currentPrice\" : \"currentPrice\", \"id\" : \"id\", \"treatmentName\" : \"treatmentName\" }, { \"durationMinutes\" : 6, \"treatmentMenuItemId\" : \"treatmentMenuItemId\", \"currentPrice\" : \"currentPrice\", \"id\" : \"id\", \"treatmentName\" : \"treatmentName\" } ], \"guestName\" : \"guestName\", \"roomUnitLabel\" : \"roomUnitLabel\", \"durationMinutes\" : 1, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"therapistUserId\" : \"therapistUserId\", \"therapistName\" : \"therapistName\", \"tableId\" : \"tableId\", \"tableLabel\" : \"tableLabel\", \"startTime\" : \"startTime\", \"id\" : \"id\", \"cancelReason\" : \"cancelReason\", \"missingTreatmentNames\" : [ \"missingTreatmentNames\", \"missingTreatmentNames\" ], \"status\" : \"BOOKED\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * POST /spa-appointments : Book a spa appointment
-     * Requires CASHIER or above. Both the table and the therapist must be free for the whole slot - enforced by a database exclusion constraint on each axis, not a check-then-write; a genuine race (two receptionists booking the same therapist at once) surfaces as 409 on whichever request loses, not a 500 or a silent double-booking. 
+     * Requires CASHIER or above. Both the table and the therapist must be free for the whole slot - enforced by a database exclusion constraint on each axis, not a check-then-write; a genuine race (two receptionists booking the same therapist at once) surfaces as 409 on whichever request loses, not a 500 or a silent double-booking. Checked by the server, not left to the screen (and again by &#x60;PATCH /spa-appointments/{id}/schedule&#x60;): the therapist must be active and hold the &#x60;THERAPIST&#x60; job function; the table must be in the &#x60;SPA&#x60; zone (a restaurant table is refused); and the booking must be one the spa can serve on that date - &#x60;CHECKED_IN&#x60;, or not yet arrived (&#x60;NEW&#x60;/&#x60;CONFIRMED&#x60;/&#x60;PAID&#x60;, not cancelled) with a stay that covers &#x60;date&#x60; (&#x60;checkIn &lt;&#x3D; date &lt;&#x3D; checkOut&#x60;). A guest who has checked out, a cancelled booking, and a not-yet-arrived booking for other dates are refused. 
      *
      * @param spaAppointmentCreateInput  (required)
      * @return Appointment created (possibly with a warning - see &#x60;SpaAppointmentResult&#x60;). (status code 201)
-     *         or Body failed validation, &#x60;treatmentMenuItemId&#x60; isn&#39;t a &#x60;SPA&#x60;-department item with a duration, or &#x60;startTime&#x60; falls outside opening hours / off the half-hour grid. (status code 400)
+     *         or Body failed validation, &#x60;treatmentMenuItemId&#x60; isn&#39;t a &#x60;SPA&#x60;-department item with a duration, &#x60;startTime&#x60; falls outside opening hours / off the half-hour grid, the therapist is inactive or not a &#x60;THERAPIST&#x60;, the table isn&#39;t a &#x60;SPA&#x60;-zone table, or a not-yet-arrived booking&#39;s stay doesn&#39;t cover &#x60;date&#x60;. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
      *         or bookingId, tableId, therapistUserId, or treatmentMenuItemId does not reference an existing row. (status code 404)
-     *         or The table or the therapist already has an overlapping BOOKED appointment. (status code 409)
+     *         or The table or the therapist already has an overlapping BOOKED appointment, or the booking is cancelled or already checked out. (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.POST,
@@ -337,7 +391,7 @@ public interface SpaApi {
 
     /**
      * DELETE /spa-appointments/{id}/treatments/{treatmentId} : Remove a treatment from a spa appointment
-     * Requires CASHIER or above. Legal while &#x60;status&#x60; is &#x60;BOOKED&#x60; or &#x60;COMPLETED&#x60; - removing (unlike adding) can only shrink the appointment&#39;s maintained &#x60;durationMinutes&#x60;, which can never create a new overlap, so this never risks a 409 and is allowed even on a &#x60;COMPLETED&#x60; row to correct an over-count. Refused (400) if this is the appointment&#39;s only remaining treatment - an appointment cannot exist with zero; cancel it instead. 
+     * Requires CASHIER or above. Legal while &#x60;status&#x60; is &#x60;BOOKED&#x60; or &#x60;COMPLETED&#x60; - removing (unlike adding) can only shrink the appointment&#39;s maintained &#x60;durationMinutes&#x60;, which can never create a new overlap, so this never risks a 409 and is allowed even on a &#x60;COMPLETED&#x60; row to correct an over-count. Refused (400) if this is the appointment&#39;s only remaining treatment - an appointment cannot exist with zero; cancel it instead. Refused (409) once the appointment&#39;s linked order is &#x60;PAID&#x60;: a treatment that was paid for is not taken off the record afterwards (refund through the order instead). 
      *
      * @param id  (required)
      * @param treatmentId  (required)
@@ -346,6 +400,7 @@ public interface SpaApi {
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
      *         or Appointment not found, or treatmentId does not belong to this appointment. (status code 404)
+     *         or The appointment&#39;s linked order is already paid. (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.DELETE,
@@ -361,6 +416,11 @@ public interface SpaApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"date\" : \"date\", \"createdByUserId\" : \"createdByUserId\", \"orderId\" : \"orderId\", \"therapistEmail\" : \"therapistEmail\", \"cancelledByUserId\" : \"cancelledByUserId\", \"bookingId\" : \"bookingId\", \"treatments\" : [ { \"durationMinutes\" : 6, \"treatmentMenuItemId\" : \"treatmentMenuItemId\", \"currentPrice\" : \"currentPrice\", \"id\" : \"id\", \"treatmentName\" : \"treatmentName\" }, { \"durationMinutes\" : 6, \"treatmentMenuItemId\" : \"treatmentMenuItemId\", \"currentPrice\" : \"currentPrice\", \"id\" : \"id\", \"treatmentName\" : \"treatmentName\" } ], \"guestName\" : \"guestName\", \"roomUnitLabel\" : \"roomUnitLabel\", \"durationMinutes\" : 1, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"therapistUserId\" : \"therapistUserId\", \"therapistName\" : \"therapistName\", \"tableId\" : \"tableId\", \"tableLabel\" : \"tableLabel\", \"startTime\" : \"startTime\", \"id\" : \"id\", \"cancelReason\" : \"cancelReason\", \"missingTreatmentNames\" : [ \"missingTreatmentNames\", \"missingTreatmentNames\" ], \"status\" : \"BOOKED\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -456,16 +516,16 @@ public interface SpaApi {
 
     /**
      * PATCH /spa-appointments/{id}/schedule : Move a spa appointment to another table, time, and/or therapist
-     * Requires CASHIER or above. The operation a drag on the spa schedule grid needs. Full replacement of all four fields, not a partial update - a drag always knows all four, and this project&#39;s own convention is full replacement wherever the caller has no reason not to send everything. Only legal while &#x60;status&#x60; is &#x60;BOOKED&#x60; - the same lifecycle boundary &#x60;PATCH /spa-appointments/{id}/status&#x60; already enforces (an appointment past that point is an end state). Never touches the treatment or its frozen &#x60;durationMinutes&#x60;, so the interval this checks is unchanged in length, just moved. No pre-check query - same \&quot;let the database settle it\&quot; philosophy &#x60;POST /spa-appointments&#x60; already documents: this writes the four fields directly and lets the two GiST exclusion constraints (&#x60;spa_appointment_no_table_overlap&#x60;, &#x60;spa_appointment_no_therapist_overlap&#x60; - see &#x60;V41__spa_appointment.sql&#x60;) decide, exactly as they do for a fresh booking. Both apply to this update exactly as they apply to an insert; the 409 on a lost race is the same message &#x60;POST /spa-appointments&#x60; already gives, not a new one. 
+     * Requires CASHIER or above. The operation a drag on the spa schedule grid needs. Full replacement of all four fields, not a partial update - a drag always knows all four, and this project&#39;s own convention is full replacement wherever the caller has no reason not to send everything. Only legal while &#x60;status&#x60; is &#x60;BOOKED&#x60; - the same lifecycle boundary &#x60;PATCH /spa-appointments/{id}/status&#x60; already enforces (an appointment past that point is an end state). Never touches the treatment or its frozen &#x60;durationMinutes&#x60;, so the interval this checks is unchanged in length, just moved. No pre-check query - same \&quot;let the database settle it\&quot; philosophy &#x60;POST /spa-appointments&#x60; already documents: this writes the four fields directly and lets the two GiST exclusion constraints (&#x60;spa_appointment_no_table_overlap&#x60;, &#x60;spa_appointment_no_therapist_overlap&#x60; - see &#x60;V41__spa_appointment.sql&#x60;) decide, exactly as they do for a fresh booking. Both apply to this update exactly as they apply to an insert; the 409 on a lost race is the same message &#x60;POST /spa-appointments&#x60; already gives, not a new one. The same server-side checks as &#x60;POST /spa-appointments&#x60; run against the new values: the therapist must be active with the &#x60;THERAPIST&#x60; job function, the table must be a &#x60;SPA&#x60;-zone table, and the appointment&#39;s booking must still be servable on the new &#x60;date&#x60;. 
      *
      * @param id  (required)
      * @param spaAppointmentScheduleInput  (required)
      * @return Updated appointment. (status code 200)
-     *         or &#x60;startTime&#x60; isn&#39;t on a slot boundary, the treatment would run past closing, or the appointment isn&#39;t &#x60;BOOKED&#x60;. (status code 400)
+     *         or &#x60;startTime&#x60; isn&#39;t on a slot boundary, the treatment would run past closing, the appointment isn&#39;t &#x60;BOOKED&#x60;, the therapist is inactive or not a &#x60;THERAPIST&#x60;, the table isn&#39;t a &#x60;SPA&#x60;-zone table, or a not-yet-arrived booking&#39;s stay doesn&#39;t cover the new &#x60;date&#x60;. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
      *         or Appointment, table, or therapist not found. (status code 404)
-     *         or This table or this therapist already has an appointment overlapping the requested time. (status code 409)
+     *         or This table or this therapist already has an appointment overlapping the requested time, or the booking is cancelled or already checked out. (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.PATCH,

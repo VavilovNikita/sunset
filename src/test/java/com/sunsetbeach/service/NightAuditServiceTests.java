@@ -148,6 +148,41 @@ class NightAuditServiceTests extends AbstractIntegrationTest {
         assertThat(row.getCheckOut()).isEqualTo("2033-03-10");
     }
 
+    /**
+     * The count the missed-departures screen shows ("Staying unpaid - N nights"): the nights from
+     * checkOut through the reviewed date, counted inclusively - one more than the days overdue
+     * beside it - and zero for a guest who is only due out that day.
+     */
+    @Test
+    void unpaidOverstayNights_countsFromCheckOutThroughTheReviewedDate_andIsZeroForADueOutGuest() {
+        BookingEntity overstaying = persistStay(BookingStatus.PAID, OccupancyStatus.CHECKED_IN, "2033-03-08", "2033-03-10");
+
+        assertThat(overstayNights("2033-03-09", overstaying)).isNull(); // not on the list yet
+        assertThat(overstayNights("2033-03-10", overstaying)).isZero(); // due out today: that night is still sellable
+        assertThat(overstayNights("2033-03-11", overstaying)).isEqualTo(2); // 1 day overdue = the 10th and the 11th
+        assertThat(overstayNights("2033-03-14", overstaying)).isEqualTo(5);
+    }
+
+    @Test
+    void unpaidOverstayNights_isZeroOnEveryOtherListRow() {
+        BookingEntity late = persistStay(BookingStatus.CONFIRMED, OccupancyStatus.EXPECTED, "2033-03-10", "2033-03-12");
+        BookingEntity finishedAndOwing = persistStay(BookingStatus.NEW, OccupancyStatus.CHECKED_OUT, "2033-03-05", "2033-03-07");
+
+        NightAudit audit = nightAuditService.get("2033-03-11");
+
+        assertThat(audit.getMissedArrivals().stream().filter(b -> b.getId().equals(late.getId())).findFirst().orElseThrow().getUnpaidOverstayNights()).isZero();
+        assertThat(audit.getUnpaidBalances().stream().filter(b -> b.getId().equals(finishedAndOwing.getId())).findFirst().orElseThrow().getUnpaidOverstayNights())
+                .isZero();
+    }
+
+    private Integer overstayNights(String date, BookingEntity booking) {
+        return nightAuditService.get(date).getMissedDepartures().stream()
+                .filter(b -> b.getId().equals(booking.getId()))
+                .findFirst()
+                .map(NightAuditBooking::getUnpaidOverstayNights)
+                .orElse(null);
+    }
+
     @Test
     void sameDayCheckInAndOut_appearsInNeitherList() {
         BookingEntity done = persistStay(BookingStatus.PAID, OccupancyStatus.CHECKED_OUT, "2033-03-10", "2033-03-11");

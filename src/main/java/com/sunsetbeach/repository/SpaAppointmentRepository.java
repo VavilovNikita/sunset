@@ -11,6 +11,9 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface SpaAppointmentRepository extends JpaRepository<SpaAppointmentEntity, String> {
 
+    /** Every appointment of one booking, whatever its status - see {@code SpaBookingCancellationService}. */
+    List<SpaAppointmentEntity> findByBookingId(String bookingId);
+
     /** The grid's own query - everything on one date, regardless of status. */
     List<SpaAppointmentEntity> findByDate(LocalDate date);
 

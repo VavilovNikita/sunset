@@ -378,6 +378,26 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
 
     // --- Cancellation -------------------------------------------------------------------------
 
+    /** The staff path refuses to cancel a guest who has arrived (409); the import reports that as a skip instead of failing every poll. */
+    @Test
+    void cancelled_forAGuestWhoHasAlreadyCheckedIn_isSkippedAndChangesNothing() {
+        RoomEntity room = room(1);
+        String roomType = mapped(room);
+        String reference = newReference();
+        importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, roomType));
+        BookingEntity arrived = bookingFor(reference);
+        arrived.setOccupancyStatus(com.sunsetbeach.model.OccupancyStatus.CHECKED_IN);
+        bookingRepository.saveAndFlush(arrived);
+
+        actAs(siteMinderAuthentication());
+        SiteMinderImportResult result = importService.importReservation(reservation(reference, SiteMinderReservationStatus.CANCELLED, roomType)
+                .cancelledAt(BOOKED_AT.plusDays(3)));
+
+        assertThat(result.getAction()).isEqualTo(SiteMinderImportAction.SKIPPED);
+        assertThat(result.getMessage().get()).contains("checked in");
+        assertThat(bookingFor(reference).getStatus()).isNotEqualTo(BookingStatus.CANCELLED);
+    }
+
     @Test
     void cancelled_hasTheSameEffectsAsAStaffCancellation() {
         RoomEntity room = room(1);

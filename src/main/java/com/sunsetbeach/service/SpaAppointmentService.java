@@ -18,8 +18,10 @@ import com.sunsetbeach.mapper.TableMapper;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
+import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.MenuDepartment;
+import com.sunsetbeach.model.OrderItemInput;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.SpaAppointment;
 import com.sunsetbeach.model.SpaAppointmentCreateInput;
@@ -97,6 +99,7 @@ public class SpaAppointmentService {
     private final OverstayRule overstayRule;
     private final BookingSegmentRepository bookingSegmentRepository;
     private final RoomUnitRepository roomUnitRepository;
+    private final OrderService orderService;
     private final LocalTime openingTime;
     private final LocalTime closingTime;
     private final int slotMinutes;
@@ -115,10 +118,12 @@ public class SpaAppointmentService {
             OverstayRule overstayRule,
             BookingSegmentRepository bookingSegmentRepository,
             RoomUnitRepository roomUnitRepository,
+            OrderService orderService,
             org.springframework.core.env.Environment env) {
         this.overstayRule = overstayRule;
         this.bookingSegmentRepository = bookingSegmentRepository;
         this.roomUnitRepository = roomUnitRepository;
+        this.orderService = orderService;
         this.spaAppointmentRepository = spaAppointmentRepository;
         this.spaAppointmentTreatmentRepository = spaAppointmentTreatmentRepository;
         this.bookingRepository = bookingRepository;
@@ -228,6 +233,9 @@ public class SpaAppointmentService {
         LocalDate date = LocalDate.parse(input.getDate());
         LocalTime startTime = LocalTime.parse(input.getStartTime());
         int durationMinutes = treatment.getDurationMinutes();
+        requireTherapist(therapist);
+        requireSpaTable(table);
+        requireServable(booking, date);
         validateWithinOpeningHours(startTime, durationMinutes);
 
         SpaAppointmentEntity entity = new SpaAppointmentEntity();
@@ -319,6 +327,9 @@ public class SpaAppointmentService {
         if (entity.getStatus() != SpaAppointmentStatus.BOOKED && entity.getStatus() != SpaAppointmentStatus.COMPLETED) {
             throw new BadRequestException("Cannot edit treatments on a " + entity.getStatus().getValue().toLowerCase() + " appointment");
         }
+        if (isOrderPaid(entity)) {
+            throw new ConflictException("This appointment's order is already paid, so a treatment can't be removed from it. Refund through the order instead.");
+        }
 
         List<SpaAppointmentTreatmentEntity> treatments = spaAppointmentTreatmentRepository.findBySpaAppointmentId(appointmentId);
         SpaAppointmentTreatmentEntity toRemove = treatments.stream()
@@ -392,6 +403,10 @@ public class SpaAppointmentService {
         UserEntity therapist = userRepository.findById(input.getTherapistUserId()).orElseThrow(() -> new NotFoundException("Therapist not found"));
         LocalDate date = LocalDate.parse(input.getDate());
         LocalTime startTime = LocalTime.parse(input.getStartTime());
+        BookingEntity booking = bookingRepository.findById(entity.getBookingId()).orElseThrow(() -> new NotFoundException("Booking not found"));
+        requireTherapist(therapist);
+        requireSpaTable(table);
+        requireServable(booking, date);
         validateWithinOpeningHours(startTime, entity.getDurationMinutes());
 
         entity.setTableId(table.getId());
@@ -549,6 +564,115 @@ public class SpaAppointmentService {
                         + otherOldTable.getLabel() + ")");
 
         return toDto(entity);
+    }
+
+    /**
+     * A therapist is an active account holding the {@code THERAPIST} job function - the same test
+     * {@link #listTherapists} uses to offer people in the picker, enforced here on the server so a
+     * stale screen, an old link or a direct API call can't book someone who isn't one.
+     */
+    private static void requireTherapist(UserEntity therapist) {
+        if (!therapist.isActive()) {
+            throw new BadRequestException(therapist.getName() + "'s account is deactivated, so they can't be booked for a treatment.");
+        }
+        if (!Arrays.asList(therapist.getJobFunctions()).contains(JobFunction.THERAPIST.getValue())) {
+            throw new BadRequestException(therapist.getName() + " is not a therapist (the Therapist job function is not set on their account).");
+        }
+    }
+
+    /** A treatment happens in the spa zone; a restaurant table has no business on the spa grid. */
+    private static void requireSpaTable(TableEntity table) {
+        if (table.getZone() != Zone.SPA) {
+            throw new BadRequestException("Table " + table.getLabel() + " is not a spa table - treatments can only be booked on tables in the SPA zone.");
+        }
+    }
+
+    /**
+     * Whom the spa can serve on {@code date}. A guest in the house ({@code CHECKED_IN}) can be
+     * booked; a guest who has left, a cancelled booking and a no-show can't (409 - the booking is
+     * in the wrong state). A guest who has not arrived yet ({@code NEW}/{@code CONFIRMED}/
+     * {@code PAID}) can be booked only on a day of the stay they actually hold, both ends
+     * included - the same inclusive convention as the out-of-stay warning in {@link #create},
+     * since the guest is still here on the departure day (400 - the date is wrong). A checked-in
+     * guest booked outside their stay still only gets that warning: they may be about to extend.
+     */
+    private static void requireServable(BookingEntity booking, LocalDate date) {
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new ConflictException(booking.getGuestName() + "'s booking is cancelled, so no treatment can be booked for it.");
+        }
+        switch (booking.getOccupancyStatus()) {
+            case CHECKED_OUT -> throw new ConflictException(booking.getGuestName() + " has already checked out, so no treatment can be booked for this booking.");
+            case NO_SHOW -> throw new ConflictException(booking.getGuestName() + " was marked as a no-show, so no treatment can be booked for this booking.");
+            case CHECKED_IN -> {
+            }
+            case EXPECTED -> {
+                if (date.isBefore(booking.getCheckIn()) || date.isAfter(booking.getCheckOut())) {
+                    throw new BadRequestException(booking.getGuestName() + "'s stay is " + booking.getCheckIn() + " to " + booking.getCheckOut()
+                            + ", which doesn't include " + date + " - pick a date within the stay.");
+                }
+            }
+        }
+    }
+
+    private boolean isOrderPaid(SpaAppointmentEntity appointment) {
+        return appointment.getOrderId() != null
+                && orderRepository.findById(appointment.getOrderId()).map(o -> o.getStatus() == OrderStatus.PAID).orElse(false);
+    }
+
+    /**
+     * The partial-payment top-up: a {@code COMPLETED} appointment whose linked order doesn't carry
+     * every treatment gets exactly the missing quantity of each one added to that same order, in
+     * one action. Goes through {@link OrderService#addItems}, so the price is the menu's live one
+     * at this moment (the one pricing rule for POS lines, see CLAUDE.md's Spa billing section)
+     * and the order's total is recomputed there; nothing is charged here - the order is closed
+     * as usual afterwards. Needs an order that can still take lines: a {@code PAID} one can't,
+     * and the 409 says so rather than silently opening a second order for the rest.
+     */
+    @Transactional
+    public SpaAppointment billMissingTreatments(String appointmentId, String actorUserId) {
+        SpaAppointmentEntity entity = spaAppointmentRepository.findById(appointmentId).orElseThrow(() -> new NotFoundException("Appointment not found"));
+        if (entity.getStatus() != SpaAppointmentStatus.COMPLETED) {
+            throw new ConflictException("Only a completed appointment's treatments can be added to its bill - this one is " + entity.getStatus().getValue().toLowerCase() + ".");
+        }
+        if (entity.getOrderId() == null) {
+            throw new ConflictException("This appointment has no order yet - open the spa billing to create its bill.");
+        }
+        OrderEntity order = orderRepository.findById(entity.getOrderId()).orElseThrow(() -> new NotFoundException("Order not found"));
+        if (order.getStatus() != OrderStatus.OPEN && order.getStatus() != OrderStatus.SENT) {
+            throw new ConflictException("The linked order #" + order.getNumber() + " is already " + order.getStatus().getValue().toLowerCase()
+                    + " and can't take more lines.");
+        }
+
+        Map<String, Integer> billed = new HashMap<>();
+        for (OrderItemEntity item : orderItemRepository.findByOrderId(order.getId())) {
+            billed.merge(item.getMenuItemId(), item.getQuantity(), Integer::sum);
+        }
+        Map<String, Long> booked = spaAppointmentTreatmentRepository.findBySpaAppointmentId(appointmentId).stream()
+                .collect(Collectors.groupingBy(SpaAppointmentTreatmentEntity::getTreatmentMenuItemId, java.util.LinkedHashMap::new, Collectors.counting()));
+        List<OrderItemInput> missing = new ArrayList<>();
+        booked.forEach((menuItemId, count) -> {
+            long shortBy = count - billed.getOrDefault(menuItemId, 0);
+            if (shortBy > 0) {
+                missing.add(new OrderItemInput(menuItemId, Math.toIntExact(shortBy)));
+            }
+        });
+        if (missing.isEmpty()) {
+            throw new ConflictException("Everything this appointment booked is already on its order.");
+        }
+
+        orderService.addItems(order.getId(), missing);
+
+        auditLogService.record(
+                AuditAction.SPA_APPOINTMENT_TREATMENT_ADDED,
+                AuditEntityType.SPA_APPOINTMENT,
+                entity.getId(),
+                "Added the missing treatments (" + missing.stream().map(i -> i.getQuantity() + "x " + treatmentName(i.getMenuItemId())).collect(Collectors.joining(", "))
+                        + ") to order #" + order.getNumber());
+        return toDto(entity);
+    }
+
+    private String treatmentName(String menuItemId) {
+        return menuItemRepository.findById(menuItemId).map(MenuItemEntity::getName).orElse(menuItemId);
     }
 
     private MenuItemEntity validateTreatment(String treatmentMenuItemId) {

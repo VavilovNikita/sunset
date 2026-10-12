@@ -53,6 +53,8 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
@@ -154,7 +156,7 @@ public class OrderService {
             }
         }
 
-        List<OrderEntity> orders = orderRepository.findAll(buildSpecification(status, tableId, from, to, dateBasis, shiftOrderIds));
+        List<OrderEntity> orders = orderRepository.findAll(buildSpecification(status, tableId, from, to, dateBasis, shiftOrderIds, clock.getZone()));
         return toDtos(orders);
     }
 
@@ -711,6 +713,74 @@ public class OrderService {
     }
 
     /**
+     * What {@link #removeUnpaidSpaLines} found and did: {@code paid} means the order is already
+     * {@code PAID} and was left exactly as it was; otherwise {@code removedLines} names what came
+     * off ("2x Thai massage") and {@code orderCancelled} says the order had nothing else on it.
+     */
+    public record SpaLineCleanup(boolean paid, List<String> removedLines, boolean orderCancelled) {
+        public static SpaLineCleanup empty() {
+            return untouched(false);
+        }
+
+        static SpaLineCleanup untouched(boolean paid) {
+            return new SpaLineCleanup(paid, List.of(), false);
+        }
+    }
+
+    /**
+     * Takes the {@code SPA}-department lines off an order that is still unpaid - the clean-up when
+     * the booking they were for is cancelled. Lines of any other department stay (a guest's dinner
+     * is not a treatment), and an order left with no lines at all is cancelled, since an empty
+     * order can't be closed and would only sit open. A {@code PAID} (or already {@code CANCELLED})
+     * order is not touched. A treatment never goes to a printer, so - unlike a kitchen line - there
+     * is no paper to void: the lines leave {@code OrderItem} and the caller audits what went.
+     */
+    @Transactional
+    public SpaLineCleanup removeUnpaidSpaLines(String orderId) {
+        OrderEntity order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+        if (order == null || order.getStatus() == OrderStatus.CANCELLED) {
+            return SpaLineCleanup.untouched(false);
+        }
+        if (order.getStatus() == OrderStatus.PAID) {
+            return SpaLineCleanup.untouched(true);
+        }
+        List<MenuItemEntity> menu = new ArrayList<>();
+        List<OrderItemEntity> spaLines = new ArrayList<>();
+        for (OrderItemEntity item : orderItemRepository.findByOrderId(orderId)) {
+            MenuItemEntity menuItem = menuItemRepository.findById(item.getMenuItemId()).orElse(null);
+            if (menuItem != null && menuItem.getDepartment() == MenuDepartment.SPA) {
+                spaLines.add(item);
+                menu.add(menuItem);
+            }
+        }
+        if (spaLines.isEmpty()) {
+            return SpaLineCleanup.untouched(false);
+        }
+        List<String> removed = new ArrayList<>();
+        for (int i = 0; i < spaLines.size(); i++) {
+            removed.add(spaLines.get(i).getQuantity() + "x " + menu.get(i).getName());
+        }
+        orderItemRepository.deleteAll(spaLines);
+        orderItemRepository.flush();
+
+        List<OrderItemEntity> remaining = orderItemRepository.findByOrderId(orderId);
+        order.setTotal(sumTotal(remaining));
+        boolean cancelled = remaining.isEmpty();
+        if (cancelled) {
+            order.setStatus(OrderStatus.CANCELLED);
+        }
+        OrderEntity saved = orderRepository.saveAndFlush(order);
+        if (cancelled) {
+            auditLogService.record(
+                    AuditAction.ORDER_CANCELLED,
+                    AuditEntityType.ORDER,
+                    saved.getId(),
+                    "Order #" + saved.getNumber() + " cancelled - its spa lines (" + String.join(", ", removed) + ") were taken off because the booking was cancelled");
+        }
+        return new SpaLineCleanup(false, removed, cancelled);
+    }
+
+    /**
      * Prints a kitchen/bar ticket for every currently-unsent line on the order (department-split,
      * same as the original send) and marks them {@code sentAt}, regardless of whether the print
      * itself reached the printer - same fail-open contract as everywhere else in
@@ -911,9 +981,14 @@ public class OrderService {
         return userRepository.findById(userId).map(UserEntity::getEmail).orElse(userId);
     }
 
+    /** Hotel-local midnight of {@code day} as the UTC wall-clock the timestamp columns hold - see {@link ReportDateRange}. */
+    private static LocalDateTime dayStartUtc(LocalDate day, ZoneId zone) {
+        return day.atStartOfDay(zone).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+    }
+
     /** Shared by {@link #list}. */
     private static Specification<OrderEntity> buildSpecification(
-            OrderStatus status, String tableId, LocalDate from, LocalDate to, OrderDateBasis dateBasis, List<String> shiftOrderIds) {
+            OrderStatus status, String tableId, LocalDate from, LocalDate to, OrderDateBasis dateBasis, List<String> shiftOrderIds, ZoneId zone) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (status != null) {
@@ -932,12 +1007,12 @@ public class OrderService {
                 List<Predicate> cancelledPredicates = new ArrayList<>();
                 cancelledPredicates.add(cb.equal(root.get("status"), OrderStatus.CANCELLED));
                 if (from != null) {
-                    paymentPredicates.add(cb.greaterThanOrEqualTo(payment.get("createdAt"), from.atStartOfDay()));
-                    cancelledPredicates.add(cb.greaterThanOrEqualTo(root.get("updatedAt"), from.atStartOfDay()));
+                    paymentPredicates.add(cb.greaterThanOrEqualTo(payment.get("createdAt"), dayStartUtc(from, zone)));
+                    cancelledPredicates.add(cb.greaterThanOrEqualTo(root.get("updatedAt"), dayStartUtc(from, zone)));
                 }
                 if (to != null) {
-                    paymentPredicates.add(cb.lessThan(payment.get("createdAt"), to.plusDays(1).atStartOfDay()));
-                    cancelledPredicates.add(cb.lessThan(root.get("updatedAt"), to.plusDays(1).atStartOfDay()));
+                    paymentPredicates.add(cb.lessThan(payment.get("createdAt"), dayStartUtc(to.plusDays(1), zone)));
+                    cancelledPredicates.add(cb.lessThan(root.get("updatedAt"), dayStartUtc(to.plusDays(1), zone)));
                 }
                 paidInRange.select(payment.get("orderId")).where(paymentPredicates.toArray(new Predicate[0]));
                 predicates.add(cb.or(
@@ -945,10 +1020,10 @@ public class OrderService {
                         cb.and(cancelledPredicates.toArray(new Predicate[0]))));
             } else {
                 if (from != null) {
-                    predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from.atStartOfDay()));
+                    predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), dayStartUtc(from, zone)));
                 }
                 if (to != null) {
-                    predicates.add(cb.lessThan(root.get("createdAt"), to.plusDays(1).atStartOfDay()));
+                    predicates.add(cb.lessThan(root.get("createdAt"), dayStartUtc(to.plusDays(1), zone)));
                 }
             }
             if (shiftOrderIds != null) {

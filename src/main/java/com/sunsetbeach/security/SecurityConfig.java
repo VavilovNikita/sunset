@@ -275,6 +275,8 @@ public class SecurityConfig {
                         // (SpaAppointmentService), not a role distinction.
                         .requestMatchers(HttpMethod.POST, "/spa-appointments/*/treatments").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.DELETE, "/spa-appointments/*/treatments/*").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // Top-up of the linked order with the treatments it is missing - CASHIER+, like the billing it feeds.
+                        .requestMatchers(HttpMethod.POST, "/spa-appointments/*/bill-missing-treatments").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Spa map background image - same CASHIER-read/MANAGER-write split as
                         // GET/POST /property-map/image just above, mirrored deliberately (see
                         // SpaMapService's own class javadoc for why this is a separate image, not

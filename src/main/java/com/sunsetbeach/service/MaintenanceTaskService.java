@@ -236,10 +236,14 @@ public class MaintenanceTaskService {
     }
 
     /**
-     * Block dates are inclusive, so a {@code toDate} of today would still cover tonight - the
-     * room must not go back on sale until the day after it's actually fixed, so this moves
-     * {@code toDate} to yesterday, not today. If yesterday falls before the block's own {@code
-     * fromDate}, the block was created and closed the same day and never covered a usable night -
+     * Closing a task can only <b>shorten</b> its block, never extend it. Block dates are
+     * inclusive, so a {@code toDate} of today would still cover tonight - the room must not go
+     * back on sale until the day after it's actually fixed, so the new end is yesterday - but
+     * never later than the block already ended: {@code min(current toDate, yesterday)}. Taking
+     * plain "yesterday" turned a block that had already expired (5-9 Oct) into 5-10 Oct when the
+     * task was closed on the 11th, putting a room back out of sale for a night that had been
+     * sellable. If the resulting end falls before the block's own {@code fromDate}, the block
+     * never covered a usable night (closed the day it was created, or it starts in the future) -
      * delete it outright instead of writing a backwards range. If the block has already been
      * removed by other means (e.g. a manager deleting it directly), this does nothing - closing
      * still succeeds.
@@ -255,7 +259,8 @@ public class MaintenanceTaskService {
         }
 
         RoomUnitBlockEntity block = blockOpt.get();
-        LocalDate newToDate = LocalDate.now(clock).minusDays(1);
+        LocalDate yesterday = LocalDate.now(clock).minusDays(1);
+        LocalDate newToDate = yesterday.isBefore(block.getToDate()) ? yesterday : block.getToDate();
         if (newToDate.isBefore(block.getFromDate())) {
             roomUnitBlockRepository.delete(block);
             task.setBlockId(null);
@@ -264,6 +269,12 @@ public class MaintenanceTaskService {
                     AuditEntityType.MAINTENANCE_TASK,
                     task.getId(),
                     "Block removed - task closed the same day the block was created, so it never covered a usable night");
+        } else if (newToDate.equals(block.getToDate())) {
+            auditLogService.record(
+                    AuditAction.MAINTENANCE_TASK_BLOCK_LIFTED,
+                    AuditEntityType.MAINTENANCE_TASK,
+                    task.getId(),
+                    "Block left as it was - it already ended " + block.getToDate() + ", closing a task never extends one");
         } else {
             block.setToDate(newToDate);
             roomUnitBlockRepository.save(block);
