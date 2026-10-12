@@ -1,0 +1,11 @@
+[Unit]
+Description=Sunset Beach uploads volume backup (room photos, floor plans, maintenance photos)
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/sunsetbeach-backup.env
+ExecStart=/opt/sunsetbeach/backup/uploads_backup.sh
+# Same belt and suspenders as pg-backup.service: `systemctl status uploads-backup.service` shows a
+# failed run even if the script died before it could log or ping.

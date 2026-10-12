@@ -54,7 +54,6 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
@@ -981,9 +980,8 @@ public class OrderService {
         return userRepository.findById(userId).map(UserEntity::getEmail).orElse(userId);
     }
 
-    /** Hotel-local midnight of {@code day} as the UTC wall-clock the timestamp columns hold - see {@link ReportDateRange}. */
     private static LocalDateTime dayStartUtc(LocalDate day, ZoneId zone) {
-        return day.atStartOfDay(zone).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        return HotelDay.startUtc(day, zone);
     }
 
     /** Shared by {@link #list}. */

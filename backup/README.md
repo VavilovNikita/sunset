@@ -184,3 +184,10 @@ repo, same `flyway_schema_history`, same Prisma-then-Flyway origin):
 
 This is what "checked the mechanism actually works" means here — not "the
 commands should work in theory."
+
+## 5. The uploads volume has its own backup
+
+This dump holds the *paths* of uploaded files (room photos, floor plans, maintenance photos), not the
+files. [`uploads_backup.sh`](./uploads_backup.sh) archives the Docker volume daily to
+`/var/backups/sunsetbeach` with the same rotation and mirrors as the dump (`systemd/uploads-backup.*`,
+freshness check `check_uploads_backup_freshness.sh`). Install and restore steps: `DEPLOY.md`, "Uploads".

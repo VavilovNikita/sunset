@@ -139,18 +139,25 @@ class ShiftListTests extends AbstractIntegrationTest {
         assertThat(ids).doesNotContain(otherShift.getId());
     }
 
+    /** A Bangkok wall-clock moment as the UTC wall-clock openedAt holds. */
+    private static LocalDateTime bangkok(LocalDate day, int hour, int minute) {
+        return day.atTime(hour, minute).atZone(java.time.ZoneId.of("Asia/Bangkok")).withZoneSameInstant(java.time.ZoneOffset.UTC).toLocalDateTime();
+    }
+
     @Test
     void list_filtersByDateRange_boundedOnBothEndsInclusive() {
         // All closed - see list_noFilters_returnsAllMatchingShiftsNewestFirst's comment; this
         // test only cares about openedAt filtering.
-        LocalDate from = LocalDate.now().minusDays(5);
-        LocalDate to = LocalDate.now().minusDays(3);
+        // Days are hotel (Bangkok) days; openedAt holds UTC - so each boundary is written as a Bangkok time and converted.
+        LocalDate from = LocalDate.of(2031, 3, 10);
+        LocalDate to = LocalDate.of(2031, 3, 12);
         ShiftEntity beforeRange =
-                persistShift(cashierOne, from.minusDays(1).atTime(12, 0), new BigDecimal("0.00"), new BigDecimal("0.00"));
-        ShiftEntity onFromDate = persistShift(cashierOne, from.atTime(0, 30), new BigDecimal("0.00"), new BigDecimal("0.00"));
-        ShiftEntity onToDate = persistShift(cashierOne, to.atTime(23, 30), new BigDecimal("0.00"), new BigDecimal("0.00"));
+                persistShift(cashierOne, bangkok(from.minusDays(1), 23, 30), new BigDecimal("0.00"), new BigDecimal("0.00"));
+        // 02:00 Bangkok on the first day is 19:00 UTC the day before - still the first day.
+        ShiftEntity onFromDate = persistShift(cashierOne, bangkok(from, 2, 0), new BigDecimal("0.00"), new BigDecimal("0.00"));
+        ShiftEntity onToDate = persistShift(cashierOne, bangkok(to, 23, 30), new BigDecimal("0.00"), new BigDecimal("0.00"));
         ShiftEntity afterRange =
-                persistShift(cashierOne, to.plusDays(1).atTime(12, 0), new BigDecimal("0.00"), new BigDecimal("0.00"));
+                persistShift(cashierOne, bangkok(to.plusDays(1), 0, 30), new BigDecimal("0.00"), new BigDecimal("0.00"));
 
         List<String> ids = shiftService.list(from.toString(), to.toString(), null).stream().map(ShiftListItem::getId).toList();
 

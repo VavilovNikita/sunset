@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Sunset Beach uploads backup freshness check daily, offset from the backup itself
+
+[Timer]
+# Backup runs at 03:50; check at 12:05, after pg-backup-check, with plenty of time for it to finish.
+OnCalendar=*-*-* 12:05:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -117,9 +117,12 @@ public class AuditLogService {
     private final AuditLogRepository auditLogRepository;
     private final AuditLogMapper auditLogMapper;
 
-    public AuditLogService(AuditLogRepository auditLogRepository, AuditLogMapper auditLogMapper) {
+    private final java.time.Clock clock;
+
+    public AuditLogService(AuditLogRepository auditLogRepository, AuditLogMapper auditLogMapper, java.time.Clock clock) {
         this.auditLogRepository = auditLogRepository;
         this.auditLogMapper = auditLogMapper;
+        this.clock = clock;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -205,7 +208,7 @@ public class AuditLogService {
         int pageNumber = page != null ? page : 0;
         int size = pageSize != null ? pageSize : 50;
 
-        Specification<AuditLogEntity> spec = buildSpecification(actorEmail, action, entityType, entityId, fromDate, toDate);
+        Specification<AuditLogEntity> spec = buildSpecification(actorEmail, action, entityType, entityId, fromDate, toDate, clock.getZone());
         Page<AuditLogEntity> result =
                 auditLogRepository.findAll(spec, PageRequest.of(pageNumber, size, Sort.by(Sort.Direction.DESC, "createdAt")));
 
@@ -214,7 +217,7 @@ public class AuditLogService {
     }
 
     private static Specification<AuditLogEntity> buildSpecification(
-            String actorEmail, AuditAction action, AuditEntityType entityType, String entityId, LocalDate from, LocalDate to) {
+            String actorEmail, AuditAction action, AuditEntityType entityType, String entityId, LocalDate from, LocalDate to, java.time.ZoneId zone) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (actorEmail != null && !actorEmail.isBlank()) {
@@ -230,10 +233,10 @@ public class AuditLogService {
                 predicates.add(cb.equal(root.get("entityId"), entityId));
             }
             if (from != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from.atStartOfDay()));
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), HotelDay.startUtc(from, zone)));
             }
             if (to != null) {
-                predicates.add(cb.lessThan(root.get("createdAt"), to.plusDays(1).atStartOfDay()));
+                predicates.add(cb.lessThan(root.get("createdAt"), HotelDay.startUtc(to.plusDays(1), zone)));
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };

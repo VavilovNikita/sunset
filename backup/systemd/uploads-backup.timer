@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Sunset Beach uploads backup daily
+
+[Timer]
+# After the database backup (03:30), so the two never compete for the disk.
+OnCalendar=*-*-* 03:50:00
+# Run as soon as the server is back up if it was off at 03:50, instead of skipping the day.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

@@ -59,14 +59,59 @@ docker compose exec backend ls /app/uploads          # property-map, spa-map, re
 docker compose logs backend | grep "Uploads root"    # the line above, from the last start
 ```
 
-The Postgres backup in `backup/` does **not** include these files. Back the volume up the same way
-you take the dump before a risky deploy, and keep it next to it:
+The Postgres backup (`backup/pg_backup.sh`) does **not** include these files. They have their own
+daily backup, installed next to it - see below.
+
+### Uploads backup: install (once, by hand on the VPS)
+
+`backup/uploads_backup.sh` archives the volume once a day to `/var/backups/sunsetbeach/uploads_YYYYMMDD_HHMMSS.tgz`
+(+ a `.sha256`), reads the archive back before trusting it, mirrors it to `OFFSITE_DIR` / `RCLONE_REMOTE`
+if those are set for the database backup, and rotates like the dumps (14 daily, 8 weekly, 12 monthly
+- the same `KEEP_*`). It refuses to rotate anything if the volume suddenly holds no files while the
+previous archive did (a recreated, empty volume is exactly the incident this is for), and refuses if
+the volume does not exist. The `pg-backup` setup is assumed: scripts under `/opt/sunsetbeach/backup`,
+settings in `/etc/sunsetbeach-backup.env`.
 
 ```bash
-docker run --rm -v sunset_uploads:/data -v "$PWD":/backup alpine   tar czf /backup/uploads-$(date +%F).tgz -C /data .
-# restore into an empty volume:
-docker run --rm -v sunset_uploads:/data -v "$PWD":/backup alpine   tar xzf /backup/uploads-YYYY-MM-DD.tgz -C /data
+# 1. scripts (from the checkout; pg_backup.sh is already there)
+sudo cp ~/sunset/sunset/backup/uploads_backup.sh ~/sunset/sunset/backup/check_uploads_backup_freshness.sh /opt/sunsetbeach/backup/
+sudo chmod +x /opt/sunsetbeach/backup/uploads_backup.sh /opt/sunsetbeach/backup/check_uploads_backup_freshness.sh
+
+# 2. settings: append the "Uploads volume backup" block of backup/pg_backup.env.example to the env file,
+#    and make UPLOADS_VOLUME the real name from:  docker volume ls | grep uploads
+sudoedit /etc/sunsetbeach-backup.env
+sudo mkdir -p /var/backups/sunsetbeach && sudo chmod 700 /var/backups/sunsetbeach
+
+# 3. systemd units: backup at 03:50 (after the database's 03:30), freshness check at 12:05
+sudo cp ~/sunset/sunset/backup/systemd/uploads-backup.{service,timer} ~/sunset/sunset/backup/systemd/uploads-backup-check.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now uploads-backup.timer uploads-backup-check.timer
+
+# 4. run it once now and look at the result
+sudo systemctl start uploads-backup.service
+journalctl -u uploads-backup.service -n 20 --no-pager      # "wrote uploads_...tgz: N file(s)"
+ls -l /var/backups/sunsetbeach
+systemctl list-timers 'uploads-*'
 ```
+
+After a script update, copy the script again (step 1); the units only change if their files do.
+A failed night shows as a failed `uploads-backup.service`, a stale or missing archive as a failed
+`uploads-backup-check.service`, and - if `UPLOADS_HEALTHCHECK_URL` is set - as a missing ping.
+
+### Uploads backup: restore
+
+```bash
+cd /var/backups/sunsetbeach
+sha256sum -c uploads_YYYYMMDD_HHMMSS.sha256          # the archive is intact
+tar -tzf uploads_YYYYMMDD_HHMMSS.tgz | head          # looks like rooms/, spa-map/, ...
+# a GPG copy from the cloud first: gpg --decrypt uploads_....tgz.gpg > uploads_....tgz  (key held offline)
+cd ~/sunset/sunset && docker compose stop backend
+docker run --rm -v sunset_uploads:/data -v /var/backups/sunsetbeach:/backup:ro --entrypoint tar sunset-backend:latest   -xzf /backup/uploads_YYYYMMDD_HHMMSS.tgz -C /data
+docker compose up -d backend && docker compose logs backend | grep "Uploads root"   # holds N file(s)
+```
+
+Restoring into a volume that still has files overwrites files of the same name and leaves the rest.
+Before a risky deploy, take an extra archive by hand: `sudo systemctl start uploads-backup.service`.
 
 If a plan or photo does 404 anyway, upload it again from the admin (Property map, Spa map, the
 room's photos) - the screens say so when the image is missing.

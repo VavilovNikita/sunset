@@ -14,6 +14,10 @@ import com.sunsetbeach.model.AuditLogPage;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.AuditLogRepository;
 import com.sunsetbeach.security.StaffPrincipal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -21,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -43,6 +48,9 @@ class AuditLogServiceTests extends AbstractIntegrationTest {
 
     @Autowired
     private AuditLogRepository auditLogRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private final List<String> createdIds = new java.util.ArrayList<>();
     private String actorEmail;
@@ -150,6 +158,34 @@ class AuditLogServiceTests extends AbstractIntegrationTest {
     void search_entityIdWithoutEntityType_isRejected() {
         assertThatThrownBy(() -> auditLogService.search(null, null, null, "some-id", null, null, 0, 50))
                 .isInstanceOf(ValidationException.class);
+    }
+
+    /**
+     * The history's date filter is a hotel (Bangkok) day over a UTC createdAt: an entry written at
+     * 02:00 Bangkok (19:00 UTC the day before) belongs to that Bangkok day, and one at 23:30 UTC is
+     * already the next morning there.
+     */
+    @Test
+    void search_dateFilter_cutsTheDayAtBangkokMidnight_notUtcMidnight() {
+        LocalDate day = LocalDate.of(2031, 6, 10);
+        String earlyId = "early-" + UUID.randomUUID();
+        String lateUtcId = "late-" + UUID.randomUUID();
+        recordAndTrack(AuditAction.BOOKING_CREATED, AuditEntityType.BOOKING, earlyId, "02:00 Bangkok");
+        recordAndTrack(AuditAction.BOOKING_CREATED, AuditEntityType.BOOKING, lateUtcId, "23:30 UTC the day before");
+        backdate(earlyId, day.atTime(2, 0).atZone(ZoneId.of("Asia/Bangkok")).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime());
+        backdate(lateUtcId, day.minusDays(1).atTime(23, 30));
+
+        List<String> onTheDay = auditLogService.search(actorEmail, null, null, null, day.toString(), day.toString(), 0, 50).getItems().stream()
+                .map(e -> e.getEntityId().orElse(null)).toList();
+        List<String> dayBefore = auditLogService.search(actorEmail, null, null, null, day.minusDays(1).toString(), day.minusDays(1).toString(), 0, 50)
+                .getItems().stream().map(e -> e.getEntityId().orElse(null)).toList();
+
+        assertThat(onTheDay).containsExactlyInAnyOrder(earlyId, lateUtcId);
+        assertThat(dayBefore).isEmpty();
+    }
+
+    private void backdate(String entityId, LocalDateTime createdAtUtc) {
+        jdbcTemplate.update("UPDATE \"AuditLog\" SET \"createdAt\" = ? WHERE \"entityId\" = ?", createdAtUtc, entityId);
     }
 
     @Test

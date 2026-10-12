@@ -1,0 +1,9 @@
+[Unit]
+Description=Check that the Sunset Beach uploads backup is not stale
+After=uploads-backup.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/sunsetbeach-backup.env
+ExecStart=/opt/sunsetbeach/backup/check_uploads_backup_freshness.sh
+# A failed run of this unit is what to alert on, same as pg-backup-check.service.

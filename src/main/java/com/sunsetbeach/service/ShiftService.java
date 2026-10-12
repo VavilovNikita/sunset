@@ -442,7 +442,7 @@ public class ShiftService {
     @Transactional(readOnly = true)
     public List<ShiftListItem> list(String from, String to, String staffId) {
         List<ShiftEntity> shifts =
-                shiftRepository.findAll(buildListSpecification(from, to, staffId), Sort.by(Sort.Direction.DESC, "openedAt"));
+                shiftRepository.findAll(buildListSpecification(from, to, staffId, clock.getZone()), Sort.by(Sort.Direction.DESC, "openedAt"));
 
         List<String> userIds = shifts.stream()
                 .flatMap(s -> Stream.of(s.getOpenedByUserId(), s.getClosedByUserId()))
@@ -469,21 +469,21 @@ public class ShiftService {
                 .toList();
     }
 
-    private static Specification<ShiftEntity> buildListSpecification(String from, String to, String staffId) {
+    private static Specification<ShiftEntity> buildListSpecification(String from, String to, String staffId, java.time.ZoneId zone) {
         LocalDate fromDate = from != null ? LocalDate.parse(from) : null;
         LocalDate toDate = to != null ? LocalDate.parse(to) : null;
 
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (fromDate != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("openedAt"), fromDate.atStartOfDay()));
+                predicates.add(cb.greaterThanOrEqualTo(root.get("openedAt"), HotelDay.startUtc(fromDate, zone)));
             }
             if (toDate != null) {
-                // Exclusive upper bound one day past `to`, so a shift opened any time on the `to`
+                // Hotel (Bangkok) days, converted to the UTC openedAt holds - see HotelDay. Exclusive upper bound one day past `to`, so a shift opened any time on the `to`
                 // date itself is still included - the closed-on-both-ends date range every other
                 // filter in this API promises is about calendar days, not a literal <= on a
                 // datetime column, which would silently drop same-day matches after midnight.
-                predicates.add(cb.lessThan(root.get("openedAt"), toDate.plusDays(1).atStartOfDay()));
+                predicates.add(cb.lessThan(root.get("openedAt"), HotelDay.startUtc(toDate.plusDays(1), zone)));
             }
             if (staffId != null && !staffId.isBlank()) {
                 predicates.add(cb.equal(root.get("openedByUserId"), staffId));
