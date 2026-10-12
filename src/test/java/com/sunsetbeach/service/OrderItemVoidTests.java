@@ -7,9 +7,11 @@ import com.sunsetbeach.AbstractIntegrationTest;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
+import com.sunsetbeach.error.ForbiddenException;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.Order;
+import com.sunsetbeach.model.OrderCancelInput;
 import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderItemInput;
 import com.sunsetbeach.model.OrderItemVoid;
@@ -178,6 +180,73 @@ class OrderItemVoidTests extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> orderService.voidItem(
                         order.getId(), lineId(order, beer), new OrderItemVoidInput("After the fact"), manager.getId()))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    private static OrderCancelInput because(String reason) {
+        return new OrderCancelInput().reason(reason);
+    }
+
+    @Test
+    void cancellingASentOrder_isAManagersVoid_notAWaitersTap() {
+        Order order = sentOrder();
+
+        // Waiter and cashier are refused whatever they write as the reason; nothing changes.
+        assertThatThrownBy(() -> orderService.cancel(order.getId(), because("Guest left"), waiter.getId(), Role.WAITER))
+                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> orderService.cancel(order.getId(), because("Guest left"), waiter.getId(), Role.CASHIER))
+                .isInstanceOf(ForbiddenException.class);
+        assertThat(orderService.getById(order.getId()).getStatus()).isEqualTo(OrderStatus.SENT);
+
+        // A manager still needs a reason - none, or only spaces, is a 400.
+        assertThatThrownBy(() -> orderService.cancel(order.getId(), null, manager.getId(), Role.MANAGER)).isInstanceOf(ValidationException.class);
+        assertThatThrownBy(() -> orderService.cancel(order.getId(), because("   "), manager.getId(), Role.MANAGER))
+                .isInstanceOf(ValidationException.class);
+        assertThat(orderService.getById(order.getId()).getStatus()).isEqualTo(OrderStatus.SENT);
+
+        Order after = orderService.cancel(order.getId(), because("  Table walked out "), manager.getId(), Role.MANAGER);
+
+        assertThat(after.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(after.getItems()).isEmpty();
+        assertThat(new BigDecimal(after.getTotal())).isEqualByComparingTo("0.00");
+        assertThat(after.getVoids()).extracting(OrderItemVoid::getMenuItemId).containsExactlyInAnyOrder(beer.getId(), burger.getId());
+        assertThat(after.getVoids()).extracting(OrderItemVoid::getQuantity).containsExactlyInAnyOrder(3, 1);
+        assertThat(after.getVoids()).allSatisfy(v -> {
+            assertThat(v.getReason()).isEqualTo("Table walked out");
+            assertThat(v.getVoidedByUserId()).isEqualTo(manager.getId());
+        });
+    }
+
+    @Test
+    void cancellingASentOrder_voidsALaterRoundToo() {
+        Order order = sentOrder();
+        // A round added to an already-sent order goes to the kitchen at once, so it is on paper too.
+        orderService.addItems(order.getId(), List.of(new OrderItemInput(beer.getId(), 2)));
+
+        Order after = orderService.cancel(order.getId(), because("Guest left"), manager.getId(), Role.ADMIN);
+
+        assertThat(after.getItems()).isEmpty();
+        assertThat(after.getVoids()).extracting(OrderItemVoid::getQuantity).containsExactlyInAnyOrder(3, 1, 2);
+    }
+
+    @Test
+    void cancellingAnOrderNothingWasSentFrom_staysAWaitersCall_andNeedsNoReason() {
+        Order order = orderService.create(new OrderCreateInput().items(List.of(new OrderItemInput(beer.getId(), 1))), waiter.getId());
+
+        Order after = orderService.cancel(order.getId(), null, waiter.getId(), Role.WAITER);
+
+        assertThat(after.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(after.getVoids()).isEmpty();
+        // Unchanged behaviour: the lines stay on the cancelled order.
+        assertThat(after.getItems()).hasSize(1);
+    }
+
+    @Test
+    void aCancelledOrder_cannotBeCancelledAgain() {
+        Order order = sentOrder();
+        orderService.cancel(order.getId(), because("Guest left"), manager.getId(), Role.MANAGER);
+
+        assertThatThrownBy(() -> orderService.cancel(order.getId(), because("Again"), manager.getId(), Role.MANAGER))
                 .isInstanceOf(ConflictException.class);
     }
 

@@ -12,6 +12,7 @@ import com.sunsetbeach.entity.SpaAppointmentEntity;
 import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
+import com.sunsetbeach.error.ForbiddenException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.GuestOrderMapper;
@@ -24,6 +25,7 @@ import com.sunsetbeach.model.GuestOrderView;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.Order;
+import com.sunsetbeach.model.OrderCancelInput;
 import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderDateBasis;
 import com.sunsetbeach.model.OrderItemInput;
@@ -32,6 +34,7 @@ import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.OrderUpdateInput;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.PrintAttemptResult;
+import com.sunsetbeach.model.Role;
 import com.sunsetbeach.model.ShiftStatus;
 import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.model.Zone;
@@ -519,16 +522,7 @@ public class OrderService {
             throw ValidationException.field("quantity", "must be between 1 and the line's quantity (" + item.getQuantity() + ")");
         }
 
-        OrderItemVoidEntity voided = new OrderItemVoidEntity();
-        voided.setOrderId(id);
-        voided.setMenuItemId(item.getMenuItemId());
-        voided.setQuantity(quantity);
-        voided.setUnitPrice(item.getUnitPrice());
-        voided.setNote(item.getNote());
-        voided.setSentAt(item.getSentAt());
-        voided.setReason(reason);
-        voided.setVoidedByUserId(userId);
-        orderItemVoidRepository.save(voided);
+        OrderItemVoidEntity voided = recordVoid(id, item, quantity, reason, userId);
 
         if (quantity == item.getQuantity()) {
             orderItemRepository.delete(item);
@@ -542,9 +536,7 @@ public class OrderService {
         order.setTotal(sumTotal(items));
         OrderEntity saved = orderRepository.saveAndFlush(order);
 
-        MenuItemEntity menuItem = menuItemRepository.findById(voided.getMenuItemId()).orElse(null);
-        String itemName = menuItem != null ? menuItem.getName() : voided.getMenuItemId();
-        orderPrintingService.printVoidTicket(saved, voided, menuItem);
+        String itemName = printVoidTicket(saved, voided);
         auditLogService.record(
                 AuditAction.ORDER_ITEM_VOIDED,
                 AuditEntityType.ORDER,
@@ -553,6 +545,27 @@ public class OrderService {
                         + voided.getUnitPrice().multiply(BigDecimal.valueOf(quantity)) + ") from order #" + saved.getNumber()
                         + " after it was sent. Reason: " + reason);
         return toDto(saved, items);
+    }
+
+    /** Writes the {@link OrderItemVoidEntity} for {@code quantity} units of a sent line; the caller takes them off the line. */
+    private OrderItemVoidEntity recordVoid(String orderId, OrderItemEntity item, int quantity, String reason, String userId) {
+        OrderItemVoidEntity voided = new OrderItemVoidEntity();
+        voided.setOrderId(orderId);
+        voided.setMenuItemId(item.getMenuItemId());
+        voided.setQuantity(quantity);
+        voided.setUnitPrice(item.getUnitPrice());
+        voided.setNote(item.getNote());
+        voided.setSentAt(item.getSentAt());
+        voided.setReason(reason);
+        voided.setVoidedByUserId(userId);
+        return orderItemVoidRepository.save(voided);
+    }
+
+    /** Sends the VOID ticket to the line's station (best effort, like every print) and returns the item's name. */
+    private String printVoidTicket(OrderEntity order, OrderItemVoidEntity voided) {
+        MenuItemEntity menuItem = menuItemRepository.findById(voided.getMenuItemId()).orElse(null);
+        orderPrintingService.printVoidTicket(order, voided, menuItem);
+        return menuItem != null ? menuItem.getName() : voided.getMenuItemId();
     }
 
     @Transactional
@@ -698,17 +711,62 @@ public class OrderService {
         return orderPrintingService.reprintGuestReceipt(order, orderItemRepository.findByOrderId(id), payment, booking);
     }
 
+    /**
+     * {@code POST /orders/{id}/cancel}. An order nothing has been sent from is cancelled as it
+     * always was (WAITER+, lines left as they are). Once a line is on paper at the kitchen/bar the
+     * cancellation is a void of every sent line, like {@link #voidItem}: MANAGER+ and a reason,
+     * checked here because the route's role floor can't see the order's status. The sent lines
+     * become {@link OrderItemVoidEntity} rows and leave {@code OrderItem} (so no reader that sums
+     * lines needs to know), lines that were never sent are dropped, and each station gets a VOID
+     * ticket. The order row is locked like {@link #voidItem} and {@link #close}.
+     */
     @Transactional
-    public Order cancel(String id) {
-        OrderEntity order = findOrThrow(id);
+    public Order cancel(String id, OrderCancelInput input, String userId, Role callerRole) {
+        OrderEntity order = orderRepository.findByIdForUpdate(id).orElseThrow(() -> new NotFoundException("Order not found"));
         if (CLOSED_STATUSES.contains(order.getStatus())) {
             throw new ConflictException("Order is already " + order.getStatus().getValue().toLowerCase());
         }
+        List<OrderItemEntity> lines = orderItemRepository.findByOrderId(id);
+        List<OrderItemEntity> sentLines = lines.stream().filter(i -> i.getSentAt() != null).toList();
+        boolean wasSent = order.getStatus() == OrderStatus.SENT || !sentLines.isEmpty();
+
+        String reason = input != null ? input.getReason().orElse(null) : null;
+        reason = reason != null ? reason.trim() : "";
+        if (wasSent) {
+            if (callerRole != Role.ADMIN && callerRole != Role.MANAGER) {
+                throw new ForbiddenException("A manager has to cancel an order that was already sent");
+            }
+            if (reason.isEmpty()) {
+                throw ValidationException.field("reason", "A reason is required to cancel an order that was already sent.");
+            }
+        }
+
+        BigDecimal totalBefore = order.getTotal();
+        List<String> voidedLines = new ArrayList<>();
+        List<OrderItemVoidEntity> voids = new ArrayList<>();
+        if (wasSent) {
+            for (OrderItemEntity line : sentLines) {
+                voids.add(recordVoid(id, line, line.getQuantity(), reason, userId));
+                voidedLines.add(line.getQuantity() + "x " + menuItemName(line.getMenuItemId()));
+            }
+            orderItemRepository.deleteAll(lines);
+            orderItemRepository.flush();
+            order.setTotal(sumTotal(List.of()));
+        }
         order.setStatus(OrderStatus.CANCELLED);
         OrderEntity saved = orderRepository.saveAndFlush(order);
+        voids.forEach(v -> printVoidTicket(saved, v));
         auditLogService.record(
-                AuditAction.ORDER_CANCELLED, AuditEntityType.ORDER, saved.getId(), "Order cancelled (total was " + saved.getTotal() + ")");
+                AuditAction.ORDER_CANCELLED,
+                AuditEntityType.ORDER,
+                saved.getId(),
+                "Order cancelled (total was " + totalBefore + ")"
+                        + (wasSent ? " after it was sent; voided " + String.join(", ", voidedLines) + ". Reason: " + reason : ""));
         return toDto(saved, orderItemRepository.findByOrderId(id));
+    }
+
+    private String menuItemName(String menuItemId) {
+        return menuItemRepository.findById(menuItemId).map(MenuItemEntity::getName).orElse(menuItemId);
     }
 
     /**

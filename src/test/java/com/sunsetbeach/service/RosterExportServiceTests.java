@@ -604,4 +604,47 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         }
         assertThat(foundShiftCodeRow).isTrue();
     }
+
+    private static java.util.Set<String> firstColumn(XSSFSheet sheet) {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (Row row : sheet) {
+            Cell first = row.getCell(0);
+            if (first != null && first.getCellType() == org.apache.poi.ss.usermodel.CellType.STRING) {
+                names.add(first.getStringCellValue());
+            }
+        }
+        return names;
+    }
+
+    /**
+     * One month, two files, one list of people: an active employee nobody scheduled (a row of
+     * zeros in the actuals file, as the grid has always shown them), an employee deactivated
+     * mid-month who has an entry that month (the actuals file already listed them; the grid
+     * dropped them), and a deactivated one with nothing that month, who is in neither.
+     */
+    @Test
+    void gridAndActualsExports_listTheSamePeople() {
+        UserEntity mgr = createEmployee(null, "Manager");
+        ShiftCode code = createCode(ShiftCodeKind.MORNING, true, "09:00", "17:00");
+        UserEntity scheduled = createEmployee(StaffArea.RESTAURANT, "ExpScheduled");
+        UserEntity unscheduled = createEmployee(StaffArea.RESTAURANT, "ExpUnscheduled");
+        UserEntity leftMidMonth = createEmployee(StaffArea.RESTAURANT, "ExpLeft");
+        UserEntity leftBefore = createEmployee(StaffArea.RESTAURANT, "ExpLongGone");
+        rosterService.createEntry(new RosterEntryCreateInput(scheduled.getId(), "2027-08-04", code.getId()), mgr.getId());
+        rosterService.createEntry(new RosterEntryCreateInput(leftMidMonth.getId(), "2027-08-05", code.getId()), mgr.getId());
+        leftMidMonth.setActive(false);
+        userRepository.saveAndFlush(leftMidMonth);
+        leftBefore.setActive(false);
+        userRepository.saveAndFlush(leftBefore);
+
+        java.util.Set<String> grid = firstColumn(exportSheet(2027, 8));
+        java.util.Set<String> actuals = firstColumn(exportActualsWorkbook(2027, 8).getSheetAt(0));
+
+        for (UserEntity expected : List.of(scheduled, unscheduled, leftMidMonth)) {
+            assertThat(grid).as("grid has " + expected.getName()).contains(expected.getName());
+            assertThat(actuals).as("actuals has " + expected.getName()).contains(expected.getName());
+        }
+        assertThat(grid).doesNotContain(leftBefore.getName());
+        assertThat(actuals).doesNotContain(leftBefore.getName());
+    }
 }

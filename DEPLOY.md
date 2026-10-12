@@ -8,6 +8,49 @@ dump) are in CLAUDE.md, "Migrations".
 Some migrations can't be undone by deploying the previous build. Restoring means restoring a dump,
 so take one before every deploy.
 
+## Settings that belong to one server live in untracked files
+
+A deploy is `git pull` on the VPS. `git pull` refuses to run over a tracked file that was edited
+by hand on the server, so anything that is true only for one machine must not be written into a
+tracked file such as `docker-compose.yml` - the deploy then fails before it builds anything. Such
+settings go in two files git ignores:
+
+- **`.env`** - values: `DATABASE_URL`, secrets, `JAVA_OPTS`, and so on.
+- **`docker-compose.override.yml`** (in `.gitignore`) - the shape of the containers. Docker Compose
+  reads it automatically next to `docker-compose.yml` and merges it over the tracked file, so
+  `docker compose up -d` needs no extra flags.
+
+On the production VPS the one such setting is the network: the backend joins the external Docker
+network `sunset-net`, which is how it reaches Postgres. That lives in the override file only
+(shape of the file - adapt it to what is on the server):
+
+```yaml
+# docker-compose.override.yml - on the VPS only, never committed
+services:
+  backend:
+    networks:
+      - default
+      - sunset-net
+
+networks:
+  sunset-net:
+    external: true
+```
+
+and `DATABASE_URL` in `.env` uses the database container's name on that network. The `networks:`
+comments inside `docker-compose.yml` (Scenario A/B) that say "uncomment this" describe the same
+thing as a hand-edit of the tracked file; use the override file instead.
+
+If the tracked `docker-compose.yml` is already hand-edited on the server, move that edit into the
+override file first, then `git checkout docker-compose.yml`, then pull. Before a deploy, `git status`
+on the VPS should list nothing tracked as modified.
+
+**`docker compose config` prints the secrets from `.env`** - database password, JWT secrets,
+integration keys - because it expands every variable. Its output must never be pasted into a log, a
+chat or an issue. To check that the override is picked up, look at the result on the server
+without copying it anywhere, e.g. `docker inspect <backend container> --format '{{json .NetworkSettings.Networks}}'`
+after `docker compose up -d`.
+
 ## V132: rollback only from a dump once early-departure fees exist
 
 V132 adds `Booking.earlyDepartureFee` and `FolioPayment.shiftId`. It is a pure `ADD COLUMN`, so
@@ -29,6 +72,28 @@ SELECT count(*) FROM "Booking" WHERE "earlyDepartureFee" > 0;
 If the count is 0, a code-only rollback is still safe. If it's above 0, restore the dump.
 
 Deploy sunset-beach together with it: its folio and check-out screens read the fields V132 serves.
+
+## V138: unique room type names
+
+V138 makes a room type's name unique ignoring case and spaces at either end. The migration never
+fails on old data: if two types already share a name it creates **no** index and logs one WARNING
+per group (`V138: 2 room types are named "deluxe": <id> ("Deluxe"), <id> ("Deluxe ")`), and
+`RoomService` still refuses any new duplicate. After deploying, look for the warning in the first
+start's log, or ask the database:
+
+```sql
+SELECT lower(btrim("name")) AS name, count(*), string_agg("id", ', ') AS ids
+FROM "Room" GROUP BY 1 HAVING count(*) > 1;
+```
+
+No rows: the index exists, nothing to do. Rows: rename or delete the extra types in the admin (a
+type with bookings or units can't be deleted - rename it), then create the index by hand:
+
+```sql
+CREATE UNIQUE INDEX "Room_name_normalized_key" ON "Room" (lower(btrim("name")));
+```
+
+Rolling back to the previous build is safe: the index is just an index.
 
 ## Uploads (room photos, floor plans, maintenance photos)
 

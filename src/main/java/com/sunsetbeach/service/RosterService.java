@@ -70,19 +70,32 @@ public class RosterService {
         // description - not joined from EmployeePattern, which no longer carries its own copy.
         return userRepository.findAll().stream()
                 .filter(UserEntity::isActive)
-                .map(u -> {
-                    RosterEmployee dto = new RosterEmployee(u.getId(), u.getName(), u.isActive());
-                    dto.setEmail(u.getEmail());
-                    if (u.getStaffArea() != null) {
-                        dto.staffArea(u.getStaffArea());
-                    }
-                    return dto;
-                })
+                .map(RosterService::toEmployeeDto)
                 // name, not email: the roster's whole reason for existing is a grid with
                 // someone to point at, and a no-login account (see UserCreateInput) has no
                 // email to sort by at all.
                 .sorted((a, b) -> a.getName().compareTo(b.getName()))
                 .toList();
+    }
+
+    /**
+     * A shift is never assigned to a deactivated employee, whichever door it comes through - the
+     * manual gestures here, {@link #generateMonth}, and both Excel imports. Their past entries stay
+     * (the history is still true) and can still be deleted; nothing new is written for them.
+     */
+    static void requireActiveEmployee(UserEntity employee) {
+        if (!employee.isActive()) {
+            throw new BadRequestException(employee.getName() + " is deactivated - a shift can't be assigned to them");
+        }
+    }
+
+    static RosterEmployee toEmployeeDto(UserEntity u) {
+        RosterEmployee dto = new RosterEmployee(u.getId(), u.getName(), u.isActive());
+        dto.setEmail(u.getEmail());
+        if (u.getStaffArea() != null) {
+            dto.staffArea(u.getStaffArea());
+        }
+        return dto;
     }
 
     @Transactional(readOnly = true)
@@ -115,9 +128,11 @@ public class RosterService {
         java.util.Set<String> occupied =
                 existing.stream().map(e -> e.getEmployeeUserId() + "|" + e.getDate()).collect(Collectors.toSet());
 
+        Map<String, UserEntity> patternEmployees = resolveUsers(patterns.stream().map(EmployeePatternEntity::getEmployeeUserId).distinct().toList());
         int created = 0;
         for (EmployeePatternEntity pattern : patterns) {
-            if (pattern.getDefaultShiftCodeId() == null) {
+            UserEntity patternEmployee = patternEmployees.get(pattern.getEmployeeUserId());
+            if (pattern.getDefaultShiftCodeId() == null || patternEmployee == null || !patternEmployee.isActive()) {
                 continue;
             }
             for (LocalDate date = ym.atDay(1); !date.isAfter(ym.atEndOfMonth()); date = date.plusDays(1)) {
@@ -150,6 +165,7 @@ public class RosterService {
     @Transactional
     public RosterEntry createEntry(RosterEntryCreateInput input, String actorUserId) {
         UserEntity employee = userRepository.findById(input.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found"));
+        requireActiveEmployee(employee);
         ShiftCodeEntity shiftCode = shiftCodeRepository.findById(input.getShiftCodeId()).orElseThrow(() -> new NotFoundException("Shift code not found"));
         LocalDate date = LocalDate.parse(input.getDate());
         rosterEntryRepository.findByEmployeeUserIdAndDate(employee.getId(), date).ifPresent(e -> {
@@ -190,6 +206,7 @@ public class RosterService {
         }
         LocalDate targetDate = LocalDate.parse(input.getDate());
         if (!targetDate.equals(entity.getDate())) {
+            requireActiveEmployee(userRepository.findById(entity.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found")));
             rosterEntryRepository.findByEmployeeUserIdAndDate(entity.getEmployeeUserId(), targetDate).ifPresent(e -> {
                 throw new BadRequestException("This employee already has an entry on the target date");
             });
@@ -222,6 +239,7 @@ public class RosterService {
         }
         UserEntity targetEmployee = userRepository.findById(input.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found"));
         if (!targetEmployee.getId().equals(entity.getEmployeeUserId())) {
+            requireActiveEmployee(targetEmployee);
             rosterEntryRepository.findByEmployeeUserIdAndDate(targetEmployee.getId(), entity.getDate()).ifPresent(e -> {
                 throw new BadRequestException("The target employee already has an entry on this date");
             });
@@ -260,6 +278,11 @@ public class RosterService {
         RosterEntryEntity other = rosterEntryRepository.findById(input.getOtherEntryId()).orElseThrow(() -> new NotFoundException("Other entry not found"));
         if (entity.isLocked() || other.isLocked()) {
             throw new BadRequestException("One of these entries is locked");
+        }
+        // Each person ends up with the other's date and code, so both have to be assignable.
+        if (!entity.getEmployeeUserId().equals(other.getEmployeeUserId())) {
+            requireActiveEmployee(userRepository.findById(entity.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found")));
+            requireActiveEmployee(userRepository.findById(other.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found")));
         }
         if (rosterEntryRepository.findByEmployeeUserIdAndDate(entity.getEmployeeUserId(), other.getDate()).filter(e -> !e.getId().equals(entity.getId())).isPresent()
                 || rosterEntryRepository.findByEmployeeUserIdAndDate(other.getEmployeeUserId(), entity.getDate()).filter(e -> !e.getId().equals(other.getId())).isPresent()) {

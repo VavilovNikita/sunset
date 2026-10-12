@@ -31,6 +31,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -158,7 +159,8 @@ public class RosterExportService {
             entriesByKey.put(e.getEmployeeUserId() + "|" + e.getDate(), e);
         }
 
-        java.util.Set<String> employeeIds = data.getEmployees().stream().map(RosterEmployee::getId).collect(java.util.stream.Collectors.toSet());
+        List<RosterEmployee> gridEmployees = gridEmployees(ym, data);
+        java.util.Set<String> employeeIds = gridEmployees.stream().map(RosterEmployee::getId).collect(java.util.stream.Collectors.toSet());
         Map<Integer, Integer> workingByDay = new HashMap<>();
         Map<Integer, Integer> absentByDay = new HashMap<>();
         Map<Integer, Integer> presentByDay = new HashMap<>();
@@ -172,7 +174,7 @@ public class RosterExportService {
         }
 
         Map<StaffArea, List<RosterEmployee>> byArea = new LinkedHashMap<>();
-        for (RosterEmployee emp : data.getEmployees()) {
+        for (RosterEmployee emp : gridEmployees) {
             byArea.computeIfAbsent(resolveArea(emp), k -> new java.util.ArrayList<>()).add(emp);
         }
 
@@ -275,6 +277,33 @@ public class RosterExportService {
     }
 
     /**
+     * Who both exports list, so the same month never gives one file a person the other lacks:
+     * every active employee, plus anyone - active or not - who has a roster entry or an
+     * attendance punch in the month (someone deactivated mid-month still worked the weeks before).
+     */
+    private Set<String> exportEmployeeIds(Collection<String> entryEmployeeIds, Collection<String> punchEmployeeIds) {
+        Set<String> ids = userRepository.findAll().stream().filter(UserEntity::isActive).map(UserEntity::getId).collect(Collectors.toCollection(HashSet::new));
+        ids.addAll(entryEmployeeIds);
+        ids.addAll(punchEmployeeIds);
+        return ids;
+    }
+
+    /** {@link RosterMonth#getEmployees} (active people) plus the deactivated ones {@link #exportEmployeeIds} adds, name-ordered. */
+    private List<RosterEmployee> gridEmployees(YearMonth ym, RosterMonth data) {
+        Set<String> punchEmployeeIds = attendancePunchRepository
+                .findByPunchAtBetweenAndVoidedAtIsNullOrderByEmployeeUserIdAscPunchAtAsc(ym.atDay(1).atStartOfDay(), ym.atEndOfMonth().plusDays(1).atStartOfDay())
+                .stream()
+                .map(AttendancePunchEntity::getEmployeeUserId)
+                .collect(Collectors.toSet());
+        Set<String> ids = exportEmployeeIds(data.getEntries().stream().map(RosterEntry::getEmployeeUserId).toList(), punchEmployeeIds);
+        List<RosterEmployee> result = new java.util.ArrayList<>(data.getEmployees());
+        ids.removeAll(result.stream().map(RosterEmployee::getId).collect(Collectors.toSet()));
+        userRepository.findAllById(ids).forEach(u -> result.add(RosterService.toEmployeeDto(u)));
+        result.sort((a, b) -> a.getName().compareTo(b.getName()));
+        return result;
+    }
+
+    /**
      * Plan vs. reality for one month, two sheets. No money: the hotel's accountant keeps pay
      * calculation off-system - everyone is currently on a monthly salary held in a sheet this
      * system has never seen, and there are no part-timers - so this export reports only the
@@ -307,11 +336,11 @@ public class RosterExportService {
                 attendancePunchRepository.findByPunchAtBetweenAndVoidedAtIsNullOrderByEmployeeUserIdAscPunchAtAsc(from.atStartOfDay(), to.plusDays(1).atStartOfDay());
         Map<String, List<AttendancePunchEntity>> punchesByEmployee = punches.stream().collect(Collectors.groupingBy(AttendancePunchEntity::getEmployeeUserId));
 
-        // Union, not just who's scheduled - a punch with no roster entry is exactly the anomaly
-        // this export exists to surface, not drop. See this class's own javadoc for why this
-        // can't just reuse RosterService#getMonth's "every active employee" universe.
-        Set<String> employeeIds = new HashSet<>(assignedByEmployee.keySet());
-        employeeIds.addAll(punchesByEmployee.keySet());
+        // The grid export's set of people (exportEmployeeIds): a punch with no roster entry is
+        // exactly the anomaly this export exists to surface, and an active employee nobody
+        // scheduled still gets a row of zeros instead of silently missing from one file but
+        // present in the other.
+        Set<String> employeeIds = exportEmployeeIds(entries.stream().map(RosterEntryEntity::getEmployeeUserId).toList(), punchesByEmployee.keySet());
         Map<String, UserEntity> employees = userRepository.findAllById(employeeIds).stream().collect(Collectors.toMap(UserEntity::getId, u -> u));
         List<String> orderedEmployeeIds = employeeIds.stream().sorted((a, b) -> employees.get(a).getName().compareTo(employees.get(b).getName())).toList();
 

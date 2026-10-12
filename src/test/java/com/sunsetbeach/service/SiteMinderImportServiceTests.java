@@ -61,6 +61,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -80,6 +81,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 @SpringBootTest
 class SiteMinderImportServiceTests extends AbstractIntegrationTest {
 
+    @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private SiteMinderImportService importService;
     @Autowired private SiteMinderRoomTypeMappingService mappingService;
     @Autowired private BookingService bookingService;
@@ -535,18 +537,32 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
         assertThat(bookingFor(reference).getRoomId()).isEqualTo(aliasTarget.getId());
     }
 
+    /**
+     * Room type names are unique now (V138), so two types can only share one in a database where the
+     * migration had to leave its index out because of older duplicates - which is exactly the case
+     * this guard is for. The test recreates that database for its own duration: the index is dropped,
+     * and put back (after the duplicate is renamed) whatever the outcome.
+     */
     @Test
     void aNameSharedByTwoRoomTypes_isRejectedRatherThanGuessed() {
         RoomEntity first = room(2);
         RoomEntity second = room(2);
-        second.setName(first.getName());
-        roomRepository.saveAndFlush(second);
-        String reference = newReference();
+        String secondOwnName = second.getName();
+        jdbcTemplate.execute("DROP INDEX \"Room_name_normalized_key\"");
+        try {
+            second.setName(first.getName());
+            roomRepository.saveAndFlush(second);
+            String reference = newReference();
 
-        assertThatThrownBy(() -> importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, first.getName())))
-                .isInstanceOfSatisfying(ValidationException.class,
-                        e -> assertThat(e.getFieldErrors().get("roomTypeName")).singleElement().asString().contains("More than one room type"));
-        assertThat(bookingsWithReference(reference)).isZero();
+            assertThatThrownBy(() -> importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, first.getName())))
+                    .isInstanceOfSatisfying(ValidationException.class,
+                            e -> assertThat(e.getFieldErrors().get("roomTypeName")).singleElement().asString().contains("More than one room type"));
+            assertThat(bookingsWithReference(reference)).isZero();
+        } finally {
+            second.setName(secondOwnName);
+            roomRepository.saveAndFlush(second);
+            jdbcTemplate.execute("CREATE UNIQUE INDEX \"Room_name_normalized_key\" ON \"Room\" (lower(btrim(\"name\")))");
+        }
     }
 
     @Test

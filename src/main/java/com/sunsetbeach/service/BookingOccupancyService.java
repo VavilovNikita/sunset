@@ -180,7 +180,7 @@ public class BookingOccupancyService {
                 }
                 BookingScheduleInput schedule = new BookingScheduleInput(before.getCheckIn().toString(), plan.shortenedCheckOut().toString())
                         .roomUnitId(plan.roomUnitId());
-                Booking shortened = bookingService.updateSchedule(bookingId, schedule);
+                Booking shortened = bookingService.updateSchedule(bookingId, schedule, true);
                 released = priceBefore.subtract(new BigDecimal(shortened.getTotalPrice()));
             }
         }
@@ -267,7 +267,9 @@ public class BookingOccupancyService {
     /**
      * Null when checking out today isn't early: the stay already ends today or earlier, or it's a
      * one-night stay leaving on its arrival day (the first night is always charged). The room
-     * passed to the schedule change is the last segment's - the one the guest is leaving.
+     * passed to the schedule change is the one holding the stay's new last night - the one the
+     * guest is leaving. After a relocation that is not always the last segment's: a guest who
+     * leaves on the day of the move never uses the new room, and its segment is dropped.
      */
     private EarlyDeparture planEarlyDeparture(BookingEntity booking) {
         LocalDate today = LocalDate.now(clock);
@@ -277,8 +279,9 @@ public class BookingOccupancyService {
             return null;
         }
         List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(booking.getId());
-        String roomUnitId = segments.isEmpty() ? booking.getRoomUnitId() : segments.get(segments.size() - 1).getRoomUnitId();
-        BookingWriter.ScheduleQuote quote = bookingWriter.quoteSchedule(booking.getId(), booking.getCheckIn(), shortened, roomUnitId);
+        BookingSegmentEntity leaving = segments.stream().filter(s -> s.getCheckIn().isBefore(shortened)).reduce((first, second) -> second).orElse(null);
+        String roomUnitId = leaving != null ? leaving.getRoomUnitId() : booking.getRoomUnitId();
+        BookingWriter.ScheduleQuote quote = bookingWriter.quoteSchedule(booking.getId(), booking.getCheckIn(), shortened, roomUnitId, true);
         return new EarlyDeparture(shortened, roomUnitId, quote);
     }
 

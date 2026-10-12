@@ -11,6 +11,7 @@ import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.CheckOutInput;
 import com.sunsetbeach.model.CheckOutPreview;
 import com.sunsetbeach.model.CheckOutResult;
+import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
@@ -60,6 +61,7 @@ class EarlyCheckOutTests extends AbstractIntegrationTest {
 
     private RoomEntity room;
     private RoomUnitEntity unit;
+    private RoomUnitEntity otherUnit;
 
     @BeforeEach
     void setUp() {
@@ -75,6 +77,12 @@ class EarlyCheckOutTests extends AbstractIntegrationTest {
         newUnit.setLabel("Early-" + UUID.randomUUID().toString().substring(0, 8));
         newUnit.setActive(true);
         unit = roomUnitRepository.saveAndFlush(newUnit);
+
+        RoomUnitEntity second = new RoomUnitEntity();
+        second.setRoomId(room.getId());
+        second.setLabel("Early2-" + UUID.randomUUID().toString().substring(0, 8));
+        second.setActive(true);
+        otherUnit = roomUnitRepository.saveAndFlush(second);
     }
 
     private Booking checkedInStay(LocalDate checkIn, LocalDate checkOut) {
@@ -132,6 +140,74 @@ class EarlyCheckOutTests extends AbstractIntegrationTest {
         BookingFolio folio = bookingService.getFolio(booking.getId());
         assertThat(new BigDecimal(folio.getEarlyDepartureFee())).isEqualByComparingTo(fee);
         assertThat(new BigDecimal(folio.getBalanceDue())).isEqualByComparingTo(fullPrice);
+    }
+
+    /** The stay moved to {@code otherUnit} from {@code moveOn} on; the guest is checked in, in {@code unit}, today. */
+    private Booking relocatedStay(LocalDate checkIn, LocalDate checkOut, LocalDate moveOn) {
+        Booking booking = checkedInStay(checkIn, checkOut);
+        bookingService.relocate(booking.getId(), new RelocationInput(moveOn.toString(), room.getId()).roomUnitId(otherUnit.getId()));
+        return bookingService.getById(booking.getId());
+    }
+
+    @Test
+    void leavingBeforeAFutureRoomMove_dropsTheNewRoom_andFreesIt() {
+        // Room 1 for the first three nights, room 2 for the last two - the guest leaves today, the
+        // third night's morning, so the move never happens.
+        Booking booking = relocatedStay(TODAY.minusDays(2), TODAY.plusDays(3), TODAY.plusDays(1));
+        assertThat(booking.getSegments()).hasSize(2);
+
+        CheckOutPreview preview = occupancyService.previewCheckOut(booking.getId());
+        assertThat(preview.getShortenable()).isTrue();
+        assertThat(preview.getReason().orElse(null)).isNull();
+        assertThat(preview.getNightsReleased()).isEqualTo(3);
+
+        CheckOutResult result = occupancyService.checkOut(booking.getId(), new CheckOutInput().shortenStay(true).chargeUnusedNights(false));
+
+        Booking out = result.getBooking();
+        assertThat(out.getCheckOut()).isEqualTo(TODAY.toString());
+        assertThat(out.getSegments()).singleElement().satisfies(s -> {
+            assertThat(s.getCheckIn()).isEqualTo(TODAY.minusDays(2).toString());
+            assertThat(s.getCheckOut()).isEqualTo(TODAY.toString());
+        });
+        // Two nights stayed, at the 3500 the booking was agreed at.
+        assertThat(new BigDecimal(out.getTotalPrice())).isEqualByComparingTo("7000.00");
+        assertThat(out.getRoomUnitId().orElse(null)).isEqualTo(unit.getId());
+
+        // The room the guest never moved into is sellable again for the nights it was held.
+        Booking next = bookingService.createBooking(new BookingCreateInput(
+                room.getId(), "Next Guest", "next@example.com", "+66800000002", TODAY.plusDays(1).toString(), TODAY.plusDays(3).toString(), 1));
+        bookingService.assignRoomUnit(next.getId(), new RoomUnitAssignmentInput().roomUnitId(otherUnit.getId()));
+    }
+
+    @Test
+    void leavingOnTheDayOfTheRoomMove_dropsTheNewRoom_andKeepsTheOldOneAsIs() {
+        Booking booking = relocatedStay(TODAY.minusDays(2), TODAY.plusDays(2), TODAY);
+
+        CheckOutResult result = occupancyService.checkOut(booking.getId(), new CheckOutInput().shortenStay(true).chargeUnusedNights(true));
+
+        Booking out = result.getBooking();
+        assertThat(out.getCheckOut()).isEqualTo(TODAY.toString());
+        assertThat(out.getSegments()).singleElement().satisfies(s -> assertThat(s.getCheckOut()).isEqualTo(TODAY.toString()));
+        assertThat(new BigDecimal(out.getTotalPrice())).isEqualByComparingTo("7000.00");
+        // The two nights that would have been spent in room 2 are the early-departure fee.
+        assertThat(new BigDecimal(out.getEarlyDepartureFee())).isEqualByComparingTo("7000.00");
+        assertThat(out.getRoomUnitId().orElse(null)).isEqualTo(unit.getId());
+    }
+
+    @Test
+    void leavingAfterTheRoomMove_shortensTheLastRoom() {
+        Booking booking = relocatedStay(TODAY.minusDays(3), TODAY.plusDays(3), TODAY.minusDays(1));
+
+        CheckOutResult result = occupancyService.checkOut(booking.getId(), new CheckOutInput().shortenStay(true).chargeUnusedNights(false));
+
+        Booking out = result.getBooking();
+        assertThat(out.getCheckOut()).isEqualTo(TODAY.toString());
+        assertThat(out.getSegments()).hasSize(2);
+        assertThat(out.getSegments().get(1).getCheckIn()).isEqualTo(TODAY.minusDays(1).toString());
+        assertThat(out.getSegments().get(1).getCheckOut()).isEqualTo(TODAY.toString());
+        // Two nights in room 1 and one in room 2.
+        assertThat(new BigDecimal(out.getTotalPrice())).isEqualByComparingTo("10500.00");
+        assertThat(out.getRoomUnitId().orElse(null)).isEqualTo(otherUnit.getId());
     }
 
     @Test

@@ -110,7 +110,7 @@ class OrderCloseAndShiftGuardTests extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> shiftService.close(shift.getId(), new ShiftCloseInput())).isInstanceOf(ConflictException.class);
 
-        orderService.cancel(unrelatedOrder.getId());
+        orderService.cancel(unrelatedOrder.getId(), null, null, Role.WAITER);
 
         Shift closed = shiftService.close(shift.getId(), new ShiftCloseInput());
         assertThat(closed.getId()).isEqualTo(shift.getId());

@@ -207,6 +207,16 @@ public class RosterGridImportService {
                 .map(c -> c.getEmployeeUserId() + "|" + c.getDate())
                 .collect(Collectors.toSet());
 
+        // Adding or changing a shift for a deactivated employee refuses the commit before any write
+        // (removing one of their old entries is fine).
+        userRepository
+                .findAllById(resolution.diffRows.stream()
+                        .filter(d -> !d.lockedConflict && !excluded.contains(d.employeeUserId + "|" + d.date) && !"REMOVE".equals(d.changeType))
+                        .map(d -> d.employeeUserId)
+                        .distinct()
+                        .toList())
+                .forEach(RosterService::requireActiveEmployee);
+
         int created = 0;
         int removed = 0;
         int changed = 0;

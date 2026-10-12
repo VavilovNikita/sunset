@@ -36,12 +36,13 @@ public interface RoomsApi {
 
     /**
      * POST /rooms : Create a room
-     * Requires any authenticated staff session (ADMIN or MANAGER).
+     * Requires any authenticated staff session (ADMIN or MANAGER). A room type&#39;s &#x60;name&#x60; is unique regardless of case and of spaces at either end (\&quot;Deluxe\&quot; &#x3D; \&quot; deluxe \&quot;): 409 when another type already has it (V138 adds the matching unique index). 
      *
      * @param roomInput  (required)
      * @return Room created. (status code 201)
      *         or Body failed &#x60;roomSchema&#x60; validation. (status code 400)
      *         or No valid JWT. (status code 401)
+     *         or Another room type already has this name. (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.POST,
@@ -62,6 +63,11 @@ public interface RoomsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -255,7 +261,7 @@ public interface RoomsApi {
 
     /**
      * PATCH /rooms/{id} : Update a room
-     * Requires any authenticated staff session (ADMIN or MANAGER). Full replacement of all &#x60;roomSchema&#x60; fields (no partial update).
+     * Requires any authenticated staff session (ADMIN or MANAGER). Full replacement of all &#x60;roomSchema&#x60; fields (no partial update). The &#x60;name&#x60; rule of &#x60;POST /rooms&#x60; applies (the type&#39;s own current name is of course fine). 
      *
      * @param id  (required)
      * @param roomInput  (required)
@@ -263,6 +269,7 @@ public interface RoomsApi {
      *         or Body failed &#x60;roomSchema&#x60; validation. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Room not found (Prisma &#x60;P2025&#x60;). (status code 404)
+     *         or Another room type already has this name. (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.PATCH,
@@ -284,6 +291,11 @@ public interface RoomsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

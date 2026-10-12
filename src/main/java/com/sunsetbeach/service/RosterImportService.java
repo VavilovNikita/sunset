@@ -229,6 +229,12 @@ public class RosterImportService {
                             + "what's left");
         }
 
+        // Checked before the first write, so a deactivated employee in the file refuses the whole
+        // commit instead of leaving half a month behind (nothing is committed on a 400).
+        userRepository
+                .findAllById(resolution.resolvedCells.stream().map(ResolvedCell::employeeUserId).distinct().toList())
+                .forEach(RosterService::requireActiveEmployee);
+
         int created = 0;
         for (ResolvedCell cell : resolution.resolvedCells) {
             if (resolution.existingEntryDates.contains(cell.employeeUserId() + "|" + cell.parsed().date())) {

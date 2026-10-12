@@ -230,7 +230,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
     void cancelOrder_writesOrderCancelledEntry() {
         Order order = openOrderWithOneItem();
 
-        orderService.cancel(order.getId());
+        orderService.cancel(order.getId(), null, null, Role.WAITER);
 
         List<AuditLogEntity> entries = entriesFor(AuditEntityType.ORDER, order.getId()).stream()
                 .filter(e -> e.getAction() == AuditAction.ORDER_CANCELLED)

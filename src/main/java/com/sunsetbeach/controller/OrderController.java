@@ -3,6 +3,7 @@ package com.sunsetbeach.controller;
 import com.sunsetbeach.api.OrdersApi;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.Order;
+import com.sunsetbeach.model.OrderCancelInput;
 import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderDateBasis;
 import com.sunsetbeach.model.OrderItemInput;
@@ -74,8 +75,8 @@ public class OrderController implements OrdersApi {
     }
 
     @Override
-    public ResponseEntity<Order> cancelOrder(String id) {
-        return ResponseEntity.ok(orderService.cancel(id));
+    public ResponseEntity<Order> cancelOrder(String id, OrderCancelInput orderCancelInput) {
+        return ResponseEntity.ok(orderService.cancel(id, orderCancelInput, CurrentUser.id(), CurrentUser.role()));
     }
 
     @Override

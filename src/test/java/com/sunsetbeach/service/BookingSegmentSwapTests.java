@@ -254,6 +254,31 @@ class BookingSegmentSwapTests extends AbstractIntegrationTest {
         assertThat(segmentsOf(bookingTwo.getId()).get(0).getRoomUnitId()).isEqualTo(unitB.getId());
     }
 
+    /**
+     * Two back-to-back stays in the same room "swapping" it changes nothing, yet used to be accepted
+     * and written to both bookings' history as "Swapped rooms ... now 101" for a 101 -> 101 swap.
+     */
+    @Test
+    void swap_twoBookingsInTheSameRoom_isRejected_andWritesNoHistory() {
+        RoomEntity room = createRoom(1, new BigDecimal("1000.00"));
+        LocalDate checkIn = LocalDate.now().plusDays(329);
+        RoomUnitEntity unit = roomUnitRepository.findByRoomId(room.getId()).get(0);
+
+        Booking first = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
+        bookingService.assignRoomUnit(first.getId(), new RoomUnitAssignmentInput().roomUnitId(unit.getId()));
+        Booking second = createBooking(room.getId(), checkIn.plusDays(2), checkIn.plusDays(4));
+        bookingService.assignRoomUnit(second.getId(), new RoomUnitAssignmentInput().roomUnitId(unit.getId()));
+        String firstSegmentId = segmentsOf(first.getId()).get(0).getId();
+        String secondSegmentId = segmentsOf(second.getId()).get(0).getId();
+
+        assertThatCode(() -> bookingService.swapSegmentRoomUnit(first.getId(), firstSegmentId, new SwapSegmentRoomUnitInput(secondSegmentId)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("same room");
+
+        assertThat(entriesFor(AuditEntityType.BOOKING, first.getId()).stream().filter(e -> e.getSummary().contains("Swapped rooms"))).isEmpty();
+        assertThat(entriesFor(AuditEntityType.BOOKING, second.getId()).stream().filter(e -> e.getSummary().contains("Swapped rooms"))).isEmpty();
+    }
+
     @Test
     void swap_oneSideUnassigned_isRejected() {
         RoomEntity room = createRoom(1, new BigDecimal("1000.00"));

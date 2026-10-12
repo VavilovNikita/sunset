@@ -485,6 +485,12 @@ public class BookingWriter {
         if (segment.getRoomUnitId() == null || other.getRoomUnitId() == null) {
             throw new BadRequestException("Both rooms must already have a physical room assigned to swap them");
         }
+        if (segment.getRoomUnitId().equals(other.getRoomUnitId())) {
+            // Two stays in one room (back to back) exchanging it with each other changes nothing, yet
+            // would be written to the history as "Swapped rooms". The calendar no longer offers it;
+            // this keeps any other caller from recording it.
+            throw new BadRequestException("These two bookings are already in the same room, so there is nothing to swap - change a booking's dates instead");
+        }
 
         Set<String> excluded = Set.of(segment.getId(), other.getId());
         RoomUnitEntity segmentsNewUnit =
@@ -533,12 +539,24 @@ public class BookingWriter {
      */
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public BookingEntity updateSchedule(String bookingId, LocalDate newCheckIn, LocalDate newCheckOut, String roomUnitId) {
+        return updateSchedule(bookingId, newCheckIn, newCheckOut, roomUnitId, false);
+    }
+
+    /**
+     * {@link #updateSchedule(String, LocalDate, LocalDate, String)} with {@code earlyDeparture}: the
+     * guest is leaving before the end of the stay, so a new {@code checkOut} that falls on or before
+     * the start of the last segment drops the segments that begin at or after it (the nights they
+     * covered are released, their frozen rates go with them) and shortens the one that remains.
+     * Without it such a change is a relocation boundary crossing and is refused.
+     */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public BookingEntity updateSchedule(String bookingId, LocalDate newCheckIn, LocalDate newCheckOut, String roomUnitId, boolean earlyDeparture) {
         BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
         if (segments.isEmpty()) {
             throw new NotFoundException("Booking not found");
         }
-        ScheduleTarget target = resolveScheduleTarget(segments, newCheckIn, newCheckOut);
+        ScheduleTarget target = resolveScheduleTarget(segments, newCheckIn, newCheckOut, earlyDeparture);
         if (target.isRejected()) {
             if (target.badRequest()) {
                 throw new BadRequestException(target.rejectionReason());
@@ -573,6 +591,12 @@ public class BookingWriter {
         segment.setCheckOut(segCheckOut);
         segment.setTotalPrice(reprice.newSegmentTotal());
         segmentRepository.saveAndFlush(segment);
+        if (!target.dropped().isEmpty()) {
+            // Their nightly rates go with them (ON DELETE CASCADE) - the guest has left, so there
+            // is no relocation left to undo.
+            segmentRepository.deleteAll(target.dropped());
+            segmentRepository.flush();
+        }
         if (!reprice.nightsToRemove().isEmpty()) {
             // Flushed immediately, not left for Hibernate's own action ordering to sort out: a
             // single flush runs every pending insert before every pending delete regardless of
@@ -608,11 +632,17 @@ public class BookingWriter {
      */
     @Transactional(readOnly = true)
     public ScheduleQuote quoteSchedule(String bookingId, LocalDate newCheckIn, LocalDate newCheckOut, String roomUnitId) {
+        return quoteSchedule(bookingId, newCheckIn, newCheckOut, roomUnitId, false);
+    }
+
+    /** {@link #quoteSchedule(String, LocalDate, LocalDate, String)} for {@code updateSchedule}'s {@code earlyDeparture} variant. */
+    @Transactional(readOnly = true)
+    public ScheduleQuote quoteSchedule(String bookingId, LocalDate newCheckIn, LocalDate newCheckOut, String roomUnitId, boolean earlyDeparture) {
         List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
         if (segments.isEmpty()) {
             throw new NotFoundException("Booking not found");
         }
-        ScheduleTarget target = resolveScheduleTarget(segments, newCheckIn, newCheckOut);
+        ScheduleTarget target = resolveScheduleTarget(segments, newCheckIn, newCheckOut, earlyDeparture);
         if (target.isRejected()) {
             return new ScheduleQuote(BigDecimal.ZERO, 0, false, target.rejectionReason());
         }
@@ -623,7 +653,7 @@ public class BookingWriter {
 
         ScheduleReprice reprice = repriceSchedule(segment, room, segCheckIn, segCheckOut);
         BigDecimal othersTotal = segments.stream()
-                .filter(s -> !s.getId().equals(segment.getId()))
+                .filter(s -> !s.getId().equals(segment.getId()) && !target.dropped().contains(s))
                 .map(BookingSegmentEntity::getTotalPrice)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalPrice = othersTotal.add(reprice.newSegmentTotal());
@@ -667,7 +697,8 @@ public class BookingWriter {
      *       one from a dateless request.</li>
      * </ul>
      */
-    private ScheduleTarget resolveScheduleTarget(List<BookingSegmentEntity> sortedSegments, LocalDate newCheckIn, LocalDate newCheckOut) {
+    private ScheduleTarget resolveScheduleTarget(
+            List<BookingSegmentEntity> sortedSegments, LocalDate newCheckIn, LocalDate newCheckOut, boolean earlyDeparture) {
         if (sortedSegments.size() == 1) {
             return ScheduleTarget.of(sortedSegments.get(0), newCheckIn, newCheckOut);
         }
@@ -684,6 +715,15 @@ public class BookingWriter {
             return ScheduleTarget.of(first, newCheckIn, first.getCheckOut());
         }
         if (checkOutChanged && !checkInChanged) {
+            if (earlyDeparture && newCheckOut.isBefore(last.getCheckOut()) && !newCheckOut.isAfter(last.getCheckIn())) {
+                // The guest leaves before the last room's first night, so that room is never used:
+                // its segment (and any other starting on or after the new departure) goes, and the
+                // segment holding the new last night is shortened.
+                List<BookingSegmentEntity> kept = sortedSegments.stream().filter(s -> s.getCheckIn().isBefore(newCheckOut)).toList();
+                List<BookingSegmentEntity> dropped = sortedSegments.stream().filter(s -> !s.getCheckIn().isBefore(newCheckOut)).toList();
+                BookingSegmentEntity newLast = kept.get(kept.size() - 1);
+                return new ScheduleTarget(newLast, newLast.getCheckIn(), newCheckOut, null, false, dropped);
+            }
             if (!newCheckOut.isAfter(last.getCheckIn())) {
                 return ScheduleTarget.badRequest("New check-out must stay after " + last.getCheckIn()
                         + " - crossing into the previous segment isn't a schedule change, it's an undo-relocation.");
@@ -695,17 +735,22 @@ public class BookingWriter {
 
     /** Result of {@link #resolveScheduleTarget} - either a segment to change and its new bounds, or a reason it can't be resolved. */
     private record ScheduleTarget(
-            BookingSegmentEntity segment, LocalDate segmentCheckIn, LocalDate segmentCheckOut, String rejectionReason, boolean badRequest) {
+            BookingSegmentEntity segment,
+            LocalDate segmentCheckIn,
+            LocalDate segmentCheckOut,
+            String rejectionReason,
+            boolean badRequest,
+            List<BookingSegmentEntity> dropped) {
         static ScheduleTarget of(BookingSegmentEntity segment, LocalDate checkIn, LocalDate checkOut) {
-            return new ScheduleTarget(segment, checkIn, checkOut, null, false);
+            return new ScheduleTarget(segment, checkIn, checkOut, null, false, List.of());
         }
 
         static ScheduleTarget rejected(String reason) {
-            return new ScheduleTarget(null, null, null, reason, false);
+            return new ScheduleTarget(null, null, null, reason, false, List.of());
         }
 
         static ScheduleTarget badRequest(String reason) {
-            return new ScheduleTarget(null, null, null, reason, true);
+            return new ScheduleTarget(null, null, null, reason, true, List.of());
         }
 
         boolean isRejected() {

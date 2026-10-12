@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.error.SqlStates;
 import com.sunsetbeach.mapper.RoomMapper;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -28,6 +29,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class RoomService {
+
+    private static final String UNIQUE_VIOLATION_SQLSTATE = "23505";
 
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
@@ -68,18 +71,20 @@ public class RoomService {
 
     @Transactional
     public Room create(RoomInput input) {
+        requireNameFree(input.getName(), null);
         RoomEntity entity = new RoomEntity();
         roomMapper.applyInput(entity, input);
         // flush so @CreationTimestamp (populated at insert time) is on the object before mapping
-        return roomMapper.toDto(roomRepository.saveAndFlush(entity));
+        return roomMapper.toDto(saveRoomFlushed(entity, input.getName()));
     }
 
     @Transactional
     public Room update(String id, RoomInput input) {
         RoomEntity entity = roomRepository.findById(id).orElseThrow(() -> new NotFoundException("Room not found"));
+        requireNameFree(input.getName(), id);
         BigDecimal oldBasePrice = entity.getBasePrice();
         roomMapper.applyInput(entity, input);
-        RoomEntity saved = roomRepository.save(entity);
+        RoomEntity saved = saveRoomFlushed(entity, input.getName());
 
         if (oldBasePrice.compareTo(saved.getBasePrice()) != 0) {
             // Both sides scaled to 2 decimal places before formatting: oldBasePrice comes off the
@@ -96,6 +101,35 @@ public class RoomService {
         }
 
         return roomMapper.toDto(saved);
+    }
+
+    /**
+     * A room type's name is unique ignoring case and surrounding spaces (V138's index is the
+     * guarantee under a race; this is the readable answer in the common case, and the only
+     * guard on a database where V138 had to leave the index out because of older duplicates).
+     */
+    private void requireNameFree(String name, String excludeId) {
+        if (roomRepository.existsByNormalizedName(name, excludeId)) {
+            throw nameTaken(name);
+        }
+    }
+
+    private RoomEntity saveRoomFlushed(RoomEntity entity, String name) {
+        try {
+            return roomRepository.saveAndFlush(entity);
+        } catch (DataIntegrityViolationException e) {
+            // The room table's only unique constraints are its primary key (a fresh random id) and
+            // V138's name index, so a unique violation here is a concurrent same-name write. Not
+            // re-queried: the failed statement already aborted this transaction.
+            if (SqlStates.is(e, UNIQUE_VIOLATION_SQLSTATE)) {
+                throw nameTaken(name);
+            }
+            throw e;
+        }
+    }
+
+    private static ConflictException nameTaken(String name) {
+        return new ConflictException("A room type named \"" + name.strip() + "\" already exists (names are compared ignoring case and spaces).");
     }
 
     @Transactional

@@ -10,6 +10,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import com.sunsetbeach.model.ErrorMessage;
 import java.time.LocalDate;
 import com.sunsetbeach.model.Order;
+import com.sunsetbeach.model.OrderCancelInput;
 import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderDateBasis;
 import com.sunsetbeach.model.OrderItemInput;
@@ -101,27 +102,42 @@ public interface OrdersApi {
 
     /**
      * POST /orders/{id}/cancel : Cancel an order
-     * Requires role &#x60;WAITER&#x60; or above. No payment is created.
+     * Requires role &#x60;WAITER&#x60; or above for an &#x60;OPEN&#x60; order (nothing has reached the kitchen/bar yet). A &#x60;SENT&#x60; order has lines on paper at a station, so cancelling it whole is a void like voiding one sent line (&#x60;POST /orders/{id}/items/{itemId}/void&#x60;): &#x60;MANAGER&#x60; or above (403 otherwise) and a &#x60;reason&#x60; (400 without one). Every sent line is recorded as an &#x60;OrderItemVoid&#x60; on &#x60;Order.voids&#x60; and leaves &#x60;items&#x60; (so &#x60;total&#x60; is 0), lines that were never sent are simply dropped, a VOID ticket goes to each line&#39;s station, and the audit entry carries the reason. No payment is created. The rule is enforced here, not only by the screens. 
      *
      * @param id  (required)
+     * @param orderCancelInput  (optional)
      * @return Cancelled order (status &#x60;CANCELLED&#x60;). (status code 200)
+     *         or Cancelling a &#x60;SENT&#x60; order without a &#x60;reason&#x60;. (status code 400)
      *         or No valid JWT. (status code 401)
+     *         or The order is &#x60;SENT&#x60; and the caller is below &#x60;MANAGER&#x60;. (status code 403)
      *         or Order not found. (status code 404)
      *         or Order already &#x60;PAID&#x60;/&#x60;CANCELLED&#x60;. (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.POST,
         value = "/orders/{id}/cancel",
-        produces = { "application/json" }
+        produces = { "application/json" },
+        consumes = { "application/json" }
     )
     
     default ResponseEntity<Order> cancelOrder(
-         @PathVariable("id") String id
+         @PathVariable("id") String id,
+         @Valid @RequestBody(required = false) OrderCancelInput orderCancelInput
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"note\" : \"note\", \"openedByEmail\" : \"openedByEmail\", \"guestAccessToken\" : \"guestAccessToken\", \"spaAppointmentId\" : \"spaAppointmentId\", \"voids\" : [ { \"unitPrice\" : \"unitPrice\", \"note\" : \"note\", \"reason\" : \"reason\", \"voidedByEmail\" : \"voidedByEmail\", \"voidedByUserId\" : \"voidedByUserId\", \"quantity\" : 6, \"id\" : \"id\", \"sentAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"menuItemId\" : \"menuItemId\" }, { \"unitPrice\" : \"unitPrice\", \"note\" : \"note\", \"reason\" : \"reason\", \"voidedByEmail\" : \"voidedByEmail\", \"voidedByUserId\" : \"voidedByUserId\", \"quantity\" : 6, \"id\" : \"id\", \"sentAt\" : \"2000-01-23T04:56:07.000+00:00\", \"voidedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"menuItemId\" : \"menuItemId\" } ], \"bookingId\" : \"bookingId\", \"guestName\" : \"guestName\", \"number\" : 0, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"total\" : \"total\", \"tableId\" : \"tableId\", \"paymentMethod\" : \"\", \"openedByUserId\" : \"openedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"items\" : [ { \"unitPrice\" : \"unitPrice\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"quantity\" : 1, \"orderId\" : \"orderId\", \"id\" : \"id\", \"sentAt\" : \"2000-01-23T04:56:07.000+00:00\", \"menuItemId\" : \"menuItemId\" }, { \"unitPrice\" : \"unitPrice\", \"note\" : \"note\", \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"quantity\" : 1, \"orderId\" : \"orderId\", \"id\" : \"id\", \"sentAt\" : \"2000-01-23T04:56:07.000+00:00\", \"menuItemId\" : \"menuItemId\" } ], \"status\" : \"OPEN\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

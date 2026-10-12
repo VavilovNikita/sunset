@@ -22,6 +22,7 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.MenuDepartment;
 import com.sunsetbeach.model.Order;
+import com.sunsetbeach.model.OrderCancelInput;
 import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderItemInput;
 import com.sunsetbeach.model.OrderUpdateInput;
@@ -665,7 +666,7 @@ class PrintingTests extends AbstractIntegrationTest {
             // ShiftService.close()'s unsettled-order guard is system-wide (see
             // OrderCloseAndShiftGuardTests) - a SENT order anywhere blocks any shift from
             // closing, so this one must be settled before the shift-close call below.
-            orderService.cancel(ticketOrder.getId());
+            orderService.cancel(ticketOrder.getId(), new OrderCancelInput().reason("test cleanup"), cashier.getId(), Role.MANAGER);
 
             Shift shift = shiftService.open(cashier.getId(), new ShiftOpenInput());
             Order paidOrder = orderService.create(new OrderCreateInput(), cashier.getId());

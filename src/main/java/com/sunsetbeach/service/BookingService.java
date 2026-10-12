@@ -798,6 +798,16 @@ public class BookingService {
      * booking creation.
      */
     public Booking updateSchedule(String bookingId, BookingScheduleInput input) {
+        return updateSchedule(bookingId, input, false);
+    }
+
+    /**
+     * {@link #updateSchedule(String, BookingScheduleInput)} for a guest leaving early
+     * ({@code earlyDeparture}): a booking split across several rooms may drop the trailing rooms
+     * entirely - see {@link BookingWriter#updateSchedule(String, LocalDate, LocalDate, String, boolean)}.
+     * Used only by {@link BookingOccupancyService#checkOut}; the {@code PATCH} endpoint never sets it.
+     */
+    public Booking updateSchedule(String bookingId, BookingScheduleInput input, boolean earlyDeparture) {
         LocalDate checkIn = LocalDate.parse(input.getCheckIn());
         LocalDate checkOut = LocalDate.parse(input.getCheckOut());
         if (!checkIn.isBefore(checkOut)) {
@@ -813,7 +823,7 @@ public class BookingService {
 
         BookingEntity saved;
         try {
-            saved = bookingWriter.updateSchedule(bookingId, checkIn, checkOut, roomUnitId);
+            saved = bookingWriter.updateSchedule(bookingId, checkIn, checkOut, roomUnitId, earlyDeparture);
         } catch (DataAccessException | TransactionSystemException e) {
             if (isSerializationFailure(e)) {
                 throw new ConflictException("Someone just changed this booking's schedule — please try again.");

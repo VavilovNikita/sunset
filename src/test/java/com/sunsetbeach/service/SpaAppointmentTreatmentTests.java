@@ -554,7 +554,7 @@ class SpaAppointmentTreatmentTests extends AbstractIntegrationTest {
 
         Order order = openOrderLinkedTo(created.getId(), receptionist.getId());
         bill(order.getId(), treatment, 1);
-        orderService.cancel(order.getId());
+        orderService.cancel(order.getId(), null, null, Role.WAITER);
 
         SpaAppointment reloaded = spaAppointmentService.getSchedule(checkIn).getAppointments().stream()
                 .filter(a -> a.getId().equals(created.getId())).findFirst().orElseThrow();

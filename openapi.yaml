@@ -965,7 +965,10 @@ paths:
       operationId: createRoom
       tags: [Rooms]
       summary: Create a room
-      description: Requires any authenticated staff session (ADMIN or MANAGER).
+      description: >
+        Requires any authenticated staff session (ADMIN or MANAGER). A room type's `name` is unique
+        regardless of case and of spaces at either end ("Deluxe" = " deluxe "): 409 when another
+        type already has it (V138 adds the matching unique index).
       requestBody:
         required: true
         content:
@@ -987,6 +990,12 @@ paths:
                 $ref: "#/components/schemas/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Another room type already has this name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /rooms/{id}:
     parameters:
@@ -1023,7 +1032,10 @@ paths:
       operationId: updateRoom
       tags: [Rooms]
       summary: Update a room
-      description: Requires any authenticated staff session (ADMIN or MANAGER). Full replacement of all `roomSchema` fields (no partial update).
+      description: >
+        Requires any authenticated staff session (ADMIN or MANAGER). Full replacement of all
+        `roomSchema` fields (no partial update). The `name` rule of `POST /rooms` applies (the
+        type's own current name is of course fine).
       requestBody:
         required: true
         content:
@@ -1053,6 +1065,12 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Room not found
+        "409":
+          description: Another room type already has this name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
     delete:
       operationId: deleteRoom
       tags: [Rooms]
@@ -2544,9 +2562,11 @@ paths:
         already-frozen nightly rates, only `roomUnitId` moves.
 
         Both segments must already have a physical room assigned - swapping with nothing isn't a
-        swap, it's a single-sided assignment; use `PUT .../room-unit` for that. Writes one audit
-        entry under each booking's own id, naming the other guest, so each booking's own history
-        shows the move.
+        swap, it's a single-sided assignment; use `PUT .../room-unit` for that. Two segments that
+        are already in the *same* physical room are a 400 as well: exchanging a room with itself
+        changes nothing and would only leave a "Swapped rooms" entry in both histories. Writes one
+        audit entry under each booking's own id, naming the other guest, so each booking's own
+        history shows the move.
       requestBody:
         required: true
         content:
@@ -5540,7 +5560,21 @@ paths:
       operationId: cancelOrder
       tags: [Orders]
       summary: Cancel an order
-      description: Requires role `WAITER` or above. No payment is created.
+      description: >
+        Requires role `WAITER` or above for an `OPEN` order (nothing has reached the kitchen/bar
+        yet). A `SENT` order has lines on paper at a station, so cancelling it whole is a void like
+        voiding one sent line (`POST /orders/{id}/items/{itemId}/void`): `MANAGER` or above (403
+        otherwise) and a `reason` (400 without one). Every sent line is recorded as an
+        `OrderItemVoid` on `Order.voids` and leaves `items` (so `total` is 0), lines that were
+        never sent are simply dropped, a VOID ticket goes to each line's station, and the audit
+        entry carries the reason. No payment is created. The rule is enforced here, not only by
+        the screens.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCancelInput"
       responses:
         "200":
           description: Cancelled order (status `CANCELLED`).
@@ -5548,8 +5582,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Order"
+        "400":
+          description: Cancelling a `SENT` order without a `reason`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The order is `SENT` and the caller is below `MANAGER`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+              example:
+                error: A manager has to cancel an order that was already sent
         "404":
           description: Order not found.
           content:
@@ -8892,7 +8942,11 @@ paths:
       operationId: createRosterEntry
       tags: [Roster]
       summary: Assign a shift directly (fill a blank cell)
-      description: Requires MANAGER or above. Fails if the employee already has an entry that date.
+      description: >
+        Requires MANAGER or above. Fails if the employee already has an entry that date, or is
+        deactivated: no shift is ever assigned to a deactivated employee, by this call, the move/
+        reassign/swap gestures, the pattern generator or either Excel import (their earlier entries
+        stay and can still be removed).
       requestBody:
         required: true
         content:
@@ -8907,7 +8961,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/RosterEntry"
         "400":
-          description: This employee already has an entry on this date.
+          description: This employee already has an entry on this date, or is deactivated.
           content:
             application/json:
               schema:
@@ -9680,10 +9734,11 @@ paths:
       summary: Export a month's assigned vs. actual worked days and hours, as an Excel workbook
       description: >
         Requires MANAGER or above, the same floor as the rest of the roster module's write/export
-        surface. Two sheets. "Summary": one row per employee who either had a
-        `shiftCode.countsAsWorked` roster entry that month or at least one real `AttendancePunch`
-        that month (a punch with no matching entry is exactly the kind of anomaly this export
-        exists to surface, not drop) - Days assigned/Hours assigned are the plan (`OP` counts as a
+        surface. Lists the same people as `GET /roster/export` for the same month: every active
+        employee, plus anyone - deactivated or not - with a roster entry or a real
+        `AttendancePunch` that month (a punch with no matching entry is exactly the kind of anomaly
+        this export exists to surface, not drop). Two sheets. "Summary": one row per such employee
+        (zeros for someone who neither was scheduled nor punched) - Days assigned/Hours assigned are the plan (`OP` counts as a
         day with no fixed hours, `PH` doesn't count at all, same as before this export reported
         real attendance); Days present/Hours worked are real punches, paired consecutive IN/OUT
         per day the same way `GET /attendance/summary` does; Incomplete days counts days that
@@ -9731,7 +9786,8 @@ paths:
       description: >
         Requires ADMIN - stricter than the rest of this module's MANAGER floor, matching the
         Excel import's own floor (`/roster/import/**`), not the actuals export's. One row per
-        employee, grouped and ordered exactly as the on-screen grid (`RosterGrid.tsx`) renders it -
+        employee - every active one, plus anyone deactivated who still has an entry or a punch that
+        month, the same people `GET /roster/actuals-export` lists - grouped and ordered exactly as the on-screen grid (`RosterGrid.tsx`) renders it -
         by `StaffArea` in the fixed order Admin, Front Office, Maintenance, Housekeeping,
         Restaurant, Kitchen, then employees with no area set, alphabetically by name within each
         group; a group with nobody in it is left out entirely, same as on screen. One column per
@@ -14218,6 +14274,16 @@ components:
           minLength: 1
           maxLength: 500
           description: Required - recorded on the void and in the audit log.
+
+    OrderCancelInput:
+      type: object
+      description: Optional body of `POST /orders/{id}/cancel`; `reason` is required only when the order is `SENT`.
+      properties:
+        reason:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Recorded on every void the cancellation creates and in the audit log.
 
     OrderCreateInput:
       type: object

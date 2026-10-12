@@ -129,7 +129,7 @@ class GuestOrderAccessTests extends AbstractIntegrationTest {
     void rightToken_orderCancelled_getView_isNotFound() {
         Order order = orderService.create(new OrderCreateInput(), waiter.getId());
         String token = order.getGuestAccessToken().get();
-        orderService.cancel(order.getId());
+        orderService.cancel(order.getId(), null, null, Role.WAITER);
 
         assertThatThrownBy(() -> orderService.getGuestOrderView(order.getId(), token)).isInstanceOf(NotFoundException.class);
     }

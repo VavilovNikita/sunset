@@ -437,4 +437,62 @@ class RosterServiceTests extends AbstractIntegrationTest {
         createdShiftCodeIds.add(created.getId());
         return created;
     }
+
+    private UserEntity deactivate(UserEntity user) {
+        user.setActive(false);
+        return userRepository.saveAndFlush(user);
+    }
+
+    @Test
+    void createEntry_forADeactivatedEmployee_isRejected() {
+        UserEntity mgr = createUser(Role.MANAGER);
+        UserEntity gone = deactivate(createUser(Role.WAITER));
+        ShiftCode code = createCode(StaffArea.RESTAURANT, "09:00", "17:00");
+
+        assertThatThrownBy(() -> rosterService.createEntry(new RosterEntryCreateInput(gone.getId(), "2027-03-20", code.getId()), mgr.getId()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("deactivated");
+        assertThat(rosterEntryRepository.findByEmployeeUserIdAndDate(gone.getId(), LocalDate.of(2027, 3, 20))).isEmpty();
+    }
+
+    @Test
+    void movingReassigningOrSwapping_toADeactivatedEmployee_isRejected_butTheirOldEntryCanStillBeRemoved() {
+        UserEntity mgr = createUser(Role.MANAGER);
+        UserEntity staying = createUser(Role.WAITER);
+        UserEntity leaving = createUser(Role.WAITER);
+        ShiftCode code = createCode(StaffArea.RESTAURANT, "09:00", "17:00");
+        RosterEntry stayingEntry = rosterService.createEntry(new RosterEntryCreateInput(staying.getId(), "2027-03-21", code.getId()), mgr.getId());
+        RosterEntry leavingEntry = rosterService.createEntry(new RosterEntryCreateInput(leaving.getId(), "2027-03-22", code.getId()), mgr.getId());
+        deactivate(leaving);
+
+        // Give someone's shift to the deactivated person, trade with them, or move their own: all refused.
+        assertThatThrownBy(() -> rosterService.reassignEntry(stayingEntry.getId(), new RosterReassignInput(leaving.getId()), mgr.getId()))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> rosterService.swapEntries(stayingEntry.getId(), new RosterSwapInput(leavingEntry.getId()), mgr.getId()))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> rosterService.moveEntry(leavingEntry.getId(), new RosterMoveInput("2027-03-23"), mgr.getId()))
+                .isInstanceOf(BadRequestException.class);
+        assertThat(rosterEntryRepository.findById(stayingEntry.getId()).orElseThrow().getEmployeeUserId()).isEqualTo(staying.getId());
+        assertThat(rosterEntryRepository.findById(leavingEntry.getId()).orElseThrow().getDate()).isEqualTo(LocalDate.of(2027, 3, 22));
+
+        // Their earlier entry is history that can still be cleared.
+        rosterService.deleteEntry(leavingEntry.getId());
+        assertThat(rosterEntryRepository.findById(leavingEntry.getId())).isEmpty();
+    }
+
+    @Test
+    void generateMonth_skipsADeactivatedEmployeesPattern() {
+        UserEntity mgr = createUser(Role.MANAGER);
+        UserEntity active = createUserInArea(StaffArea.RESTAURANT);
+        UserEntity gone = createUserInArea(StaffArea.RESTAURANT);
+        ShiftCode code = createCode(StaffArea.RESTAURANT, "09:00", "17:00");
+        employeePatternService.set(active.getId(), new EmployeePatternInput(StaffArea.RESTAURANT, 5, Weekday.SUNDAY).defaultShiftCodeId(code.getId()), mgr.getId());
+        employeePatternService.set(gone.getId(), new EmployeePatternInput(StaffArea.RESTAURANT, 5, Weekday.SUNDAY).defaultShiftCodeId(code.getId()), mgr.getId());
+        deactivate(gone);
+
+        rosterService.generateMonth(2027, 4, mgr.getId());
+
+        assertThat(rosterEntryRepository.findByEmployeeUserIdAndDateBetween(active.getId(), LocalDate.of(2027, 4, 1), LocalDate.of(2027, 4, 30))).isNotEmpty();
+        assertThat(rosterEntryRepository.findByEmployeeUserIdAndDateBetween(gone.getId(), LocalDate.of(2027, 4, 1), LocalDate.of(2027, 4, 30))).isEmpty();
+    }
 }

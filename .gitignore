@@ -12,6 +12,9 @@ target/
 .env.*
 !.env.example
 
+### Server-specific compose settings (e.g. the VPS joining the external sunset-net network) - see DEPLOY.md ###
+docker-compose.override.yml
+
 ### STS ###
 .apt_generated
 .classpath
