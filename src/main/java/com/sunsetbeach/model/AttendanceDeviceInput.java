@@ -40,14 +40,14 @@ public class AttendanceDeviceInput {
    * Constructor with only required parameters
    */
   public AttendanceDeviceInput(String name, String serial, String address, String timezone) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
     this.serial = serial;
     this.address = address;
     this.timezone = timezone;
   }
 
   public AttendanceDeviceInput name(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
     return this;
   }
 
@@ -62,7 +62,7 @@ public class AttendanceDeviceInput {
   }
 
   public void setName(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
   }
 
   public AttendanceDeviceInput serial(String serial) {

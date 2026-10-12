@@ -37,7 +37,7 @@ public class LedgerAccountCreateInput {
    */
   public LedgerAccountCreateInput(String code, String name, LedgerAccountType type) {
     this.code = code;
-    this.name = name;
+    this.name = name == null ? null : name.strip();
     this.type = type;
   }
 
@@ -61,7 +61,7 @@ public class LedgerAccountCreateInput {
   }
 
   public LedgerAccountCreateInput name(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
     return this;
   }
 
@@ -76,7 +76,7 @@ public class LedgerAccountCreateInput {
   }
 
   public void setName(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
   }
 
   public LedgerAccountCreateInput type(LedgerAccountType type) {

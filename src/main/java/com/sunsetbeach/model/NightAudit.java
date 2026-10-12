@@ -34,6 +34,9 @@ public class NightAudit {
   @Valid
   private List<@Valid NightAuditBooking> missedDepartures = new ArrayList<>();
 
+  @Valid
+  private List<@Valid NightAuditBooking> unpaidBalances = new ArrayList<>();
+
   private OccupancyReportRow snapshot;
 
   private JsonNullable<NightAuditClosure> closure = JsonNullable.<NightAuditClosure>undefined();
@@ -45,10 +48,11 @@ public class NightAudit {
   /**
    * Constructor with only required parameters
    */
-  public NightAudit(String date, List<@Valid NightAuditBooking> missedArrivals, List<@Valid NightAuditBooking> missedDepartures, OccupancyReportRow snapshot, NightAuditClosure closure) {
+  public NightAudit(String date, List<@Valid NightAuditBooking> missedArrivals, List<@Valid NightAuditBooking> missedDepartures, List<@Valid NightAuditBooking> unpaidBalances, OccupancyReportRow snapshot, NightAuditClosure closure) {
     this.date = date;
     this.missedArrivals = missedArrivals;
     this.missedDepartures = missedDepartures;
+    this.unpaidBalances = unpaidBalances;
     this.snapshot = snapshot;
     this.closure = JsonNullable.of(closure);
   }
@@ -126,6 +130,33 @@ public class NightAudit {
     this.missedDepartures = missedDepartures;
   }
 
+  public NightAudit unpaidBalances(List<@Valid NightAuditBooking> unpaidBalances) {
+    this.unpaidBalances = unpaidBalances;
+    return this;
+  }
+
+  public NightAudit addUnpaidBalancesItem(NightAuditBooking unpaidBalancesItem) {
+    if (this.unpaidBalances == null) {
+      this.unpaidBalances = new ArrayList<>();
+    }
+    this.unpaidBalances.add(unpaidBalancesItem);
+    return this;
+  }
+
+  /**
+   * Bookings whose stay is over (checked out, or `checkOut` on or before `date` and not still checked in) or that are `CANCELLED`, and that still owe money (`balanceDue` above zero) - whatever their `status`. Sorted by `checkOut`, oldest first. Each row carries `balanceDue`. 
+   * @return unpaidBalances
+   */
+  @NotNull @Valid 
+  @JsonProperty("unpaidBalances")
+  public List<@Valid NightAuditBooking> getUnpaidBalances() {
+    return unpaidBalances;
+  }
+
+  public void setUnpaidBalances(List<@Valid NightAuditBooking> unpaidBalances) {
+    this.unpaidBalances = unpaidBalances;
+  }
+
   public NightAudit snapshot(OccupancyReportRow snapshot) {
     this.snapshot = snapshot;
     return this;
@@ -176,13 +207,14 @@ public class NightAudit {
     return Objects.equals(this.date, nightAudit.date) &&
         Objects.equals(this.missedArrivals, nightAudit.missedArrivals) &&
         Objects.equals(this.missedDepartures, nightAudit.missedDepartures) &&
+        Objects.equals(this.unpaidBalances, nightAudit.unpaidBalances) &&
         Objects.equals(this.snapshot, nightAudit.snapshot) &&
         Objects.equals(this.closure, nightAudit.closure);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(date, missedArrivals, missedDepartures, snapshot, closure);
+    return Objects.hash(date, missedArrivals, missedDepartures, unpaidBalances, snapshot, closure);
   }
 
   @Override
@@ -192,6 +224,7 @@ public class NightAudit {
     sb.append("    date: ").append(toIndentedString(date)).append("\n");
     sb.append("    missedArrivals: ").append(toIndentedString(missedArrivals)).append("\n");
     sb.append("    missedDepartures: ").append(toIndentedString(missedDepartures)).append("\n");
+    sb.append("    unpaidBalances: ").append(toIndentedString(unpaidBalances)).append("\n");
     sb.append("    snapshot: ").append(toIndentedString(snapshot)).append("\n");
     sb.append("    closure: ").append(toIndentedString(closure)).append("\n");
     sb.append("}");

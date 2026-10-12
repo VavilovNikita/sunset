@@ -126,6 +126,19 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
         LocalDate getLastCheckIn();
     }
 
+    /**
+     * Bookings whose stay is over as of {@code day}: checked out, cancelled, or past their
+     * {@code checkOut} without being in the house. The candidates for the night audit's unpaid
+     * balances - the caller keeps the ones that still owe money.
+     */
+    @Query("select b from BookingEntity b where b.status = :cancelled or b.occupancyStatus = :checkedOut"
+            + " or (b.checkOut <= :day and b.occupancyStatus <> :checkedIn) order by b.checkOut asc, b.id asc")
+    List<BookingEntity> findStayOver(
+            @Param("day") LocalDate day,
+            @Param("cancelled") BookingStatus cancelled,
+            @Param("checkedOut") OccupancyStatus checkedOut,
+            @Param("checkedIn") OccupancyStatus checkedIn);
+
     /** {@code SELECT ... FOR UPDATE} - see {@code BookingService#updateStatus}. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from BookingEntity b where b.id = :id")

@@ -36,6 +36,8 @@ public class BookingFolio {
 
   private String balanceDue;
 
+  private String amountToMarkPaid;
+
   private String creditBalance;
 
   private Integer roomChargeCount;
@@ -212,6 +214,25 @@ public class BookingFolio {
     this.balanceDue = balanceDue;
   }
 
+  public BookingFolio amountToMarkPaid(String amountToMarkPaid) {
+    this.amountToMarkPaid = amountToMarkPaid;
+    return this;
+  }
+
+  /**
+   * The payment a change into `PAID` must carry (`BookingStatusInput.payment`): the balance as if the booking were not yet paid and not cancelled - the room (also for a `CANCELLED` booking being reinstated) plus POS room charges, minus what folio payments already cover. Equals `balanceDue` for a `NEW`/`CONFIRMED` booking; for a booking that is already `PAID` or `CANCELLED` it is what `balanceDue` would be if it were not. Decimal(10,2) rendered as a string. 
+   * @return amountToMarkPaid
+   */
+  
+  @JsonProperty("amountToMarkPaid")
+  public String getAmountToMarkPaid() {
+    return amountToMarkPaid;
+  }
+
+  public void setAmountToMarkPaid(String amountToMarkPaid) {
+    this.amountToMarkPaid = amountToMarkPaid;
+  }
+
   public BookingFolio creditBalance(String creditBalance) {
     this.creditBalance = creditBalance;
     return this;
@@ -267,13 +288,14 @@ public class BookingFolio {
         Objects.equals(this.paidTotal, bookingFolio.paidTotal) &&
         Objects.equals(this.settledOutside, bookingFolio.settledOutside) &&
         Objects.equals(this.balanceDue, bookingFolio.balanceDue) &&
+        Objects.equals(this.amountToMarkPaid, bookingFolio.amountToMarkPaid) &&
         Objects.equals(this.creditBalance, bookingFolio.creditBalance) &&
         Objects.equals(this.roomChargeCount, bookingFolio.roomChargeCount);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, creditBalance, roomChargeCount);
+    return Objects.hash(roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, amountToMarkPaid, creditBalance, roomChargeCount);
   }
 
   @Override
@@ -288,6 +310,7 @@ public class BookingFolio {
     sb.append("    paidTotal: ").append(toIndentedString(paidTotal)).append("\n");
     sb.append("    settledOutside: ").append(toIndentedString(settledOutside)).append("\n");
     sb.append("    balanceDue: ").append(toIndentedString(balanceDue)).append("\n");
+    sb.append("    amountToMarkPaid: ").append(toIndentedString(amountToMarkPaid)).append("\n");
     sb.append("    creditBalance: ").append(toIndentedString(creditBalance)).append("\n");
     sb.append("    roomChargeCount: ").append(toIndentedString(roomChargeCount)).append("\n");
     sb.append("}");

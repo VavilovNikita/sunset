@@ -99,6 +99,22 @@ The billing *warning* is a separate question from the link, asked by the server,
 
 `LifecycleEmailSettings` is a singleton row (`id = 1`, pinned by a `CHECK`, seeded by V112, every type disabled until an admin turns it on). `/settings/**` is ADMIN-only, reads included.
 
+## Payments, states and exports (owner's decisions after the October 2026 QA report)
+
+**A debt is visible whatever the status.** `BookingFolioCalculator` is the one place the folio balance is computed (`BookingService#computeFolioBreakdown` and every list delegate to it), and `Booking.balanceDue` rides on every booking the API returns - lists and searches compute it for the whole page in two queries, not per row. A client's "Owes" badge reads that field and nothing else. `GET /night-audit` has an `unpaidBalances` block: finished stays (checked out, past `checkOut` and not in the house, or cancelled) with `balanceDue > 0`, any status.
+
+**`PAID` never writes money off.** A change into `PAID` while `BookingFolio.amountToMarkPaid` (the folio as if the booking were not yet paid or cancelled; also in `BookingService#settleForPaid`) is above zero is a 409 unless `BookingStatusInput.payment` carries exactly that amount; the payment is recorded in the same transaction (`insertFolioPayment`, shared with `recordFolioPayment`, so cash shift, ledger posting and audit can't drift). The old hand-set `PAID` ("collected outside": OTA, bank transfer) is now a payment with method `OTHER`. `settledOutside` stays in the folio maths only for `PAID` rows that predate this rule, and a `PAID` booking's settlement can still post "Dr Cash for the rest" for them. The dashboard's room figure is `PaymentsSummary.folioPaymentsTotal` (recorded `FolioPayment` rows) - never a sum over bookings by status; don't derive revenue from a status anywhere (`RevenueExportService`'s "Paid bookings (info)" sheet is explicitly not a total).
+
+**States are enforced by the server, not the UI.** Check-in: not `CANCELLED`, not before `checkIn` (hotel `Clock`), not repeated (409). Check-out: only `CHECKED_IN` (409). `ROOM_CHARGE` close: only a `CHECKED_IN` booking (409; an overdue guest is still `CHECKED_IN`). Changing dates, relocating or repricing a `CHECKED_OUT` stay is 409 (`requireStayNotEnded`) - it would add charges to a closed folio. A `PAID` booking is checked in like any other: the rule is "not cancelled", not "only NEW/CONFIRMED".
+
+**A cash shift is blocked only by its own orders.** `ShiftService#close`: an `OPEN`/`SENT` order opened by the shift's cashier (or carrying a payment in that shift) blocks with a 409; anyone else's open order is listed in `Shift.warning` on the close response and left alone. Empty `OPEN` orders are still cancelled on the audit record, system-wide.
+
+**Exports go through `SpreadsheetSafe`.** A cell starting `=` `+` `-` `@` tab or CR gets a leading `'` (CSV: `CsvBuilder`; workbooks: `SpreadsheetSafe.sanitize(workbook)` before `write`). A cell that is only a number (`-50.00`) is left alone - its sign is data. `RosterGridImportParser` undoes the apostrophe on re-import (`unescape`). A new export calls the utility; it never builds a cell by hand.
+
+**Names are trimmed in the model, not the service.** A property marked `x-trim: true` in `openapi.yaml` is `strip()`ped by the generated setter, fluent setter *and* required-args constructor (`openapi-templates/pojo.mustache`; Jackson uses the constructor when it can, so trimming only the setter silently did nothing), and its `minLength` then rejects a name of only spaces with a 400. Mark every new required name/label that way. Optional nullable names (`JsonNullable`) are trimmed in the service.
+
+**A POS line is 1..99** (`OrderItemInput.quantity`, and the merged total in `OrderService#addItems`). **A guest-facing order path (dine-in QR, room service) accepts only what `GET /public/menu` lists** (`MenuService#isPubliclyOrderable`, checked for the whole request before anything is written).
+
 ## Concurrency
 
 Availability writes run `SERIALIZABLE` in `BookingWriter`, and PostgreSQL serialization failures (SQLSTATE 40001) are translated to `ConflictException` with a human message. `BookingWriter` is a separate bean specifically so the `@Transactional` proxy applies — self-invocation would bypass it.

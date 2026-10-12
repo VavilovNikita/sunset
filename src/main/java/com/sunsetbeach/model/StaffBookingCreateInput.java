@@ -59,7 +59,7 @@ public class StaffBookingCreateInput {
    */
   public StaffBookingCreateInput(String roomId, String guestName, String checkIn, String checkOut, BookingChannel channel, Integer adults) {
     this.roomId = roomId;
-    this.guestName = guestName;
+    this.guestName = guestName == null ? null : guestName.strip();
     this.checkIn = checkIn;
     this.checkOut = checkOut;
     this.channel = channel;
@@ -86,7 +86,7 @@ public class StaffBookingCreateInput {
   }
 
   public StaffBookingCreateInput guestName(String guestName) {
-    this.guestName = guestName;
+    this.guestName = guestName == null ? null : guestName.strip();
     return this;
   }
 
@@ -101,7 +101,7 @@ public class StaffBookingCreateInput {
   }
 
   public void setGuestName(String guestName) {
-    this.guestName = guestName;
+    this.guestName = guestName == null ? null : guestName.strip();
   }
 
   public StaffBookingCreateInput guestEmail(String guestEmail) {

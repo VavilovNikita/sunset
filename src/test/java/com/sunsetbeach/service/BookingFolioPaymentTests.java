@@ -50,6 +50,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import com.sunsetbeach.security.StaffPrincipal;
+import com.sunsetbeach.support.PaidBookings;
 
 /**
  * Covers the fix for a real bug: a ROOM_CHARGE Payment had no way to ever be marked collected,
@@ -245,8 +246,8 @@ class BookingFolioPaymentTests extends AbstractIntegrationTest {
     void bookingAlreadyPaid_withRoomChargeFullySettled_hasNoOutstandingBalanceAtAll() {
         BookingEntity booking = persistBooking(new BigDecimal("1000.00"));
         persistRoomChargePayment(booking, new BigDecimal("500.00"));
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
-        bookingService.recordFolioPayment(booking.getId(), new FolioPaymentInput(FolioPaymentMethod.CASH, "500.00"));
+        // The room and the bar charge are both owed; PAID needs the payment for all of it.
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId()));
 
         BigDecimal outstanding = bookingService.computeOutstandingBalance(booking.getId());
         assertThat(outstanding).isEqualByComparingTo("0.00");
@@ -304,12 +305,17 @@ class BookingFolioPaymentTests extends AbstractIntegrationTest {
         assertThat(guestLedgerDebit).isEqualByComparingTo("7000.00");
     }
 
-    /** Marked PAID by hand (an OTA prepayment): the room was collected outside, the bar wasn't. */
+    /**
+     * A PAID row that has no payment behind it - how a booking marked PAID by hand looked before PAID
+     * needed a payment (an OTA prepayment; the room was collected outside, the bar wasn't). The API no
+     * longer produces one, but such rows exist, and the folio still reads them the same way.
+     */
     @Test
-    void markedPaidByHand_owesOnlyTheUncollectedCharges() {
+    void legacyPaidWithoutPayment_owesOnlyTheUncollectedCharges() {
         BookingEntity booking = persistBooking(new BigDecimal("7000.00"));
         persistRoomChargePayment(booking, new BigDecimal("450.00"));
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
+        booking.setStatus(BookingStatus.PAID);
+        bookingRepository.saveAndFlush(booking);
 
         BookingFolio folio = bookingService.getFolio(booking.getId());
         assertThat(new BigDecimal(folio.getSettledOutside())).isEqualByComparingTo("7000.00");
@@ -319,20 +325,22 @@ class BookingFolioPaymentTests extends AbstractIntegrationTest {
         assertThat(bookingService.computeOutstandingBalance(booking.getId())).isEqualByComparingTo("0.00");
     }
 
+    /** Part paid earlier, the rest with the status change: both are folio payments, so the settlement takes the whole room from Guest Ledger. */
     @Test
-    void partOfTheRoomPaidThenMarkedPaidByHand_settlementSplitsGuestLedgerAndCash() {
+    void partOfTheRoomPaidThenMarkedPaidWithThePayment_settlementTakesTheWholeRoomFromGuestLedger() {
         BookingEntity booking = persistBooking(new BigDecimal("7000.00"));
         bookingService.recordFolioPayment(booking.getId(), new FolioPaymentInput(FolioPaymentMethod.CASH, "2000.00"));
         assertThat(bookingService.computeOutstandingBalance(booking.getId())).isEqualByComparingTo("5000.00");
 
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId()));
 
         assertThat(bookingService.computeOutstandingBalance(booking.getId())).isEqualByComparingTo("0.00");
+        assertThat(bookingService.listFolioPayments(booking.getId())).hasSize(2);
         JournalEntryEntity settlement =
                 journalEntryRepository.findBySourceTypeAndSourceIdOrderByCreatedAtAsc(JournalSourceType.BOOKING, booking.getId()).get(0);
         List<JournalLineEntity> lines = journalLineRepository.findByEntryIdInOrderByEntryIdAscLineOrderAsc(List.of(settlement.getId()));
-        assertThat(debitOn(lines, "1100")).isEqualByComparingTo("2000.00");
-        assertThat(debitOn(lines, "1000")).isEqualByComparingTo("5000.00");
+        assertThat(debitOn(lines, "1100")).isEqualByComparingTo("7000.00");
+        assertThat(debitOn(lines, "1000")).isEqualByComparingTo("0.00");
     }
 
     @Test
@@ -384,7 +392,7 @@ class BookingFolioPaymentTests extends AbstractIntegrationTest {
     @Test
     void recordFolioPayment_whenNothingIsOutstanding_isRejected() {
         BookingEntity booking = persistBooking(new BigDecimal("1000.00")); // no room charge at all
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID)); // room collected outside
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId())); // paid in full
 
         assertThatCode(() -> bookingService.recordFolioPayment(
                         booking.getId(), new FolioPaymentInput(FolioPaymentMethod.CASH, "0.01")))

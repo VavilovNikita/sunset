@@ -18,6 +18,8 @@ public interface OrderRepository extends JpaRepository<OrderEntity, String>, Jpa
 
     boolean existsByStatusIn(Collection<OrderStatus> statuses);
 
+    java.util.List<com.sunsetbeach.entity.OrderEntity> findByStatusIn(Collection<OrderStatus> statuses);
+
     List<OrderEntity> findByTableIdIsNotNullAndStatusIn(Collection<OrderStatus> statuses);
 
     /**

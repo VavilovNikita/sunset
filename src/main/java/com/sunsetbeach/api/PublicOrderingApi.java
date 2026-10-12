@@ -9,6 +9,7 @@ import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.GuestOrderView;
 import com.sunsetbeach.model.MenuItem;
 import com.sunsetbeach.model.OrderItemInput;
+import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +41,7 @@ public interface PublicOrderingApi {
      * @param token  (required)
      * @param orderItemInput  (required)
      * @return Items added; the order&#39;s updated guest-facing view. (status code 201)
+     *         or A line is not on the public menu (&#x60;GET /public/menu&#x60;: hidden/unavailable items and spa treatments are refused, and one bad line refuses the whole request), or a quantity is outside 1..99 (also when it would take a merged line above 99).  (status code 400)
      *         or Wrong/missing token, unknown order, or the order is no longer OPEN/SENT. (status code 404)
      *         or Too many requests for this token within the rate-limit window. (status code 429)
      */
@@ -59,6 +61,11 @@ public interface PublicOrderingApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"total\" : \"total\", \"locationLabel\" : \"locationLabel\", \"id\" : \"id\", \"items\" : [ { \"unitPrice\" : \"unitPrice\", \"note\" : \"note\", \"quantity\" : 0, \"name\" : \"name\" }, { \"unitPrice\" : \"unitPrice\", \"note\" : \"note\", \"quantity\" : 0, \"name\" : \"name\" } ], \"status\" : \"OPEN\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

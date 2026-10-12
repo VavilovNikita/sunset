@@ -113,12 +113,17 @@ public class {{classname}}{{#parent}} extends {{{parent}}}{{/parent}}{{^parent}}
     {{/parent}}
     {{#vars}}
     {{#required}}
+    {{#vendorExtensions.x-trim}}
+    this.{{name}} = {{name}} == null ? null : {{name}}.strip();
+    {{/vendorExtensions.x-trim}}
+    {{^vendorExtensions.x-trim}}
     {{#openApiNullable}}
     this.{{name}} = {{#isNullable}}JsonNullable.of({{/isNullable}}{{#useOptional}}{{^required}}{{^isNullable}}{{^isContainer}}Optional.ofNullable({{/isContainer}}{{/isNullable}}{{/required}}{{/useOptional}}{{name}}{{#isNullable}}){{/isNullable}}{{#useOptional}}{{^required}}{{^isNullable}}{{^isContainer}}){{/isContainer}}{{/isNullable}}{{/required}}{{/useOptional}};
     {{/openApiNullable}}
     {{^openApiNullable}}
     this.{{name}} = {{name}};
     {{/openApiNullable}}
+    {{/vendorExtensions.x-trim}}
     {{/required}}
     {{/vars}}
   }
@@ -150,12 +155,17 @@ public class {{classname}}{{#parent}} extends {{{parent}}}{{/parent}}{{^parent}}
 
   {{! begin feature: fluent setter methods }}
   public {{classname}} {{name}}({{{datatypeWithEnum}}} {{name}}) {
+    {{#vendorExtensions.x-trim}}
+    this.{{name}} = {{name}} == null ? null : {{name}}.strip();
+    {{/vendorExtensions.x-trim}}
+    {{^vendorExtensions.x-trim}}
     {{#openApiNullable}}
     this.{{name}} = {{#isNullable}}JsonNullable.of({{/isNullable}}{{#useOptional}}{{^required}}{{^isNullable}}{{^isContainer}}Optional.of({{/isContainer}}{{/isNullable}}{{/required}}{{/useOptional}}{{name}}{{#isNullable}}){{/isNullable}}{{#useOptional}}{{^required}}{{^isNullable}}{{^isContainer}}){{/isContainer}}{{/isNullable}}{{/required}}{{/useOptional}};
     {{/openApiNullable}}
     {{^openApiNullable}}
     this.{{name}} = {{name}};
     {{/openApiNullable}}
+    {{/vendorExtensions.x-trim}}
     return this;
   }
   {{#isArray}}
@@ -267,7 +277,12 @@ public class {{classname}}{{#parent}} extends {{{parent}}}{{/parent}}{{^parent}}
   @Deprecated
   {{/deprecated}}
   public void {{setter}}({{>nullableDataType}} {{name}}) {
+    {{#vendorExtensions.x-trim}}
+    this.{{name}} = {{name}} == null ? null : {{name}}.strip();
+    {{/vendorExtensions.x-trim}}
+    {{^vendorExtensions.x-trim}}
     this.{{name}} = {{name}};
+    {{/vendorExtensions.x-trim}}
   }
   {{/lombok.Setter}}
   {{/lombok.Data}}
@@ -373,3 +388,7 @@ public class {{classname}}{{#parent}} extends {{{parent}}}{{/parent}}{{^parent}}
   {{/generateBuilders}}
   {{/lombok.Data}}
 }
+{{! sunset repo customization (2): a property marked x-trim: true in openapi.yaml is stripped of
+    leading/trailing whitespace by its setter and fluent setter, so a request body is trimmed before
+    Bean Validation sees it - minLength then rejects a name that was only spaces (400). Only for plain
+    (non-nullable) String properties: a JsonNullable wrapper is not handled here. }}

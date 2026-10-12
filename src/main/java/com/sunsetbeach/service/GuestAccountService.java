@@ -85,6 +85,8 @@ public class GuestAccountService {
         }
 
         String name = input.getName() != null ? input.getName().orElse(null) : null;
+        // Optional display name: trimmed, and one of only spaces is no name at all.
+        name = name == null || name.isBlank() ? null : name.strip();
 
         if (entity == null) {
             entity = new GuestAccountEntity();

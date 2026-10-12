@@ -544,7 +544,7 @@ class PosRoleHierarchyTests {
     @Test
     void nightAudit_withCashierToken_canViewAndClose() throws Exception {
         when(nightAuditService.get(any())).thenReturn(new com.sunsetbeach.model.NightAudit(
-                "2026-09-27", java.util.List.of(), java.util.List.of(),
+                "2026-09-27", java.util.List.of(), java.util.List.of(), java.util.List.of(),
                 new com.sunsetbeach.model.OccupancyReportRow(null, null, 0, 0, 0, null, "0.00", null, null), null));
         when(nightAuditService.close(any())).thenReturn(new com.sunsetbeach.model.NightAuditClosure(
                 "2026-09-27", "user-1", "Cashier", java.time.OffsetDateTime.now(), null));
@@ -2291,6 +2291,6 @@ class PosRoleHierarchyTests {
 
     private static PaymentsSummary samplePaymentsSummary() {
         ShiftTotals totals = new ShiftTotals("0.00", "0.00", "0.00", "0.00", 0);
-        return new PaymentsSummary("2031-01-01", "2031-01-31", totals, "0.00");
+        return new PaymentsSummary("2031-01-01", "2031-01-31", totals, "0.00", "0.00");
     }
 }

@@ -149,7 +149,7 @@ public interface OrdersApi {
 
     /**
      * POST /orders/{id}/close : Close an order with a payment
-     * Requires role &#x60;CASHIER&#x60; or above, and requires the calling user to have an &#x60;OPEN&#x60; &#x60;Shift&#x60; (409 otherwise). Creates a &#x60;Payment&#x60; row for &#x60;Order.total&#x60;/&#x60;method&#x60; (and &#x60;bookingId&#x60; when &#x60;method&#x60; is &#x60;ROOM_CHARGE&#x60;) tied to that shift, then sets the order&#39;s status to &#x60;PAID&#x60;. The amount charged is always &#x60;Order.total&#x60; - see &#x60;CloseOrderInput&#x60;. Any line still unsent (&#x60;sentAt: null&#x60;) is sent to the kitchen/bar first, exactly as the &#x60;OPEN -&gt; SENT&#x60; transition does - paying is the last chance for an item nobody pressed \&quot;Send\&quot; for to reach the station; lines already sent are never reprinted. 
+     * Requires role &#x60;CASHIER&#x60; or above, and requires the calling user to have an &#x60;OPEN&#x60; &#x60;Shift&#x60; (409 otherwise). Creates a &#x60;Payment&#x60; row for &#x60;Order.total&#x60;/&#x60;method&#x60; (and &#x60;bookingId&#x60; when &#x60;method&#x60; is &#x60;ROOM_CHARGE&#x60;) tied to that shift, then sets the order&#39;s status to &#x60;PAID&#x60;. The amount charged is always &#x60;Order.total&#x60; - see &#x60;CloseOrderInput&#x60;. A &#x60;ROOM_CHARGE&#x60; needs a guest in the house: the booking must be &#x60;CHECKED_IN&#x60; (409 before arrival and after check-out; an overdue guest is still &#x60;CHECKED_IN&#x60;) and not &#x60;CANCELLED&#x60;. Any line still unsent (&#x60;sentAt: null&#x60;) is sent to the kitchen/bar first, exactly as the &#x60;OPEN -&gt; SENT&#x60; transition does - paying is the last chance for an item nobody pressed \&quot;Send\&quot; for to reach the station; lines already sent are never reprinted. 
      *
      * @param id  (required)
      * @param closeOrderInput  (required)
@@ -158,7 +158,7 @@ public interface OrdersApi {
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
      *         or Order not found, or (for &#x60;ROOM_CHARGE&#x60;) &#x60;bookingId&#x60; not found. (status code 404)
-     *         or Order already &#x60;PAID&#x60;/&#x60;CANCELLED&#x60;, caller has no open shift, or (for &#x60;ROOM_CHARGE&#x60;) the booking is &#x60;CANCELLED&#x60;. (status code 409)
+     *         or Order already &#x60;PAID&#x60;/&#x60;CANCELLED&#x60;, caller has no open shift, or (for &#x60;ROOM_CHARGE&#x60;) the booking is &#x60;CANCELLED&#x60; or not &#x60;CHECKED_IN&#x60;.  (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.POST,

@@ -100,15 +100,23 @@ public class BookingOccupancyService {
     }
 
     /**
-     * Only legal once a physical room is assigned ({@code booking.roomUnitId} - the moment a key
-     * is handed over) and while occupancy is {@code EXPECTED} or {@code NO_SHOW} (a guest who
-     * no-showed can still turn up late and check in normally). Checking into a {@code DIRTY}
-     * room is a warning, not a rejection - a room sometimes gets finished while the guest waits,
-     * and the desk must not stall on it.
+     * Only legal for a booking that is not {@code CANCELLED}, on or after its check-in date (hotel
+     * date), once a physical room is assigned ({@code booking.roomUnitId} - the moment a key is
+     * handed over) and while occupancy is {@code EXPECTED} or {@code NO_SHOW} (a guest who
+     * no-showed can still turn up late and check in normally). Anything else is a 409 (400 for the
+     * missing room). Checking into a {@code DIRTY} room is a warning, not a rejection - a room
+     * sometimes gets finished while the guest waits, and the desk must not stall on it.
      */
     @Transactional
     public CheckInResult checkIn(String bookingId) {
-        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        BookingEntity booking = bookingRepository.findByIdForUpdate(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new ConflictException("This booking is cancelled and can't be checked in.");
+        }
+        LocalDate today = LocalDate.now(clock);
+        if (today.isBefore(booking.getCheckIn())) {
+            throw new ConflictException("This booking can't be checked in before its check-in date (" + booking.getCheckIn() + ").");
+        }
         if (booking.getRoomUnitId() == null) {
             throw new BadRequestException("Assign a room before checking in.");
         }

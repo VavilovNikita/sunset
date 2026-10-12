@@ -127,6 +127,36 @@ class RoomServiceOrderingServiceTests extends AbstractIntegrationTest {
     }
 
     @Test
+    void checkedInGuest_cannotOrderAHiddenItemOrASpaTreatment_andNothingIsCreated() {
+        String bookingId = checkedInBooking(GUEST_EMAIL);
+        MenuItemEntity hidden = new MenuItemEntity();
+        hidden.setName("Hidden Special");
+        hidden.setDescription("not on the guest menu");
+        hidden.setCategory("Test");
+        hidden.setDepartment(MenuDepartment.BAR);
+        hidden.setPrice(new BigDecimal("90.00"));
+        hidden.setAvailable(false);
+        hidden = menuItemRepository.saveAndFlush(hidden);
+        MenuItemEntity treatment = new MenuItemEntity();
+        treatment.setName("Thai Massage");
+        treatment.setDescription("a treatment");
+        treatment.setCategory("Treatments");
+        treatment.setDepartment(MenuDepartment.SPA);
+        treatment.setPrice(new BigDecimal("1500.00"));
+        treatment.setAvailable(true);
+        treatment = menuItemRepository.saveAndFlush(treatment);
+        long ordersBefore = orderRepository.count();
+        String hiddenId = hidden.getId();
+        String treatmentId = treatment.getId();
+
+        assertThatThrownBy(() -> roomServiceOrderingService.submit(GUEST_EMAIL, bookingId, List.of(new OrderItemInput(hiddenId, 1))))
+                .isInstanceOf(com.sunsetbeach.error.ValidationException.class);
+        assertThatThrownBy(() -> roomServiceOrderingService.submit(GUEST_EMAIL, bookingId, List.of(new OrderItemInput(treatmentId, 1))))
+                .isInstanceOf(com.sunsetbeach.error.ValidationException.class);
+        assertThat(orderRepository.count()).isEqualTo(ordersBefore);
+    }
+
+    @Test
     void checkedInGuest_submit_orderLandsSent_andItemsCarryThrough() {
         String bookingId = checkedInBooking(GUEST_EMAIL);
 

@@ -32,12 +32,12 @@ public class RoomUnitUpdateInput {
    * Constructor with only required parameters
    */
   public RoomUnitUpdateInput(String label, Boolean isActive) {
-    this.label = label;
+    this.label = label == null ? null : label.strip();
     this.isActive = isActive;
   }
 
   public RoomUnitUpdateInput label(String label) {
-    this.label = label;
+    this.label = label == null ? null : label.strip();
     return this;
   }
 
@@ -52,7 +52,7 @@ public class RoomUnitUpdateInput {
   }
 
   public void setLabel(String label) {
-    this.label = label;
+    this.label = label == null ? null : label.strip();
   }
 
   public RoomUnitUpdateInput isActive(Boolean isActive) {

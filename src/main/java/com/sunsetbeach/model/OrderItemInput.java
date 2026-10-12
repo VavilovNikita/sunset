@@ -66,11 +66,12 @@ public class OrderItemInput {
   }
 
   /**
-   * Get quantity
+   * 1 to 99 per line. A request that would take a merged line above 99 is a 400 too. 
    * minimum: 1
+   * maximum: 99
    * @return quantity
    */
-  @NotNull @Min(1) 
+  @NotNull @Min(1) @Max(99) 
   @JsonProperty("quantity")
   public Integer getQuantity() {
     return quantity;

@@ -37,14 +37,14 @@ public class RoomInput {
    * Constructor with only required parameters
    */
   public RoomInput(String name, String description, Integer capacity, BigDecimal basePrice) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
     this.description = description;
     this.capacity = capacity;
     this.basePrice = basePrice;
   }
 
   public RoomInput name(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
     return this;
   }
 
@@ -59,7 +59,7 @@ public class RoomInput {
   }
 
   public void setName(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
   }
 
   public RoomInput description(String description) {

@@ -46,7 +46,7 @@ public interface ShiftsApi {
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
      *         or Shift not found. (status code 404)
-     *         or Already &#x60;CLOSED&#x60;, or there are &#x60;OPEN&#x60;/&#x60;SENT&#x60; orders anywhere in the system. This is a system-wide gate, not scoped to this particular shift - &#x60;Order&#x60; has no &#x60;shiftId&#x60; (only &#x60;Payment&#x60; does, and only once an order is closed), so there is no way to ask \&quot;orders opened during this shift\&quot; and the check intentionally doesn&#39;t pretend otherwise.  (status code 409)
+     *         or Already &#x60;CLOSED&#x60;, or this shift still has &#x60;OPEN&#x60;/&#x60;SENT&#x60; orders that belong to it: opened by the shift&#39;s own cashier, or carrying a payment recorded in this shift. Other staff&#39;s open orders do not block the close; they come back as &#x60;Shift.warning&#x60;. Empty &#x60;OPEN&#x60; orders are cancelled automatically, on the audit record.  (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.POST,
@@ -62,7 +62,7 @@ public interface ShiftsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"notes\" : \"notes\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"OPEN\" }";
+                    String exampleString = "{ \"notes\" : \"notes\", \"openingCashFloat\" : \"openingCashFloat\", \"warning\" : \"warning\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"OPEN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -162,7 +162,7 @@ public interface ShiftsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"notes\" : \"notes\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"OPEN\" }";
+                    String exampleString = "{ \"notes\" : \"notes\", \"openingCashFloat\" : \"openingCashFloat\", \"warning\" : \"warning\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"OPEN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -305,7 +305,7 @@ public interface ShiftsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"notes\" : \"notes\", \"openingCashFloat\" : \"openingCashFloat\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"OPEN\" }";
+                    String exampleString = "{ \"notes\" : \"notes\", \"openingCashFloat\" : \"openingCashFloat\", \"warning\" : \"warning\", \"openedByUserId\" : \"openedByUserId\", \"closedByUserId\" : \"closedByUserId\", \"id\" : \"id\", \"closedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"closingCashCounted\" : \"closingCashCounted\", \"openedAt\" : \"2000-01-23T04:56:07.000+00:00\", \"status\" : \"OPEN\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

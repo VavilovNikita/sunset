@@ -1,10 +1,13 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.entity.FolioPaymentEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.model.PaymentsSummary;
+import com.sunsetbeach.repository.FolioPaymentRepository;
 import com.sunsetbeach.repository.PaymentRepository;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -16,8 +19,11 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
 
-    public PaymentService(PaymentRepository paymentRepository) {
+    private final FolioPaymentRepository folioPaymentRepository;
+
+    public PaymentService(PaymentRepository paymentRepository, FolioPaymentRepository folioPaymentRepository) {
         this.paymentRepository = paymentRepository;
+        this.folioPaymentRepository = folioPaymentRepository;
     }
 
     @Transactional(readOnly = true)
@@ -33,7 +39,16 @@ public class PaymentService {
         List<PaymentEntity> payments = paymentRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(start, endExclusive);
 
         PaymentAggregation.Totals totals = PaymentAggregation.aggregate(payments);
+        // Desk payments against bookings' folios, same window as the POS rows above. The dashboard's
+        // room revenue is this - money actually recorded - never a sum over bookings by status.
+        BigDecimal folioTotal = folioPaymentRepository.findByCreatedAtGreaterThanEqualAndCreatedAtLessThan(start, endExclusive).stream()
+                .map(FolioPaymentEntity::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         return new PaymentsSummary(
-                from, to, PaymentAggregation.toShiftTotals(totals), PriceFormat.asDecimalString(totals.receivedTotal()));
+                from,
+                to,
+                PaymentAggregation.toShiftTotals(totals),
+                PriceFormat.asDecimalString(totals.receivedTotal()),
+                PriceFormat.asDecimalString(folioTotal));
     }
 }

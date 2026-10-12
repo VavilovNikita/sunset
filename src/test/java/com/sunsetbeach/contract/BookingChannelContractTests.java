@@ -88,6 +88,9 @@ class BookingChannelContractTests extends AbstractIntegrationTest {
     @Autowired
     private AuditLogRepository auditLogRepository;
 
+    @Autowired
+    private com.sunsetbeach.repository.FolioPaymentRepository folioPaymentRepository;
+
     @MockitoSpyBean
     private EmailService emailService;
 
@@ -114,6 +117,7 @@ class BookingChannelContractTests extends AbstractIntegrationTest {
     void cleanUp() {
         for (String bookingId : createdBookingIds) {
             auditLogRepository.deleteAll(auditEntries(bookingId));
+            folioPaymentRepository.deleteAll(folioPaymentRepository.findByBookingIdOrderByCreatedAtAsc(bookingId));
             bookingRepository.findById(bookingId).ifPresent(booking -> {
                 String guestId = booking.getGuestId();
                 bookingSegmentRepository.deleteAll(bookingSegmentRepository.findByBookingIdOrderByCheckInAsc(bookingId));
@@ -233,7 +237,9 @@ class BookingChannelContractTests extends AbstractIntegrationTest {
     @Test
     void patch_channelOnPaidBooking_doesNotResendGuestStatusEmail() throws Exception {
         String bookingId = createStaffBooking("PHONE");
-        patchBooking(bookingId, "{\"status\":\"PAID\"}");
+        // PAID needs the payment for what is owed (BookingStatusInput.payment) - the room's whole price here.
+        String owed = bookingRepository.findById(bookingId).orElseThrow().getTotalPrice().toPlainString();
+        patchBooking(bookingId, "{\"status\":\"PAID\",\"payment\":{\"method\":\"CASH\",\"amount\":\"" + owed + "\"}}");
         verify(emailService).sendGuestStatusEmail(any(), any());
         clearInvocations(emailService);
 

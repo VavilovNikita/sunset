@@ -25,6 +25,8 @@ public class NightAuditBooking {
 
   private String id;
 
+  private String balanceDue;
+
   private String guestName;
 
   private String roomName;
@@ -74,6 +76,25 @@ public class NightAuditBooking {
 
   public void setId(String id) {
     this.id = id;
+  }
+
+  public NightAuditBooking balanceDue(String balanceDue) {
+    this.balanceDue = balanceDue;
+    return this;
+  }
+
+  /**
+   * Decimal(10,2) string, `BookingFolio.balanceDue`. Present on every `unpaidBalances` row.
+   * @return balanceDue
+   */
+  
+  @JsonProperty("balanceDue")
+  public String getBalanceDue() {
+    return balanceDue;
+  }
+
+  public void setBalanceDue(String balanceDue) {
+    this.balanceDue = balanceDue;
   }
 
   public NightAuditBooking guestName(String guestName) {
@@ -219,6 +240,7 @@ public class NightAuditBooking {
     }
     NightAuditBooking nightAuditBooking = (NightAuditBooking) o;
     return Objects.equals(this.id, nightAuditBooking.id) &&
+        Objects.equals(this.balanceDue, nightAuditBooking.balanceDue) &&
         Objects.equals(this.guestName, nightAuditBooking.guestName) &&
         Objects.equals(this.roomName, nightAuditBooking.roomName) &&
         Objects.equals(this.roomUnitLabel, nightAuditBooking.roomUnitLabel) &&
@@ -230,7 +252,7 @@ public class NightAuditBooking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus);
+    return Objects.hash(id, balanceDue, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus);
   }
 
   @Override
@@ -238,6 +260,7 @@ public class NightAuditBooking {
     StringBuilder sb = new StringBuilder();
     sb.append("class NightAuditBooking {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
+    sb.append("    balanceDue: ").append(toIndentedString(balanceDue)).append("\n");
     sb.append("    guestName: ").append("[REDACTED]").append("\n");
     sb.append("    roomName: ").append(toIndentedString(roomName)).append("\n");
     sb.append("    roomUnitLabel: ").append(toIndentedString(roomUnitLabel)).append("\n");

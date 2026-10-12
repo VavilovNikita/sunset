@@ -77,6 +77,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import com.sunsetbeach.service.BookingFolioCalculator.FolioBreakdown;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -107,6 +108,7 @@ public class BookingService {
     private final LedgerService ledgerService;
     private final OverstayRule overstayRule;
     private final ShiftRepository shiftRepository;
+    private final BookingFolioCalculator folioCalculator;
 
     public BookingService(
             RoomRepository roomRepository,
@@ -126,8 +128,10 @@ public class BookingService {
             LedgerService ledgerService,
             OverstayRule overstayRule,
             ShiftRepository shiftRepository,
+            BookingFolioCalculator folioCalculator,
             Clock clock) {
         this.clock = clock;
+        this.folioCalculator = folioCalculator;
         this.shiftRepository = shiftRepository;
         this.overstayRule = overstayRule;
         this.roomRepository = roomRepository;
@@ -389,6 +393,11 @@ public class BookingService {
         BookingEntity booking = bookingRepository.findByIdForUpdate(id).orElseThrow(() -> new NotFoundException("Booking not found"));
         BookingStatus oldStatus = booking.getStatus();
         String oldPaymentNote = booking.getPaymentNote();
+        // PAID never writes money off on its own: what is still owed has to arrive with the request
+        // as a payment, recorded here in the same transaction as the status change (see settleForPaid).
+        if (input.getStatus() == BookingStatus.PAID && oldStatus != BookingStatus.PAID) {
+            settleForPaid(booking, input.getPayment());
+        }
         booking.setStatus(input.getStatus());
         // paymentNote is optional+nullable: an omitted field leaves the existing value alone
         // (matches Prisma skipping `undefined` update data), an explicit null clears it.
@@ -504,14 +513,29 @@ public class BookingService {
 
     @Transactional(readOnly = true)
     public List<Booking> list(String from, String to, BookingStatus status, String guestName) {
-        List<BookingEntity> bookings = bookingRepository.findAll(buildSpecification(from, to, status, guestName, overstayRule.today()));
-        Map<String, List<BookingSegmentEntity>> segmentsByBookingId = bookings.isEmpty()
-                ? Map.of()
-                : segmentRepository.findByBookingIdIn(bookings.stream().map(BookingEntity::getId).toList()).stream()
+        return toDtos(bookingRepository.findAll(buildSpecification(from, to, status, guestName, overstayRule.today())));
+    }
+
+    /**
+     * The bulk load behind every list: segments and folios for the whole set in one query each,
+     * not one per row.
+     */
+    private List<Booking> toDtos(List<BookingEntity> bookings) {
+        if (bookings.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<BookingSegmentEntity>> segmentsByBookingId =
+                segmentRepository.findByBookingIdIn(bookings.stream().map(BookingEntity::getId).toList()).stream()
                         .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+        Map<String, FolioBreakdown> folios = folioCalculator.breakdowns(bookings);
         return bookings.stream()
                 .map(b -> bookingMapper.toDto(
-                        b, b.getRoom(), b.getRoomUnit(), b.getGuest(), segmentsByBookingId.getOrDefault(b.getId(), List.of())))
+                        b,
+                        b.getRoom(),
+                        b.getRoomUnit(),
+                        b.getGuest(),
+                        segmentsByBookingId.getOrDefault(b.getId(), List.of()),
+                        folios.get(b.getId()).balanceDue()))
                 .toList();
     }
 
@@ -537,15 +561,7 @@ public class BookingService {
 
         Specification<BookingEntity> spec = buildSpecification(from, to, status, null, overstayRule.today()).and(textSearch(q));
         Page<BookingEntity> result = bookingRepository.findAll(spec, PageRequest.of(pageNumber, size, order));
-        List<BookingEntity> bookings = result.getContent();
-        Map<String, List<BookingSegmentEntity>> segmentsByBookingId = bookings.isEmpty()
-                ? Map.of()
-                : segmentRepository.findByBookingIdIn(bookings.stream().map(BookingEntity::getId).toList()).stream()
-                        .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
-        List<Booking> items = bookings.stream()
-                .map(b -> bookingMapper.toDto(
-                        b, b.getRoom(), b.getRoomUnit(), b.getGuest(), segmentsByBookingId.getOrDefault(b.getId(), List.of())))
-                .toList();
+        List<Booking> items = toDtos(result.getContent());
         return new BookingPage(items, pageNumber, size, (int) result.getTotalElements());
     }
 
@@ -585,15 +601,7 @@ public class BookingService {
     /** A guest's full stay history for {@code GET /guests/{id}} - see {@link GuestService#getDetail}. Same bulk-load shape as {@link #list}. */
     @Transactional(readOnly = true)
     public List<Booking> listByGuestId(String guestId) {
-        List<BookingEntity> bookings = bookingRepository.findByGuestIdOrderByCreatedAtDesc(guestId);
-        Map<String, List<BookingSegmentEntity>> segmentsByBookingId = bookings.isEmpty()
-                ? Map.of()
-                : segmentRepository.findByBookingIdIn(bookings.stream().map(BookingEntity::getId).toList()).stream()
-                        .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
-        return bookings.stream()
-                .map(b -> bookingMapper.toDto(
-                        b, b.getRoom(), b.getRoomUnit(), b.getGuest(), segmentsByBookingId.getOrDefault(b.getId(), List.of())))
-                .toList();
+        return toDtos(bookingRepository.findByGuestIdOrderByCreatedAtDesc(guestId));
     }
 
     /**
@@ -760,6 +768,7 @@ public class BookingService {
         String roomUnitId = requireRoomUnitIdPresent(input.getRoomUnitId());
 
         BookingEntity before = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        requireStayNotEnded(before);
         LocalDate oldCheckIn = before.getCheckIn();
         LocalDate oldCheckOut = before.getCheckOut();
         String oldRoomUnitId = before.getRoomUnitId();
@@ -826,6 +835,7 @@ public class BookingService {
      * {@link BookingWriter#relocate}, which runs SERIALIZABLE.
      */
     public Booking relocate(String bookingId, RelocationInput input) {
+        requireStayNotEnded(bookingId);
         LocalDate effectiveDate = LocalDate.parse(input.getEffectiveDate());
         String newRoomUnitId = input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
 
@@ -870,6 +880,7 @@ public class BookingService {
      * the earlier room may no longer be free for the range it is about to re-absorb.
      */
     public Booking undoRelocation(String bookingId, RelocationUndoInput input) {
+        requireStayNotEnded(bookingId);
         LocalDate splitDate = LocalDate.parse(input.getSplitDate());
 
         BookingWriter.RelocationResult result;
@@ -901,6 +912,7 @@ public class BookingService {
      * already-agreed night's price instead of recomputing it.
      */
     public Booking reprice(String bookingId, RepriceInput input) {
+        requireStayNotEnded(bookingId);
         BookingWriter.RepriceResult result;
         try {
             result = bookingWriter.reprice(bookingId, input.getSegmentId());
@@ -946,6 +958,22 @@ public class BookingService {
      * *unwrapped* value instead, incorrectly rejecting the exact {@code null} this field exists
      * to accept (see both schemas' descriptions in openapi.yaml).
      */
+    /**
+     * A guest who has checked out has no stay left to change: moving the dates, relocating or
+     * repricing would add charges to a folio the desk has already closed. 409, with the booking
+     * untouched. (A checkout that shortens the stay changes the dates itself while the guest is
+     * still {@code CHECKED_IN}, before the checkout completes.)
+     */
+    private void requireStayNotEnded(String bookingId) {
+        requireStayNotEnded(bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found")));
+    }
+
+    private static void requireStayNotEnded(BookingEntity booking) {
+        if (booking.getOccupancyStatus() == OccupancyStatus.CHECKED_OUT) {
+            throw new ConflictException("This guest has already checked out - the stay and its price can't be changed any more.");
+        }
+    }
+
     private static String requireRoomUnitIdPresent(JsonNullable<String> roomUnitId) {
         if (!roomUnitId.isPresent()) {
             throw ValidationException.field("roomUnitId", "roomUnitId is required (send null to unassign)");
@@ -984,7 +1012,8 @@ public class BookingService {
                 PriceFormat.asDecimalString(b.settledOutside()),
                 PriceFormat.asDecimalString(b.balanceDue()),
                 PriceFormat.asDecimalString(b.creditBalance()),
-                b.roomChargeCount());
+                b.roomChargeCount())
+                .amountToMarkPaid(PriceFormat.asDecimalString(b.asUnsettled().balanceDue()));
     }
 
     /**
@@ -1010,76 +1039,12 @@ public class BookingService {
     }
 
     /**
-     * The one place a booking's folio is computed. Never stored.
-     *
-     * <p>Charged: the room ({@code totalPrice} + {@code earlyDepartureFee}; nothing for a
-     * {@code CANCELLED} booking) and every {@code ROOM_CHARGE} {@link PaymentEntity}. Collected:
-     * every {@link FolioPaymentEntity}, applied to the POS charges first and then to the room -
-     * so "owes for the bar" clears before the room does, matching how the desk collects. A
-     * booking marked {@code PAID} by hand had the rest of its room collected outside this system
-     * (an OTA prepayment, a bank transfer): that remainder is {@code settledOutside}. Once folio
-     * payments cover the room, {@link #recordFolioPayment} sets {@code PAID} itself, and
-     * {@code settledOutside} is zero - which is why it's derived from what folio payments cover,
-     * not from {@code PAID} alone: {@code PAID} used to zero the room no matter how it was paid,
-     * while "Total due" kept showing the full room, and the desk couldn't tell what to collect.
+     * The one place a booking's folio is computed is {@link BookingFolioCalculator} - see its
+     * javadoc for what is charged, what is collected and what {@code settledOutside} means.
      */
     private FolioBreakdown computeFolioBreakdown(String bookingId) {
         BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
-        List<PaymentEntity> payments = roomChargePayments(bookingId);
-        BigDecimal roomChargesGross = payments.stream().map(PaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal paid = folioPaymentRepository.findByBookingIdOrderByCreatedAtAsc(bookingId).stream()
-                .map(FolioPaymentEntity::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return new FolioBreakdown(
-                booking.getTotalPrice(), booking.getEarlyDepartureFee(), roomChargesGross, payments.size(), paid, booking.getStatus());
-    }
-
-    record FolioBreakdown(
-            BigDecimal stayPrice,
-            BigDecimal earlyDepartureFee,
-            BigDecimal roomChargesGross,
-            int roomChargeCount,
-            BigDecimal paid,
-            BookingStatus status) {
-
-        /** The room as owed: nothing once the booking is cancelled. */
-        BigDecimal roomOwed() {
-            return status == BookingStatus.CANCELLED ? BigDecimal.ZERO : stayPrice.add(earlyDepartureFee);
-        }
-
-        BigDecimal folioTotal() {
-            return roomOwed().add(roomChargesGross);
-        }
-
-        BigDecimal paidToCharges() {
-            return paid.min(roomChargesGross);
-        }
-
-        BigDecimal roomChargesOutstanding() {
-            return roomChargesGross.subtract(paidToCharges());
-        }
-
-        /** Folio payments that went to the room, after the POS charges were covered. */
-        BigDecimal paidToRoom() {
-            return paid.subtract(paidToCharges()).min(roomOwed());
-        }
-
-        BigDecimal settledOutside() {
-            return status == BookingStatus.PAID ? roomOwed().subtract(paidToRoom()) : BigDecimal.ZERO;
-        }
-
-        BigDecimal balanceDue() {
-            return folioTotal().subtract(paid).subtract(settledOutside()).max(BigDecimal.ZERO);
-        }
-
-        BigDecimal creditBalance() {
-            return paid.subtract(folioTotal()).max(BigDecimal.ZERO);
-        }
-
-        /** True once folio payments alone cover the whole room - what auto-PAID waits for. */
-        boolean roomCoveredByPayments() {
-            return roomOwed().signum() > 0 && paidToRoom().compareTo(roomOwed()) >= 0;
-        }
+        return folioCalculator.breakdown(booking);
     }
 
     /**
@@ -1107,19 +1072,46 @@ public class BookingService {
     @Transactional
     public FolioPayment recordFolioPayment(String bookingId, FolioPaymentInput input) {
         BookingEntity booking = bookingRepository.findByIdForUpdate(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
-        BigDecimal amount = new BigDecimal(input.getAmount());
-        if (amount.signum() <= 0) {
-            throw ValidationException.field("amount", "amount must be greater than zero");
-        }
+        BigDecimal amount = parseFolioAmount(input);
         BigDecimal outstanding = computeFolioBreakdown(bookingId).balanceDue();
         if (amount.compareTo(outstanding) > 0) {
             throw new ConflictException(
                     "This would overpay the folio - ฿" + PriceFormat.asDecimalString(outstanding) + " is currently outstanding.");
         }
 
+        FolioPaymentEntity saved = insertFolioPayment(booking, input, amount);
+
+        FolioBreakdown after = computeFolioBreakdown(bookingId);
+        if ((booking.getStatus() == BookingStatus.NEW || booking.getStatus() == BookingStatus.CONFIRMED) && after.roomCoveredByPayments()) {
+            updateStatus(bookingId, new BookingStatusInput(BookingStatus.PAID));
+        }
+
+        return toFolioPaymentDto(saved);
+    }
+
+    private static BigDecimal parseFolioAmount(FolioPaymentInput input) {
+        BigDecimal amount;
+        try {
+            amount = new BigDecimal(input.getAmount());
+        } catch (NumberFormatException e) {
+            throw ValidationException.field("amount", "amount must be a decimal number");
+        }
+        if (amount.signum() <= 0) {
+            throw ValidationException.field("amount", "amount must be greater than zero");
+        }
+        return amount;
+    }
+
+    /**
+     * Writes one folio payment row, its ledger posting and its audit entry. Callers have already
+     * locked the booking and decided the amount is acceptable ({@link #recordFolioPayment}: not
+     * above the balance; {@link #settleForPaid}: exactly what is owed) - this is only the write, so
+     * the two can't drift on who recorded it, which cash shift it counts in, or what the books say.
+     */
+    private FolioPaymentEntity insertFolioPayment(BookingEntity booking, FolioPaymentInput input, BigDecimal amount) {
         StaffPrincipal actor = (StaffPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         FolioPaymentEntity entity = new FolioPaymentEntity();
-        entity.setBookingId(bookingId);
+        entity.setBookingId(booking.getId());
         entity.setMethod(input.getMethod());
         entity.setAmount(amount);
         entity.setRecordedByUserId(actor.id());
@@ -1130,16 +1122,38 @@ public class BookingService {
         auditLogService.record(
                 AuditAction.BOOKING_FOLIO_PAYMENT_RECORDED,
                 AuditEntityType.BOOKING,
-                bookingId,
+                booking.getId(),
                 "Recorded ฿" + PriceFormat.asDecimalString(amount) + " (" + input.getMethod().getValue() + ") against "
                         + booking.getGuestName() + "'s folio");
+        return saved;
+    }
 
-        FolioBreakdown after = computeFolioBreakdown(bookingId);
-        if ((booking.getStatus() == BookingStatus.NEW || booking.getStatus() == BookingStatus.CONFIRMED) && after.roomCoveredByPayments()) {
-            updateStatus(bookingId, new BookingStatusInput(BookingStatus.PAID));
+    /**
+     * The gate in front of a change into {@code PAID}. What is owed is the folio as if the booking
+     * were not yet settled ({@link FolioBreakdown#asUnsettled}) - a {@code CANCELLED} booking being
+     * reinstated owes its room again, and nothing has been "settled outside" yet. When that is
+     * above zero the request must carry a payment of exactly that amount, which is recorded here;
+     * a missing or different one is a 409 and nothing is written. When nothing is owed a payment is
+     * optional, and one that would overpay is refused like any other.
+     */
+    private void settleForPaid(BookingEntity booking, FolioPaymentInput payment) {
+        BigDecimal owed = folioCalculator.breakdown(booking).asUnsettled().balanceDue();
+        if (payment == null) {
+            if (owed.signum() > 0) {
+                throw new ConflictException("฿" + PriceFormat.asDecimalString(owed)
+                        + " is still owed on this booking. Record a payment for that amount to mark it paid.");
+            }
+            return;
         }
-
-        return toFolioPaymentDto(saved);
+        BigDecimal amount = parseFolioAmount(payment);
+        if (owed.signum() > 0 && amount.compareTo(owed) != 0) {
+            throw new ConflictException("To mark this booking paid the payment must be exactly ฿" + PriceFormat.asDecimalString(owed)
+                    + ", what is still owed (not ฿" + PriceFormat.asDecimalString(amount) + ").");
+        }
+        if (owed.signum() == 0) {
+            throw new ConflictException("Nothing is owed on this booking - mark it paid without a payment.");
+        }
+        insertFolioPayment(booking, payment, amount);
     }
 
     /** Settlement history behind {@link #computeFolioBreakdown}'s {@code roomChargesTotal} - see {@link #recordFolioPayment}. */

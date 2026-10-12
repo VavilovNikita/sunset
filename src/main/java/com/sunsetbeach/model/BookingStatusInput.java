@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.FolioPaymentInput;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.util.NoSuchElementException;
@@ -40,6 +41,8 @@ public class BookingStatusInput {
   private Integer children;
 
   private JsonNullable<@Size(max = 500) String> cancellationReason = JsonNullable.<String>undefined();
+
+  private FolioPaymentInput payment;
 
   public BookingStatusInput() {
     super();
@@ -187,6 +190,25 @@ public class BookingStatusInput {
     this.cancellationReason = cancellationReason;
   }
 
+  public BookingStatusInput payment(FolioPaymentInput payment) {
+    this.payment = payment;
+    return this;
+  }
+
+  /**
+   * The payment that settles the booking, recorded in the same transaction as the status change. Read only on a change into `PAID`. A booking cannot become `PAID` while `BookingFolio.balanceDue` (computed as if the booking were not yet paid) is above zero unless this carries a payment of exactly that amount - otherwise 409. When nothing is owed it is optional and, if sent, recorded like any folio payment (and rejected the same way if it would overpay). 
+   * @return payment
+   */
+  @Valid 
+  @JsonProperty("payment")
+  public FolioPaymentInput getPayment() {
+    return payment;
+  }
+
+  public void setPayment(FolioPaymentInput payment) {
+    this.payment = payment;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -202,7 +224,8 @@ public class BookingStatusInput {
         Objects.equals(this.purpose, bookingStatusInput.purpose) &&
         Objects.equals(this.adults, bookingStatusInput.adults) &&
         Objects.equals(this.children, bookingStatusInput.children) &&
-        equalsNullable(this.cancellationReason, bookingStatusInput.cancellationReason);
+        equalsNullable(this.cancellationReason, bookingStatusInput.cancellationReason) &&
+        Objects.equals(this.payment, bookingStatusInput.payment);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -211,7 +234,7 @@ public class BookingStatusInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(status, hashCodeNullable(paymentNote), channel, purpose, adults, children, hashCodeNullable(cancellationReason));
+    return Objects.hash(status, hashCodeNullable(paymentNote), channel, purpose, adults, children, hashCodeNullable(cancellationReason), payment);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -232,6 +255,7 @@ public class BookingStatusInput {
     sb.append("    adults: ").append(toIndentedString(adults)).append("\n");
     sb.append("    children: ").append(toIndentedString(children)).append("\n");
     sb.append("    cancellationReason: ").append(toIndentedString(cancellationReason)).append("\n");
+    sb.append("    payment: ").append(toIndentedString(payment)).append("\n");
     sb.append("}");
     return sb.toString();
   }

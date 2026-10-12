@@ -48,7 +48,9 @@ import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.ShiftRepository;
 import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.repository.VatSettingsRepository;
+import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.security.StaffPrincipal;
+import com.sunsetbeach.support.PaidBookings;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -230,10 +232,10 @@ class LedgerServiceTests extends AbstractIntegrationTest {
     // --- Booking settlement -------------------------------------------------------------------
 
     @Test
-    void bookingBecomingPaid_postsCashAgainstRoomRevenueAndVat() {
+    void bookingBecomingPaid_settlesTheGuestLedgerAgainstRoomRevenueAndVat_theCashCameWithThePayment() {
         BookingEntity booking = persistBooking("1070.00");
 
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId()));
 
         List<JournalEntryEntity> entries = entriesFor(JournalSourceType.BOOKING, booking.getId());
         assertThat(entries).hasSize(1);
@@ -241,10 +243,20 @@ class LedgerServiceTests extends AbstractIntegrationTest {
         assertThat(entries.get(0).getCreatedByUserId()).isEqualTo(cashier.getId());
         Map<String, BigDecimal[]> lines = linesOf(entries.get(0));
         assertBalanced(lines);
-        assertLine(lines, LedgerService.CASH, "1070.00", "0");
+        // PAID now travels with a payment: the cash was debited by that folio payment (below), so the
+        // settlement takes the room out of the guest ledger instead of counting the cash twice.
+        assertLine(lines, LedgerService.GUEST_LEDGER, "1070.00", "0");
         assertLine(lines, LedgerService.ROOM_REVENUE, "0", "1000.00");
         assertLine(lines, LedgerService.VAT_PAYABLE, "0", "70.00");
         assertThat(lines).hasSize(3);
+
+        List<JournalEntryEntity> payments = entryRepository.findAll().stream()
+                .filter(e -> e.getSourceType() == JournalSourceType.FOLIO_PAYMENT && e.getCreatedByUserId().equals(cashier.getId()))
+                .toList();
+        assertThat(payments).hasSize(1);
+        Map<String, BigDecimal[]> paymentLines = linesOf(payments.get(0));
+        assertLine(paymentLines, LedgerService.CASH, "1070.00", "0");
+        assertLine(paymentLines, LedgerService.GUEST_LEDGER, "0", "1070.00");
     }
 
     @Test
@@ -257,7 +269,7 @@ class LedgerServiceTests extends AbstractIntegrationTest {
     @Test
     void bookingLeavingPaid_postsExactMirror_thatNetsToZeroOnEveryAccount() {
         BookingEntity booking = persistBooking("1070.00");
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId()));
 
         bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CANCELLED));
 
@@ -271,19 +283,19 @@ class LedgerServiceTests extends AbstractIntegrationTest {
     @Test
     void bookingPaidAgainAfterLeavingPaid_postsANewSettlement() {
         BookingEntity booking = persistBooking("1070.00");
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId()));
         bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CONFIRMED));
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId()));
 
         List<JournalEntryEntity> entries = entriesFor(JournalSourceType.BOOKING, booking.getId());
         assertThat(entries).hasSize(3);
-        assertThat(netOf(entries).get(LedgerService.CASH)).isEqualByComparingTo("1070.00");
+        assertThat(netOf(entries).get(LedgerService.GUEST_LEDGER)).isEqualByComparingTo("1070.00");
     }
 
     @Test
     void bookingSettlementReversedByHand_isNotReversedAgainWhenTheBookingLeavesPaid() {
         BookingEntity booking = persistBooking("1070.00");
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId()));
         String settlementId = entriesFor(JournalSourceType.BOOKING, booking.getId()).get(0).getId();
         ledgerService.reverse(settlementId, new JournalEntryReverseInput("Posted in error"));
 
@@ -325,6 +337,8 @@ class LedgerServiceTests extends AbstractIntegrationTest {
     @Test
     void roomChargedOrder_debitsGuestLedger_andAFolioPaymentClearsIt() {
         BookingEntity booking = persistBooking("1000.00");
+        booking.setOccupancyStatus(OccupancyStatus.CHECKED_IN); // a room charge needs a guest in the house
+        bookingRepository.saveAndFlush(booking);
         OrderEntity order = persistOrder(Map.of(menuItem("Pad Thai", MenuDepartment.KITCHEN, "107.00"), 2));
 
         orderService.close(order.getId(), new CloseOrderInput(PaymentMethod.ROOM_CHARGE).bookingId(booking.getId()), cashier.getId());
@@ -444,7 +458,7 @@ class LedgerServiceTests extends AbstractIntegrationTest {
         TrialBalanceReport before = ledgerService.trialBalance(asOf);
 
         BookingEntity booking = persistBooking("2140.00");
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId()));
         OrderEntity order = persistOrder(Map.of(menuItem("Massage", MenuDepartment.SPA, "535.00"), 1));
         orderService.close(order.getId(), new CloseOrderInput(PaymentMethod.CARD), cashier.getId());
         ledgerService.createManualEntry(new JournalEntryCreateInput(
@@ -455,7 +469,7 @@ class LedgerServiceTests extends AbstractIntegrationTest {
         assertThat(after.getBalanced()).isTrue();
         assertThat(after.getTotalDebit()).isEqualTo(after.getTotalCredit());
         assertThat(new BigDecimal(after.getTotalDebit()).subtract(new BigDecimal(before.getTotalDebit())))
-                .isEqualByComparingTo("2975.00"); // 2140 + 535 + 300
+                .isEqualByComparingTo("5115.00"); // 2140 (desk payment) + 2140 (settlement) + 535 + 300
         assertThat(balanceDelta(before, after, "1000")).isEqualByComparingTo("2375.00"); // 2140 + 535 - 300
         assertThat(balanceDelta(before, after, "4000")).isEqualByComparingTo("2000.00");
         assertThat(balanceDelta(before, after, "4200")).isEqualByComparingTo("500.00");

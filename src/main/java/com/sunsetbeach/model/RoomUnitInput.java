@@ -35,7 +35,7 @@ public class RoomUnitInput {
    */
   public RoomUnitInput(String roomId, String label) {
     this.roomId = roomId;
-    this.label = label;
+    this.label = label == null ? null : label.strip();
   }
 
   public RoomUnitInput roomId(String roomId) {
@@ -58,7 +58,7 @@ public class RoomUnitInput {
   }
 
   public RoomUnitInput label(String label) {
-    this.label = label;
+    this.label = label == null ? null : label.strip();
     return this;
   }
 
@@ -73,7 +73,7 @@ public class RoomUnitInput {
   }
 
   public void setLabel(String label) {
-    this.label = label;
+    this.label = label == null ? null : label.strip();
   }
 
   public RoomUnitInput isActive(Boolean isActive) {

@@ -51,6 +51,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -172,11 +173,24 @@ public class ShiftService {
         }
         orderRepository.flush();
 
-        // Orders don't carry a shiftId (only Payments do), so there's no way to scope this
-        // check to "orders opened during this shift" - it's a system-wide gate: don't let the
-        // register close while there's still unpaid business anywhere in the POS.
-        if (orderRepository.existsByStatusIn(UNSETTLED_STATUSES)) {
-            throw new ConflictException("There are still OPEN/SENT orders that need to be closed or cancelled first");
+        // Orders don't carry a shiftId (only Payments do), so "this shift's" orders are the ones its
+        // cashier opened, plus any that already carry a payment recorded in this shift. Those block
+        // the close. Everyone else's open orders are somebody else's business: the close goes ahead
+        // and the response names them in a warning, so one waiter's open table can't keep another
+        // cashier from counting their drawer.
+        Set<String> paidInThisShift = paymentRepository.findByShiftId(shift.getId()).stream()
+                .map(PaymentEntity::getOrderId)
+                .collect(Collectors.toSet());
+        List<OrderEntity> blocking = new ArrayList<>();
+        List<OrderEntity> belongingToOthers = new ArrayList<>();
+        for (OrderEntity unsettled : orderRepository.findByStatusIn(UNSETTLED_STATUSES)) {
+            boolean thisShifts = Objects.equals(unsettled.getOpenedByUserId(), shift.getOpenedByUserId())
+                    || paidInThisShift.contains(unsettled.getId());
+            (thisShifts ? blocking : belongingToOthers).add(unsettled);
+        }
+        if (!blocking.isEmpty()) {
+            throw new ConflictException("This shift still has " + blocking.size() + " OPEN/SENT order(s) that need to be closed or cancelled first: "
+                    + describeOrders(blocking));
         }
 
         shift.setClosedByUserId(shift.getOpenedByUserId());
@@ -189,7 +203,21 @@ public class ShiftService {
 
         auditLogService.record(AuditAction.SHIFT_CLOSED, AuditEntityType.SHIFT, saved.getId(), describeShiftClose(saved));
 
-        return shiftMapper.toDto(saved);
+        Shift dto = shiftMapper.toDto(saved);
+        if (!belongingToOthers.isEmpty()) {
+            dto.warning(belongingToOthers.size() + " open order(s) opened by other staff were left open: " + describeOrders(belongingToOthers));
+        }
+        return dto;
+    }
+
+    /** "#1204, #1207 and 2 more" - enough to find them, short enough for a banner. */
+    private static String describeOrders(List<OrderEntity> orders) {
+        int shown = Math.min(orders.size(), 5);
+        String list = orders.stream()
+                .limit(shown)
+                .map(o -> o.getNumber() != null ? "#" + o.getNumber() : o.getId().substring(0, 8))
+                .collect(Collectors.joining(", "));
+        return orders.size() > shown ? list + " and " + (orders.size() - shown) + " more" : list;
     }
 
     /**

@@ -207,6 +207,11 @@ class OrderCloseSpaAppointmentLinkTests extends AbstractIntegrationTest {
                 new StaffBookingCreateInput(savedRoom.getId(), "Order Close Link Guest", checkIn.toString(), checkIn.plusDays(2).toString(), BookingChannel.WALK_IN, 1)
                         .roomUnitId(unit.getId()));
         createdBookingIds.add(booking.getId());
+        // A room charge needs a guest in the house (these tests close orders to the room).
+        bookingRepository.findById(booking.getId()).ifPresent(b -> {
+            b.setOccupancyStatus(com.sunsetbeach.model.OccupancyStatus.CHECKED_IN);
+            bookingRepository.saveAndFlush(b);
+        });
         return booking;
     }
 

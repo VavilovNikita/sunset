@@ -53,10 +53,19 @@ public class MenuService {
     @Transactional(readOnly = true)
     public List<MenuItem> listPublic() {
         return menuItemRepository.findAll().stream()
-                .filter(MenuItemEntity::isAvailable)
-                .filter(item -> item.getDepartment() != MenuDepartment.SPA)
+                .filter(MenuService::isPubliclyOrderable)
                 .map(menuItemMapper::toDto)
                 .toList();
+    }
+
+    /**
+     * The one definition of "a guest may order this": what {@link #listPublic} shows and what the
+     * guest-facing order paths accept ({@code OrderService#requirePubliclyOrderable}). A hidden
+     * (unavailable) item or a spa treatment is not on the guest's menu, so it can't be ordered by
+     * posting its id either.
+     */
+    public static boolean isPubliclyOrderable(MenuItemEntity item) {
+        return item.isAvailable() && item.getDepartment() != MenuDepartment.SPA;
     }
 
     @Transactional

@@ -2329,6 +2329,15 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: Booking not found
+        "409":
+          description: >
+            A change into `PAID` while money is still owed and the request carries no payment (or
+            one for a different amount) - `BookingStatusInput.payment`. `PAID` never writes money
+            off on its own.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /bookings/{id}/room-unit:
     parameters:
@@ -3266,8 +3275,9 @@ paths:
         Requires CASHIER or above. Only legal once a physical room is assigned
         (`booking.roomUnitId` - this is the moment a key is handed over) and while
         `occupancyStatus` is `EXPECTED` or `NO_SHOW` (a guest who no-showed can still turn up
-        late and check in normally). Checking into a `DIRTY` room is allowed, not blocked - see
-        `CheckInResult.warning`. Recorded in the audit log.
+        late and check in normally). A `CANCELLED` booking cannot be checked in, and neither can
+        one before its `checkIn` date (the hotel's today) - both 409. Checking into a `DIRTY` room
+        is allowed, not blocked - see `CheckInResult.warning`. Recorded in the audit log.
       responses:
         "200":
           description: Checked in, with a warning set if the room wasn't clean.
@@ -3294,7 +3304,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
-          description: Already checked in or already checked out.
+          description: Already checked in or already checked out, the booking is `CANCELLED`, or its check-in date has not arrived yet.
           content:
             application/json:
               schema:
@@ -5320,6 +5330,8 @@ paths:
         `Shift` (409 otherwise). Creates a `Payment` row for `Order.total`/`method` (and
         `bookingId` when `method` is `ROOM_CHARGE`) tied to that shift, then sets the order's
         status to `PAID`. The amount charged is always `Order.total` - see `CloseOrderInput`.
+        A `ROOM_CHARGE` needs a guest in the house: the booking must be `CHECKED_IN` (409 before
+        arrival and after check-out; an overdue guest is still `CHECKED_IN`) and not `CANCELLED`.
         Any line still unsent (`sentAt: null`) is sent to the kitchen/bar first, exactly as
         the `OPEN -> SENT` transition does - paying is the last chance for an item nobody
         pressed "Send" for to reach the station; lines already sent are never reprinted.
@@ -5355,7 +5367,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
-          description: Order already `PAID`/`CANCELLED`, caller has no open shift, or (for `ROOM_CHARGE`) the booking is `CANCELLED`.
+          description: >
+            Order already `PAID`/`CANCELLED`, caller has no open shift, or (for `ROOM_CHARGE`) the
+            booking is `CANCELLED` or not `CHECKED_IN`.
           content:
             application/json:
               schema:
@@ -5575,11 +5589,10 @@ paths:
                 error: Shift not found
         "409":
           description: >
-            Already `CLOSED`, or there are `OPEN`/`SENT` orders anywhere in the system. This is
-            a system-wide gate, not scoped to this particular shift - `Order` has no `shiftId`
-            (only `Payment` does, and only once an order is closed), so there is no way to ask
-            "orders opened during this shift" and the check intentionally doesn't pretend
-            otherwise.
+            Already `CLOSED`, or this shift still has `OPEN`/`SENT` orders that belong to it: opened by
+            the shift's own cashier, or carrying a payment recorded in this shift. Other staff's open
+            orders do not block the close; they come back as `Shift.warning`. Empty `OPEN` orders are
+            cancelled automatically, on the audit record.
           content:
             application/json:
               schema:
@@ -6948,6 +6961,12 @@ paths:
         date shows what is still unresolved with a date on or before it, not a historical snapshot.
 
 
+        **`unpaidBalances`**: bookings whose stay is over - `occupancyStatus` `CHECKED_OUT`, or
+        `checkOut` on or before `date` and not still checked in, or `status` `CANCELLED` - that
+        still owe money (`balanceDue` above zero), whatever their `status`. Each row carries
+        `balanceDue`, the folio's single balance.
+
+
         **`snapshot`** is exactly `GET /reports/occupancy?from=date&to=date`'s `total` row - the
         same computation, called, not reimplemented.
       parameters:
@@ -8223,6 +8242,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GuestOrderView"
+        "400":
+          description: >
+            A line is not on the public menu (`GET /public/menu`: hidden/unavailable items and spa
+            treatments are refused, and one bad line refuses the whole request), or a quantity is
+            outside 1..99 (also when it would take a merged line above 99).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
         "404":
           description: Wrong/missing token, unknown order, or the order is no longer OPEN/SENT.
           content:
@@ -10438,6 +10466,7 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
           minLength: 2
           maxLength: 120
         department:
@@ -10857,6 +10886,7 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
           minLength: 2
           maxLength: 120
         description:
@@ -10940,6 +10970,7 @@ components:
           type: string
         label:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 60
         isActive:
@@ -10953,6 +10984,7 @@ components:
       properties:
         label:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 60
         isActive:
@@ -11885,6 +11917,7 @@ components:
           minLength: 1
         guestName:
           type: string
+          x-trim: true
           minLength: 2
           maxLength: 120
         guestEmail:
@@ -12385,6 +12418,15 @@ components:
             Decimal(10,2) rendered as a string, `"0.00"` unless an early checkout released nights
             and staff chose to charge them anyway (`CheckOutInput.chargeUnusedNights`). Owed on
             top of `totalPrice` - see `BookingFolio`.
+        balanceDue:
+          type: string
+          description: >
+            What the guest still owes on this booking right now - `BookingFolio.balanceDue`,
+            computed by the server in one place (`BookingFolioCalculator`) and sent on every
+            booking, whatever its `status` or `occupancyStatus`: a checked-out booking, a `NEW` one
+            whose dates have passed and a `CANCELLED` one with POS charges can all owe money.
+            Decimal(10,2) rendered as a string, never below `"0.00"`. A client shows its "Owes"
+            badge from this field and never works the balance out itself.
         status:
           $ref: "#/components/schemas/BookingStatus"
         channel:
@@ -12464,6 +12506,7 @@ components:
           minLength: 1
         guestName:
           type: string
+          x-trim: true
           minLength: 2
           maxLength: 120
         guestEmail:
@@ -12530,6 +12573,16 @@ components:
             `CANCELLED` (ignored otherwise); stored as `Booking.cancellationReason` and repeated in
             that status change's audit entry. Optional at the API so system paths (the SiteMinder import,
             the expiry sweep) keep working; the admin screens require it before they send a cancel.
+        payment:
+          allOf:
+            - $ref: "#/components/schemas/FolioPaymentInput"
+          description: >
+            The payment that settles the booking, recorded in the same transaction as the status
+            change. Read only on a change into `PAID`. A booking cannot become `PAID` while
+            `BookingFolio.balanceDue` (computed as if the booking were not yet paid) is above zero
+            unless this carries a payment of exactly that amount - otherwise 409. When nothing is
+            owed it is optional and, if sent, recorded like any folio payment (and rejected the
+            same way if it would overpay).
 
     Guest:
       type: object
@@ -12995,6 +13048,7 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 120
         email:
@@ -13042,6 +13096,7 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 120
         email:
@@ -13392,6 +13447,8 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
+          maxLength: 120
           minLength: 1
         fullName:
           type: string
@@ -13491,6 +13548,8 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
+          maxLength: 120
           minLength: 1
 
     UserFullNameUpdateInput:
@@ -13741,6 +13800,7 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
           minLength: 2
           maxLength: 120
         description:
@@ -13821,6 +13881,7 @@ components:
           $ref: "#/components/schemas/Zone"
         label:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 60
         capacity:
@@ -14187,6 +14248,9 @@ components:
         quantity:
           type: integer
           minimum: 1
+          maximum: 99
+          description: >
+            1 to 99 per line. A request that would take a merged line above 99 is a 400 too.
         note:
           type: string
           nullable: true
@@ -14335,6 +14399,12 @@ components:
         notes:
           type: string
           nullable: true
+        warning:
+          type: string
+          description: >
+            Set only on the response to `POST /shifts/{id}/close`, and only when OPEN/SENT orders
+            that belong to someone else were left open (they do not block this close). Names them.
+            Absent otherwise.
 
     ShiftOpenInput:
       type: object
@@ -14577,6 +14647,15 @@ components:
         balanceDue:
           type: string
           description: What is still to collect - decimal(10,2) rendered as a string.
+        amountToMarkPaid:
+          type: string
+          description: >
+            The payment a change into `PAID` must carry (`BookingStatusInput.payment`): the balance
+            as if the booking were not yet paid and not cancelled - the room (also for a `CANCELLED`
+            booking being reinstated) plus POS room charges, minus what folio payments already
+            cover. Equals `balanceDue` for a `NEW`/`CONFIRMED` booking; for a booking that is
+            already `PAID` or `CANCELLED` it is what `balanceDue` would be if it were not. Decimal(10,2)
+            rendered as a string.
         creditBalance:
           type: string
           description: Collected beyond what was charged - decimal(10,2) rendered as a string.
@@ -14645,7 +14724,7 @@ components:
         Response of `GET /payments/summary`. See that operation's description for why
         `totals.roomCharge` is excluded from `grandTotal` - do not sum `totals.*` yourself on
         the client, use `grandTotal` as-is for received revenue.
-      required: [from, to, totals, grandTotal]
+      required: [from, to, totals, grandTotal, folioPaymentsTotal]
       properties:
         from:
           type: string
@@ -14658,6 +14737,14 @@ components:
         grandTotal:
           type: string
           description: '`totals.cash + totals.card + totals.other` - decimal(10,2) rendered as a string. Deliberately excludes `totals.roomCharge`.'
+        folioPaymentsTotal:
+          type: string
+          description: >
+            Money recorded against bookings' folios in the same period (`FolioPayment` rows, every
+            method) - the room, its early-departure fee and POS room charges once paid at the desk.
+            Decimal(10,2) rendered as a string. This, not any booking's `status`, is what the
+            dashboard's room revenue is built from. Not part of `grandTotal`: that stays the POS
+            figure.
 
     AuditAction:
       type: string
@@ -16250,6 +16337,7 @@ components:
       properties:
         name:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 120
         serial:
@@ -16448,7 +16536,7 @@ components:
     NightAudit:
       type: object
       description: '`GET /night-audit` - see that operation for what each list contains.'
-      required: [date, missedArrivals, missedDepartures, snapshot, closure]
+      required: [date, missedArrivals, missedDepartures, unpaidBalances, snapshot, closure]
       properties:
         date:
           type: string
@@ -16461,6 +16549,15 @@ components:
         missedDepartures:
           type: array
           description: Sorted by `checkOut`, oldest first.
+          items:
+            $ref: "#/components/schemas/NightAuditBooking"
+        unpaidBalances:
+          type: array
+          description: >
+            Bookings whose stay is over (checked out, or `checkOut` on or before `date` and not
+            still checked in) or that are `CANCELLED`, and that still owe money
+            (`balanceDue` above zero) - whatever their `status`. Sorted by `checkOut`, oldest first.
+            Each row carries `balanceDue`.
           items:
             $ref: "#/components/schemas/NightAuditBooking"
         snapshot:
@@ -16478,6 +16575,9 @@ components:
       properties:
         id:
           type: string
+        balanceDue:
+          type: string
+          description: Decimal(10,2) string, `BookingFolio.balanceDue`. Present on every `unpaidBalances` row.
         guestName:
           type: string
           x-sensitive: true
@@ -17127,6 +17227,7 @@ components:
           description: Unique; digits, capital letters and hyphens, at most 20 characters (e.g. "6100").
         name:
           type: string
+          x-trim: true
           minLength: 1
           maxLength: 100
         type:

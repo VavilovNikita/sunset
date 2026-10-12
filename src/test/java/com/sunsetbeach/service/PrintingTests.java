@@ -602,6 +602,7 @@ class PrintingTests extends AbstractIntegrationTest {
             booking.setCheckOut(LocalDate.now().plusDays(1));
             booking.setTotalPrice(new BigDecimal("1000.00"));
             booking.setStatus(BookingStatus.CONFIRMED);
+            booking.setOccupancyStatus(com.sunsetbeach.model.OccupancyStatus.CHECKED_IN); // a room charge needs a guest in the house
             booking = bookingRepository.saveAndFlush(booking);
             // Forces OrderService.close()'s later bookingRepository.findById() to hydrate a fresh
             // lazy Room proxy instead of reusing this already-managed instance, whose `room`
@@ -739,6 +740,7 @@ class PrintingTests extends AbstractIntegrationTest {
             booking.setCheckOut(LocalDate.now().plusDays(1));
             booking.setTotalPrice(new BigDecimal("1000.00"));
             booking.setStatus(BookingStatus.CONFIRMED);
+            booking.setOccupancyStatus(com.sunsetbeach.model.OccupancyStatus.CHECKED_IN); // a room charge needs a guest in the house
             booking = bookingRepository.saveAndFlush(booking);
             entityManager.clear(); // see closeShift_printsZReport_... for why
 
@@ -864,6 +866,7 @@ class PrintingTests extends AbstractIntegrationTest {
         booking.setCheckOut(LocalDate.of(2030, 1, 11));
         booking.setTotalPrice(new BigDecimal("1000.00"));
         booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setOccupancyStatus(com.sunsetbeach.model.OccupancyStatus.CHECKED_IN); // a room charge needs a guest in the house
         booking = bookingRepository.saveAndFlush(booking);
         entityManager.clear(); // see closeShift_printsZReport_... for why
         return booking;

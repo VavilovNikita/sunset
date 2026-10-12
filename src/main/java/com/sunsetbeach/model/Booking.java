@@ -62,6 +62,8 @@ public class Booking {
 
   private String earlyDepartureFee;
 
+  private String balanceDue;
+
   private BookingStatus status;
 
   private BookingChannel channel;
@@ -403,6 +405,25 @@ public class Booking {
     this.earlyDepartureFee = earlyDepartureFee;
   }
 
+  public Booking balanceDue(String balanceDue) {
+    this.balanceDue = balanceDue;
+    return this;
+  }
+
+  /**
+   * What the guest still owes on this booking right now - `BookingFolio.balanceDue`, computed by the server in one place (`BookingFolioCalculator`) and sent on every booking, whatever its `status` or `occupancyStatus`: a checked-out booking, a `NEW` one whose dates have passed and a `CANCELLED` one with POS charges can all owe money. Decimal(10,2) rendered as a string, never below `\"0.00\"`. A client shows its \"Owes\" badge from this field and never works the balance out itself. 
+   * @return balanceDue
+   */
+  
+  @JsonProperty("balanceDue")
+  public String getBalanceDue() {
+    return balanceDue;
+  }
+
+  public void setBalanceDue(String balanceDue) {
+    this.balanceDue = balanceDue;
+  }
+
   public Booking status(BookingStatus status) {
     this.status = status;
     return this;
@@ -738,6 +759,7 @@ public class Booking {
         Objects.equals(this.checkOut, booking.checkOut) &&
         Objects.equals(this.totalPrice, booking.totalPrice) &&
         Objects.equals(this.earlyDepartureFee, booking.earlyDepartureFee) &&
+        Objects.equals(this.balanceDue, booking.balanceDue) &&
         Objects.equals(this.status, booking.status) &&
         Objects.equals(this.channel, booking.channel) &&
         Objects.equals(this.purpose, booking.purpose) &&
@@ -758,7 +780,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
   }
 
   @Override
@@ -779,6 +801,7 @@ public class Booking {
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
     sb.append("    earlyDepartureFee: ").append(toIndentedString(earlyDepartureFee)).append("\n");
+    sb.append("    balanceDue: ").append(toIndentedString(balanceDue)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    channel: ").append(toIndentedString(channel)).append("\n");
     sb.append("    purpose: ").append(toIndentedString(purpose)).append("\n");

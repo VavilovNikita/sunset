@@ -18,21 +18,38 @@ import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
 import com.sunsetbeach.repository.RoomUnitRepository;
+import com.sunsetbeach.entity.UserEntity;
+import com.sunsetbeach.model.Role;
+import com.sunsetbeach.repository.UserRepository;
+import com.sunsetbeach.security.StaffPrincipal;
+import com.sunsetbeach.support.PaidBookings;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Physical occupancy (check-in/check-out/no-show) - see {@link BookingOccupancyService}'s class
  * javadoc for the design this exercises. The "today" board's tests live in {@link
- * TodayBoardClockTests}, which pins the clock "today" is read from. Every test that
- * needs a room-unit assignment uses dates far enough in the future to avoid colliding with any
- * other test's room (rooms are created fresh per test, so this is mostly precautionary).
+ * TodayBoardClockTests}, which pins the clock "today" is read from. Check-in is only legal on or
+ * after the booking's check-in date, so this class pins the hotel's "today" to {@link #TODAY} the
+ * same way and every booking that is checked in arrives on it (rooms are created fresh per test, so
+ * sharing the date collides with nothing).
  *
  * <p>DB-backed against the ephemeral Testcontainers Postgres, {@code @Transactional} (auto
  * rollback) - no concurrency under test here.
@@ -40,6 +57,39 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional
 class BookingOccupancyTests extends AbstractIntegrationTest {
+
+    private static final ZoneId BANGKOK = ZoneId.of("Asia/Bangkok");
+    private static final LocalDate TODAY = LocalDate.parse("2033-05-10");
+
+    @TestConfiguration
+    static class FixedClockConfig {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(TODAY.atTime(12, 0).atZone(BANGKOK).toInstant(), BANGKOK);
+        }
+    }
+
+    @Autowired
+    private UserRepository userRepository;
+
+    /** Marking a booking PAID records a folio payment, which needs a recorder (a foreign key). */
+    @BeforeEach
+    void signInAsStaff() {
+        UserEntity user = new UserEntity();
+        user.setEmail("occupancy-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
+        user.setPasswordHash("irrelevant-for-this-test");
+        user.setRole(Role.CASHIER);
+        user = userRepository.saveAndFlush(user);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(new StaffPrincipal(user.getId(), user.getEmail(), Role.CASHIER), null, List.of()));
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Autowired
     private BookingService bookingService;
@@ -91,7 +141,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void checkIn_withoutARoomUnitAssigned_isRejectedWithAClearReason() {
         RoomEntity room = createRoom();
         createUnit(room); // a unit must exist for the room type to be bookable at all - just never assigned to this booking
-        LocalDate checkIn = LocalDate.now().plusDays(400);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
 
         assertThatCode(() -> occupancyService.checkIn(booking.getId()))
@@ -106,7 +156,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
         roomUnitService.updateHousekeeping(unit.getId(), HousekeepingStatus.DIRTY);
-        LocalDate checkIn = LocalDate.now().plusDays(401);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
 
@@ -121,7 +171,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void checkIn_intoACleanRoom_succeedsWithNoWarning() {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room); // CLEAN by default
-        LocalDate checkIn = LocalDate.now().plusDays(402);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
 
@@ -137,7 +187,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void checkOut_marksTheRoomDirty() {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
-        LocalDate checkIn = LocalDate.now().plusDays(403);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
         occupancyService.checkIn(booking.getId());
@@ -156,7 +206,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void checkOut_withAnUnpaidBooking_reportsTheOutstandingBalance_butDoesNotBlock() {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
-        LocalDate checkIn = LocalDate.now().plusDays(404);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(3)); // status NEW, never marked PAID
         assignUnit(booking.getId(), unit.getId());
         occupancyService.checkIn(booking.getId());
@@ -171,10 +221,10 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void checkOut_whenAlreadyPaid_reportsNoOutstandingBalance() {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
-        LocalDate checkIn = LocalDate.now().plusDays(405);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(com.sunsetbeach.model.BookingStatus.PAID));
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId()));
         occupancyService.checkIn(booking.getId());
 
         CheckOutResult result = occupancyService.checkOut(booking.getId(), null);
@@ -188,7 +238,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void checkIn_whenAlreadyCheckedIn_isRejected() {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
-        LocalDate checkIn = LocalDate.now().plusDays(406);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
         occupancyService.checkIn(booking.getId());
@@ -202,7 +252,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void checkOut_whenNeverCheckedIn_isRejected() {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
-        LocalDate checkIn = LocalDate.now().plusDays(407);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
 
@@ -215,7 +265,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void checkOut_whenAlreadyCheckedOut_isRejected() {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
-        LocalDate checkIn = LocalDate.now().plusDays(408);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
         occupancyService.checkIn(booking.getId());
@@ -232,7 +282,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void markNoShow_thenCheckIn_succeeds_aLateArrivalCanStillCheckIn() {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
-        LocalDate checkIn = LocalDate.now().plusDays(409);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
 
@@ -250,7 +300,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void markNoShow_whenNotAwaitingArrival_isRejected() {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
-        LocalDate checkIn = LocalDate.now().plusDays(410);
+        LocalDate checkIn = TODAY;
         Booking booking = createBooking(room.getId(), checkIn, checkIn.plusDays(2));
         assignUnit(booking.getId(), unit.getId());
         occupancyService.checkIn(booking.getId());
@@ -266,7 +316,7 @@ class BookingOccupancyTests extends AbstractIntegrationTest {
     void occupancyStatus_neverAffectsAvailability() {
         RoomEntity room = createRoom();
         RoomUnitEntity unit = createUnit(room);
-        LocalDate checkIn = LocalDate.now().plusDays(411);
+        LocalDate checkIn = TODAY;
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = createBooking(room.getId(), checkIn, checkOut);
         assignUnit(booking.getId(), unit.getId());

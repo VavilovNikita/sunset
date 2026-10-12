@@ -72,6 +72,7 @@ public class RoomServiceOrderingService {
     @Transactional
     public GuestOrderView submit(String guestEmail, String bookingId, List<OrderItemInput> items) {
         requireCheckedInOwnBooking(guestEmail, bookingId);
+        orderService.requirePubliclyOrderable(items);
 
         Order created = orderService.create(new OrderCreateInput().bookingId(bookingId), null);
         orderService.addItems(created.getId(), items);
@@ -90,6 +91,7 @@ public class RoomServiceOrderingService {
     @Transactional
     public GuestOrderView addItems(String guestEmail, String orderId, List<OrderItemInput> items) {
         requireOwnRoomServiceOrder(guestEmail, orderId, true);
+        orderService.requirePubliclyOrderable(items);
         orderService.addItems(orderId, items);
         return toGuestOrderView(orderId);
     }

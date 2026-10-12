@@ -44,6 +44,8 @@ public class Shift {
 
   private JsonNullable<String> notes = JsonNullable.<String>undefined();
 
+  private String warning;
+
   public Shift() {
     super();
   }
@@ -234,6 +236,25 @@ public class Shift {
     this.notes = notes;
   }
 
+  public Shift warning(String warning) {
+    this.warning = warning;
+    return this;
+  }
+
+  /**
+   * Set only on the response to `POST /shifts/{id}/close`, and only when OPEN/SENT orders that belong to someone else were left open (they do not block this close). Names them. Absent otherwise. 
+   * @return warning
+   */
+  
+  @JsonProperty("warning")
+  public String getWarning() {
+    return warning;
+  }
+
+  public void setWarning(String warning) {
+    this.warning = warning;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -251,12 +272,13 @@ public class Shift {
         Objects.equals(this.openingCashFloat, shift.openingCashFloat) &&
         Objects.equals(this.closingCashCounted, shift.closingCashCounted) &&
         Objects.equals(this.status, shift.status) &&
-        Objects.equals(this.notes, shift.notes);
+        Objects.equals(this.notes, shift.notes) &&
+        Objects.equals(this.warning, shift.warning);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, openedByUserId, openedAt, closedByUserId, closedAt, openingCashFloat, closingCashCounted, status, notes);
+    return Objects.hash(id, openedByUserId, openedAt, closedByUserId, closedAt, openingCashFloat, closingCashCounted, status, notes, warning);
   }
 
   @Override
@@ -272,6 +294,7 @@ public class Shift {
     sb.append("    closingCashCounted: ").append(toIndentedString(closingCashCounted)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    notes: ").append(toIndentedString(notes)).append("\n");
+    sb.append("    warning: ").append(toIndentedString(warning)).append("\n");
     sb.append("}");
     return sb.toString();
   }

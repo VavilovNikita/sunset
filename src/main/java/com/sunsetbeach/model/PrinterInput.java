@@ -43,13 +43,13 @@ public class PrinterInput {
    * Constructor with only required parameters
    */
   public PrinterInput(String name, PrinterDepartment department, String host) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
     this.department = department;
     this.host = host;
   }
 
   public PrinterInput name(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
     return this;
   }
 
@@ -64,7 +64,7 @@ public class PrinterInput {
   }
 
   public void setName(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
   }
 
   public PrinterInput department(PrinterDepartment department) {

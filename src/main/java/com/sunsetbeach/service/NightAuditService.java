@@ -8,6 +8,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.SqlStates;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -53,6 +54,7 @@ public class NightAuditService {
     private final RoomUnitRepository roomUnitRepository;
     private final ReportService reportService;
     private final AuditLogService auditLogService;
+    private final BookingFolioCalculator folioCalculator;
     private final Clock clock;
 
     public NightAuditService(
@@ -63,7 +65,9 @@ public class NightAuditService {
             RoomUnitRepository roomUnitRepository,
             ReportService reportService,
             AuditLogService auditLogService,
+            BookingFolioCalculator folioCalculator,
             Clock clock) {
+        this.folioCalculator = folioCalculator;
         this.bookingRepository = bookingRepository;
         this.nightAuditRepository = nightAuditRepository;
         this.userRepository = userRepository;
@@ -86,6 +90,7 @@ public class NightAuditService {
                 iso,
                 toBookingDtos(missedArrivals(day)),
                 toBookingDtos(missedDepartures(day)),
+                unpaidBalances(day),
                 reportService.occupancy(iso, iso).getTotal(),
                 nightAuditRepository.findByDate(day).map(this::toClosureDto).orElse(null));
     }
@@ -122,8 +127,25 @@ public class NightAuditService {
                 AuditEntityType.NIGHT_AUDIT,
                 saved.getId(),
                 "Closed night audit for " + day + " (" + missedArrivals(day).size() + " missed arrival(s), "
-                        + missedDepartures(day).size() + " missed departure(s) open)");
+                        + missedDepartures(day).size() + " missed departure(s), " + unpaidBalances(day).size() + " unpaid balance(s) open)");
         return toClosureDto(saved);
+    }
+
+    /**
+     * Bookings whose stay is over (or that were cancelled) and that still owe money, whatever
+     * their commercial status - a {@code NEW} booking that was never paid and never collected
+     * after the guest left is exactly what this list is for. The balance is the folio's
+     * ({@link BookingFolioCalculator}), computed for all candidates in two queries.
+     */
+    private List<NightAuditBooking> unpaidBalances(LocalDate day) {
+        List<BookingEntity> candidates = bookingRepository.findStayOver(day, BookingStatus.CANCELLED, OccupancyStatus.CHECKED_OUT, OccupancyStatus.CHECKED_IN);
+        Map<String, BookingFolioCalculator.FolioBreakdown> folios = folioCalculator.breakdowns(candidates);
+        List<BookingEntity> owing = candidates.stream().filter(b -> folios.get(b.getId()).balanceDue().signum() > 0).toList();
+        List<NightAuditBooking> rows = toBookingDtos(owing);
+        for (int i = 0; i < rows.size(); i++) {
+            rows.get(i).balanceDue(PriceFormat.asDecimalString(folios.get(owing.get(i).getId()).balanceDue()));
+        }
+        return rows;
     }
 
     private List<BookingEntity> missedArrivals(LocalDate day) {

@@ -201,6 +201,11 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
         Booking booking = bookingService.createStaffBooking(new StaffBookingCreateInput(
                 savedRoom.getId(), "Guest", LocalDate.now().plusDays(3).toString(), LocalDate.now().plusDays(4).toString(), BookingChannel.WALK_IN, 1));
         createdBookingIds.add(booking.getId());
+        // A room charge needs a guest in the house.
+        bookingRepository.findById(booking.getId()).ifPresent(b -> {
+            b.setOccupancyStatus(com.sunsetbeach.model.OccupancyStatus.CHECKED_IN);
+            bookingRepository.saveAndFlush(b);
+        });
 
         Shift shift = shiftService.open(cashierId, new ShiftOpenInput());
         createdShiftIds.add(shift.getId());

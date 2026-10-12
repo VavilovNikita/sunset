@@ -8,6 +8,8 @@ import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
+import com.sunsetbeach.service.BookingFolioCalculator;
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +27,7 @@ public class BookingMapper {
     private final BookingSegmentMapper segmentMapper;
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
+    private final BookingFolioCalculator folioCalculator;
 
     public BookingMapper(
             RoomMapper roomMapper,
@@ -32,7 +35,9 @@ public class BookingMapper {
             GuestMapper guestMapper,
             BookingSegmentMapper segmentMapper,
             RoomRepository roomRepository,
-            RoomUnitRepository roomUnitRepository) {
+            RoomUnitRepository roomUnitRepository,
+            BookingFolioCalculator folioCalculator) {
+        this.folioCalculator = folioCalculator;
         this.roomMapper = roomMapper;
         this.roomUnitMapper = roomUnitMapper;
         this.guestMapper = guestMapper;
@@ -65,6 +70,21 @@ public class BookingMapper {
      * a lazy nav here would throw `LazyInitializationException` outside that closed session.
      */
     public Booking toDto(BookingEntity entity, RoomEntity room, RoomUnitEntity roomUnit, GuestEntity guest, List<BookingSegmentEntity> segments) {
+        return toDto(entity, room, roomUnit, guest, segments, folioCalculator.balanceDue(entity));
+    }
+
+    /**
+     * {@code balanceDue}: what the guest owes right now ({@link BookingFolioCalculator}). A list
+     * passes the figure it computed for the whole page in two queries ({@link
+     * BookingFolioCalculator#breakdowns}) instead of letting each row ask for its own.
+     */
+    public Booking toDto(
+            BookingEntity entity,
+            RoomEntity room,
+            RoomUnitEntity roomUnit,
+            GuestEntity guest,
+            List<BookingSegmentEntity> segments,
+            BigDecimal balanceDue) {
         List<BookingSegmentEntity> sorted = segments.stream().sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn)).toList();
 
         Map<String, RoomEntity> roomsById = roomRepository
@@ -108,6 +128,7 @@ public class BookingMapper {
                         .toList(),
                 TimestampFormat.toUtc(entity.getCreatedAt()),
                 TimestampFormat.toUtc(entity.getUpdatedAt()))
-                .earlyDepartureFee(PriceFormat.asDecimalString(entity.getEarlyDepartureFee()));
+                .earlyDepartureFee(PriceFormat.asDecimalString(entity.getEarlyDepartureFee()))
+                .balanceDue(PriceFormat.asDecimalString(balanceDue));
     }
 }

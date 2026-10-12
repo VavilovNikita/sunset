@@ -50,11 +50,11 @@ public class UserCreateInput {
    * Constructor with only required parameters
    */
   public UserCreateInput(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
   }
 
   public UserCreateInput name(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
     return this;
   }
 
@@ -62,14 +62,14 @@ public class UserCreateInput {
    * Get name
    * @return name
    */
-  @NotNull @Size(min = 1) 
+  @NotNull @Size(min = 1, max = 120) 
   @JsonProperty("name")
   public String getName() {
     return name;
   }
 
   public void setName(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
   }
 
   public UserCreateInput fullName(String fullName) {

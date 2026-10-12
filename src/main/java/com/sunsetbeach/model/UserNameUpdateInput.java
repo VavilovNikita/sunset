@@ -30,11 +30,11 @@ public class UserNameUpdateInput {
    * Constructor with only required parameters
    */
   public UserNameUpdateInput(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
   }
 
   public UserNameUpdateInput name(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
     return this;
   }
 
@@ -42,14 +42,14 @@ public class UserNameUpdateInput {
    * Get name
    * @return name
    */
-  @NotNull @Size(min = 1) 
+  @NotNull @Size(min = 1, max = 120) 
   @JsonProperty("name")
   public String getName() {
     return name;
   }
 
   public void setName(String name) {
-    this.name = name;
+    this.name = name == null ? null : name.strip();
   }
 
   @Override

@@ -22,6 +22,7 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.CloseOrderInput;
 import com.sunsetbeach.model.GuestOrderView;
 import com.sunsetbeach.model.MenuDepartment;
+import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.Order;
 import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderDateBasis;
@@ -76,6 +77,9 @@ public class OrderService {
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
     private static final Set<OrderStatus> CLOSED_STATUSES = Set.of(OrderStatus.PAID, OrderStatus.CANCELLED);
     private static final Set<OrderStatus> ADDABLE_STATUSES = Set.of(OrderStatus.OPEN, OrderStatus.SENT);
+
+    /** Most units of one item on one line. A typo ("100" for "10") is a wasted ticket and a wrong bill. */
+    static final int MAX_LINE_QUANTITY = 99;
     /** {@link #resolveEmail}'s label for a room-service order - see {@code Order.openedByUserId}'s own openapi.yaml description for why this id is null in the first place. */
     private static final String GUEST_ROOM_SERVICE_LABEL = "Guest (room service)";
     private static final List<SpaAppointmentStatus> LINKABLE_SPA_APPOINTMENT_STATUSES =
@@ -183,7 +187,8 @@ public class OrderService {
         OrderEntity entity = new OrderEntity();
         entity.setTableId(tableId);
         entity.setBookingId(bookingId);
-        entity.setGuestName(input.getGuestName().orElse(null));
+        String guestName = input.getGuestName().orElse(null);
+        entity.setGuestName(guestName == null || guestName.isBlank() ? null : guestName.strip());
         entity.setOpenedByUserId(openedByUserId);
         entity.setGuestAccessToken(generateGuestAccessToken());
         OrderEntity saved = orderRepository.saveAndFlush(entity);
@@ -403,6 +408,7 @@ public class OrderService {
                     .findById(input.getMenuItemId())
                     .orElseThrow(() -> new NotFoundException("Menu item not found: " + input.getMenuItemId()));
             String note = normalizeNote(input.getNote().orElse(null));
+            requireLineQuantity(input.getQuantity());
 
             // Only merge into a line that hasn't gone out yet (sentAt == null) - a line already
             // on a printed ticket must never have its quantity silently bumped on-screen with no
@@ -415,6 +421,7 @@ public class OrderService {
                     .orElse(null);
 
             if (mergeTarget != null) {
+                requireLineQuantity(mergeTarget.getQuantity() + input.getQuantity());
                 mergeTarget.setQuantity(mergeTarget.getQuantity() + input.getQuantity());
                 orderItemRepository.save(mergeTarget);
             } else {
@@ -456,6 +463,7 @@ public class OrderService {
         OrderItemEntity item = orderItemRepository
                 .findByIdAndOrderId(itemId, id)
                 .orElseThrow(() -> new NotFoundException("Line item not found"));
+        requireLineQuantity(input.getQuantity());
         item.setQuantity(input.getQuantity());
         item.setNote(input.getNote().orElse(null));
         orderItemRepository.save(item);
@@ -577,6 +585,11 @@ public class OrderService {
             booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
             if (booking.getStatus() == BookingStatus.CANCELLED) {
                 throw new ConflictException("Booking is cancelled");
+            }
+            // A charge to a room needs a guest in it: before arrival there is no room to charge,
+            // after check-out the folio is closed. (An overdue guest is still CHECKED_IN.)
+            if (booking.getOccupancyStatus() != OccupancyStatus.CHECKED_IN) {
+                throw new ConflictException("Room charges can only go to a guest who is checked in.");
             }
         }
 
@@ -759,10 +772,35 @@ public class OrderService {
         return guestOrderMapper.toDto(order, orderItemRepository.findByOrderId(orderId), orderPrintingService.describeLocation(order));
     }
 
+    /** 1 to {@link #MAX_LINE_QUANTITY}; the same rule as the spec's {@code OrderItemInput.quantity}, here for a merged line and for callers that skip Bean Validation. */
+    private static void requireLineQuantity(int quantity) {
+        if (quantity < 1 || quantity > MAX_LINE_QUANTITY) {
+            throw ValidationException.field("quantity", "must be between 1 and " + MAX_LINE_QUANTITY + " per line");
+        }
+    }
+
+    /**
+     * Guest-facing order paths (dine-in QR, room service) may only add what is on the public menu
+     * ({@link MenuService#isPubliclyOrderable}): a hidden item or a spa treatment is a 400 even if
+     * its id is known. Checked for the whole request before anything is written. Staff are not held
+     * to it - the POS offers them the full menu.
+     */
+    public void requirePubliclyOrderable(List<OrderItemInput> inputs) {
+        for (OrderItemInput input : inputs) {
+            MenuItemEntity item = menuItemRepository
+                    .findById(input.getMenuItemId())
+                    .orElseThrow(() -> new NotFoundException("Menu item not found: " + input.getMenuItemId()));
+            if (!MenuService.isPubliclyOrderable(item)) {
+                throw ValidationException.field("menuItemId", "\"" + item.getName() + "\" isn't available to order here");
+            }
+        }
+    }
+
     /** Delegates straight into {@link #addItems} - never a second implementation of its merge/print-dispatch logic. */
     @Transactional
     public GuestOrderView addGuestItems(String orderId, String token, List<OrderItemInput> inputs) {
         requireGuestAccess(orderId, token);
+        requirePubliclyOrderable(inputs);
         addItems(orderId, inputs);
         return getGuestOrderView(orderId, token);
     }

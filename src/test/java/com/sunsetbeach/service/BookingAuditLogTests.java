@@ -21,6 +21,7 @@ import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.security.StaffPrincipal;
+import com.sunsetbeach.support.PaidBookings;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -60,12 +61,26 @@ class BookingAuditLogTests extends AbstractIntegrationTest {
     @Autowired
     private AuditLogRepository auditLogRepository;
 
+    @Autowired
+    private com.sunsetbeach.repository.UserRepository userRepository;
+
+    @Autowired
+    private com.sunsetbeach.repository.FolioPaymentRepository folioPaymentRepository;
+
     private final List<String> createdRoomIds = new java.util.ArrayList<>();
     private final List<String> createdBookingIds = new java.util.ArrayList<>();
+    private String actorUserId;
 
     @BeforeEach
     void setUpSecurityContext() {
-        StaffPrincipal principal = new StaffPrincipal("cashier-actor", "audit-booking-test@example.com", Role.CASHIER);
+        // A real user: marking a booking PAID records a folio payment, whose recorder is a foreign key.
+        com.sunsetbeach.entity.UserEntity user = new com.sunsetbeach.entity.UserEntity();
+        user.setEmail("audit-booking-test@example.com");
+        user.setName("Audit booking test");
+        user.setPasswordHash("irrelevant-for-this-test");
+        user.setRole(Role.CASHIER);
+        actorUserId = userRepository.saveAndFlush(user).getId();
+        StaffPrincipal principal = new StaffPrincipal(actorUserId, "audit-booking-test@example.com", Role.CASHIER);
         var authorities = List.of(new SimpleGrantedAuthority("ROLE_CASHIER"));
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(principal, null, authorities));
     }
@@ -75,6 +90,7 @@ class BookingAuditLogTests extends AbstractIntegrationTest {
         SecurityContextHolder.clearContext();
         for (String bookingId : createdBookingIds) {
             auditLogRepository.deleteAll(findEntriesForBooking(bookingId));
+            folioPaymentRepository.deleteAll(folioPaymentRepository.findByBookingIdOrderByCreatedAtAsc(bookingId));
             bookingRepository.deleteById(bookingId);
         }
         for (String roomId : createdRoomIds) {
@@ -82,6 +98,9 @@ class BookingAuditLogTests extends AbstractIntegrationTest {
                 roomUnitRepository.deleteById(unit.getId());
             }
             roomRepository.deleteById(roomId);
+        }
+        if (actorUserId != null) {
+            userRepository.deleteById(actorUserId);
         }
     }
 
@@ -141,7 +160,7 @@ class BookingAuditLogTests extends AbstractIntegrationTest {
                 room.getId(), "Guest", LocalDate.now().plusDays(5).toString(), LocalDate.now().plusDays(6).toString(), BookingChannel.WALK_IN, 1));
         createdBookingIds.add(booking.getId());
 
-        bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.PAID));
+        bookingService.updateStatus(booking.getId(), PaidBookings.paidInput(bookingService, booking.getId()));
 
         List<AuditLogEntity> entries = findEntriesForBooking(booking.getId()).stream()
                 .filter(e -> e.getAction() == AuditAction.BOOKING_STATUS_CHANGED)

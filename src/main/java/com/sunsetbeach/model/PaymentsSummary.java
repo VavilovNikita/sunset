@@ -29,6 +29,8 @@ public class PaymentsSummary {
 
   private String grandTotal;
 
+  private String folioPaymentsTotal;
+
   public PaymentsSummary() {
     super();
   }
@@ -36,11 +38,12 @@ public class PaymentsSummary {
   /**
    * Constructor with only required parameters
    */
-  public PaymentsSummary(String from, String to, ShiftTotals totals, String grandTotal) {
+  public PaymentsSummary(String from, String to, ShiftTotals totals, String grandTotal, String folioPaymentsTotal) {
     this.from = from;
     this.to = to;
     this.totals = totals;
     this.grandTotal = grandTotal;
+    this.folioPaymentsTotal = folioPaymentsTotal;
   }
 
   public PaymentsSummary from(String from) {
@@ -119,6 +122,25 @@ public class PaymentsSummary {
     this.grandTotal = grandTotal;
   }
 
+  public PaymentsSummary folioPaymentsTotal(String folioPaymentsTotal) {
+    this.folioPaymentsTotal = folioPaymentsTotal;
+    return this;
+  }
+
+  /**
+   * Money recorded against bookings' folios in the same period (`FolioPayment` rows, every method) - the room, its early-departure fee and POS room charges once paid at the desk. Decimal(10,2) rendered as a string. This, not any booking's `status`, is what the dashboard's room revenue is built from. Not part of `grandTotal`: that stays the POS figure. 
+   * @return folioPaymentsTotal
+   */
+  @NotNull 
+  @JsonProperty("folioPaymentsTotal")
+  public String getFolioPaymentsTotal() {
+    return folioPaymentsTotal;
+  }
+
+  public void setFolioPaymentsTotal(String folioPaymentsTotal) {
+    this.folioPaymentsTotal = folioPaymentsTotal;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -131,12 +153,13 @@ public class PaymentsSummary {
     return Objects.equals(this.from, paymentsSummary.from) &&
         Objects.equals(this.to, paymentsSummary.to) &&
         Objects.equals(this.totals, paymentsSummary.totals) &&
-        Objects.equals(this.grandTotal, paymentsSummary.grandTotal);
+        Objects.equals(this.grandTotal, paymentsSummary.grandTotal) &&
+        Objects.equals(this.folioPaymentsTotal, paymentsSummary.folioPaymentsTotal);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(from, to, totals, grandTotal);
+    return Objects.hash(from, to, totals, grandTotal, folioPaymentsTotal);
   }
 
   @Override
@@ -147,6 +170,7 @@ public class PaymentsSummary {
     sb.append("    to: ").append(toIndentedString(to)).append("\n");
     sb.append("    totals: ").append(toIndentedString(totals)).append("\n");
     sb.append("    grandTotal: ").append(toIndentedString(grandTotal)).append("\n");
+    sb.append("    folioPaymentsTotal: ").append(toIndentedString(folioPaymentsTotal)).append("\n");
     sb.append("}");
     return sb.toString();
   }

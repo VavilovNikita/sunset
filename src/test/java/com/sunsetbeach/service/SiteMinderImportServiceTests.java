@@ -41,6 +41,7 @@ import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.repository.SiteMinderRoomTypeMappingRepository;
 import com.sunsetbeach.security.IntegrationPrincipal;
 import com.sunsetbeach.security.StaffPrincipal;
+import com.sunsetbeach.support.PaidBookings;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -93,11 +94,14 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
     @Autowired private JournalEntryRepository journalEntryRepository;
     @Autowired private SiteMinderRoomTypeMappingRepository mappingRepository;
     @Autowired private Clock clock;
+    @Autowired private com.sunsetbeach.repository.UserRepository userRepository;
+    @Autowired private com.sunsetbeach.repository.FolioPaymentRepository folioPaymentRepository;
 
     private static final OffsetDateTime BOOKED_AT = OffsetDateTime.of(2026, 9, 1, 10, 0, 0, 0, ZoneOffset.ofHours(7));
 
     private final List<String> roomIds = new ArrayList<>();
     private final List<String> guestIds = new ArrayList<>();
+    private final List<String> userIds = new ArrayList<>();
 
     @BeforeEach
     void actAsSiteMinder() {
@@ -110,6 +114,7 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
         for (String roomId : roomIds) {
             for (BookingEntity booking : bookingRepository.findAll().stream().filter(b -> roomId.equals(b.getRoomId())).toList()) {
                 auditLogRepository.deleteAll(auditEntries(booking.getId()));
+                folioPaymentRepository.deleteAll(folioPaymentRepository.findByBookingIdOrderByCreatedAtAsc(booking.getId()));
                 if (booking.getGuestId() != null) {
                     guestIds.add(booking.getGuestId());
                 }
@@ -130,6 +135,20 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
         auditLogRepository.deleteAll(auditLogRepository.findAll().stream()
                 .filter(e -> e.getEntityType() == AuditEntityType.SITEMINDER_ROOM_TYPE_MAPPING && e.getSummary().contains("SM Test"))
                 .toList());
+        userIds.forEach(userRepository::deleteById);
+    }
+
+    /** A manager that exists in the database: the payment that marks a booking PAID records who took it (a foreign key). */
+    private UsernamePasswordAuthenticationToken persistedStaffAuthentication() {
+        com.sunsetbeach.entity.UserEntity user = new com.sunsetbeach.entity.UserEntity();
+        user.setEmail("sm-test-staff-" + UUID.randomUUID() + "@example.com");
+        user.setName(user.getEmail());
+        user.setPasswordHash("irrelevant-for-this-test");
+        user.setRole(Role.MANAGER);
+        String id = userRepository.saveAndFlush(user).getId();
+        userIds.add(id);
+        return new UsernamePasswordAuthenticationToken(
+                new StaffPrincipal(id, user.getEmail(), Role.MANAGER), null, List.of(new SimpleGrantedAuthority("ROLE_MANAGER")));
     }
 
     // --- Fixtures -----------------------------------------------------------------------------
@@ -371,7 +390,8 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
         StaffBookingCreateInput sameNights = new StaffBookingCreateInput(room.getId(), "Walk In", "2035-03-10", "2035-03-13", BookingChannel.WALK_IN, 1);
         assertThatThrownBy(() -> bookingService.createStaffBooking(sameNights)).isInstanceOf(ConflictException.class);
         // Staff take payment - the ledger posts the room settlement.
-        bookingService.updateStatus(bookingId, new BookingStatusInput(BookingStatus.PAID));
+        actAs(persistedStaffAuthentication());
+        bookingService.updateStatus(bookingId, PaidBookings.paidInput(bookingService, bookingId));
         assertThat(journalEntryRepository.findBySourceTypeAndSourceIdOrderByCreatedAtAsc(JournalSourceType.BOOKING, bookingId)).hasSize(1);
         String today = LocalDate.now(clock).toString();
         int cancellationsBefore = reportService.manager(today).getToday().getAccounts().getCancellations();

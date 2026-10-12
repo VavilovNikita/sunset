@@ -9,6 +9,9 @@ public interface FolioPaymentRepository extends JpaRepository<FolioPaymentEntity
 
     List<FolioPaymentEntity> findByBookingIdOrderByCreatedAtAsc(String bookingId);
 
+    /** Bulk counterpart of {@link #findByBookingIdOrderByCreatedAtAsc}, for {@code BookingFolioCalculator#breakdowns}. */
+    List<FolioPaymentEntity> findByBookingIdIn(java.util.Collection<String> bookingIds);
+
     /** Taken at reception during this cash shift - see {@code ShiftService#folioTotals}. */
     List<FolioPaymentEntity> findByShiftIdOrderByCreatedAtAsc(String shiftId);
 
