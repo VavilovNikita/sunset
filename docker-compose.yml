@@ -10,22 +10,11 @@ services:
     environment:
       # Overridable via .env; safe fallback keeps container logs readable if unset.
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75.0}
-      # Pinned here (compose `environment` wins over `env_file`), not left to .env: every
-      # uploaded file - room photos, floor plans, spa/restaurant maps, maintenance photos - must be
-      # written under the `uploads` volume below. A stray UPLOADS_ROOT in .env (or the relative
-      # ./uploads default resolving somewhere else) would put them in the container's own
-      # filesystem, which is thrown away on the next `docker compose up -d --build`.
-      UPLOADS_ROOT: /app/uploads
     # Bound to loopback only: the existing reverse proxy on the VPS (in front of
     # the Next.js app) is expected to proxy /api/* to http://127.0.0.1:8080.
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
-      # Persistent named volume (<compose project>_uploads, i.e. sunset_uploads for the checkout in
-      # ~/sunset/sunset). A deploy recreates only the container - this survives it. It does NOT
-      # survive `docker compose down -v`, `docker volume prune` or the checkout directory being
-      # renamed/re-cloned (a new project name means a new, empty volume), and nothing backs it up
-      # automatically: see DEPLOY.md, "Uploads".
       - uploads:/app/uploads
     # --- Where does Postgres actually live? Pick ONE scenario. ---------------
     #

@@ -34,8 +34,11 @@ Deploy sunset-beach together with it: its folio and check-out screens read the f
 
 Everything staff upload - room photos, the property, spa and restaurant plans, maintenance task
 photos - is a file under `/app/uploads` in the backend container; the database only keeps the
-path. `docker-compose.yml` mounts the named volume `uploads` there and pins `UPLOADS_ROOT` to it, so
-a normal deploy (`docker compose build backend && docker compose up -d backend`) keeps the files.
+path. `docker-compose.yml` mounts the named volume `uploads` at `/app/uploads`, which is where
+`UPLOADS_ROOT` points by default (the container's working directory is `/app` and the default is
+`./uploads`) - so `.env` must **not** set `UPLOADS_ROOT` to anything else, or the files land in the
+container's own filesystem and are gone after the next `up -d --build`. A normal deploy
+(`docker compose build backend && docker compose up -d backend`) keeps the files.
 
 What loses them (the database then still points at images that 404, and the maps show the
 "image not found" notice):
@@ -50,6 +53,7 @@ What loses them (the database then still points at images that 404, and the maps
 Check it on the VPS after a deploy:
 
 ```bash
+grep UPLOADS_ROOT .env                                # prints nothing (or /app/uploads) - never another path
 docker volume ls | grep uploads                      # the volume exists
 docker compose exec backend ls /app/uploads          # property-map, spa-map, restaurant-map, rooms, maintenance-tasks
 docker compose logs backend | grep "Uploads root"    # the line above, from the last start
