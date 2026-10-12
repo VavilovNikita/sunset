@@ -2,6 +2,7 @@ package com.sunsetbeach.rosterimport;
 
 import com.sunsetbeach.model.ShiftCodeKind;
 import com.sunsetbeach.model.StaffArea;
+import com.sunsetbeach.service.SpreadsheetSafe;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -164,7 +165,9 @@ public class RosterGridImportParser {
             case BLANK -> null;
             case STRING -> {
                 String s = cell.getStringCellValue();
-                yield (s == null || s.isBlank()) ? null : s.trim();
+                // The export prefixes a text a spreadsheet could run as a formula with ' (SpreadsheetSafe);
+                // read back, it is the text that was exported.
+                yield (s == null || s.isBlank()) ? null : SpreadsheetSafe.unescape(s.trim());
             }
             case NUMERIC -> formatNumeric(cell.getNumericCellValue());
             case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());

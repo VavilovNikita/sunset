@@ -131,6 +131,7 @@ public class RevenueExportService {
             writePaidBookingsSheet(workbook, styles, paidBookings);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
+            SpreadsheetSafe.sanitize(workbook);
             workbook.write(out);
 
             auditLogService.record(

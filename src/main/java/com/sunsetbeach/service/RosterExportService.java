@@ -261,6 +261,7 @@ public class RosterExportService {
             sheet.createFreezePane(1, 2);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
+            SpreadsheetSafe.sanitize(workbook);
             workbook.write(out);
 
             auditLogService.record(
@@ -320,6 +321,7 @@ public class RosterExportService {
             writeLateAndAnomaliesSheet(workbook, orderedEmployeeIds, employees, assignedByEmployee, shiftCodesById, punchesByEmployee, today);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
+            SpreadsheetSafe.sanitize(workbook);
             workbook.write(out);
 
             auditLogService.record(

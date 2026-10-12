@@ -41,10 +41,12 @@ public final class CsvBuilder {
         return sb.toString();
     }
 
-    private static String escape(String value) {
-        if (value == null) {
+    private static String escape(String rawValue) {
+        if (rawValue == null) {
             return "";
         }
+        // Formula injection first (a leading ' on =, +, -, @, tab, CR), then CSV quoting of the result.
+        String value = SpreadsheetSafe.text(rawValue);
         if (value.indexOf(',') >= 0 || value.indexOf('"') >= 0 || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
             return '"' + value.replace("\"", "\"\"") + '"';
         }
