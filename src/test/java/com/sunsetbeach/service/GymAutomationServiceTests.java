@@ -215,7 +215,7 @@ class GymAutomationServiceTests extends AbstractIntegrationTest {
         s.setAcMode(2);
         s.setAcTemp(22);
         s.setAcWind(1);
-        hallSettings.update(s);
+        hallSettings.update(s, 0);
         reserve(booking, "10:00", 60);
 
         clock.set(DAY + "T09:14");
@@ -425,6 +425,26 @@ class GymAutomationServiceTests extends AbstractIntegrationTest {
         clock.set(DAY + "T11:30");
         automation.runOnce();
         verify(tuya, times(1)).sendCommand("tuya-fan-1", "switch_1", false);
+    }
+
+    @Test
+    void aStayShortenedPastARunningSession_cancelsIt_andTheEquipmentGoesOff() {
+        GymReservationEntity r = reserve(booking, "10:00", 60);
+        clock.set(DAY + "T09:30");
+        automation.runOnce();
+        verify(tuya, times(1)).sendCommand("tuya-fan-1", "switch_1", true);
+
+        // The stay is cut so that today is no longer part of it (the dates change through the booking, as updateSchedule does).
+        booking.setCheckIn(LocalDate.parse(DAY).minusDays(3));
+        booking.setCheckOut(LocalDate.parse(DAY).minusDays(1));
+        booking = bookings.saveAndFlush(booking);
+        clock.set(DAY + "T10:20");
+        assertThat(reservationService.onStayChanged(booking)).isEqualTo(1);
+        automation.runOnce();
+
+        assertThat(reservations.findById(r.getId()).orElseThrow().getStatus()).isEqualTo(GymReservationStatus.CANCELLED);
+        verify(tuya, times(1)).sendCommand("tuya-fan-1", "switch_1", false);
+        verify(tuya, times(1)).sendAirConditionerCommand("hub-1", "tuya-ac-1", 0, 0, 16, 3);
     }
 
     // ---- failures ----------------------------------------------------------------------------

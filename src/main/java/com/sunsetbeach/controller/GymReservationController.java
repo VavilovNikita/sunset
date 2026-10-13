@@ -2,6 +2,7 @@ package com.sunsetbeach.controller;
 
 import com.sunsetbeach.api.GymScheduleApi;
 import com.sunsetbeach.model.GymHallSettings;
+import com.sunsetbeach.model.GymHallSettingsResult;
 import com.sunsetbeach.model.GymReservation;
 import com.sunsetbeach.model.GymReservationCancelInput;
 import com.sunsetbeach.model.GymReservationCreateInput;
@@ -10,6 +11,7 @@ import com.sunsetbeach.model.GymSchedule;
 import com.sunsetbeach.security.CurrentUser;
 import com.sunsetbeach.service.GymHallSettingsService;
 import com.sunsetbeach.service.GymReservationService;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -52,7 +54,12 @@ public class GymReservationController implements GymScheduleApi {
     }
 
     @Override
-    public ResponseEntity<GymHallSettings> updateGymHallSettings(GymHallSettings input) {
-        return ResponseEntity.ok(hallSettings.update(input));
+    public ResponseEntity<GymHallSettingsResult> updateGymHallSettings(GymHallSettings input, Boolean force) {
+        java.time.LocalTime[] hours = hallSettings.validatedHours(input);
+        List<GymReservation> outside = reservations.outsideHours(hours[0], hours[1]);
+        if (!outside.isEmpty() && !Boolean.TRUE.equals(force)) {
+            return ResponseEntity.ok(new GymHallSettingsResult(hallSettings.get(), false, outside));
+        }
+        return ResponseEntity.ok(new GymHallSettingsResult(hallSettings.update(input, outside.size()), true, outside));
     }
 }

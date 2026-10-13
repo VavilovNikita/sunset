@@ -7,6 +7,7 @@ package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.GymHallSettings;
+import com.sunsetbeach.model.GymHallSettingsResult;
 import com.sunsetbeach.model.GymReservation;
 import com.sunsetbeach.model.GymReservationCancelInput;
 import com.sunsetbeach.model.GymReservationCreateInput;
@@ -248,10 +249,11 @@ public interface GymScheduleApi {
 
     /**
      * PUT /gym/settings/hall : Change the gym opening hours and automation parameters
-     * Requires ADMIN. Full replacement. &#x60;openTime&#x60;/&#x60;closeTime&#x60; must lie on the 30-minute grid with &#x60;openTime&#x60; before &#x60;closeTime&#x60;. Changing the hours does not touch existing reservations. The lead time, air-conditioner mode, temperature and fan speed take effect at the automation&#39;s next transition. Audited. 
+     * Requires ADMIN. Full replacement. &#x60;openTime&#x60;/&#x60;closeTime&#x60; must lie on the 30-minute grid with &#x60;openTime&#x60; before &#x60;closeTime&#x60;. The lead time, air-conditioner mode, temperature and fan speed take effect at the automation&#39;s next transition. Audited. Narrowing the hours never cancels anything, but the owner must know it happens: the response lists every &#x60;BOOKED&#x60; reservation that has not ended and does not fit the new hours (&#x60;outsideHours&#x60;). Without &#x60;force&#x3D;true&#x60;, when that list is not empty **nothing is saved** (&#x60;saved&#x60; false) and the list is returned so the screen can ask; the same request with &#x60;force&#x3D;true&#x60; saves anyway. The reservations stay as they are and the schedule still shows them. 
      *
      * @param gymHallSettings  (required)
-     * @return The saved settings. (status code 200)
+     * @param force  (optional, default to false)
+     * @return The settings (as saved, or as they still are when &#x60;saved&#x60; is false) and the reservations outside the new hours. (status code 200)
      *         or Body failed validation. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
@@ -263,13 +265,14 @@ public interface GymScheduleApi {
         consumes = { "application/json" }
     )
     
-    default ResponseEntity<GymHallSettings> updateGymHallSettings(
-         @Valid @RequestBody GymHallSettings gymHallSettings
+    default ResponseEntity<GymHallSettingsResult> updateGymHallSettings(
+         @Valid @RequestBody GymHallSettings gymHallSettings,
+         @Valid @RequestParam(value = "force", required = false, defaultValue = "false") Boolean force
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"acTemp\" : 18, \"closeTime\" : \"closeTime\", \"acMode\" : 2, \"acWind\" : 1, \"leadMinutes\" : 14, \"openTime\" : \"openTime\" }";
+                    String exampleString = "{ \"settings\" : { \"acTemp\" : 18, \"closeTime\" : \"closeTime\", \"acMode\" : 2, \"acWind\" : 1, \"leadMinutes\" : 14, \"openTime\" : \"openTime\" }, \"saved\" : true, \"outsideHours\" : [ { \"date\" : \"date\", \"createdByName\" : \"createdByName\", \"cancelledBy\" : \"cancelledBy\", \"bookingId\" : \"bookingId\", \"guestName\" : \"guestName\", \"durationMinutes\" : 5, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"automation\" : { \"switchOff\" : { \"at\" : \"2000-01-23T04:56:07.000+00:00\", \"state\" : \"PENDING\", \"results\" : [ { \"skipReason\" : \"COVERED_BY_PREVIOUS\", \"error\" : \"error\", \"deviceName\" : \"deviceName\", \"status\" : \"PENDING\", \"attempts\" : 2 }, { \"skipReason\" : \"COVERED_BY_PREVIOUS\", \"error\" : \"error\", \"deviceName\" : \"deviceName\", \"status\" : \"PENDING\", \"attempts\" : 2 } ] }, \"switchOn\" : { \"at\" : \"2000-01-23T04:56:07.000+00:00\", \"state\" : \"PENDING\", \"results\" : [ { \"skipReason\" : \"COVERED_BY_PREVIOUS\", \"error\" : \"error\", \"deviceName\" : \"deviceName\", \"status\" : \"PENDING\", \"attempts\" : 2 }, { \"skipReason\" : \"COVERED_BY_PREVIOUS\", \"error\" : \"error\", \"deviceName\" : \"deviceName\", \"status\" : \"PENDING\", \"attempts\" : 2 } ] } }, \"roomLabel\" : \"roomLabel\", \"createdByType\" : \"GUEST\", \"startTime\" : \"startTime\", \"id\" : \"id\", \"endTime\" : \"endTime\", \"cancelReason\" : \"cancelReason\", \"status\" : \"BOOKED\" }, { \"date\" : \"date\", \"createdByName\" : \"createdByName\", \"cancelledBy\" : \"cancelledBy\", \"bookingId\" : \"bookingId\", \"guestName\" : \"guestName\", \"durationMinutes\" : 5, \"createdAt\" : \"2000-01-23T04:56:07.000+00:00\", \"automation\" : { \"switchOff\" : { \"at\" : \"2000-01-23T04:56:07.000+00:00\", \"state\" : \"PENDING\", \"results\" : [ { \"skipReason\" : \"COVERED_BY_PREVIOUS\", \"error\" : \"error\", \"deviceName\" : \"deviceName\", \"status\" : \"PENDING\", \"attempts\" : 2 }, { \"skipReason\" : \"COVERED_BY_PREVIOUS\", \"error\" : \"error\", \"deviceName\" : \"deviceName\", \"status\" : \"PENDING\", \"attempts\" : 2 } ] }, \"switchOn\" : { \"at\" : \"2000-01-23T04:56:07.000+00:00\", \"state\" : \"PENDING\", \"results\" : [ { \"skipReason\" : \"COVERED_BY_PREVIOUS\", \"error\" : \"error\", \"deviceName\" : \"deviceName\", \"status\" : \"PENDING\", \"attempts\" : 2 }, { \"skipReason\" : \"COVERED_BY_PREVIOUS\", \"error\" : \"error\", \"deviceName\" : \"deviceName\", \"status\" : \"PENDING\", \"attempts\" : 2 } ] } }, \"roomLabel\" : \"roomLabel\", \"createdByType\" : \"GUEST\", \"startTime\" : \"startTime\", \"id\" : \"id\", \"endTime\" : \"endTime\", \"cancelReason\" : \"cancelReason\", \"status\" : \"BOOKED\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

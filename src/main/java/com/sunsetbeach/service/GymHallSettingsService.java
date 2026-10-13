@@ -47,17 +47,26 @@ public class GymHallSettingsService {
         return toDto(entity());
     }
 
-    @Transactional
-    public GymHallSettings update(GymHallSettings input) {
+    /** The requested hours, checked (grid, order); the caller needs them to look for reservations they would leave outside. */
+    public LocalTime[] validatedHours(GymHallSettings input) {
         LocalTime open = parse("openTime", input.getOpenTime());
         LocalTime close = parse("closeTime", input.getCloseTime());
         if (!open.isBefore(close)) {
             throw new BadRequestException("The gym must open before it closes");
         }
+        return new LocalTime[] {open, close};
+    }
+
+    @Transactional
+    public GymHallSettings update(GymHallSettings input, int reservationsOutsideHours) {
+        LocalTime[] hours = validatedHours(input);
+        LocalTime open = hours[0];
+        LocalTime close = hours[1];
         GymHallSettingsEntity entity = entity();
         List<String> changes = new ArrayList<>();
         if (!entity.getOpenTime().equals(open) || !entity.getCloseTime().equals(close)) {
-            changes.add("hours " + open.format(HHMM) + "-" + close.format(HHMM));
+            changes.add("hours " + open.format(HHMM) + "-" + close.format(HHMM)
+                    + (reservationsOutsideHours > 0 ? " (" + reservationsOutsideHours + " existing reservation(s) now outside the hours, left in place)" : ""));
         }
         if (entity.getLeadMinutes() != input.getLeadMinutes()) {
             changes.add("lead time " + input.getLeadMinutes() + " min");

@@ -145,6 +145,24 @@ public class GymReservationService {
                 STEP_MINUTES, MIN_DURATION_MINUTES, MAX_DURATION_MINUTES, MAX_DAILY_MINUTES, toStaffDtos(found));
     }
 
+    /**
+     * Reservations that have not ended and do not fit {@code open..close}: what narrowing the hours
+     * would leave outside. Nothing here changes them.
+     */
+    @Transactional(readOnly = true)
+    public List<GymReservation> outsideHours(LocalTime open, LocalTime close) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        int openMin = minutesOfDay(open);
+        int closeMin = minutesOfDay(close);
+        List<GymReservationEntity> outside = reservations
+                .findByDateBetweenAndStatusInOrderByDateAscStartTimeAsc(now.toLocalDate(), LocalDate.of(9999, 1, 1), List.of(GymReservationStatus.BOOKED))
+                .stream()
+                .filter(r -> r.end().isAfter(now))
+                .filter(r -> minutesOfDay(r.getStartTime()) < openMin || minutesOfDay(r.getStartTime()) + r.getDurationMinutes() > closeMin)
+                .toList();
+        return toStaffDtos(outside);
+    }
+
     @Transactional
     public GymReservation createForStaff(GymReservationCreateInput input, String userId) {
         Actor actor = Actor.staff(userId, staffName(userId));
@@ -209,11 +227,26 @@ public class GymReservationService {
      */
     @Transactional
     public int onBookingEnded(BookingEntity booking, String reason) {
+        return cancelUnfinished(booking, reason, r -> true);
+    }
+
+    /**
+     * The stay's dates changed (a shortened stay, an early departure's new check-out, a SiteMinder
+     * date change): every reservation that has not ended and now lies outside {@code checkIn..checkOut}
+     * is cancelled, one in progress included - the equipment is switched off by the automation's next
+     * run exactly as for any cancellation. Reservations still inside the stay are left alone.
+     */
+    @Transactional
+    public int onStayChanged(BookingEntity booking) {
+        return cancelUnfinished(booking, "Stay dates changed", r -> r.getDate().isBefore(booking.getCheckIn()) || r.getDate().isAfter(booking.getCheckOut()));
+    }
+
+    private int cancelUnfinished(BookingEntity booking, String reason, java.util.function.Predicate<GymReservationEntity> which) {
         LocalDateTime now = LocalDateTime.now(clock);
         Actor actor = isStaffRequest() ? Actor.staff(staffId(), staffName(staffId())) : Actor.system();
         int cancelled = 0;
         for (GymReservationEntity reservation : reservations.findByBookingId(booking.getId())) {
-            if (reservation.getStatus() == GymReservationStatus.BOOKED && reservation.end().isAfter(now)) {
+            if (reservation.getStatus() == GymReservationStatus.BOOKED && reservation.end().isAfter(now) && which.test(reservation)) {
                 cancel(reservation, actor, reason);
                 cancelled++;
             }

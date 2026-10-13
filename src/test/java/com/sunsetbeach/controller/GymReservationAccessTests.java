@@ -18,6 +18,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ForbiddenException;
 import com.sunsetbeach.model.GymGuestInfo;
 import com.sunsetbeach.model.GymHallSettings;
+import com.sunsetbeach.model.GymReservation;
 import com.sunsetbeach.model.GymSchedule;
 import com.sunsetbeach.model.Role;
 import com.sunsetbeach.repository.GuestAccountRepository;
@@ -138,6 +139,31 @@ class GymReservationAccessTests {
         mockMvc.perform(get("/gym/settings/hall").header("Authorization", staff(Role.ADMIN)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.leadMinutes").value(30));
+    }
+
+    @Test
+    void narrowingTheHours_overReservations_savesNothingUntilForced() throws Exception {
+        String body = "{\"openTime\":\"08:00\",\"closeTime\":\"20:00\",\"leadMinutes\":30,\"acMode\":0,\"acTemp\":16,\"acWind\":3}";
+        GymReservation outside = new GymReservation("r1", "b1", "Guest", "2031-06-16", "06:00", "07:00", 60,
+                com.sunsetbeach.model.GymReservationStatus.BOOKED, GymReservation.CreatedByTypeEnum.STAFF, "Desk", new com.sunsetbeach.model.GymAutomation(),
+                java.time.OffsetDateTime.parse("2031-06-14T00:00:00Z"));
+        when(hallSettings.validatedHours(any())).thenReturn(new java.time.LocalTime[] {java.time.LocalTime.of(8, 0), java.time.LocalTime.of(20, 0)});
+        when(reservations.outsideHours(any(), any())).thenReturn(List.of(outside));
+        when(hallSettings.update(any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(new GymHallSettings("08:00", "20:00", 30, 0, 16, 3));
+
+        mockMvc.perform(put("/gym/settings/hall").header("Authorization", staff(Role.ADMIN)).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.saved").value(false))
+                .andExpect(jsonPath("$.outsideHours[0].id").value("r1"))
+                .andExpect(jsonPath("$.settings.openTime").value("06:00"));
+        verify(hallSettings, never()).update(any(), org.mockito.ArgumentMatchers.anyInt());
+
+        mockMvc.perform(put("/gym/settings/hall?force=true").header("Authorization", staff(Role.ADMIN)).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.saved").value(true))
+                .andExpect(jsonPath("$.settings.openTime").value("08:00"))
+                .andExpect(jsonPath("$.outsideHours[0].id").value("r1"));
+        verify(hallSettings).update(any(), org.mockito.ArgumentMatchers.eq(1));
     }
 
     @Test

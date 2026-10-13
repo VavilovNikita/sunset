@@ -406,6 +406,25 @@ class GymReservationServiceTests extends AbstractIntegrationTest {
         assertThat(reservationOf(running.getId()).getStatus()).isEqualTo(GymReservationStatus.BOOKED); // already over: the automation completes it, not the cascade
     }
 
+    @Test
+    void hoursThatWouldLeaveReservationsOutside_listTheFutureBookedOnes_only() {
+        service.createForStaff(new GymReservationCreateInput(bookingA.getId(), TOMORROW, "06:00", 60), staff.getId()); // starts before 08:00
+        service.createForStaff(new GymReservationCreateInput(bookingA.getId(), TOMORROW, "20:00", 60), staff.getId()); // ends after 20:30
+        service.createForStaff(new GymReservationCreateInput(bookingB.getId(), TOMORROW, "10:00", 60), staff.getId()); // fits
+        GymReservation cancelled = service.createForStaff(new GymReservationCreateInput(bookingB.getId(), TOMORROW, "07:00", 30), staff.getId());
+        service.cancelByStaff(cancelled.getId(), null, staff.getId());
+        GymReservation over = service.createForStaff(new GymReservationCreateInput(bookingB.getId(), TODAY, "10:00", 30), staff.getId()); // ends 10:30
+        clock.set(TODAY + "T11:00");
+
+        List<GymReservation> outside = service.outsideHours(java.time.LocalTime.of(8, 0), java.time.LocalTime.of(20, 30));
+
+        assertThat(outside).extracting(GymReservation::getStartTime).containsExactly("06:00", "20:00");
+        assertThat(over.getId()).isNotNull();
+        // Nothing was cancelled by asking.
+        assertThat(reservations.findAll()).filteredOn(r -> r.getStatus() == GymReservationStatus.BOOKED).hasSize(4);
+        assertThat(service.outsideHours(java.time.LocalTime.of(6, 0), java.time.LocalTime.of(22, 0))).isEmpty();
+    }
+
     // ---- slots -------------------------------------------------------------------------------
 
     @Test

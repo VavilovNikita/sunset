@@ -299,7 +299,7 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
      * regression this test guards against.
      */
     @Test
-    void concurrentSwapAndCreate_racingForTheSameTable_exactlyOneSucceeds() throws Exception {
+    void concurrentSwapAndCreate_racingForTheSameTable_createAlwaysLoses_swapEitherWinsOrIsToldToRetry() throws Exception {
         Booking booking = createBooking();
         TableEntity tableA = createSpaTable();
         TableEntity tableB = createSpaTable();
@@ -331,41 +331,61 @@ class SpaAppointmentOverlapRaceTests extends AbstractIntegrationTest {
                     receptionist.getId());
         };
 
+        // Both outcomes are collected, never thrown through: what each side got is the thing under test.
         ExecutorService executor = Executors.newFixedThreadPool(2);
-        int succeeded = 0;
-        List<String> conflictMessages = new ArrayList<>();
+        Object swapOutcome;
+        Object createOutcome;
         try {
-            Future<Object> swapFuture = executor.submit(swap);
-            Future<Object> createFuture = executor.submit(thirdPartyCreate);
-            for (Future<Object> f : List.of(swapFuture, createFuture)) {
-                try {
-                    f.get();
-                    succeeded++;
-                } catch (Exception e) {
-                    if (e.getCause() instanceof ConflictException conflict) {
-                        conflictMessages.add(conflict.getMessage());
-                    } else {
-                        throw e;
-                    }
-                }
-            }
+            Future<Object> swapFuture = executor.submit(() -> outcomeOf(swap));
+            Future<Object> createFuture = executor.submit(() -> outcomeOf(thirdPartyCreate));
+            swapOutcome = swapFuture.get();
+            createOutcome = createFuture.get();
         } finally {
             executor.shutdown();
         }
 
-        assertThat(succeeded).isEqualTo(1);
-        assertThat(conflictMessages).hasSize(1);
-        assertThat(conflictMessages.get(0))
-                .isIn(
-                        "This table already has an appointment overlapping this time.",
-                        "Someone else was changing one of these appointments at the same time — please try again.");
-        // Whichever won, tableB has exactly one BOOKED occupant at this time - not zero (both
-        // somehow failed) and not two (both somehow "succeeded" against the same slot).
+        List<String> knownConflicts = List.of(
+                "This table already has an appointment overlapping this time.",
+                "Someone else was changing one of these appointments at the same time — please try again.");
+
+        // The create can NEVER win: tableB is held by appointment B until the swap commits, and by
+        // appointment A (moved in) after it. So the loser is never "whichever got there second".
+        assertThat(createOutcome).isInstanceOf(ConflictException.class);
+        assertThat(((ConflictException) createOutcome).getMessage()).isIn(knownConflicts);
+
+        // The swap is what depends on timing. The two sides wait on each other (the create's insert on the
+        // swap's uncommitted rows, the swap's forced-immediate check on the create's uncommitted row), and
+        // PostgreSQL breaks that deadlock by killing ONE of them - which one is a matter of who reached
+        // deadlock_timeout first, so under load it is sometimes the swap. Both are correct: the swap
+        // happened, or it was told to try again. What must hold either way is the state it leaves behind.
+        boolean swapped = !(swapOutcome instanceof Exception);
+        if (!swapped) {
+            assertThat(swapOutcome).isInstanceOf(ConflictException.class);
+            assertThat(((ConflictException) swapOutcome).getMessage()).isIn(knownConflicts);
+        }
+        String tableOfA = spaAppointmentRepository.findById(appointmentAId).orElseThrow().getTableId();
+        String tableOfB = spaAppointmentRepository.findById(appointmentBId).orElseThrow().getTableId();
+        assertThat(tableOfA).isEqualTo(swapped ? tableB.getId() : tableA.getId());
+        assertThat(tableOfB).isEqualTo(swapped ? tableA.getId() : tableB.getId());
+        // tableB has exactly one BOOKED occupant at this time - not zero, not two - and it is not the create's.
         assertThat(spaAppointmentRepository.findByDate(java.time.LocalDate.parse(booking.getCheckIn())).stream()
                         .filter(a -> a.getTableId().equals(tableB.getId())
                                 && a.getStatus() == com.sunsetbeach.model.SpaAppointmentStatus.BOOKED)
                         .count())
                 .isEqualTo(1);
+        assertThat(spaAppointmentRepository.findByDate(java.time.LocalDate.parse(booking.getCheckIn())).stream()
+                        .filter(a -> a.getTherapistUserId().equals(therapistC.getId()))
+                        .count())
+                .isZero();
+    }
+
+    /** The task's result, or the exception it threw (a ConflictException arrives unwrapped). */
+    private static Object outcomeOf(Callable<Object> task) {
+        try {
+            return task.call();
+        } catch (Exception e) {
+            return e;
+        }
     }
 
     /**

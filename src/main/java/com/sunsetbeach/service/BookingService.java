@@ -863,6 +863,11 @@ public class BookingService {
                     .append(" → ")
                     .append(newUnit != null ? newUnit.getLabel() : "unassigned");
         }
+        // Gym sessions that now fall outside the stay go (one in progress is switched off by the automation).
+        int gymCancelled = gymReservations.onStayChanged(saved);
+        if (gymCancelled > 0) {
+            summary.append("; ").append(gymCancelled).append(" gym reservation(s) outside the new stay cancelled");
+        }
         auditLogService.record(AuditAction.BOOKING_SCHEDULE_CHANGED, AuditEntityType.BOOKING, saved.getId(), summary.toString());
 
         return bookingMapper.toDto(saved, room, newUnit, findGuest(saved.getGuestId()), loadSegments(saved.getId()));

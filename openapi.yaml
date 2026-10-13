@@ -10607,9 +10607,21 @@ paths:
       summary: Change the gym opening hours and automation parameters
       description: >
         Requires ADMIN. Full replacement. `openTime`/`closeTime` must lie on the 30-minute grid
-        with `openTime` before `closeTime`. Changing the hours does not touch existing
-        reservations. The lead time, air-conditioner mode, temperature and fan speed take effect at
-        the automation's next transition. Audited.
+        with `openTime` before `closeTime`. The lead time, air-conditioner mode, temperature and fan
+        speed take effect at the automation's next transition. Audited.
+
+        Narrowing the hours never cancels anything, but the owner must know it happens: the
+        response lists every `BOOKED` reservation that has not ended and does not fit the new hours
+        (`outsideHours`). Without `force=true`, when that list is not empty **nothing is saved**
+        (`saved` false) and the list is returned so the screen can ask; the same request with
+        `force=true` saves anyway. The reservations stay as they are and the schedule still shows them.
+      parameters:
+        - name: force
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
       requestBody:
         required: true
         content:
@@ -10618,11 +10630,11 @@ paths:
               $ref: "#/components/schemas/GymHallSettings"
       responses:
         "200":
-          description: The saved settings.
+          description: The settings (as saved, or as they still are when `saved` is false) and the reservations outside the new hours.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GymHallSettings"
+                $ref: "#/components/schemas/GymHallSettingsResult"
         "400":
           description: Body failed validation.
           content:
@@ -18852,6 +18864,21 @@ components:
           type: integer
           minimum: 0
           maximum: 3
+
+    GymHallSettingsResult:
+      type: object
+      required: [settings, saved, outsideHours]
+      properties:
+        settings:
+          $ref: "#/components/schemas/GymHallSettings"
+        saved:
+          type: boolean
+          description: False when the new hours would leave reservations outside them and `force` was not set - nothing was written.
+        outsideHours:
+          type: array
+          description: Future `BOOKED` reservations that do not fit the requested hours (empty when the hours are not narrowed over any).
+          items:
+            $ref: "#/components/schemas/GymReservation"
 
     GymGuestStay:
       type: object
