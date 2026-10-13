@@ -261,6 +261,10 @@ public class RosterExportService {
                 sheet.setColumnWidth(day, 6 * 256);
             }
             sheet.createFreezePane(1, 2);
+            // The re-import's ids sit beside the grid; a manager scrolling right must not meet a column of UUIDs.
+            for (int col = RosterGridImportFormat.employeeIdColumn(days); col <= RosterGridImportFormat.shiftCodeIdColumn(days, days); col++) {
+                sheet.setColumnHidden(col, true);
+            }
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             SpreadsheetSafe.sanitize(workbook);

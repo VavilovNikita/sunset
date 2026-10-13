@@ -37,9 +37,10 @@ networks:
     external: true
 ```
 
-and `DATABASE_URL` in `.env` uses the database container's name on that network. The `networks:`
-comments inside `docker-compose.yml` (Scenario A/B) that say "uncomment this" describe the same
-thing as a hand-edit of the tracked file; use the override file instead.
+and `DATABASE_URL` in `.env` uses the database container's name on that network. (If Postgres
+runs on the host instead, `DATABASE_URL` uses `host.docker.internal`, which `docker-compose.yml`
+already maps; no override is needed.) `docker-compose.yml` no longer carries "uncomment this"
+scenarios - never hand-edit it on the server.
 
 If the tracked `docker-compose.yml` is already hand-edited on the server, move that edit into the
 override file first, then `git checkout docker-compose.yml`, then pull. Before a deploy, `git status`

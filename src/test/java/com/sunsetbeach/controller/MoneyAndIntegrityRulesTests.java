@@ -601,4 +601,23 @@ class MoneyAndIntegrityRulesTests extends AbstractIntegrationTest {
         assertThat(csv).contains("'=HYPERLINK(");
         assertThat(csv).doesNotContain(",=HYPERLINK(").doesNotContain("\r\n=HYPERLINK(");
     }
+
+    @Test
+    void theBookingsCsv_carriesTheRoomUnitTheBalanceAndAZonedTimestamp() throws Exception {
+        String dates = "\"checkIn\":\"" + TODAY.plusDays(3) + "\",\"checkOut\":\"" + TODAY.plusDays(5) + "\"";
+        postJson("/bookings/staff", adminAuth,
+                        "{\"roomId\":\"" + room.getId() + "\",\"guestName\":\"Csv Columns Guest\"," + dates + ",\"adults\":1,\"channel\":\"WALK_IN\"}")
+                .andExpect(status().isCreated());
+
+        flushAndForget();
+        String csv = mockMvc.perform(get("/bookings/export").param("from", TODAY.toString()).param("to", TODAY.plusDays(30).toString()).header("Authorization", adminAuth))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(csv).contains("Room unit").contains("Balance due").contains("Created at (Asia/Bangkok)");
+        String row = csv.lines().filter(l -> l.contains("Csv Columns Guest")).findFirst().orElseThrow();
+        // An unpaid two-night stay owes its whole price, and the timestamp names its offset.
+        assertThat(row).containsPattern("[0-9]+[.][0-9]{2},[0-9]+[.][0-9]{2},NEW,");
+        assertThat(row).endsWith("+07:00");
+    }
 }

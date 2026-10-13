@@ -3753,8 +3753,8 @@ paths:
               schema:
                 type: string
                 example: |
-                  ID,Room,Guest,Email,Phone,Check-in,Check-out,Total,Status,Payment note,Created at
-                  clx123,Ocean View Suite,Jane Doe,jane@example.com,+66801234567,2026-08-01,2026-08-05,24000.00,PAID,,2026-07-01T10:00:00.000Z
+                  ID,Room,Room unit,Guest,Email,Phone,Check-in,Check-out,Total,Balance due,Status,Payment note,Created at (Asia/Bangkok)
+                  clx123,Ocean View Suite,OV-2,Jane Doe,jane@example.com,+66801234567,2026-08-01,2026-08-05,24000.00,0.00,PAID,,2026-07-01 17:00:00 +07:00
           headers:
             Content-Disposition:
               schema:
@@ -15529,7 +15529,10 @@ components:
         `GET /roster/employees` - deliberately narrower than `User`/`GET /users`, see that
         endpoint's own description. `name` is the field the roster grid displays and sorts by -
         unlike `email`, it's never absent, including for a no-login account (see
-        `UserCreateInput`).
+        `UserCreateInput`). In `GET /roster` (`RosterMonth.employees`) a deactivated employee
+        (`active: false`) is listed too when they have an entry or an attendance punch in that
+        month - the same people the two Excel exports list - so a screen can show them greyed out;
+        `GET /roster/employees` stays active-only.
       required: [id, name, active]
       properties:
         id:

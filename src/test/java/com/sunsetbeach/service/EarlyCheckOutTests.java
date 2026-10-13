@@ -9,6 +9,7 @@ import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.CheckOutInput;
+import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.CheckOutPreview;
 import com.sunsetbeach.model.CheckOutResult;
 import com.sunsetbeach.model.RelocationInput;
@@ -208,6 +209,19 @@ class EarlyCheckOutTests extends AbstractIntegrationTest {
         // Two nights in room 1 and one in room 2.
         assertThat(new BigDecimal(out.getTotalPrice())).isEqualByComparingTo("10500.00");
         assertThat(out.getRoomUnitId().orElse(null)).isEqualTo(otherUnit.getId());
+        // Both rooms the guest slept in are dirty, not only the final one.
+        assertThat(roomUnitRepository.findById(otherUnit.getId()).orElseThrow().getHousekeepingStatus()).isEqualTo(HousekeepingStatus.DIRTY);
+        assertThat(roomUnitRepository.findById(unit.getId()).orElseThrow().getHousekeepingStatus()).isEqualTo(HousekeepingStatus.DIRTY);
+    }
+
+    @Test
+    void leavingBeforeAFutureRoomMove_leavesTheNeverUsedRoomAlone() {
+        Booking booking = relocatedStay(TODAY.minusDays(2), TODAY.plusDays(3), TODAY.plusDays(1));
+
+        occupancyService.checkOut(booking.getId(), new CheckOutInput().shortenStay(true).chargeUnusedNights(false));
+
+        assertThat(roomUnitRepository.findById(unit.getId()).orElseThrow().getHousekeepingStatus()).isEqualTo(HousekeepingStatus.DIRTY);
+        assertThat(roomUnitRepository.findById(otherUnit.getId()).orElseThrow().getHousekeepingStatus()).isNotEqualTo(HousekeepingStatus.DIRTY);
     }
 
     @Test

@@ -62,6 +62,8 @@ import jakarta.persistence.criteria.Predicate;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -155,6 +157,7 @@ public class BookingService {
     }
 
     private final Clock clock;
+    private static final DateTimeFormatter CSV_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss xxx");
 
     /**
      * The longest stay a new booking may have. Nobody books a hotel room for 1000 nights on
@@ -1340,22 +1343,32 @@ public class BookingService {
         };
     }
 
-    private static String buildCsv(List<BookingEntity> bookings) {
+    /**
+     * "Balance due" is {@link BookingFolioCalculator}'s figure, the same one every list carries, and
+     * "Created at" is the hotel's wall-clock with its offset written out - the column holds UTC, and
+     * a bare time in a file opened on another machine reads as whatever zone that machine is in.
+     */
+    private String buildCsv(List<BookingEntity> bookings) {
+        Map<String, FolioBreakdown> folios = bookings.isEmpty() ? Map.of() : folioCalculator.breakdowns(bookings);
         CsvBuilder csv = new CsvBuilder();
-        csv.row("ID", "Room", "Guest", "Email", "Phone", "Check-in", "Check-out", "Total", "Status", "Payment note", "Created at");
+        csv.row(
+                "ID", "Room", "Room unit", "Guest", "Email", "Phone", "Check-in", "Check-out", "Total", "Balance due", "Status", "Payment note",
+                "Created at (Asia/Bangkok)");
         for (BookingEntity b : bookings) {
             csv.row(
                     b.getId(),
                     b.getRoom().getName(),
+                    b.getRoomUnit() != null ? b.getRoomUnit().getLabel() : "",
                     b.getGuestName(),
                     b.getGuestEmail(),
                     b.getGuestPhone(),
                     b.getCheckIn().toString(),
                     b.getCheckOut().toString(),
                     PriceFormat.asDecimalString(b.getTotalPrice()),
+                    PriceFormat.asDecimalString(folios.get(b.getId()).balanceDue()),
                     b.getStatus().getValue(),
                     b.getPaymentNote() != null ? b.getPaymentNote() : "",
-                    DateRangeUtil.formatIsoInstant(b.getCreatedAt()));
+                    CSV_TIMESTAMP.format(b.getCreatedAt().atOffset(ZoneOffset.UTC).atZoneSameInstant(clock.getZone())));
         }
         return csv.toString();
     }

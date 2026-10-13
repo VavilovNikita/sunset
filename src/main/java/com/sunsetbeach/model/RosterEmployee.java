@@ -19,7 +19,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * &#x60;GET /roster/employees&#x60; - deliberately narrower than &#x60;User&#x60;/&#x60;GET /users&#x60;, see that endpoint&#39;s own description. &#x60;name&#x60; is the field the roster grid displays and sorts by - unlike &#x60;email&#x60;, it&#39;s never absent, including for a no-login account (see &#x60;UserCreateInput&#x60;). 
+ * &#x60;GET /roster/employees&#x60; - deliberately narrower than &#x60;User&#x60;/&#x60;GET /users&#x60;, see that endpoint&#39;s own description. &#x60;name&#x60; is the field the roster grid displays and sorts by - unlike &#x60;email&#x60;, it&#39;s never absent, including for a no-login account (see &#x60;UserCreateInput&#x60;). In &#x60;GET /roster&#x60; (&#x60;RosterMonth.employees&#x60;) a deactivated employee (&#x60;active: false&#x60;) is listed too when they have an entry or an attendance punch in that month - the same people the two Excel exports list - so a screen can show them greyed out; &#x60;GET /roster/employees&#x60; stays active-only. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

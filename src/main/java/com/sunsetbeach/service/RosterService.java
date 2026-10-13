@@ -19,6 +19,7 @@ import com.sunsetbeach.model.RosterMoveInput;
 import com.sunsetbeach.model.RosterReassignInput;
 import com.sunsetbeach.model.RosterSwapInput;
 import com.sunsetbeach.model.StaffArea;
+import com.sunsetbeach.repository.AttendancePunchRepository;
 import com.sunsetbeach.repository.EmployeePatternRepository;
 import com.sunsetbeach.repository.RosterEntryRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
@@ -47,6 +48,7 @@ public class RosterService {
     private final ShiftCodeRepository shiftCodeRepository;
     private final StaffAreaCoverageRuleRepository staffAreaCoverageRuleRepository;
     private final UserRepository userRepository;
+    private final AttendancePunchRepository attendancePunchRepository;
     private final AuditLogService auditLogService;
 
     public RosterService(
@@ -55,12 +57,14 @@ public class RosterService {
             ShiftCodeRepository shiftCodeRepository,
             StaffAreaCoverageRuleRepository staffAreaCoverageRuleRepository,
             UserRepository userRepository,
+            AttendancePunchRepository attendancePunchRepository,
             AuditLogService auditLogService) {
         this.rosterEntryRepository = rosterEntryRepository;
         this.employeePatternRepository = employeePatternRepository;
         this.shiftCodeRepository = shiftCodeRepository;
         this.staffAreaCoverageRuleRepository = staffAreaCoverageRuleRepository;
         this.userRepository = userRepository;
+        this.attendancePunchRepository = attendancePunchRepository;
         this.auditLogService = auditLogService;
     }
 
@@ -74,6 +78,25 @@ public class RosterService {
                 // name, not email: the roster's whole reason for existing is a grid with
                 // someone to point at, and a no-login account (see UserCreateInput) has no
                 // email to sort by at all.
+                .sorted((a, b) -> a.getName().compareTo(b.getName()))
+                .toList();
+    }
+
+    /**
+     * The people on a month's grid: the active ones plus anyone deactivated who still has an entry
+     * or a live punch in the month - the same set both exports list ({@code
+     * RosterExportService#exportEmployeeIds}), so the screen and the files never disagree about
+     * who worked. Those rows come back {@code active = false}; the screen shows them greyed out
+     * and offers no way to assign them a shift ({@link #requireActiveEmployee} refuses it anyway).
+     */
+    private List<RosterEmployee> listEmployeesForMonth(List<RosterEntryEntity> monthEntries, YearMonth ym) {
+        java.util.Set<String> extraIds = monthEntries.stream().map(RosterEntryEntity::getEmployeeUserId).collect(Collectors.toCollection(java.util.HashSet::new));
+        attendancePunchRepository
+                .findByPunchAtBetweenAndVoidedAtIsNullOrderByEmployeeUserIdAscPunchAtAsc(ym.atDay(1).atStartOfDay(), ym.plusMonths(1).atDay(1).atStartOfDay())
+                .forEach(p -> extraIds.add(p.getEmployeeUserId()));
+        return userRepository.findAll().stream()
+                .filter(u -> u.isActive() || extraIds.contains(u.getId()))
+                .map(RosterService::toEmployeeDto)
                 .sorted((a, b) -> a.getName().compareTo(b.getName()))
                 .toList();
     }
@@ -446,7 +469,7 @@ public class RosterService {
         Map<String, ShiftCodeEntity> shiftCodes = resolveShiftCodes(entities);
 
         List<RosterEntry> entryDtos = entities.stream().map(e -> toDto(e, employees.get(e.getEmployeeUserId()), shiftCodes.get(e.getShiftCodeId()), null)).toList();
-        List<RosterEmployee> employeeDtos = listEmployees();
+        List<RosterEmployee> employeeDtos = listEmployeesForMonth(entities, YearMonth.of(year, month));
 
         // Coverage: a countsAsWorked entry counts toward the area of the *employee* it belongs to
         // (User.staffArea), the same department the grid groups that person's row under - and,

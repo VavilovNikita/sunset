@@ -647,4 +647,39 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         assertThat(grid).doesNotContain(leftBefore.getName());
         assertThat(actuals).doesNotContain(leftBefore.getName());
     }
+
+    /** The on-screen grid lists the same people the exports do, the deactivated ones flagged so the screen can grey them out. */
+    @Test
+    void screenGrid_listsADeactivatedEmployeeWithEntriesThatMonth_asInactive() {
+        UserEntity mgr = createEmployee(null, "Manager");
+        ShiftCode code = createCode(ShiftCodeKind.MORNING, true, "09:00", "17:00");
+        UserEntity leftMidMonth = createEmployee(StaffArea.RESTAURANT, "ScreenLeft");
+        UserEntity leftBefore = createEmployee(StaffArea.RESTAURANT, "ScreenLongGone");
+        rosterService.createEntry(new RosterEntryCreateInput(leftMidMonth.getId(), "2027-09-05", code.getId()), mgr.getId());
+        leftMidMonth.setActive(false);
+        userRepository.saveAndFlush(leftMidMonth);
+        leftBefore.setActive(false);
+        userRepository.saveAndFlush(leftBefore);
+
+        var employees = rosterService.getMonth(2027, 9).getEmployees();
+
+        assertThat(employees).filteredOn(e -> e.getId().equals(leftMidMonth.getId())).singleElement().satisfies(e -> assertThat(e.getActive()).isFalse());
+        assertThat(employees).noneMatch(e -> e.getId().equals(leftBefore.getId()));
+        assertThat(rosterService.listEmployees()).noneMatch(e -> e.getId().equals(leftMidMonth.getId()));
+    }
+
+    @Test
+    void gridExport_hidesTheIdColumnsOfTheReImportFormat() {
+        UserEntity mgr = createEmployee(null, "Manager");
+        ShiftCode code = createCode(ShiftCodeKind.MORNING, true, "09:00", "17:00");
+        UserEntity emp = createEmployee(StaffArea.RESTAURANT, "HiddenIds");
+        rosterService.createEntry(new RosterEntryCreateInput(emp.getId(), "2027-08-04", code.getId()), mgr.getId());
+
+        var sheet = exportSheet(2027, 8);
+
+        int days = 31;
+        assertThat(sheet.isColumnHidden(com.sunsetbeach.rosterimport.RosterGridImportFormat.employeeIdColumn(days))).isTrue();
+        assertThat(sheet.isColumnHidden(com.sunsetbeach.rosterimport.RosterGridImportFormat.shiftCodeIdColumn(days, 4))).isTrue();
+        assertThat(sheet.isColumnHidden(0)).isFalse();
+    }
 }
