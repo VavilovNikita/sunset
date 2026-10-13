@@ -1154,6 +1154,43 @@ class PosRoleHierarchyTests {
     }
 
     @Test
+    void getSpaSchedule_withWaiterTokenAndTherapistFunction_isOk() throws Exception {
+        // A therapist reads the schedule they work to whatever their role - the function is independent of RoleHierarchy.
+        stubActiveUserWithFunctions("THERAPIST");
+        when(spaAppointmentService.getSchedule(any())).thenReturn(sampleSpaSchedule());
+        mockMvc.perform(get("/spa-appointments?date=2027-01-01").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void getSpaSchedule_withWaiterTokenAndAnotherFunction_isForbidden() throws Exception {
+        stubActiveUserWithFunctions("HOUSEKEEPER");
+        mockMvc.perform(get("/spa-appointments?date=2027-01-01").header("Authorization", token(Role.WAITER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listSpaTherapists_withWaiterTokenAndTherapistFunction_isOk() throws Exception {
+        stubActiveUserWithFunctions("THERAPIST");
+        when(spaAppointmentService.listTherapists()).thenReturn(List.of(new SpaTherapist("user-1", "Therapist One").email("therapist@example.com")));
+        mockMvc.perform(get("/spa-appointments/therapists").header("Authorization", token(Role.WAITER))).andExpect(status().isOk());
+    }
+
+    @Test
+    void everySpaChange_withWaiterTokenAndTherapistFunction_isForbidden() throws Exception {
+        // The function is read access only: not one of the writes opens up.
+        stubActiveUserWithFunctions("THERAPIST");
+        String auth = token(Role.WAITER);
+        String json = "{}";
+        mockMvc.perform(post("/spa-appointments").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON).content(json)).andExpect(status().isForbidden());
+        mockMvc.perform(patch("/spa-appointments/appt-1/status").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON).content(json)).andExpect(status().isForbidden());
+        mockMvc.perform(patch("/spa-appointments/appt-1/schedule").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON).content(json)).andExpect(status().isForbidden());
+        mockMvc.perform(post("/spa-appointments/appt-1/swap-table").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON).content(json)).andExpect(status().isForbidden());
+        mockMvc.perform(post("/spa-appointments/appt-1/treatments").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON).content(json)).andExpect(status().isForbidden());
+        mockMvc.perform(delete("/spa-appointments/appt-1/treatments/treatment-1").header("Authorization", auth)).andExpect(status().isForbidden());
+        mockMvc.perform(post("/spa-appointments/appt-1/bill-missing-treatments").header("Authorization", auth)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/spa-map").header("Authorization", auth)).andExpect(status().isForbidden());
+    }
+
+    @Test
     void getSpaSchedule_withCashierToken_isOk() throws Exception {
         when(spaAppointmentService.getSchedule(any())).thenReturn(sampleSpaSchedule());
         mockMvc.perform(get("/spa-appointments?date=2027-01-01").header("Authorization", token(Role.CASHIER))).andExpect(status().isOk());

@@ -256,12 +256,13 @@ public class SecurityConfig {
                         // Placing tables is PATCH /tables/positions, already MANAGER+ above.
                         .requestMatchers(HttpMethod.GET, "/restaurant-map", "/restaurant-map/image").authenticated()
                         .requestMatchers(HttpMethod.POST, "/restaurant-map/image").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
-                        // Spa: booking/reading the half-hour grid is CASHIER+, same floor as the
-                        // rest of front-desk reservation work (GET /bookings, POST /bookings/staff
-                        // above) - reception is the only surface in v1, no therapist self-service
-                        // (see JobFunction.THERAPIST and SpaAppointment's own description).
+                        // Spa: booking is CASHIER+, same floor as the rest of front-desk reservation
+                        // work (GET /bookings, POST /bookings/staff above). READING the half-hour grid
+                        // is CASHIER+ *or* the THERAPIST job function, whatever the role: a therapist
+                        // must see the schedule they work to (owner's decision). Read only - every write
+                        // below stays CASHIER+, and the function grants nothing else.
                         .requestMatchers(HttpMethod.GET, "/spa-appointments", "/spa-appointments/therapists")
-                        .hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        .access(cashierPlusOrTherapist())
                         .requestMatchers(HttpMethod.POST, "/spa-appointments").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         .requestMatchers(HttpMethod.PATCH, "/spa-appointments/*/status").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Rescheduling (drag to another table/time) - same CASHIER+ tier and same
@@ -481,5 +482,18 @@ public class SecurityConfig {
         managerOrAbove.setRoleHierarchy(roleHierarchy());
         AuthorityAuthorizationManager<RequestAuthorizationContext> engineerFunction = AuthorityAuthorizationManager.hasAuthority("FUNCTION_ENGINEER");
         return AuthorizationManagers.anyOf(managerOrAbove, engineerFunction);
+    }
+
+    /**
+     * Role CASHIER-or-above OR FUNCTION_THERAPIST - the read gate of the spa schedule. Built like
+     * {@link #engineerOrManagerPlus()}: the role half needs the hierarchy wired in by hand, the
+     * function half is a plain authority (never a role, so it can't climb the ladder).
+     */
+    private AuthorizationManager<RequestAuthorizationContext> cashierPlusOrTherapist() {
+        AuthorityAuthorizationManager<RequestAuthorizationContext> cashierOrAbove =
+                AuthorityAuthorizationManager.hasRole(com.sunsetbeach.model.Role.CASHIER.getValue());
+        cashierOrAbove.setRoleHierarchy(roleHierarchy());
+        AuthorityAuthorizationManager<RequestAuthorizationContext> therapistFunction = AuthorityAuthorizationManager.hasAuthority("FUNCTION_THERAPIST");
+        return AuthorizationManagers.anyOf(cashierOrAbove, therapistFunction);
     }
 }

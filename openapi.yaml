@@ -4072,7 +4072,7 @@ paths:
       operationId: getSpaSchedule
       tags: [Spa]
       summary: Get the spa's half-hour grid for one day
-      description: Requires CASHIER or above. `tables` (SPA-zone) and `appointments` for `date`, plus the backend's own opening hours - see `SpaSchedule`.
+      description: Requires CASHIER or above, or the `THERAPIST` job function (read only - every change to an appointment stays CASHIER+). `tables` (SPA-zone) and `appointments` for `date`, plus the backend's own opening hours - see `SpaSchedule`.
       parameters:
         - name: date
           in: query
@@ -4156,7 +4156,7 @@ paths:
       operationId: listSpaTherapists
       tags: [Spa]
       summary: List active staff holding the THERAPIST job function
-      description: Requires CASHIER or above - see `SpaTherapist` for why this is narrower than `GET /users`.
+      description: Requires CASHIER or above, or the `THERAPIST` job function - see `SpaTherapist` for why this is narrower than `GET /users`.
       responses:
         "200":
           description: Active therapists.

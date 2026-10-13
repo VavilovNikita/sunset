@@ -302,7 +302,7 @@ public interface SpaApi {
 
     /**
      * GET /spa-appointments : Get the spa&#39;s half-hour grid for one day
-     * Requires CASHIER or above. &#x60;tables&#x60; (SPA-zone) and &#x60;appointments&#x60; for &#x60;date&#x60;, plus the backend&#39;s own opening hours - see &#x60;SpaSchedule&#x60;.
+     * Requires CASHIER or above, or the &#x60;THERAPIST&#x60; job function (read only - every change to an appointment stays CASHIER+). &#x60;tables&#x60; (SPA-zone) and &#x60;appointments&#x60; for &#x60;date&#x60;, plus the backend&#39;s own opening hours - see &#x60;SpaSchedule&#x60;.
      *
      * @param date  (required)
      * @return The spa&#39;s schedule for the day. (status code 200)
@@ -350,7 +350,7 @@ public interface SpaApi {
 
     /**
      * GET /spa-appointments/therapists : List active staff holding the THERAPIST job function
-     * Requires CASHIER or above - see &#x60;SpaTherapist&#x60; for why this is narrower than &#x60;GET /users&#x60;.
+     * Requires CASHIER or above, or the &#x60;THERAPIST&#x60; job function - see &#x60;SpaTherapist&#x60; for why this is narrower than &#x60;GET /users&#x60;.
      *
      * @return Active therapists. (status code 200)
      *         or No valid JWT. (status code 401)
