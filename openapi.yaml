@@ -22,6 +22,10 @@ servers:
     description: Relative to the deployed Next.js app origin.
 
 tags:
+  - name: Gym
+    description: >
+      Gym equipment (fans on Wi-Fi relays, air conditioners behind IR hubs) controlled through the Tuya cloud API.
+      Control is CASHIER+, the device list and the Tuya setup are ADMIN. State is read only on request, never polled.
   - name: Auth
     description: >
       Self-hosted authentication - this app owns the `User` table and issues/verifies
@@ -10376,6 +10380,448 @@ paths:
               example:
                 error: Mapping not found
 
+  /gym/devices:
+    get:
+      operationId: listGymDevices
+      tags: [Gym]
+      summary: Gym equipment with its current state
+      description: >
+        Requires CASHIER or above. Every **active** gym device in display order. Relays carry the
+        state Tuya reports (`on`, `online`); air conditioners carry the last command *we* sent
+        (`lastCommand`) because the IR link is one-way and the real state is unknowable. State is
+        read from Tuya on demand only - there is no background polling anywhere (the Tuya trial
+        quota is about 26 000 calls a month and the service stops when it runs out). A relay's
+        state is served from a ~30 second server-side cache; `refresh=true` bypasses the cache and
+        is what the page's "Refresh" button sends. A relay whose state could not be read has
+        `on` null and `stateError` set; the rest of the list is still returned.
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Active gym devices.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymDeviceList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+  /gym/devices/{id}/relay:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: setGymRelay
+      tags: [Gym]
+      summary: Switch a relay (fan) on or off
+      description: >
+        Requires CASHIER or above. Sends the switch command to Tuya, then re-reads the relay and
+        returns its state. Audited with the outcome (success or the failure), whoever sent it.
+        409 if the device is not a relay or is switched off in settings.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymRelayInput"
+      responses:
+        "200":
+          description: The relay after the command.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymDevice"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Not a relay, or the device is disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "502":
+          description: Tuya rejected the command or could not be reached; `error` says why in plain words.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "503":
+          description: The Tuya integration is not configured or the project is unavailable (subscription expired).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /gym/devices/{id}/ac:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: sendGymAcCommand
+      tags: [Gym]
+      summary: Send one air-conditioner command
+      description: >
+        Requires CASHIER or above. One command carries the whole setting (`power`, `mode`, `temp`,
+        `wind`) - that is how the IR scene command works. The server stores it as the device's
+        `lastCommand` (what, when, by whom) once Tuya accepted it. It is the last thing *sent*, not
+        a reading of the air conditioner. Audited with the outcome.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymAcCommandInput"
+      responses:
+        "200":
+          description: The device with its new `lastCommand`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymDevice"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Not an air conditioner, or the device is disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "502":
+          description: Tuya rejected the command or could not be reached.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "503":
+          description: The Tuya integration is not configured or the project is unavailable (subscription expired).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /gym/settings/devices:
+    get:
+      operationId: listGymDeviceConfigs
+      tags: [Gym]
+      summary: Configured gym devices (settings)
+      description: Requires ADMIN. Every configured device, active or not, with its Tuya ids. No call to Tuya.
+      responses:
+        "200":
+          description: All configured devices in display order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GymDeviceConfig"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createGymDeviceConfig
+      tags: [Gym]
+      summary: Add a gym device
+      description: >
+        Requires ADMIN. Device ids are runtime data, not migrations: the admin picks them from
+        `GET /gym/settings/tuya/devices`. A relay needs `switchCode`; an air conditioner needs
+        `infraredId` (its IR hub) and takes `remoteId` (defaults to `tuyaDeviceId`). Added last in
+        the display order. 409 if the Tuya device is already configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymDeviceConfigInput"
+      responses:
+        "201":
+          description: Device added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymDeviceConfig"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: This Tuya device is already configured.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /gym/settings/devices/reorder:
+    post:
+      operationId: reorderGymDeviceConfigs
+      tags: [Gym]
+      summary: Set the display order
+      description: Requires ADMIN. `ids` is the full list of configured device ids in the wanted order; any id missing from it or unknown is a 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymReorderInput"
+      responses:
+        "200":
+          description: The devices in the new order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GymDeviceConfig"
+        "400":
+          description: The list is not exactly the configured devices.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /gym/settings/devices/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      operationId: updateGymDeviceConfig
+      tags: [Gym]
+      summary: Update a gym device
+      description: Requires ADMIN. Full replacement of the `GymDeviceConfigInput` fields; the display order is changed through `reorder`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymDeviceConfigInput"
+      responses:
+        "200":
+          description: Updated device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymDeviceConfig"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Another configured device already uses this Tuya device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    delete:
+      operationId: deleteGymDeviceConfig
+      tags: [Gym]
+      summary: Remove a gym device
+      description: Requires ADMIN. Removes it from the page; the audit entries about it stay. To hide a device temporarily, set `active` false instead.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Device not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /gym/settings/tuya/devices:
+    get:
+      operationId: listTuyaDevices
+      tags: [Gym]
+      summary: Devices of the Tuya project (for adding)
+      description: >
+        Requires ADMIN. Fetched live from the Tuya project - this costs Tuya calls, so the screen
+        asks only when the admin opens the "add" list. Never contains Tuya's `localKey`.
+      responses:
+        "200":
+          description: Devices in the project.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TuyaDiscoveredDevice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          description: Tuya rejected the request or could not be reached.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "503":
+          description: The Tuya integration is not configured or the project is unavailable (subscription expired).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /gym/settings/tuya/devices/{tuyaDeviceId}/switch-codes:
+    parameters:
+      - name: tuyaDeviceId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: listTuyaSwitchCodes
+      tags: [Gym]
+      summary: Switch codes of a relay
+      description: Requires ADMIN. The device's status codes whose value is a boolean - the candidates for `switchCode` (for the gym's WiFi Breaker T relays it is `switch_1`).
+      responses:
+        "200":
+          description: Boolean status codes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          description: Tuya rejected the request or could not be reached.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "503":
+          description: The Tuya integration is not configured or the project is unavailable (subscription expired).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /gym/settings/tuya/infrareds/{infraredId}/remotes:
+    parameters:
+      - name: infraredId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: listTuyaInfraredRemotes
+      tags: [Gym]
+      summary: Remotes learned by an IR hub
+      description: >
+        Requires ADMIN. `GET /v2.0/infrareds/{infrared_id}/remotes` - links an air conditioner to
+        its hub. Needs the IR control API subscribed on the Tuya project; without it Tuya answers
+        "This API is not subscribed" (code 28841101, seen on this project) and this is a 503.
+      responses:
+        "200":
+          description: Remotes of the hub.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TuyaRemote"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "502":
+          description: Tuya rejected the request or could not be reached.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "503":
+          description: The Tuya integration is not configured, the project is unavailable, or this API is not subscribed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /gym/settings/usage:
+    get:
+      operationId: getGymTuyaUsage
+      tags: [Gym]
+      summary: Tuya calls this month
+      description: Requires ADMIN. How many calls to Tuya this server made in the current Bangkok-time month, to watch the trial quota. Reading it costs no Tuya call.
+      responses:
+        "200":
+          description: Counter for the current month.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymTuyaUsage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -15003,6 +15449,10 @@ components:
         - SITEMINDER_ROOM_TYPE_MAPPING_DELETED
         - RESTAURANT_MAP_IMAGE_UPDATED
         - ORDER_ITEM_VOIDED
+        - GYM_DEVICE_COMMAND
+        - GYM_DEVICE_CREATED
+        - GYM_DEVICE_UPDATED
+        - GYM_DEVICE_DELETED
 
     AuditEntityType:
       type: string
@@ -15016,7 +15466,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING, RESTAURANT_MAP]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING, RESTAURANT_MAP, GYM_DEVICE]
 
     AuditLogEntry:
       type: object
@@ -17609,3 +18059,222 @@ components:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
           description: Latest `checkIn` among those bookings - can be in the future.
+
+    GymDeviceType:
+      type: string
+      enum: [RELAY, AC_IR]
+      description: '`RELAY` is a Wi-Fi switch (a fan) whose real state Tuya reports; `AC_IR` is an air conditioner behind an IR hub, which is controlled one-way.'
+
+    GymAcCommandInput:
+      type: object
+      description: One air-conditioner setting. Sent whole, also when switching off (`power` 0 with the remembered mode/temp/wind).
+      required: [power, mode, temp, wind]
+      properties:
+        power:
+          type: integer
+          minimum: 0
+          maximum: 1
+          description: 0 off, 1 on.
+        mode:
+          type: integer
+          minimum: 0
+          maximum: 4
+          description: 0 cool, 1 heat, 2 auto, 3 fan, 4 dry.
+        temp:
+          type: integer
+          minimum: 16
+          maximum: 30
+          description: Target temperature, degrees Celsius.
+        wind:
+          type: integer
+          minimum: 0
+          maximum: 3
+          description: Fan speed - 0 auto, 1 to 3 low to high.
+
+    GymAcCommand:
+      type: object
+      description: The last command this server sent to an air conditioner - not a reading of the unit.
+      required: [power, mode, temp, wind, sentAt, sentBy]
+      properties:
+        power:
+          type: integer
+        mode:
+          type: integer
+        temp:
+          type: integer
+        wind:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        sentBy:
+          type: string
+          description: Name (or email) of the staff member at the time.
+
+    GymRelayInput:
+      type: object
+      required: [isOn]
+      properties:
+        isOn:
+          type: boolean
+
+    GymDevice:
+      type: object
+      description: >
+        A gym device as the page shows it. For `RELAY`: `isOn`, `online` and `stateReadAt` come from
+        Tuya (possibly the 30 s cache), `stateError` says why they are missing. For `AC_IR`: only
+        `lastCommand` (null until the first command), no live state exists.
+      required: [id, name, type, sortOrder]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: "#/components/schemas/GymDeviceType"
+        sortOrder:
+          type: integer
+        isOn:
+          type: boolean
+          nullable: true
+        online:
+          type: boolean
+          nullable: true
+        stateReadAt:
+          type: string
+          format: date-time
+          nullable: true
+        stateError:
+          type: string
+          nullable: true
+        lastCommand:
+          allOf:
+            - $ref: "#/components/schemas/GymAcCommand"
+          nullable: true
+
+    GymDeviceList:
+      type: object
+      required: [devices, fetchedAt]
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/GymDevice"
+        fetchedAt:
+          type: string
+          format: date-time
+
+    GymDeviceConfig:
+      type: object
+      required: [id, name, type, tuyaDeviceId, sortOrder, active]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: "#/components/schemas/GymDeviceType"
+        tuyaDeviceId:
+          type: string
+        infraredId:
+          type: string
+          nullable: true
+          description: The IR hub (air conditioners only).
+        remoteId:
+          type: string
+          nullable: true
+          description: The IR remote (air conditioners only).
+        switchCode:
+          type: string
+          nullable: true
+          description: The status/command code of the on-off switch (relays only), e.g. `switch_1`.
+        sortOrder:
+          type: integer
+        active:
+          type: boolean
+
+    GymDeviceConfigInput:
+      type: object
+      description: Full replacement on update. The type-specific fields are checked by the server (relay - `switchCode`; air conditioner - `infraredId`).
+      required: [name, type, tuyaDeviceId]
+      properties:
+        name:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 120
+        type:
+          $ref: "#/components/schemas/GymDeviceType"
+        tuyaDeviceId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        infraredId:
+          type: string
+          maxLength: 64
+        remoteId:
+          type: string
+          maxLength: 64
+        switchCode:
+          type: string
+          maxLength: 64
+        active:
+          type: boolean
+          default: true
+
+    GymReorderInput:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+
+    TuyaDiscoveredDevice:
+      type: object
+      description: A device of the Tuya project. Only what the add screen needs - never Tuya's `localKey`.
+      required: [id, name, category, online, sub]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: The name the owner gave it in the Tuya app, or Tuya's own name when none.
+        category:
+          type: string
+          description: "Tuya category code: `kg` switch, `wnykq` IR hub, `qt` an IR remote (a virtual device under a hub), `wxkg` wireless switch."
+        productName:
+          type: string
+          nullable: true
+        online:
+          type: boolean
+        sub:
+          type: boolean
+          description: A sub-device (for the gym, an IR remote such as an air conditioner).
+
+    TuyaRemote:
+      type: object
+      required: [remoteId, name]
+      properties:
+        remoteId:
+          type: string
+        name:
+          type: string
+          nullable: true
+
+    GymTuyaUsage:
+      type: object
+      required: [month, calls, quotaHint]
+      properties:
+        month:
+          type: string
+          pattern: '^\d{4}-\d{2}$'
+          description: Calendar month in hotel (Bangkok) time.
+        calls:
+          type: integer
+          format: int64
+          description: Calls to Tuya this server made in that month, token requests included.
+        quotaHint:
+          type: integer
+          description: The trial's monthly quota as configured (`app.tuya.monthly-quota-hint`) - about 26 000, informational only.

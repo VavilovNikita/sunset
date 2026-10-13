@@ -81,6 +81,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ErrorMessage(ex.getMessage()));
     }
 
+    /**
+     * Tuya (the gym module) refused, was unreachable, or is not set up. The message is already worded
+     * for the person at the screen; the raw Tuya code was logged where it happened. 503 when the
+     * integration as a whole is unusable, 502 when one request failed.
+     */
+    @ExceptionHandler(com.sunsetbeach.tuya.TuyaException.class)
+    public ResponseEntity<ErrorMessage> handleTuya(com.sunsetbeach.tuya.TuyaException ex) {
+        HttpStatus status = ex.isIntegrationDown() ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
+        return ResponseEntity.status(status).body(new ErrorMessage(ex.getMessage()));
+    }
+
     @ExceptionHandler(TooManyRequestsException.class)
     public ResponseEntity<ErrorMessage> handleTooManyRequests(TooManyRequestsException ex) {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(new ErrorMessage(ex.getMessage()));

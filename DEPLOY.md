@@ -96,6 +96,34 @@ CREATE UNIQUE INDEX "Room_name_normalized_key" ON "Room" (lower(btrim("name")));
 
 Rolling back to the previous build is safe: the index is just an index.
 
+## Gym equipment (Tuya cloud)
+
+The Gym page (fans on Wi-Fi relays, air conditioners behind IR hubs) talks to the Tuya cloud. It needs three
+variables in the backend's `.env` on the VPS - without them the page opens and says the integration is not set up:
+
+| Variable | Where to take it |
+|---|---|
+| `TUYA_CLIENT_ID` | iot.tuya.com -> Cloud -> Development -> project "sunset" -> Overview -> Authorization Key -> Access ID |
+| `TUYA_CLIENT_SECRET` | the same place -> Access Secret |
+| `TUYA_API_BASE` | the project's data-centre endpoint, same page (Singapore: `https://openapi-sg.iotbing.com`) |
+
+**Restart the backend after adding or changing them** - they are read at start-up, not per request:
+`docker compose up -d backend` (a plain `docker compose restart` does not re-read `.env`). Never paste the values into
+a chat, a log or a commit; `docker compose config` prints them, same warning as above.
+
+**The IoT Core trial must be extended by hand.** Tuya's Trial Edition stops working when the subscription lapses and the
+page then shows "Интеграция Tuya недоступна - проверьте подписку IoT Core". Extend it at iot.tuya.com -> Cloud ->
+Project management -> the project -> Extend trial period. The trial also allows about 26 000 API calls a month and stops
+until the month ends when they run out; nothing polls, the Gym page reads state only when it is opened or refreshed, and
+Settings -> Gym shows this month's call count (Bangkok month).
+
+**Air conditioners need one more API on the project.** Switching a relay works with the base subscription; controlling an
+air conditioner and listing an IR hub's remotes call the infrared APIs, which Tuya answers with "This API is not subscribed"
+(code 28841101) until that service is added to the project: iot.tuya.com -> Cloud -> Development -> project -> Service API ->
+the IR control hub service -> subscribe (authorize the project). The Gym page reports it in plain words.
+
+Migrations V139 (tables) and V140 (audit values) are additive; there is nothing to restore on rollback.
+
 ## Uploads (room photos, floor plans, maintenance photos)
 
 Everything staff upload - room photos, the property, spa and restaurant plans, maintenance task

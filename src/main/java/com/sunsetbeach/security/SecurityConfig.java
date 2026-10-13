@@ -81,6 +81,12 @@ public class SecurityConfig {
                         // bigger blast radius than the MANAGER floor most admin screens use. ADMIN is
                         // the top of the hierarchy, so hasRole(ADMIN) admits nobody else.
                         .requestMatchers("/settings/**").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
+                        // Gym equipment over the Tuya cloud. The device list, the Tuya project listing and the
+                        // call counter are ADMIN (the first lets a person decide what the page can switch, the
+                        // second spends Tuya quota); switching a fan or an air conditioner is CASHIER+ - front
+                        // desk work. Specific matcher first: /gym/settings/** must not fall into /gym/**.
+                        .requestMatchers("/gym/settings/**").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
+                        .requestMatchers("/gym/**").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
                         // Night audit (checklist read and closing a day): CASHIER+, not the MANAGER+
                         // of /reports/** - it's routine front-desk work done every day, same reasoning
                         // as PATCH /room-units/*/housekeeping's lower bar below. The snapshot reuses
