@@ -37,6 +37,9 @@ public class GymDeviceEntity {
 
     private boolean active = true;
 
+    /** Whether the reservation automation switches this device (V142); every device takes part by default. */
+    private boolean inBookings = true;
+
     private Integer lastAcPower;
 
     private Integer lastAcMode;
@@ -71,6 +74,8 @@ public class GymDeviceEntity {
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
+    public boolean isInBookings() { return inBookings; }
+    public void setInBookings(boolean inBookings) { this.inBookings = inBookings; }
     public Integer getLastAcPower() { return lastAcPower; }
     public void setLastAcPower(Integer lastAcPower) { this.lastAcPower = lastAcPower; }
     public Integer getLastAcMode() { return lastAcMode; }

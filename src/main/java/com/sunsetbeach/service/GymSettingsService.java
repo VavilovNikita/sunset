@@ -85,6 +85,7 @@ public class GymSettingsService {
         GymDeviceEntity entity = find(id);
         String oldName = entity.getName();
         boolean oldActive = entity.isActive();
+        boolean oldInBookings = entity.isInBookings();
         apply(entity, input);
         if (devices.existsByTuyaDeviceIdAndIdNot(entity.getTuyaDeviceId(), id)) {
             throw new ConflictException("This Tuya device is already added");
@@ -101,6 +102,9 @@ public class GymSettingsService {
         }
         if (oldActive != saved.isActive()) {
             summary.append(saved.isActive() ? "; enabled" : "; disabled");
+        }
+        if (oldInBookings != saved.isInBookings()) {
+            summary.append(saved.isInBookings() ? "; now switched by gym reservations" : "; no longer switched by gym reservations");
         }
         gymDeviceService.clearStateCache();
         auditLogService.record(AuditAction.GYM_DEVICE_UPDATED, AuditEntityType.GYM_DEVICE, saved.getId(), summary.toString());
@@ -175,6 +179,9 @@ public class GymSettingsService {
         entity.setType(input.getType().getValue());
         entity.setTuyaDeviceId(tuyaId);
         entity.setActive(input.getActive() == null || input.getActive());
+        if (input.getInBookings() != null) {
+            entity.setInBookings(input.getInBookings());
+        }
         String switchCode = trimToNull(input.getSwitchCode());
         String infraredId = trimToNull(input.getInfraredId());
         String remoteId = trimToNull(input.getRemoteId());
@@ -202,7 +209,7 @@ public class GymSettingsService {
 
     private static GymDeviceConfig toDto(GymDeviceEntity d) {
         GymDeviceConfig dto = new GymDeviceConfig(
-                d.getId(), d.getName(), GymDeviceType.fromValue(d.getType()), d.getTuyaDeviceId(), d.getSortOrder(), d.isActive());
+                d.getId(), d.getName(), GymDeviceType.fromValue(d.getType()), d.isInBookings(), d.getTuyaDeviceId(), d.getSortOrder(), d.isActive());
         dto.infraredId(d.getInfraredId());
         dto.remoteId(d.getRemoteId());
         dto.switchCode(d.getSwitchCode());

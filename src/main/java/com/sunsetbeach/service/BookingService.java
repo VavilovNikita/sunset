@@ -112,6 +112,7 @@ public class BookingService {
     private final ShiftRepository shiftRepository;
     private final BookingFolioCalculator folioCalculator;
     private final SpaBookingCancellationService spaBookingCancellation;
+    private final GymReservationService gymReservations;
 
     public BookingService(
             RoomRepository roomRepository,
@@ -133,8 +134,10 @@ public class BookingService {
             ShiftRepository shiftRepository,
             BookingFolioCalculator folioCalculator,
             SpaBookingCancellationService spaBookingCancellation,
+            GymReservationService gymReservations,
             Clock clock) {
         this.clock = clock;
+        this.gymReservations = gymReservations;
         this.folioCalculator = folioCalculator;
         this.spaBookingCancellation = spaBookingCancellation;
         this.shiftRepository = shiftRepository;
@@ -468,6 +471,10 @@ public class BookingService {
         String spaWarning = oldStatus != BookingStatus.CANCELLED && saved.getStatus() == BookingStatus.CANCELLED
                 ? spaBookingCancellation.onBookingCancelled(saved)
                 : null;
+        // Same for the gym: a booking that is not coming releases its gym reservations in the same transaction.
+        if (oldStatus != BookingStatus.CANCELLED && saved.getStatus() == BookingStatus.CANCELLED) {
+            gymReservations.onBookingEnded(saved, "Booking cancelled");
+        }
 
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         boolean statusChanged = oldStatus != saved.getStatus();

@@ -36,6 +36,8 @@ public class GymDeviceConfigInput {
 
   private Boolean active = true;
 
+  private Boolean inBookings;
+
   public GymDeviceConfigInput() {
     super();
   }
@@ -182,6 +184,25 @@ public class GymDeviceConfigInput {
     this.active = active;
   }
 
+  public GymDeviceConfigInput inBookings(Boolean inBookings) {
+    this.inBookings = inBookings;
+    return this;
+  }
+
+  /**
+   * Whether the reservation automation switches this device. Omitted - kept on update, true on create.
+   * @return inBookings
+   */
+  
+  @JsonProperty("inBookings")
+  public Boolean getInBookings() {
+    return inBookings;
+  }
+
+  public void setInBookings(Boolean inBookings) {
+    this.inBookings = inBookings;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -197,12 +218,13 @@ public class GymDeviceConfigInput {
         Objects.equals(this.infraredId, gymDeviceConfigInput.infraredId) &&
         Objects.equals(this.remoteId, gymDeviceConfigInput.remoteId) &&
         Objects.equals(this.switchCode, gymDeviceConfigInput.switchCode) &&
-        Objects.equals(this.active, gymDeviceConfigInput.active);
+        Objects.equals(this.active, gymDeviceConfigInput.active) &&
+        Objects.equals(this.inBookings, gymDeviceConfigInput.inBookings);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, type, tuyaDeviceId, infraredId, remoteId, switchCode, active);
+    return Objects.hash(name, type, tuyaDeviceId, infraredId, remoteId, switchCode, active, inBookings);
   }
 
   @Override
@@ -216,6 +238,7 @@ public class GymDeviceConfigInput {
     sb.append("    remoteId: ").append(toIndentedString(remoteId)).append("\n");
     sb.append("    switchCode: ").append(toIndentedString(switchCode)).append("\n");
     sb.append("    active: ").append(toIndentedString(active)).append("\n");
+    sb.append("    inBookings: ").append(toIndentedString(inBookings)).append("\n");
     sb.append("}");
     return sb.toString();
   }

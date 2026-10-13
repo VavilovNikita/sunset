@@ -122,6 +122,51 @@ air conditioner and listing an IR hub's remotes call the infrared APIs, which Tu
 (code 28841101) until that service is added to the project: iot.tuya.com -> Cloud -> Development -> project -> Service API ->
 the IR control hub service -> subscribe (authorize the project). The Gym page reports it in plain words.
 
+### Gym reservations and the equipment automation
+
+Guests (checked-in, from their account on the site) and the front desk (`/admin/gym/schedule`) reserve the gym; the
+equipment follows the reservation by itself. Nothing to configure beyond the Tuya keys above - the defaults are the
+owner's - but know how it behaves when something is wrong.
+
+**What it does.** `GymAutomationService` runs once a minute (`app.gym.automation.interval-ms`, default 60000). For
+every unfinished reservation it looks for two moments: *switch-on* `leadMinutes` (default 30) before the start, and
+*switch-off* at the end (or right after a cancellation, if the equipment had been switched on). At switch-on every
+active device that takes part in bookings (Settings -> Gym -> "Switched by gym reservations", on by default for every
+device) goes on: fans via their relay, air conditioners with ONE scene command (power 1, mode 0 = cool, 16 degrees,
+wind 3 = strongest; ADMIN can change mode/temperature/fan and the lead time under Settings -> Gym). At switch-off
+everything goes off, **except** when another reservation starts within the lead time (back-to-back sessions never
+switch the equipment off in between, and the second session sends nothing at all at its own switch-on).
+
+**What it never does.** It never reads a device's state and never polls - it spends Tuya quota (about 26 000 calls a
+month on the trial) only at those two moments: roughly (devices x 2) calls per reservation. The manual Gym page keeps
+working and the automation does not fight it: a fan someone switches off by hand mid-session stays off until the next
+transition.
+
+**Restarts and gaps.** The memory is the database (`GymReservationAction`: one row per reservation, device and phase),
+not the process. A restart sends nothing twice. A switch-on that was due while the backend was down is sent when it
+comes back *if the session has not ended yet*; if it has ended, nothing is switched on (the reservation shows "missed").
+A switch-off is always sent. Rarely, a crash between Tuya accepting a command and the row being saved repeats that one
+command - harmless, on/off and the scene are idempotent.
+
+**Failures.** One device failing does not stop the others. A failed command is retried on the next minute's run, up
+to 3 attempts in all (`app.gym.automation.max-attempts`, pause `app.gym.automation.retry-pause-seconds`), then the
+device is marked failed. Every phase ends with one audit entry written by the system (Audit log -> entity "Gym
+reservation", action "Gym automation result") naming what went on and what did not, and the schedule shows it on the
+reservation: all fine / partly (with the devices that failed and Tuya's reason) / failed. Where to look when the
+equipment did not react: 1. the reservation's panel on `/admin/gym/schedule`; 2. the audit log entry above; 3. the
+backend log (`docker compose logs backend | grep -i "gym automation"`), which also says why Tuya refused. An unreachable
+Tuya shows as "Tuya is not responding"; an expired trial as "Tuya integration is unavailable" (see above).
+
+**Air conditioners need the IR service.** Exactly as for the manual Air 1 / Air 2 controls: the scene command goes
+through the IR APIs, which Tuya answers with "This API is not subscribed" (code 28841101) until **IR Control Hub** is
+subscribed in the Tuya project (iot.tuya.com -> Cloud -> Development -> project -> Service API -> IR Control Hub ->
+subscribe and authorize the project). Until then the fans still switch and the air conditioners are reported as failed
+on every reservation. This has not been verified live yet (the subscription was missing when this was built).
+
+**Migrations V141/V142** only add tables and enum values (no destructive step), and V142 adds `GymDevice.inBookings`
+(default true for every existing device). The exclusion constraint `gym_reservation_no_overlap` needs no extension
+beyond `btree_gist`, which is already installed for the spa.
+
 Migrations V139 (tables) and V140 (audit values) are additive; there is nothing to restore on rollback.
 
 ## Uploads (room photos, floor plans, maintenance photos)

@@ -65,7 +65,7 @@ public interface GymApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" }";
+                    String exampleString = "{ \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"inBookings\" : true, \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -205,7 +205,7 @@ public interface GymApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" }, { \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" } ]";
+                    String exampleString = "[ { \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"inBookings\" : true, \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" }, { \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"inBookings\" : true, \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -452,7 +452,7 @@ public interface GymApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" }, { \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" } ]";
+                    String exampleString = "[ { \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"inBookings\" : true, \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" }, { \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"inBookings\" : true, \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -655,7 +655,7 @@ public interface GymApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" }";
+                    String exampleString = "{ \"switchCode\" : \"switchCode\", \"sortOrder\" : 0, \"name\" : \"name\", \"inBookings\" : true, \"active\" : true, \"tuyaDeviceId\" : \"tuyaDeviceId\", \"id\" : \"id\", \"type\" : \"RELAY\", \"infraredId\" : \"infraredId\", \"remoteId\" : \"remoteId\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

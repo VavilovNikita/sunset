@@ -322,6 +322,19 @@ class GymDeviceServiceTests extends AbstractIntegrationTest {
         assertThat(gymSettingsService.listSwitchCodes("tuya-fan-1")).containsExactly("switch_1");
     }
 
+    @Test
+    void inBookings_defaultsToTrue_isKeptWhenOmitted_andChangesWhenSent() {
+        GymDeviceConfig created = gymSettingsService.create(relayInput("Fan", "tuya-ib-1", true));
+        assertThat(created.getInBookings()).isTrue();
+
+        GymDeviceConfig off = gymSettingsService.update(created.getId(), relayInput("Fan", "tuya-ib-1", true).inBookings(false));
+        assertThat(off.getInBookings()).isFalse();
+
+        // A full-replacement PUT that does not mention the flag must not silently switch the device back on.
+        GymDeviceConfig kept = gymSettingsService.update(created.getId(), relayInput("Fan", "tuya-ib-1", true));
+        assertThat(kept.getInBookings()).isFalse();
+    }
+
     // ---- helpers -----------------------------------------------------------------------------
 
     private void stateOf(String tuyaId, boolean on, boolean online) {

@@ -10,6 +10,9 @@ public interface GymDeviceRepository extends JpaRepository<GymDeviceEntity, Stri
 
     List<GymDeviceEntity> findByActiveTrueOrderBySortOrderAscNameAsc();
 
+    /** The devices the reservation automation switches: active and taking part in bookings. */
+    List<GymDeviceEntity> findByActiveTrueAndInBookingsTrueOrderBySortOrderAscNameAsc();
+
     boolean existsByTuyaDeviceId(String tuyaDeviceId);
 
     boolean existsByTuyaDeviceIdAndIdNot(String tuyaDeviceId, String id);

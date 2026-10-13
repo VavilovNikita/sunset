@@ -22,6 +22,15 @@ servers:
     description: Relative to the deployed Next.js app origin.
 
 tags:
+  - name: GymSchedule
+    description: >
+      Gym reservations by hotel bookings (staff schedule, opening hours and automation settings).
+      CASHIER+ for the schedule, ADMIN for `/gym/settings/hall`. The equipment is switched by
+      `GymAutomationService` around each reservation.
+  - name: GuestGym
+    description: >
+      The guest's own gym booking (guest JWT): slots, reserve, cancel, my reservations. Only a guest
+      whose booking is `CHECKED_IN` may book.
   - name: Gym
     description: >
       Gym equipment (fans on Wi-Fi relays, air conditioners behind IR hubs) controlled through the Tuya cloud API.
@@ -10380,6 +10389,437 @@ paths:
               example:
                 error: Mapping not found
 
+  /gym/reservations:
+    get:
+      operationId: listGymReservations
+      tags: [GymSchedule]
+      summary: Gym schedule for a day or a week
+      description: >
+        Requires CASHIER or above. Every reservation whose `date` is within `from`..`to` (both
+        inclusive, at most 14 days), with the opening hours and rules the grid needs so it never
+        renders a slot the server would refuse. Cancelled reservations are left out unless
+        `includeCancelled` is true. Each reservation carries `automation` - what the equipment
+        automation did for it (see `GymAutomation`).
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: includeCancelled
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: The schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymSchedule"
+        "400":
+          description: Bad dates, `to` before `from`, or a range longer than 14 days.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+    post:
+      operationId: createGymReservation
+      tags: [GymSchedule]
+      summary: Reserve the gym for a hotel booking (front desk)
+      description: >
+        Requires CASHIER or above. The staff counterpart of `POST /guest/gym/reservations`: the
+        same slot rules, but staff name the hotel booking themselves and may book a guest who has
+        not arrived yet (`NEW`/`CONFIRMED`/`PAID`, not yet checked in) on a day of their stay.
+        Rules checked by the server: the slot is on the 30-minute grid, `durationMinutes` is 30,
+        60, 90 or 120, the whole slot lies within the opening hours, it does not start before the
+        current half hour, the date is within the booking's stay (`checkIn`..`checkOut`, both
+        ends included), the booking is not cancelled, checked out or a no-show (409), and the
+        booking's reservations on that date stay within 120 minutes in total (409). The gym is
+        exclusive: an overlap with any other reservation is a 409 decided by the database
+        (`gym_reservation_no_overlap`, V142), not by a pre-check. Free of charge - nothing is
+        billed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymReservationCreateInput"
+      responses:
+        "201":
+          description: Reserved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymReservation"
+        "400":
+          description: The slot breaks a rule (grid, duration, opening hours, past, outside the stay).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Booking not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The slot is taken, the daily limit is used up, or the booking is cancelled / checked out / a no-show.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /gym/reservations/{id}/schedule:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateGymReservationSchedule
+      tags: [GymSchedule]
+      summary: Move a gym reservation
+      description: >
+        Requires CASHIER or above. Full replacement of `date`, `startTime`, `durationMinutes`.
+        Only a `BOOKED` reservation that has not ended can move, and the same rules as creation
+        apply to the new values. Once the equipment automation has started on a reservation (the
+        switch-on was attempted) it can no longer be moved to another time - only its
+        `durationMinutes` can change, with `date` and `startTime` unchanged (extending or
+        shortening a session in progress); to move it, cancel it and book again (409).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymReservationScheduleInput"
+      responses:
+        "200":
+          description: The moved reservation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymReservation"
+        "400":
+          description: The new slot breaks a rule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Reservation not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The slot is taken, the daily limit is used up, the reservation is not `BOOKED`, or the automation already started on it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /gym/reservations/{id}/cancel:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: cancelGymReservation
+      tags: [GymSchedule]
+      summary: Cancel a gym reservation
+      description: >
+        Requires CASHIER or above. A `BOOKED` reservation, also one in progress. If the equipment
+        was already switched on for it, the automation switches it off on its next run (within a
+        minute) unless another reservation starts within the lead time - see `GymAutomation`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymReservationCancelInput"
+      responses:
+        "200":
+          description: The cancelled reservation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymReservation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
+        "404":
+          description: Reservation not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The reservation is not `BOOKED` (already cancelled or over).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /gym/settings/hall:
+    get:
+      operationId: getGymHallSettings
+      tags: [GymSchedule]
+      summary: Gym opening hours and automation parameters
+      description: Requires ADMIN.
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymHallSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: updateGymHallSettings
+      tags: [GymSchedule]
+      summary: Change the gym opening hours and automation parameters
+      description: >
+        Requires ADMIN. Full replacement. `openTime`/`closeTime` must lie on the 30-minute grid
+        with `openTime` before `closeTime`. Changing the hours does not touch existing
+        reservations. The lead time, air-conditioner mode, temperature and fan speed take effect at
+        the automation's next transition. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymHallSettings"
+      responses:
+        "200":
+          description: The saved settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymHallSettings"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /guest/gym/info:
+    get:
+      operationId: getGuestGymInfo
+      tags: [GuestGym]
+      summary: Whether this guest can book the gym, and the rules
+      description: >
+        Requires a guest JWT. `eligible` is true when the account has a booking that is not
+        cancelled and is `CHECKED_IN`; `stays` lists those bookings with their dates (the date
+        picker's range). When not eligible, `message` says why in plain words. Always 200.
+      security:
+        - guestBearerAuth: []
+      responses:
+        "200":
+          description: Eligibility and rules.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymGuestInfo"
+        "401":
+          description: Missing/invalid/expired guest token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /guest/gym/slots:
+    get:
+      operationId: getGuestGymSlots
+      tags: [GuestGym]
+      summary: Free gym slots on a date
+      description: >
+        Requires a guest JWT. The day's half-hour slots with whether each can be booked and for
+        how long at most (the shorter of 120 minutes, what is left of the booking's daily
+        allowance, the closing time and the next reservation). `bookingId` is optional when the
+        account has exactly one eligible booking. 403 when the guest has no `CHECKED_IN`
+        booking; 400 when `date` is outside the stay.
+      security:
+        - guestBearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: bookingId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The day's slots.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymSlotDay"
+        "400":
+          description: Bad date, outside the stay, or several eligible bookings and none chosen.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Missing/invalid/expired guest token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "403":
+          description: The guest has no checked-in booking.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /guest/gym/reservations:
+    get:
+      operationId: listGuestGymReservations
+      tags: [GuestGym]
+      summary: This guest's gym reservations
+      description: Requires a guest JWT. Reservations of every booking linked to this account, newest date first, cancelled ones included.
+      security:
+        - guestBearerAuth: []
+      responses:
+        "200":
+          description: The reservations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GymGuestReservation"
+        "401":
+          description: Missing/invalid/expired guest token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    post:
+      operationId: createGuestGymReservation
+      tags: [GuestGym]
+      summary: Reserve the gym
+      description: >
+        Requires a guest JWT and a booking of this account that is `CHECKED_IN` (403 otherwise).
+        `date` and the whole slot must be within the stay (`checkIn`..`checkOut`) and not in the
+        past. The other slot rules are those of `POST /gym/reservations`. Free of charge.
+        `bookingId` is optional when the account has exactly one checked-in booking.
+      security:
+        - guestBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymGuestReservationInput"
+      responses:
+        "201":
+          description: Reserved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymGuestReservation"
+        "400":
+          description: The slot breaks a rule, or several eligible bookings and none chosen.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          description: Missing/invalid/expired guest token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "403":
+          description: The guest has no checked-in booking.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The slot is taken or the daily limit is used up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /guest/gym/reservations/{id}/cancel:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: cancelGuestGymReservation
+      tags: [GuestGym]
+      summary: Cancel one of my gym reservations
+      description: >
+        Requires a guest JWT. Only a `BOOKED` reservation of one of this account's own bookings,
+        and only before it starts (409 afterwards). Someone else's reservation answers 404.
+      security:
+        - guestBearerAuth: []
+      responses:
+        "200":
+          description: The cancelled reservation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymGuestReservation"
+        "401":
+          description: Missing/invalid/expired guest token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: Reservation not found (or not this guest's).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Already started, already cancelled, or over.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /gym/devices:
     get:
       operationId: listGymDevices
@@ -15453,6 +15893,11 @@ components:
         - GYM_DEVICE_CREATED
         - GYM_DEVICE_UPDATED
         - GYM_DEVICE_DELETED
+        - GYM_RESERVATION_CREATED
+        - GYM_RESERVATION_UPDATED
+        - GYM_RESERVATION_CANCELLED
+        - GYM_AUTOMATION_RESULT
+        - GYM_HALL_SETTINGS_UPDATED
 
     AuditEntityType:
       type: string
@@ -15466,7 +15911,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING, RESTAURANT_MAP, GYM_DEVICE]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING, RESTAURANT_MAP, GYM_DEVICE, GYM_RESERVATION, GYM_HALL_SETTINGS]
 
     AuditLogEntry:
       type: object
@@ -18166,7 +18611,7 @@ components:
 
     GymDeviceConfig:
       type: object
-      required: [id, name, type, tuyaDeviceId, sortOrder, active]
+      required: [id, name, type, tuyaDeviceId, sortOrder, active, inBookings]
       properties:
         id:
           type: string
@@ -18174,6 +18619,9 @@ components:
           type: string
         type:
           $ref: "#/components/schemas/GymDeviceType"
+        inBookings:
+          type: boolean
+          description: Whether the reservation automation switches this device (default true for every device).
         tuyaDeviceId:
           type: string
         infraredId:
@@ -18192,6 +18640,345 @@ components:
           type: integer
         active:
           type: boolean
+
+    GymReservationStatus:
+      type: string
+      enum: [BOOKED, COMPLETED, CANCELLED]
+      description: >
+        `BOOKED` and `COMPLETED` hold the slot (the exclusion constraint is scoped to them);
+        `CANCELLED` frees it. A `BOOKED` reservation turns `COMPLETED` by itself once its end has
+        passed (the automation's sweep).
+
+    GymAutomationDeviceResult:
+      type: object
+      required: [deviceName, status, attempts]
+      properties:
+        deviceName:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, OK, FAILED, SKIPPED]
+          description: "`PENDING` - still being tried (a failed attempt is retried on the next run, up to the attempt limit)."
+        skipReason:
+          type: string
+          nullable: true
+          enum: [COVERED_BY_PREVIOUS, NEXT_BOOKING_SOON, MISSED, CANCELLED, DEVICE_REMOVED]
+          description: >
+            Why nothing was sent: the previous reservation had already switched it on
+            (`COVERED_BY_PREVIOUS`), another reservation starts within the lead time so it stays on
+            (`NEXT_BOOKING_SOON`), the reservation was over before the command was due (`MISSED`),
+            the reservation was cancelled before switch-on (`CANCELLED`), the device was removed
+            from settings (`DEVICE_REMOVED`).
+        error:
+          type: string
+          nullable: true
+          description: Tuya's failure in plain words, for a `FAILED` (or retrying) device.
+        attempts:
+          type: integer
+
+    GymAutomationPhase:
+      type: object
+      required: [state, results]
+      properties:
+        state:
+          type: string
+          enum: [PENDING, OK, PARTIAL, FAILED, SKIPPED]
+          description: >
+            `OK` - every device did what was needed; `PARTIAL` - some did and some failed (see the
+            `FAILED` results); `FAILED` - none did; `SKIPPED` - nothing was needed or possible (see
+            `skipReason`); `PENDING` - commands still being tried.
+        at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the phase finished (the last device's outcome).
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/GymAutomationDeviceResult"
+
+    GymAutomation:
+      type: object
+      description: >
+        What the equipment automation (`GymAutomationService`) did around a reservation. `switchOn` is
+        the switch-on that happens `leadMinutes` before the start, `switchOff` the switch-off at the end
+        (or after a cancellation). A phase is absent until the automation reaches it. The automation
+        only ever sends commands at these transitions - it never reads device state and never
+        overrides a manual change in between.
+      properties:
+        switchOn:
+          $ref: "#/components/schemas/GymAutomationPhase"
+        switchOff:
+          $ref: "#/components/schemas/GymAutomationPhase"
+
+    GymReservation:
+      type: object
+      description: A gym reservation as staff see it.
+      required: [id, bookingId, guestName, date, startTime, endTime, durationMinutes, status, createdByType, createdByName, automation, createdAt]
+      properties:
+        id:
+          type: string
+        bookingId:
+          type: string
+        guestName:
+          type: string
+        roomLabel:
+          type: string
+          nullable: true
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        startTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        endTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        durationMinutes:
+          type: integer
+        status:
+          $ref: "#/components/schemas/GymReservationStatus"
+        createdByType:
+          type: string
+          enum: [GUEST, STAFF]
+        createdByName:
+          type: string
+        cancelledBy:
+          type: string
+          nullable: true
+        cancelReason:
+          type: string
+          nullable: true
+        automation:
+          $ref: "#/components/schemas/GymAutomation"
+        createdAt:
+          type: string
+          format: date-time
+
+    GymSchedule:
+      type: object
+      required: [from, to, openTime, closeTime, stepMinutes, minDurationMinutes, maxDurationMinutes, maxDailyMinutes, reservations]
+      properties:
+        from:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        to:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        openTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        closeTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        stepMinutes:
+          type: integer
+        minDurationMinutes:
+          type: integer
+        maxDurationMinutes:
+          type: integer
+        maxDailyMinutes:
+          type: integer
+        reservations:
+          type: array
+          items:
+            $ref: "#/components/schemas/GymReservation"
+
+    GymReservationCreateInput:
+      type: object
+      required: [bookingId, date, startTime, durationMinutes]
+      properties:
+        bookingId:
+          type: string
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        startTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        durationMinutes:
+          type: integer
+          description: 30, 60, 90 or 120.
+
+    GymReservationScheduleInput:
+      type: object
+      required: [date, startTime, durationMinutes]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        startTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        durationMinutes:
+          type: integer
+
+    GymReservationCancelInput:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 300
+
+    GymHallSettings:
+      type: object
+      description: >
+        Opening hours and the automation parameters. `leadMinutes` is how long before a reservation
+        the equipment is switched on, and also the gap between two reservations below which the
+        equipment is not switched off in between. The air-conditioner values are the scene command
+        sent at switch-on (`GymAcCommandInput`: mode 0 cool, temp 16..30, wind 0 auto / 1..3).
+        Defaults: 06:00-22:00, 30 minutes, mode 0, 16 degrees, wind 3.
+      required: [openTime, closeTime, leadMinutes, acMode, acTemp, acWind]
+      properties:
+        openTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        closeTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        leadMinutes:
+          type: integer
+          minimum: 0
+          maximum: 180
+        acMode:
+          type: integer
+          minimum: 0
+          maximum: 4
+        acTemp:
+          type: integer
+          minimum: 16
+          maximum: 30
+        acWind:
+          type: integer
+          minimum: 0
+          maximum: 3
+
+    GymGuestStay:
+      type: object
+      required: [bookingId, roomLabel, checkIn, checkOut]
+      properties:
+        bookingId:
+          type: string
+        roomLabel:
+          type: string
+          nullable: true
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+
+    GymGuestInfo:
+      type: object
+      required: [eligible, stays, openTime, closeTime, stepMinutes, minDurationMinutes, maxDurationMinutes, maxDailyMinutes]
+      properties:
+        eligible:
+          type: boolean
+        message:
+          type: string
+          nullable: true
+          description: Why the guest cannot book, in plain words; null when eligible.
+        stays:
+          type: array
+          items:
+            $ref: "#/components/schemas/GymGuestStay"
+        openTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        closeTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        stepMinutes:
+          type: integer
+        minDurationMinutes:
+          type: integer
+        maxDurationMinutes:
+          type: integer
+        maxDailyMinutes:
+          type: integer
+
+    GymSlot:
+      type: object
+      required: [startTime, status, maxDurationMinutes]
+      properties:
+        startTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        status:
+          type: string
+          enum: [FREE, TAKEN, PAST, DAILY_LIMIT]
+          description: "`DAILY_LIMIT` - the booking's 120 minutes for the day are used up."
+        maxDurationMinutes:
+          type: integer
+          description: The longest session that can start here (0 unless `FREE`), a multiple of 30.
+
+    GymSlotDay:
+      type: object
+      required: [date, bookingId, openTime, closeTime, stepMinutes, remainingMinutes, slots]
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        bookingId:
+          type: string
+        openTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        closeTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        stepMinutes:
+          type: integer
+        remainingMinutes:
+          type: integer
+          description: What is left of the booking's daily allowance on this date.
+        slots:
+          type: array
+          items:
+            $ref: "#/components/schemas/GymSlot"
+
+    GymGuestReservationInput:
+      type: object
+      required: [date, startTime, durationMinutes]
+      properties:
+        bookingId:
+          type: string
+          description: Needed only when the account has several checked-in bookings.
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        startTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        durationMinutes:
+          type: integer
+
+    GymGuestReservation:
+      type: object
+      description: A reservation as its guest sees it - no automation details, no staff names.
+      required: [id, bookingId, date, startTime, endTime, durationMinutes, status, canCancel]
+      properties:
+        id:
+          type: string
+        bookingId:
+          type: string
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        startTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        endTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        durationMinutes:
+          type: integer
+        status:
+          $ref: "#/components/schemas/GymReservationStatus"
+        canCancel:
+          type: boolean
+          description: "True while the reservation is `BOOKED` and has not started."
 
     GymDeviceConfigInput:
       type: object
@@ -18221,6 +19008,9 @@ components:
         active:
           type: boolean
           default: true
+        inBookings:
+          type: boolean
+          description: Whether the reservation automation switches this device. Omitted - kept on update, true on create.
 
     GymReorderInput:
       type: object

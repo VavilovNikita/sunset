@@ -137,9 +137,7 @@ public class GymDeviceService {
 
     public GymDevice sendAcCommand(String id, GymAcCommandInput input) {
         GymDeviceEntity device = requireControllable(id, TYPE_AC, "This device is not an air conditioner");
-        if (blank(device.getInfraredId()) || blank(device.getRemoteId())) {
-            throw new ConflictException("The air conditioner has no IR hub or remote set — fill them in under settings");
-        }
+        requireIrLink(device);
         String description = describe(input);
         try {
             tuya.sendAirConditionerCommand(
@@ -148,15 +146,52 @@ public class GymDeviceService {
             audit(device, "Could not send to \"" + device.getName() + "\" (" + description + "): " + e.getMessage());
             throw e;
         }
+        GymDeviceEntity saved = rememberAcCommand(device, input, currentUserName());
+        audit(saved, "Sent to \"" + saved.getName() + "\": " + description);
+        return toDto(saved, null);
+    }
+
+    // ---- commands for the reservation automation -------------------------------------------
+    //
+    // The same Tuya calls as the two methods above, minus what only makes sense with a person at the
+    // screen: no confirming read (it costs a call and the automation never reads state), no
+    // per-command staff audit (the automation records one system entry per phase instead). Failures
+    // are thrown as TuyaException for the caller to record per device.
+
+    /** Switches a relay on or off without the confirming read; forgets its cached state. */
+    public void commandRelayForAutomation(GymDeviceEntity device, boolean on) {
+        if (!TYPE_RELAY.equals(device.getType())) {
+            throw new ConflictException("This device is not a relay");
+        }
+        tuya.sendCommand(device.getTuyaDeviceId(), device.getSwitchCode(), on);
+        cache.remove(device.getTuyaDeviceId());
+    }
+
+    /** Sends one scene command to an air conditioner and stores it as the device's last command, attributed to {@code sentBy}. */
+    public void commandAcForAutomation(GymDeviceEntity device, GymAcCommandInput input, String sentBy) {
+        if (!TYPE_AC.equals(device.getType())) {
+            throw new ConflictException("This device is not an air conditioner");
+        }
+        requireIrLink(device);
+        tuya.sendAirConditionerCommand(
+                device.getInfraredId(), device.getRemoteId(), input.getPower(), input.getMode(), input.getTemp(), input.getWind());
+        rememberAcCommand(device, input, sentBy);
+    }
+
+    private static void requireIrLink(GymDeviceEntity device) {
+        if (blank(device.getInfraredId()) || blank(device.getRemoteId())) {
+            throw new ConflictException("The air conditioner has no IR hub or remote set — fill them in under settings");
+        }
+    }
+
+    private GymDeviceEntity rememberAcCommand(GymDeviceEntity device, GymAcCommandInput input, String sentBy) {
         device.setLastAcPower(input.getPower());
         device.setLastAcMode(input.getMode());
         device.setLastAcTemp(input.getTemp());
         device.setLastAcWind(input.getWind());
         device.setLastAcSentAt(TimestampFormat.nowUtc(clock));
-        device.setLastAcSentBy(currentUserName());
-        GymDeviceEntity saved = devices.save(device);
-        audit(saved, "Sent to \"" + saved.getName() + "\": " + description);
-        return toDto(saved, null);
+        device.setLastAcSentBy(sentBy);
+        return devices.save(device);
     }
 
     // ---- state -----------------------------------------------------------------------------

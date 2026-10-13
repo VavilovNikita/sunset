@@ -31,6 +31,8 @@ public class GymDeviceConfig {
 
   private GymDeviceType type;
 
+  private Boolean inBookings;
+
   private String tuyaDeviceId;
 
   private JsonNullable<String> infraredId = JsonNullable.<String>undefined();
@@ -50,10 +52,11 @@ public class GymDeviceConfig {
   /**
    * Constructor with only required parameters
    */
-  public GymDeviceConfig(String id, String name, GymDeviceType type, String tuyaDeviceId, Integer sortOrder, Boolean active) {
+  public GymDeviceConfig(String id, String name, GymDeviceType type, Boolean inBookings, String tuyaDeviceId, Integer sortOrder, Boolean active) {
     this.id = id;
     this.name = name;
     this.type = type;
+    this.inBookings = inBookings;
     this.tuyaDeviceId = tuyaDeviceId;
     this.sortOrder = sortOrder;
     this.active = active;
@@ -114,6 +117,25 @@ public class GymDeviceConfig {
 
   public void setType(GymDeviceType type) {
     this.type = type;
+  }
+
+  public GymDeviceConfig inBookings(Boolean inBookings) {
+    this.inBookings = inBookings;
+    return this;
+  }
+
+  /**
+   * Whether the reservation automation switches this device (default true for every device).
+   * @return inBookings
+   */
+  @NotNull 
+  @JsonProperty("inBookings")
+  public Boolean getInBookings() {
+    return inBookings;
+  }
+
+  public void setInBookings(Boolean inBookings) {
+    this.inBookings = inBookings;
   }
 
   public GymDeviceConfig tuyaDeviceId(String tuyaDeviceId) {
@@ -242,6 +264,7 @@ public class GymDeviceConfig {
     return Objects.equals(this.id, gymDeviceConfig.id) &&
         Objects.equals(this.name, gymDeviceConfig.name) &&
         Objects.equals(this.type, gymDeviceConfig.type) &&
+        Objects.equals(this.inBookings, gymDeviceConfig.inBookings) &&
         Objects.equals(this.tuyaDeviceId, gymDeviceConfig.tuyaDeviceId) &&
         equalsNullable(this.infraredId, gymDeviceConfig.infraredId) &&
         equalsNullable(this.remoteId, gymDeviceConfig.remoteId) &&
@@ -256,7 +279,7 @@ public class GymDeviceConfig {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, name, type, tuyaDeviceId, hashCodeNullable(infraredId), hashCodeNullable(remoteId), hashCodeNullable(switchCode), sortOrder, active);
+    return Objects.hash(id, name, type, inBookings, tuyaDeviceId, hashCodeNullable(infraredId), hashCodeNullable(remoteId), hashCodeNullable(switchCode), sortOrder, active);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -273,6 +296,7 @@ public class GymDeviceConfig {
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    name: ").append(toIndentedString(name)).append("\n");
     sb.append("    type: ").append(toIndentedString(type)).append("\n");
+    sb.append("    inBookings: ").append(toIndentedString(inBookings)).append("\n");
     sb.append("    tuyaDeviceId: ").append(toIndentedString(tuyaDeviceId)).append("\n");
     sb.append("    infraredId: ").append(toIndentedString(infraredId)).append("\n");
     sb.append("    remoteId: ").append(toIndentedString(remoteId)).append("\n");

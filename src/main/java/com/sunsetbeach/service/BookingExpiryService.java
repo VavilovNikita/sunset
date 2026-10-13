@@ -85,6 +85,7 @@ public class BookingExpiryService {
     private final EmailService emailService;
     private final AuditLogService auditLogService;
     private final SpaBookingCancellationService spaBookingCancellation;
+    private final GymReservationService gymReservations;
     private final int expiryBusinessDays;
     private final Clock clock;
 
@@ -94,6 +95,7 @@ public class BookingExpiryService {
             EmailService emailService,
             AuditLogService auditLogService,
             SpaBookingCancellationService spaBookingCancellation,
+            GymReservationService gymReservations,
             // 2 business days: a request that arrives Monday gets a staff reminder Tuesday and
             // expires Wednesday if still untouched; one that arrives Friday evening gets its
             // reminder Monday and expires Tuesday - the weekend costs it nothing. Long enough
@@ -108,6 +110,7 @@ public class BookingExpiryService {
         this.emailService = emailService;
         this.auditLogService = auditLogService;
         this.spaBookingCancellation = spaBookingCancellation;
+        this.gymReservations = gymReservations;
         this.expiryBusinessDays = expiryBusinessDays;
     }
 
@@ -139,6 +142,7 @@ public class BookingExpiryService {
                 BookingEntity saved = bookingRepository.save(booking);
                 // The guest is not coming - free the therapist and spa table they were booked on.
                 spaBookingCancellation.onBookingCancelled(saved);
+                gymReservations.onBookingEnded(saved, "Booking cancelled");
                 log.info(
                         "Auto-cancelled unconfirmed public booking {} ({} business day(s) unconfirmed) - guest not notified, "
                                 + "see BookingExpiryService's javadoc",

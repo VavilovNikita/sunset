@@ -71,6 +71,7 @@ public class BookingOccupancyService {
     private final BookingService bookingService;
     private final AuditLogService auditLogService;
     private final BookingWriter bookingWriter;
+    private final GymReservationService gymReservations;
     private final TransactionTemplate checkOutTransaction;
     private final Clock clock;
 
@@ -84,8 +85,10 @@ public class BookingOccupancyService {
             BookingService bookingService,
             AuditLogService auditLogService,
             BookingWriter bookingWriter,
+            GymReservationService gymReservations,
             PlatformTransactionManager transactionManager,
             Clock clock) {
+        this.gymReservations = gymReservations;
         this.bookingWriter = bookingWriter;
         this.checkOutTransaction = new TransactionTemplate(transactionManager);
         this.bookingRepository = bookingRepository;
@@ -219,6 +222,8 @@ public class BookingOccupancyService {
             booking.setEarlyDepartureFee(booking.getEarlyDepartureFee().add(fee));
         }
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
+        // The guest has left: gym sessions still ahead (or running) go with them, in this same transaction.
+        int gymCancelled = gymReservations.onBookingEnded(saved, "Guest checked out");
 
         String roomLabel = null;
         if (saved.getRoomUnitId() != null) {
@@ -263,6 +268,7 @@ public class BookingOccupancyService {
                 saved.getId(),
                 "Checked out " + saved.getGuestName() + (roomLabel != null ? " (" + roomLabel + ", now marked dirty)" : "")
                         + (alsoDirty.length() > 0 ? "; released room " + alsoDirty + " also marked dirty" : "") + shortened
+                        + (gymCancelled > 0 ? "; " + gymCancelled + " gym reservation(s) cancelled" : "")
                         + (outstanding.signum() > 0
                                 ? "; checkout confirmed with ฿" + PriceFormat.asDecimalString(outstanding) + " unpaid"
                                 : ""));

@@ -76,7 +76,11 @@ public enum AuditEntityType {
   
   RESTAURANT_MAP("RESTAURANT_MAP"),
   
-  GYM_DEVICE("GYM_DEVICE");
+  GYM_DEVICE("GYM_DEVICE"),
+  
+  GYM_RESERVATION("GYM_RESERVATION"),
+  
+  GYM_HALL_SETTINGS("GYM_HALL_SETTINGS");
 
   private String value;
 
