@@ -107,15 +107,15 @@ public class GymDeviceService {
     }
 
     public GymDevice setRelay(String id, boolean on) {
-        GymDeviceEntity device = requireControllable(id, TYPE_RELAY, "Это устройство не реле");
-        String action = on ? "включить" : "выключить";
+        GymDeviceEntity device = requireControllable(id, TYPE_RELAY, "This device is not a relay");
+        String action = on ? "on" : "off";
         try {
             tuya.sendCommand(device.getTuyaDeviceId(), device.getSwitchCode(), on);
         } catch (TuyaException e) {
-            audit(device, "Не удалось " + action + " «" + device.getName() + "»: " + e.getMessage());
+            audit(device, "Could not switch " + action + " \"" + device.getName() + "\": " + e.getMessage());
             throw e;
         }
-        audit(device, (on ? "Включено" : "Выключено") + " «" + device.getName() + "»");
+        audit(device, "Switched " + action + " \"" + device.getName() + "\"");
         cache.remove(device.getTuyaDeviceId());
         // Tuya's cloud takes up to about a second to show what the relay did (measured on the gym's relays:
         // an immediate read returned the old value), so wait a moment, read once, and never present a
@@ -126,26 +126,26 @@ public class GymDeviceService {
             if (read.on() != null && read.on() != on) {
                 cache.remove(device.getTuyaDeviceId());
                 return toDto(device, new RelayRead(read.on(), read.online(), read.readAt(),
-                        "Команда отправлена, но устройство ещё не подтвердило новое состояние — нажмите «Обновить» через пару секунд"));
+                        "The command was sent, but the device has not confirmed the new state yet — press Refresh in a couple of seconds"));
             }
             return toDto(device, read);
         } catch (TuyaException e) {
             // The command went through; only the confirming read failed. Say so rather than failing the whole action.
-            return toDto(device, new RelayRead(on, null, null, "Команда отправлена, но проверить состояние не удалось: " + e.getMessage()));
+            return toDto(device, new RelayRead(on, null, null, "The command was sent, but the state could not be confirmed: " + e.getMessage()));
         }
     }
 
     public GymDevice sendAcCommand(String id, GymAcCommandInput input) {
-        GymDeviceEntity device = requireControllable(id, TYPE_AC, "Это устройство не кондиционер");
+        GymDeviceEntity device = requireControllable(id, TYPE_AC, "This device is not an air conditioner");
         if (blank(device.getInfraredId()) || blank(device.getRemoteId())) {
-            throw new ConflictException("Для кондиционера не заданы ИК-хаб и пульт — заполните их в настройках");
+            throw new ConflictException("The air conditioner has no IR hub or remote set — fill them in under settings");
         }
         String description = describe(input);
         try {
             tuya.sendAirConditionerCommand(
                     device.getInfraredId(), device.getRemoteId(), input.getPower(), input.getMode(), input.getTemp(), input.getWind());
         } catch (TuyaException e) {
-            audit(device, "Не удалось отправить «" + device.getName() + "» (" + description + "): " + e.getMessage());
+            audit(device, "Could not send to \"" + device.getName() + "\" (" + description + "): " + e.getMessage());
             throw e;
         }
         device.setLastAcPower(input.getPower());
@@ -155,7 +155,7 @@ public class GymDeviceService {
         device.setLastAcSentAt(TimestampFormat.nowUtc(clock));
         device.setLastAcSentBy(currentUserName());
         GymDeviceEntity saved = devices.save(device);
-        audit(saved, "Отправлено «" + saved.getName() + "»: " + description);
+        audit(saved, "Sent to \"" + saved.getName() + "\": " + description);
         return toDto(saved, null);
     }
 
@@ -170,7 +170,7 @@ public class GymDeviceService {
         TuyaClient.TuyaDeviceState state = tuya.deviceState(device.getTuyaDeviceId());
         Boolean on = state.booleanStatus(device.getSwitchCode());
         if (on == null) {
-            return new RelayRead(null, state.online(), now, "Реле не сообщает состояние переключателя «" + device.getSwitchCode() + "»");
+            return new RelayRead(null, state.online(), now, "The relay does not report the state of switch \"" + device.getSwitchCode() + "\"");
         }
         cache.put(device.getTuyaDeviceId(), new CachedRead(on, state.online(), now));
         return new RelayRead(on, state.online(), now, null);
@@ -203,12 +203,12 @@ public class GymDeviceService {
     // ---- helpers ---------------------------------------------------------------------------
 
     private GymDeviceEntity requireControllable(String id, String type, String wrongTypeMessage) {
-        GymDeviceEntity device = devices.findById(id).orElseThrow(() -> new NotFoundException("Устройство не найдено"));
+        GymDeviceEntity device = devices.findById(id).orElseThrow(() -> new NotFoundException("Device not found"));
         if (!type.equals(device.getType())) {
             throw new ConflictException(wrongTypeMessage);
         }
         if (!device.isActive()) {
-            throw new ConflictException("Устройство отключено в настройках");
+            throw new ConflictException("The device is disabled in settings");
         }
         return device;
     }
@@ -248,11 +248,11 @@ public class GymDeviceService {
 
     private static String describe(GymAcCommandInput in) {
         if (in.getPower() == 0) {
-            return "выключить";
+            return "off";
         }
-        String[] modes = {"охлаждение", "обогрев", "авто", "вентиляция", "осушение"};
-        String wind = in.getWind() == 0 ? "обдув авто" : "обдув " + in.getWind();
-        return "вкл, " + modes[in.getMode()] + ", " + in.getTemp() + "°, " + wind;
+        String[] modes = {"cool", "heat", "auto", "fan", "dry"};
+        String wind = in.getWind() == 0 ? "fan auto" : "fan " + in.getWind();
+        return "on, " + modes[in.getMode()] + ", " + in.getTemp() + "°, " + wind;
     }
 
     private static boolean blank(String s) {

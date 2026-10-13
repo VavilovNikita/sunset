@@ -130,13 +130,13 @@ class GymDeviceServiceTests extends AbstractIntegrationTest {
     void oneRelayFailing_doesNotTakeTheListDown() {
         GymDeviceConfig a = addRelay("roof fan 1", "tuya-fan-1");
         GymDeviceConfig b = addRelay("roof fan 2", "tuya-fan-2");
-        when(tuya.deviceState("tuya-fan-1")).thenThrow(new TuyaException(TuyaException.Kind.NETWORK, "Tuya не отвечает"));
+        when(tuya.deviceState("tuya-fan-1")).thenThrow(new TuyaException(TuyaException.Kind.NETWORK, "Tuya is not responding"));
         stateOf("tuya-fan-2", true, true);
 
         List<GymDevice> devices = gymDeviceService.list(true).getDevices();
 
         GymDevice failed = only(devices, a.getId());
-        assertThat(failed.getStateError().get()).isEqualTo("Tuya не отвечает");
+        assertThat(failed.getStateError().get()).isEqualTo("Tuya is not responding");
         assertThat(failed.getIsOn().isPresent()).isFalse();
         assertThat(only(devices, b.getId()).getIsOn().get()).isTrue();
     }
@@ -147,12 +147,12 @@ class GymDeviceServiceTests extends AbstractIntegrationTest {
         addRelay("roof fan 2", "tuya-fan-2");
         addRelay("wall fan", "tuya-fan-3");
         when(tuya.deviceState(anyString()))
-                .thenThrow(new TuyaException(TuyaException.Kind.UNAVAILABLE, "Интеграция Tuya недоступна — проверьте подписку IoT Core (продление пробного периода на iot.tuya.com)"));
+                .thenThrow(new TuyaException(TuyaException.Kind.UNAVAILABLE, "Tuya integration is unavailable — check the IoT Core subscription (extend the trial period at iot.tuya.com)"));
 
         List<GymDevice> devices = gymDeviceService.list(true).getDevices();
 
         verify(tuya, times(1)).deviceState(anyString());
-        assertThat(devices).hasSize(3).allSatisfy(d -> assertThat(d.getStateError().get()).startsWith("Интеграция Tuya недоступна"));
+        assertThat(devices).hasSize(3).allSatisfy(d -> assertThat(d.getStateError().get()).startsWith("Tuya integration is unavailable"));
     }
 
     @Test
@@ -187,7 +187,7 @@ class GymDeviceServiceTests extends AbstractIntegrationTest {
         assertThat(after.getIsOn().get()).isTrue();
         List<AuditLogEntity> entries = commandEntries(fan.getId());
         assertThat(entries).hasSize(1);
-        assertThat(entries.get(0).getSummary()).isEqualTo("Включено «roof fan 1»");
+        assertThat(entries.get(0).getSummary()).isEqualTo("Switched on \"roof fan 1\"");
         assertThat(entries.get(0).getActorUserId()).isEqualTo(userId);
         assertThat(entries.get(0).getActorRole()).isEqualTo(Role.CASHIER);
     }
@@ -200,7 +200,7 @@ class GymDeviceServiceTests extends AbstractIntegrationTest {
         GymDevice after = gymDeviceService.setRelay(fan.getId(), false);
 
         verify(tuya).sendCommand("tuya-fan-3", "switch_1", false);
-        assertThat(after.getStateError().get()).startsWith("Команда отправлена, но устройство ещё не подтвердило");
+        assertThat(after.getStateError().get()).startsWith("The command was sent, but the device has not confirmed");
         // and the stale read is not kept as the cached state
         stateOf("tuya-fan-3", false, true);
         assertThat(only(gymDeviceService.list(false).getDevices(), fan.getId()).getIsOn().get()).isFalse();
@@ -209,14 +209,14 @@ class GymDeviceServiceTests extends AbstractIntegrationTest {
     @Test
     void failedRelayCommand_isAudited_withTheReason_andThrown() {
         GymDeviceConfig fan = addRelay("wall fan", "tuya-fan-3");
-        org.mockito.Mockito.doThrow(new TuyaException(TuyaException.Kind.REJECTED, "Tuya отклонила запрос. Подробности — в журнале сервера"))
+        org.mockito.Mockito.doThrow(new TuyaException(TuyaException.Kind.REJECTED, "Tuya rejected the request. Details are in the server log"))
                 .when(tuya).sendCommand("tuya-fan-3", "switch_1", false);
 
         assertThatThrownBy(() -> gymDeviceService.setRelay(fan.getId(), false)).isInstanceOf(TuyaException.class);
 
         List<AuditLogEntity> entries = commandEntries(fan.getId());
         assertThat(entries).hasSize(1);
-        assertThat(entries.get(0).getSummary()).startsWith("Не удалось выключить «wall fan»").contains("Tuya отклонила запрос");
+        assertThat(entries.get(0).getSummary()).startsWith("Could not switch off \"wall fan\"").contains("Tuya rejected the request");
     }
 
     @Test
@@ -252,7 +252,7 @@ class GymDeviceServiceTests extends AbstractIntegrationTest {
         // it survives a reload: it is stored, not held in memory
         assertThat(gymDeviceService.list(false).getDevices().get(0).getLastCommand().get().getTemp()).isEqualTo(24);
         assertThat(commandEntries(ac.getId())).singleElement()
-                .satisfies(e -> assertThat(e.getSummary()).isEqualTo("Отправлено «Air 1»: вкл, охлаждение, 24°, обдув 2"));
+                .satisfies(e -> assertThat(e.getSummary()).isEqualTo("Sent to \"Air 1\": on, cool, 24°, fan 2"));
     }
 
     @Test
@@ -268,14 +268,14 @@ class GymDeviceServiceTests extends AbstractIntegrationTest {
     void failedAcCommand_keepsThePreviousLastCommand_andIsAudited() {
         GymDeviceConfig ac = gymSettingsService.create(acInput("Air 1", "tuya-ac-1", "hub-1", "remote-1"));
         gymDeviceService.sendAcCommand(ac.getId(), acCommand(1, 0, 24, 1));
-        org.mockito.Mockito.doThrow(new TuyaException(TuyaException.Kind.UNAVAILABLE, "Этот API не подключён к проекту Tuya"))
+        org.mockito.Mockito.doThrow(new TuyaException(TuyaException.Kind.UNAVAILABLE, "This API is not subscribed in the Tuya project"))
                 .when(tuya).sendAirConditionerCommand("hub-1", "remote-1", 1, 0, 18, 3);
 
         assertThatThrownBy(() -> gymDeviceService.sendAcCommand(ac.getId(), acCommand(1, 0, 18, 3))).isInstanceOf(TuyaException.class);
 
         assertThat(gymDeviceService.list(false).getDevices().get(0).getLastCommand().get().getTemp()).isEqualTo(24);
         assertThat(commandEntries(ac.getId())).hasSize(2)
-                .anySatisfy(e -> assertThat(e.getSummary()).startsWith("Не удалось отправить «Air 1»").contains("18°"));
+                .anySatisfy(e -> assertThat(e.getSummary()).startsWith("Could not send to \"Air 1\"").contains("18°"));
     }
 
     // ---- settings ----------------------------------------------------------------------------

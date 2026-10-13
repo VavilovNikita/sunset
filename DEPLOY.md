@@ -112,7 +112,7 @@ variables in the backend's `.env` on the VPS - without them the page opens and s
 a chat, a log or a commit; `docker compose config` prints them, same warning as above.
 
 **The IoT Core trial must be extended by hand.** Tuya's Trial Edition stops working when the subscription lapses and the
-page then shows "Интеграция Tuya недоступна - проверьте подписку IoT Core". Extend it at iot.tuya.com -> Cloud ->
+page then shows "Tuya integration is unavailable — check the IoT Core subscription". Extend it at iot.tuya.com -> Cloud ->
 Project management -> the project -> Extend trial period. The trial also allows about 26 000 API calls a month and stops
 until the month ends when they run out; nothing polls, the Gym page reads state only when it is opened or refreshed, and
 Settings -> Gym shows this month's call count (Bangkok month).

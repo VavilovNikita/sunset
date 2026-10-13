@@ -52,13 +52,13 @@ public class TuyaClient {
     private static final Logger log = LoggerFactory.getLogger(TuyaClient.class);
 
     static final String MSG_UNAVAILABLE =
-            "Интеграция Tuya недоступна — проверьте подписку IoT Core (продление пробного периода на iot.tuya.com)";
+            "Tuya integration is unavailable — check the IoT Core subscription (extend the trial period at iot.tuya.com)";
     static final String MSG_NOT_CONFIGURED =
-            "Интеграция Tuya не настроена — на сервере не заданы TUYA_CLIENT_ID, TUYA_CLIENT_SECRET и TUYA_API_BASE";
+            "Tuya integration is not set up — TUYA_CLIENT_ID, TUYA_CLIENT_SECRET and TUYA_API_BASE are not set on the server";
     static final String MSG_API_NOT_SUBSCRIBED =
-            "Этот API не подключён к проекту Tuya — подключите нужный сервис в проекте на iot.tuya.com (Cloud → Development → Service API)";
-    static final String MSG_REJECTED = "Tuya отклонила запрос. Подробности — в журнале сервера";
-    static final String MSG_NETWORK = "Tuya не отвечает — попробуйте ещё раз через минуту";
+            "This API is not subscribed in the Tuya project — subscribe the needed service on iot.tuya.com (Cloud → Development → Service API)";
+    static final String MSG_REJECTED = "Tuya rejected the request. Details are in the server log";
+    static final String MSG_NETWORK = "Tuya is not responding — try again in a minute";
 
     /** Seen on this project: the called API is not part of the project's subscriptions. */
     static final long API_NOT_SUBSCRIBED = 28841101L;

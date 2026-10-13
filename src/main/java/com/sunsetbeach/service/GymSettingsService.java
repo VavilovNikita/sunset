@@ -66,17 +66,17 @@ public class GymSettingsService {
         GymDeviceEntity entity = new GymDeviceEntity();
         apply(entity, input);
         if (devices.existsByTuyaDeviceId(entity.getTuyaDeviceId())) {
-            throw new ConflictException("Это устройство Tuya уже добавлено");
+            throw new ConflictException("This Tuya device is already added");
         }
         entity.setSortOrder(devices.findAll().stream().mapToInt(GymDeviceEntity::getSortOrder).max().orElse(-1) + 1);
         GymDeviceEntity saved;
         try {
             saved = devices.saveAndFlush(entity);
         } catch (DataIntegrityViolationException e) {
-            throw new ConflictException("Это устройство Tuya уже добавлено");
+            throw new ConflictException("This Tuya device is already added");
         }
         auditLogService.record(
-                AuditAction.GYM_DEVICE_CREATED, AuditEntityType.GYM_DEVICE, saved.getId(), "Добавлено устройство спортзала «" + saved.getName() + "»");
+                AuditAction.GYM_DEVICE_CREATED, AuditEntityType.GYM_DEVICE, saved.getId(), "Gym device \"" + saved.getName() + "\" added");
         return toDto(saved);
     }
 
@@ -87,20 +87,20 @@ public class GymSettingsService {
         boolean oldActive = entity.isActive();
         apply(entity, input);
         if (devices.existsByTuyaDeviceIdAndIdNot(entity.getTuyaDeviceId(), id)) {
-            throw new ConflictException("Это устройство Tuya уже добавлено");
+            throw new ConflictException("This Tuya device is already added");
         }
         GymDeviceEntity saved;
         try {
             saved = devices.saveAndFlush(entity);
         } catch (DataIntegrityViolationException e) {
-            throw new ConflictException("Это устройство Tuya уже добавлено");
+            throw new ConflictException("This Tuya device is already added");
         }
-        StringBuilder summary = new StringBuilder("Изменено устройство спортзала «").append(oldName).append("»");
+        StringBuilder summary = new StringBuilder("Gym device \"").append(oldName).append("\" updated");
         if (!oldName.equals(saved.getName())) {
-            summary.append(" (теперь «").append(saved.getName()).append("»)");
+            summary.append(" (renamed to \"").append(saved.getName()).append("\")");
         }
         if (oldActive != saved.isActive()) {
-            summary.append(saved.isActive() ? "; включено" : "; отключено");
+            summary.append(saved.isActive() ? "; enabled" : "; disabled");
         }
         gymDeviceService.clearStateCache();
         auditLogService.record(AuditAction.GYM_DEVICE_UPDATED, AuditEntityType.GYM_DEVICE, saved.getId(), summary.toString());
@@ -114,14 +114,14 @@ public class GymSettingsService {
         all.forEach(d -> byId.put(d.getId(), d));
         Set<String> requested = new HashSet<>(ids);
         if (ids.size() != byId.size() || !byId.keySet().equals(requested)) {
-            throw new BadRequestException("Список должен содержать все настроенные устройства, каждое один раз");
+            throw new BadRequestException("The list must contain every configured device exactly once");
         }
         for (int i = 0; i < ids.size(); i++) {
             byId.get(ids.get(i)).setSortOrder(i);
         }
         devices.saveAll(all);
         if (!ids.isEmpty()) {
-            auditLogService.record(AuditAction.GYM_DEVICE_UPDATED, AuditEntityType.GYM_DEVICE, ids.get(0), "Изменён порядок устройств спортзала");
+            auditLogService.record(AuditAction.GYM_DEVICE_UPDATED, AuditEntityType.GYM_DEVICE, ids.get(0), "Gym device order changed");
         }
         return list();
     }
@@ -132,7 +132,7 @@ public class GymSettingsService {
         devices.delete(entity);
         gymDeviceService.clearStateCache();
         auditLogService.record(
-                AuditAction.GYM_DEVICE_DELETED, AuditEntityType.GYM_DEVICE, id, "Удалено устройство спортзала «" + entity.getName() + "»");
+                AuditAction.GYM_DEVICE_DELETED, AuditEntityType.GYM_DEVICE, id, "Gym device \"" + entity.getName() + "\" deleted");
     }
 
     /** Live from Tuya (costs calls). Only what the add screen shows - the client never copies out {@code localKey}. */
@@ -162,14 +162,14 @@ public class GymSettingsService {
     }
 
     private GymDeviceEntity find(String id) {
-        return devices.findById(id).orElseThrow(() -> new NotFoundException("Устройство не найдено"));
+        return devices.findById(id).orElseThrow(() -> new NotFoundException("Device not found"));
     }
 
     /** Full replacement; the type-specific fields are checked here because Bean Validation cannot see across fields. */
     private static void apply(GymDeviceEntity entity, GymDeviceConfigInput input) {
         String tuyaId = input.getTuyaDeviceId().trim();
         if (tuyaId.isEmpty()) {
-            throw ValidationException.field("tuyaDeviceId", "Укажите устройство Tuya");
+            throw ValidationException.field("tuyaDeviceId", "Specify the Tuya device");
         }
         entity.setName(input.getName());
         entity.setType(input.getType().getValue());
@@ -180,14 +180,14 @@ public class GymSettingsService {
         String remoteId = trimToNull(input.getRemoteId());
         if (input.getType() == GymDeviceType.RELAY) {
             if (switchCode == null) {
-                throw ValidationException.field("switchCode", "Для реле нужен код переключателя (например switch_1)");
+                throw ValidationException.field("switchCode", "A relay needs a switch code (for example switch_1)");
             }
             entity.setSwitchCode(switchCode);
             entity.setInfraredId(null);
             entity.setRemoteId(null);
         } else {
             if (infraredId == null) {
-                throw ValidationException.field("infraredId", "Для кондиционера нужен ИК-хаб");
+                throw ValidationException.field("infraredId", "An air conditioner needs an IR hub");
             }
             entity.setInfraredId(infraredId);
             // A virtual IR remote's device id is its remote id; used when the admin does not state one.

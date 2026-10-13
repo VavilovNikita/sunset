@@ -190,7 +190,7 @@ class TuyaClientTests {
     }
 
     @Test
-    void expiredSubscription_givesTheOwnersText() {
+    void expiredSubscription_saysToCheckTheSubscription() {
         server.expect(requestTo(TOKEN_URL)).andRespond(withSuccess(TOKEN_OK, MediaType.APPLICATION_JSON));
         server.expect(requestTo(BASE + "/v1.0/devices/d1")).andRespond(withSuccess(
                 "{\"code\":28841002,\"msg\":\"No permissions. Your subscription to cloud development plan has expired.\",\"success\":false,\"t\":1}",
@@ -199,7 +199,7 @@ class TuyaClientTests {
         assertThatThrownBy(() -> client.deviceState("d1"))
                 .isInstanceOfSatisfying(TuyaException.class, e -> {
                     assertThat(e.getMessage())
-                            .isEqualTo("Интеграция Tuya недоступна — проверьте подписку IoT Core (продление пробного периода на iot.tuya.com)");
+                            .isEqualTo("Tuya integration is unavailable — check the IoT Core subscription (extend the trial period at iot.tuya.com)");
                     assertThat(e.isIntegrationDown()).isTrue();
                 });
     }

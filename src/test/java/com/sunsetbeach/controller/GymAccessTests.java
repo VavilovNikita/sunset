@@ -157,7 +157,7 @@ class GymAccessTests {
 
     @Test
     void integrationDown_is503_withTheOwnersText() throws Exception {
-        String text = "Интеграция Tuya недоступна — проверьте подписку IoT Core (продление пробного периода на iot.tuya.com)";
+        String text = "Tuya integration is unavailable — check the IoT Core subscription (extend the trial period at iot.tuya.com)";
         when(gymDeviceService.setRelay(anyString(), anyBoolean())).thenThrow(new TuyaException(TuyaException.Kind.UNAVAILABLE, text));
 
         mockMvc.perform(post("/gym/devices/d1/relay").header("Authorization", bearer(Role.CASHIER)).contentType(MediaType.APPLICATION_JSON)
@@ -169,12 +169,12 @@ class GymAccessTests {
     @Test
     void oneRefusedRequest_is502() throws Exception {
         when(gymDeviceService.setRelay(anyString(), anyBoolean()))
-                .thenThrow(new TuyaException(TuyaException.Kind.REJECTED, "Tuya отклонила запрос. Подробности — в журнале сервера"));
+                .thenThrow(new TuyaException(TuyaException.Kind.REJECTED, "Tuya rejected the request. Details are in the server log"));
 
         mockMvc.perform(post("/gym/devices/d1/relay").header("Authorization", bearer(Role.CASHIER)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"isOn\":true}"))
                 .andExpect(status().isBadGateway())
-                .andExpect(jsonPath("$.error").value("Tuya отклонила запрос. Подробности — в журнале сервера"));
+                .andExpect(jsonPath("$.error").value("Tuya rejected the request. Details are in the server log"));
     }
 
     private String bearer(Role role) {
