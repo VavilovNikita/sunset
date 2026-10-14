@@ -36,6 +36,7 @@ import com.sunsetbeach.model.BookingStatusInput;
 import com.sunsetbeach.model.FolioPayment;
 import com.sunsetbeach.model.FolioPaymentInput;
 import com.sunsetbeach.model.OccupancyStatus;
+import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.RelocationInput;
 import com.sunsetbeach.model.RelocationUndoInput;
@@ -868,6 +869,11 @@ public class BookingService {
         if (gymCancelled > 0) {
             summary.append("; ").append(gymCancelled).append(" gym reservation(s) outside the new stay cancelled");
         }
+        // The same for spa appointments (BOOKED, not yet over) that now lie outside the stay.
+        int spaCancelled = spaBookingCancellation.onStayChanged(saved);
+        if (spaCancelled > 0) {
+            summary.append("; ").append(spaCancelled).append(" spa appointment(s) outside the new stay cancelled");
+        }
         auditLogService.record(AuditAction.BOOKING_SCHEDULE_CHANGED, AuditEntityType.BOOKING, saved.getId(), summary.toString());
 
         return bookingMapper.toDto(saved, room, newUnit, findGuest(saved.getGuestId()), loadSegments(saved.getId()));
@@ -914,14 +920,40 @@ public class BookingService {
 
         BookingEntity saved = result.booking();
         RoomEntity newRoom = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
+        boolean markedDirty = markVacatedRoomDirty(saved, result.oldUnitId(), result.newUnit(), effectiveDate);
         auditLogService.record(
                 AuditAction.BOOKING_RELOCATED,
                 AuditEntityType.BOOKING,
                 saved.getId(),
                 "Relocated " + saved.getGuestName() + " from " + result.oldRoom().getName()
                         + (result.oldUnitLabel() != null ? " (" + result.oldUnitLabel() + ")" : "") + " to " + result.newRoom().getName()
-                        + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + ", effective " + effectiveDate);
+                        + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + ", effective " + effectiveDate
+                        + (markedDirty ? "; " + result.oldUnitLabel() + " marked dirty" : ""));
         return bookingMapper.toDto(saved, newRoom, result.newUnit(), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
+    }
+
+    /**
+     * The room a guest in the house has just moved out of needs cleaning from that moment, not at
+     * their eventual check-out (which only marks the room of the last night - re-marking the earlier
+     * one then would dirty a room housekeeping had long since cleaned). Only when the move has
+     * already happened or happens today and the guest is {@code CHECKED_IN}; a move planned for a
+     * later day, or for a guest who has not arrived, leaves the room alone (nobody has left it).
+     * A room that is already dirty is not touched again. Returns whether it was marked now.
+     */
+    private boolean markVacatedRoomDirty(BookingEntity booking, String oldUnitId, RoomUnitEntity newUnit, LocalDate effectiveDate) {
+        if (oldUnitId == null || booking.getOccupancyStatus() != OccupancyStatus.CHECKED_IN || effectiveDate.isAfter(LocalDate.now(clock))) {
+            return false;
+        }
+        if (newUnit != null && oldUnitId.equals(newUnit.getId())) {
+            return false;
+        }
+        RoomUnitEntity oldUnit = roomUnitRepository.findById(oldUnitId).orElse(null);
+        if (oldUnit == null || oldUnit.getHousekeepingStatus() == HousekeepingStatus.DIRTY) {
+            return false;
+        }
+        oldUnit.setHousekeepingStatus(HousekeepingStatus.DIRTY);
+        roomUnitRepository.saveAndFlush(oldUnit);
+        return true;
     }
 
     /**
@@ -1097,7 +1129,7 @@ public class BookingService {
     @Transactional(readOnly = true)
     public BigDecimal computeOutstandingBalanceWithStayPrice(String bookingId, BigDecimal stayPrice) {
         FolioBreakdown b = computeFolioBreakdown(bookingId);
-        return new FolioBreakdown(stayPrice, b.earlyDepartureFee(), b.roomChargesGross(), b.roomChargeCount(), b.paid(), b.status())
+        return new FolioBreakdown(stayPrice, b.earlyDepartureFee(), b.roomChargesGross(), b.roomChargeCount(), b.paid(), b.status(), b.occupancy())
                 .balanceDue();
     }
 

@@ -301,13 +301,13 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
     }
 
     /**
-     * A guest in the house may be booked past their stay (they may be about to extend) and only gets
-     * the warning; a guest who has not arrived is refused outside the stay - see
-     * {@code SpaServerRulesTests}. The guest is marked in the house directly: the date is far in the
-     * future, and check-in is (rightly) refused before the arrival date.
+     * A guest in the house is held to their stay like everyone else (owner's decision after the
+     * second QA round): a date after check-out is a 400, no longer a warning - see
+     * {@code SpaStayAndTimeRulesTests}. The guest is marked in the house directly: the date is far
+     * in the future, and check-in is (rightly) refused before the arrival date.
      */
     @Test
-    void create_dateAfterCheckOut_forAGuestInTheHouse_warnsButSucceeds() {
+    void create_dateAfterCheckOut_forAGuestInTheHouse_isRefused() {
         LocalDate checkIn = LocalDate.now().plusDays(330);
         LocalDate checkOut = checkIn.plusDays(2);
         Booking booking = createBooking(checkIn, checkOut);
@@ -320,13 +320,12 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
         UserEntity therapist = createTherapist();
         UserEntity receptionist = createReceptionist();
 
-        SpaAppointmentResult result = spaAppointmentService.create(
-                new SpaAppointmentCreateInput(
-                        booking.getId(), table.getId(), therapist.getId(), treatment.getId(), checkOut.plusDays(1).toString(), "10:00"),
-                receptionist.getId());
-
-        assertThat(result.getWarning().get()).isNotNull();
-        assertThat(result.getAppointment().getStatus()).isEqualTo(SpaAppointmentStatus.BOOKED);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> spaAppointmentService.create(
+                        new SpaAppointmentCreateInput(
+                                booking.getId(), table.getId(), therapist.getId(), treatment.getId(), checkOut.plusDays(1).toString(), "10:00"),
+                        receptionist.getId()))
+                .isInstanceOf(com.sunsetbeach.error.BadRequestException.class)
+                .hasMessageContaining("doesn't include");
     }
 
     @Test

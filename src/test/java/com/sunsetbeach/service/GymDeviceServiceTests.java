@@ -335,6 +335,26 @@ class GymDeviceServiceTests extends AbstractIntegrationTest {
         assertThat(kept.getInBookings()).isFalse();
     }
 
+    @Test
+    void status_saysWhetherTuyaIsConfiguredAndHowManyDevicesTheAutomationSwitches_withoutCallingTuya() {
+        when(tuya.isConfigured()).thenReturn(false);
+        long before = gymDeviceRepository.findByActiveTrueAndInBookingsTrueOrderBySortOrderAscNameAsc().size();
+
+        GymDeviceConfig kept = addRelay("Fan status 1", "tuya-status-1");
+        GymDeviceConfig excluded = gymSettingsService.create(relayInput("Fan status 2", "tuya-status-2", true).inBookings(false));
+        GymDeviceConfig inactive = gymSettingsService.create(relayInput("Fan status 3", "tuya-status-3", false));
+
+        var status = gymDeviceService.status();
+        assertThat(status.getTuyaConfigured()).isFalse();
+        // Only the active device that bookings switch counts.
+        assertThat(status.getAutomatedDeviceCount()).isEqualTo((int) before + 1);
+
+        when(tuya.isConfigured()).thenReturn(true);
+        assertThat(gymDeviceService.status().getTuyaConfigured()).isTrue();
+        verify(tuya, never()).deviceState(anyString());
+        assertThat(kept.getId()).isNotEqualTo(excluded.getId()).isNotEqualTo(inactive.getId());
+    }
+
     // ---- helpers -----------------------------------------------------------------------------
 
     private void stateOf(String tuyaId, boolean on, boolean online) {

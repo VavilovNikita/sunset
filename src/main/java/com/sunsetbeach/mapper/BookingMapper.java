@@ -28,6 +28,7 @@ public class BookingMapper {
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
     private final BookingFolioCalculator folioCalculator;
+    private final java.time.Clock clock;
 
     public BookingMapper(
             RoomMapper roomMapper,
@@ -36,8 +37,10 @@ public class BookingMapper {
             BookingSegmentMapper segmentMapper,
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
-            BookingFolioCalculator folioCalculator) {
+            BookingFolioCalculator folioCalculator,
+            java.time.Clock clock) {
         this.folioCalculator = folioCalculator;
+        this.clock = clock;
         this.roomMapper = roomMapper;
         this.roomUnitMapper = roomUnitMapper;
         this.guestMapper = guestMapper;
@@ -129,6 +132,7 @@ public class BookingMapper {
                 TimestampFormat.toUtc(entity.getCreatedAt()),
                 TimestampFormat.toUtc(entity.getUpdatedAt()))
                 .earlyDepartureFee(PriceFormat.asDecimalString(entity.getEarlyDepartureFee()))
-                .balanceDue(PriceFormat.asDecimalString(balanceDue));
+                .balanceDue(PriceFormat.asDecimalString(balanceDue))
+                .owes(BookingFolioCalculator.debtHasFallenDue(entity, balanceDue, java.time.LocalDate.now(clock)));
     }
 }

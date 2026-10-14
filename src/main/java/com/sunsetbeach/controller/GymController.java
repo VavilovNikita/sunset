@@ -8,6 +8,7 @@ import com.sunsetbeach.model.GymDeviceConfigInput;
 import com.sunsetbeach.model.GymDeviceList;
 import com.sunsetbeach.model.GymRelayInput;
 import com.sunsetbeach.model.GymReorderInput;
+import com.sunsetbeach.model.GymStatus;
 import com.sunsetbeach.model.GymTuyaUsage;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.TuyaDiscoveredDevice;
@@ -33,6 +34,11 @@ public class GymController implements GymApi {
     @Override
     public ResponseEntity<GymDeviceList> listGymDevices(Boolean refresh) {
         return ResponseEntity.ok(gymDeviceService.list(Boolean.TRUE.equals(refresh)));
+    }
+
+    @Override
+    public ResponseEntity<GymStatus> getGymStatus() {
+        return ResponseEntity.ok(gymDeviceService.status());
     }
 
     @Override

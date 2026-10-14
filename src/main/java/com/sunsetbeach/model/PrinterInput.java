@@ -43,13 +43,13 @@ public class PrinterInput {
    * Constructor with only required parameters
    */
   public PrinterInput(String name, PrinterDepartment department, String host) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
     this.department = department;
     this.host = host;
   }
 
   public PrinterInput name(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
     return this;
   }
 
@@ -64,7 +64,7 @@ public class PrinterInput {
   }
 
   public void setName(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
   }
 
   public PrinterInput department(PrinterDepartment department) {

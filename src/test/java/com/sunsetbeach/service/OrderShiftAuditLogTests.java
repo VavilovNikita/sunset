@@ -269,6 +269,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
         // Nothing was actually received, so expected cash is exactly the 500.00 float - counting
         // 450.00 is a deliberate 50.00 shortfall.
         closeInput.setClosingCashCounted(new BigDecimal("450.00"));
+        closeInput.setNotes(org.openapitools.jackson.nullable.JsonNullable.of("Short after paying a delivery out of the drawer"));
         shiftService.close(shift.getId(), closeInput);
 
         List<AuditLogEntity> closeEntries = entriesFor(AuditEntityType.SHIFT, shift.getId()).stream()
@@ -276,6 +277,34 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
                 .toList();
         assertThat(closeEntries).hasSize(1);
         assertThat(closeEntries.get(0).getSummary()).contains("discrepancy").contains("-50.00");
+    }
+
+    @Test
+    void closeShift_withDiscrepancyAndNoNote_isA400_andTheShiftStaysOpen() {
+        Shift shift = shiftService.open(cashierId, new ShiftOpenInput().openingCashFloat(new BigDecimal("500.00")));
+        createdShiftIds.add(shift.getId());
+
+        // 450.00 counted against an expected 500.00: no note, an empty one, and one of only invisible characters are all refused.
+        for (String note : new String[] {null, "", "   ", "\u00a0\u200b "}) {
+            ShiftCloseInput closeInput = new ShiftCloseInput();
+            closeInput.setClosingCashCounted(new BigDecimal("450.00"));
+            if (note != null) {
+                closeInput.setNotes(org.openapitools.jackson.nullable.JsonNullable.of(note));
+            }
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> shiftService.close(shift.getId(), closeInput))
+                    .isInstanceOfSatisfying(com.sunsetbeach.error.ValidationException.class,
+                            e -> assertThat(e.getFieldErrors()).containsKey("notes"));
+        }
+        assertThat(shiftRepository.findById(shift.getId()).orElseThrow().getStatus()).isEqualTo(com.sunsetbeach.model.ShiftStatus.OPEN);
+    }
+
+    @Test
+    void closeShift_withTheDrawerMatching_needsNoNote() {
+        Shift matching = shiftService.open(cashierId, new ShiftOpenInput().openingCashFloat(new BigDecimal("500.00")));
+        createdShiftIds.add(matching.getId());
+        ShiftCloseInput exact = new ShiftCloseInput();
+        exact.setClosingCashCounted(new BigDecimal("500.00"));
+        assertThat(shiftService.close(matching.getId(), exact).getStatus()).isEqualTo(com.sunsetbeach.model.ShiftStatus.CLOSED);
     }
 
     @Test

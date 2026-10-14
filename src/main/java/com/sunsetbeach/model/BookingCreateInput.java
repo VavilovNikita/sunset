@@ -45,7 +45,7 @@ public class BookingCreateInput {
    */
   public BookingCreateInput(String roomId, String guestName, String guestEmail, String guestPhone, String checkIn, String checkOut, Integer adults) {
     this.roomId = roomId;
-    this.guestName = guestName == null ? null : guestName.strip();
+    this.guestName = com.sunsetbeach.util.NameText.strip(guestName);
     this.guestEmail = guestEmail;
     this.guestPhone = guestPhone;
     this.checkIn = checkIn;
@@ -73,7 +73,7 @@ public class BookingCreateInput {
   }
 
   public BookingCreateInput guestName(String guestName) {
-    this.guestName = guestName == null ? null : guestName.strip();
+    this.guestName = com.sunsetbeach.util.NameText.strip(guestName);
     return this;
   }
 
@@ -88,7 +88,7 @@ public class BookingCreateInput {
   }
 
   public void setGuestName(String guestName) {
-    this.guestName = guestName == null ? null : guestName.strip();
+    this.guestName = com.sunsetbeach.util.NameText.strip(guestName);
   }
 
   public BookingCreateInput guestEmail(String guestEmail) {

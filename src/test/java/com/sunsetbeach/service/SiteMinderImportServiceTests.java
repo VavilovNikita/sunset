@@ -561,7 +561,7 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
         } finally {
             second.setName(secondOwnName);
             roomRepository.saveAndFlush(second);
-            jdbcTemplate.execute("CREATE UNIQUE INDEX \"Room_name_normalized_key\" ON \"Room\" (lower(btrim(\"name\")))");
+            jdbcTemplate.execute("CREATE UNIQUE INDEX \"Room_name_normalized_key\" ON \"Room\" (sunset_normalize_name(\"name\"))");
         }
     }
 

@@ -11,6 +11,10 @@ public interface RoomUnitRepository extends JpaRepository<RoomUnitEntity, String
 
     List<RoomUnitEntity> findByRoomIdAndIsActiveTrue(String roomId);
 
+    /** Whether another room (not {@code excludeId}; null on create) has this label under V143's rule: ignoring case and spaces. */
+    @Query("select count(u) > 0 from RoomUnitEntity u where function('sunset_normalize_name', u.label) = function('sunset_normalize_name', :label) and (:excludeId is null or u.id <> :excludeId)")
+    boolean existsByNormalizedLabel(@org.springframework.data.repository.query.Param("label") String label, @org.springframework.data.repository.query.Param("excludeId") String excludeId);
+
     long countByRoomIdAndIsActiveTrue(String roomId);
 
     /** Bulk version of {@link #countByRoomIdAndIsActiveTrue} for {@code RoomService.list()} - avoids one query per room. */

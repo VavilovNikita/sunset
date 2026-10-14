@@ -54,7 +54,7 @@ public class ShiftCloseInput {
   }
 
   /**
-   * Get notes
+   * Required (400 on `notes`) when `closingCashCounted` differs from the expected cash (opening float + cash payments + cash folio payments of the shift) - the note says why the drawer is over or short. Optional when the drawer matches. 
    * @return notes
    */
   @Size(max = 1000) 

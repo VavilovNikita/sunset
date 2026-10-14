@@ -4,6 +4,9 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -33,6 +36,8 @@ public class RoomUnitAvailability {
   private JsonNullable<String> bookingId = JsonNullable.<String>undefined();
 
   private JsonNullable<String> blockReason = JsonNullable.<String>undefined();
+
+  private JsonNullable<String> guestName = JsonNullable.<String>undefined();
 
   public RoomUnitAvailability() {
     super();
@@ -184,6 +189,25 @@ public class RoomUnitAvailability {
     this.blockReason = blockReason;
   }
 
+  public RoomUnitAvailability guestName(String guestName) {
+    this.guestName = JsonNullable.of(guestName);
+    return this;
+  }
+
+  /**
+   * The name on the booking that holds this unit that day - set when `isBooked` is true. A screen shows it in place of `blockReason` on a day that has a booking (a block laid over a booking is still a booking day for the person looking at the room). 
+   * @return guestName
+   */
+  
+  @JsonProperty("guestName")
+  public JsonNullable<String> getGuestName() {
+    return guestName;
+  }
+
+  public void setGuestName(JsonNullable<String> guestName) {
+    this.guestName = guestName;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -199,12 +223,24 @@ public class RoomUnitAvailability {
         Objects.equals(this.isBooked, roomUnitAvailability.isBooked) &&
         Objects.equals(this.isAvailable, roomUnitAvailability.isAvailable) &&
         Objects.equals(this.bookingId, roomUnitAvailability.bookingId) &&
-        Objects.equals(this.blockReason, roomUnitAvailability.blockReason);
+        Objects.equals(this.blockReason, roomUnitAvailability.blockReason) &&
+        equalsNullable(this.guestName, roomUnitAvailability.guestName);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomUnitId, label, isBlocked, isBooked, isAvailable, bookingId, blockReason);
+    return Objects.hash(roomUnitId, label, isBlocked, isBooked, isAvailable, bookingId, blockReason, hashCodeNullable(guestName));
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -218,6 +254,7 @@ public class RoomUnitAvailability {
     sb.append("    isAvailable: ").append(toIndentedString(isAvailable)).append("\n");
     sb.append("    bookingId: ").append(toIndentedString(bookingId)).append("\n");
     sb.append("    blockReason: ").append(toIndentedString(blockReason)).append("\n");
+    sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
     sb.append("}");
     return sb.toString();
   }

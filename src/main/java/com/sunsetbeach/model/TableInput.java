@@ -42,7 +42,7 @@ public class TableInput {
    */
   public TableInput(Zone zone, String label, Integer capacity) {
     this.zone = zone;
-    this.label = label == null ? null : label.strip();
+    this.label = com.sunsetbeach.util.NameText.strip(label);
     this.capacity = capacity;
   }
 
@@ -66,7 +66,7 @@ public class TableInput {
   }
 
   public TableInput label(String label) {
-    this.label = label == null ? null : label.strip();
+    this.label = com.sunsetbeach.util.NameText.strip(label);
     return this;
   }
 
@@ -81,7 +81,7 @@ public class TableInput {
   }
 
   public void setLabel(String label) {
-    this.label = label == null ? null : label.strip();
+    this.label = com.sunsetbeach.util.NameText.strip(label);
   }
 
   public TableInput capacity(Integer capacity) {

@@ -46,13 +46,13 @@ public class GymDeviceConfigInput {
    * Constructor with only required parameters
    */
   public GymDeviceConfigInput(String name, GymDeviceType type, String tuyaDeviceId) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
     this.type = type;
     this.tuyaDeviceId = tuyaDeviceId;
   }
 
   public GymDeviceConfigInput name(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
     return this;
   }
 
@@ -67,7 +67,7 @@ public class GymDeviceConfigInput {
   }
 
   public void setName(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
   }
 
   public GymDeviceConfigInput type(GymDeviceType type) {

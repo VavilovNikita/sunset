@@ -86,6 +86,7 @@ class SpaServerRulesTests extends AbstractIntegrationTest {
     @Autowired private OrderItemRepository orderItemRepository;
     @Autowired private BookingExpiryService bookingExpiryService;
     @Autowired private EntityManager entityManager;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private RoomEntity room;
     private Booking booking;
@@ -272,12 +273,16 @@ class SpaServerRulesTests extends AbstractIntegrationTest {
     }
 
     @Test
-    void create_forAGuestInTheHouse_outsideTheStay_stillOnlyWarns() {
+    void create_forAGuestInTheHouse_outsideTheStay_is400_likeEveryoneElse() {
         setOccupancy(booking, OccupancyStatus.CHECKED_IN);
 
-        var result = spaAppointmentService.create(input(booking, spaTable, therapist, CHECK_OUT.plusDays(1), "10:00"), receptionist.getId());
-
-        assertThat(result.getWarning().get()).isNotNull();
+        assertThatThrownBy(() -> spaAppointmentService.create(input(booking, spaTable, therapist, CHECK_OUT.plusDays(1), "10:00"), receptionist.getId()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("doesn't include");
+        assertThatThrownBy(() -> spaAppointmentService.create(input(booking, spaTable, therapist, CHECK_IN.minusDays(1), "10:00"), receptionist.getId()))
+                .isInstanceOf(BadRequestException.class);
+        assertThat(spaAppointmentService.create(input(booking, spaTable, therapist, CHECK_OUT, "10:00"), receptionist.getId()).getAppointment().getStatus())
+                .isEqualTo(SpaAppointmentStatus.BOOKED);
     }
 
     // --- 1b. The same checks when an appointment is moved -------------------------------------------
@@ -459,7 +464,7 @@ class SpaServerRulesTests extends AbstractIntegrationTest {
     }
 
     @Test
-    void billMissing_isRefusedWhenTheAppointmentIsNotCompleted_thereIsNoOrder_theOrderIsPaid_orNothingIsMissing() {
+    void billMissing_isRefusedWhenTheAppointmentIsNotCompleted_thereIsNoOrder_orNothingIsMissing() {
         SpaAppointment appointment = book("10:00");
         spaAppointmentService.addTreatment(appointment.getId(), new SpaAppointmentTreatmentCreateInput(facial.getId()), receptionist.getId());
         // Not completed yet.
@@ -473,21 +478,111 @@ class SpaServerRulesTests extends AbstractIntegrationTest {
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("no order");
 
-        // A paid order that lacks the facial can't take lines - and is left exactly as it was.
-        OrderEntity paidOrder = orderFor(appointment, new OrderItemInput(massage.getId(), 1));
-        markPaid(paidOrder);
-        assertThatThrownBy(() -> spaAppointmentService.billMissingTreatments(appointment.getId(), receptionist.getId()))
-                .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("paid");
-        assertThat(orderItemRepository.findByOrderId(paidOrder.getId())).hasSize(1);
-
         // An order that already carries everything has nothing to add.
         SpaAppointment complete = book("12:00");
         orderFor(complete, new OrderItemInput(massage.getId(), 1));
         spaAppointmentService.updateStatus(complete.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.COMPLETED), receptionist.getId());
         assertThatThrownBy(() -> spaAppointmentService.billMissingTreatments(complete.getId(), receptionist.getId()))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("already on its order");
+                .hasMessageContaining("already on its orders");
+    }
+
+    @Test
+    void billMissing_whenTheOrderIsAlreadyPaid_opensASecondOrderForTheMissingTreatments_linkedToTheSameAppointment() {
+        SpaAppointment appointment = book("10:00");
+        spaAppointmentService.addTreatment(appointment.getId(), new SpaAppointmentTreatmentCreateInput(facial.getId()), receptionist.getId());
+        OrderEntity paidOrder = orderFor(appointment, new OrderItemInput(massage.getId(), 1));
+        markPaid(paidOrder);
+        spaAppointmentService.updateStatus(appointment.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.COMPLETED), receptionist.getId());
+        // Only the massage is paid for, so the facial is flagged.
+        assertThat(scheduledAppointment(appointment).getMissingTreatmentNames()).hasSize(1);
+
+        SpaAppointment topped = spaAppointmentService.billMissingTreatments(appointment.getId(), receptionist.getId());
+
+        // The paid order is untouched; the appointment still points at it as its own order.
+        assertThat(orderItemRepository.findByOrderId(paidOrder.getId())).hasSize(1);
+        assertThat(orderRepository.findById(paidOrder.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(topped.getOrderId().get()).isEqualTo(paidOrder.getId());
+        // A second order exists, linked to the same appointment, carrying just the facial.
+        List<String> linked = jdbc.queryForList("select \"orderId\" from \"SpaAppointmentOrder\" where \"spaAppointmentId\" = ?", String.class, appointment.getId());
+        assertThat(linked).hasSize(1);
+        OrderEntity second = orderRepository.findById(linked.get(0)).orElseThrow();
+        assertThat(second.getStatus()).isEqualTo(OrderStatus.OPEN);
+        assertThat(orderItemRepository.findByOrderId(second.getId())).singleElement().satisfies(l -> {
+            assertThat(l.getMenuItemId()).isEqualTo(facial.getId());
+            assertThat(l.getQuantity()).isEqualTo(1);
+        });
+        assertThat(second.getTotal()).isEqualByComparingTo("2000.00");
+        // Completeness is read over both orders: nothing is missing now, in the single read and in the day grid.
+        assertThat(topped.getMissingTreatmentNames()).isEmpty();
+        assertThat(scheduledAppointment(appointment).getMissingTreatmentNames()).isEmpty();
+        // The order DTO names the appointment too.
+        assertThat(orderService.getById(second.getId()).getSpaAppointmentId().orElse(null)).isEqualTo(appointment.getId());
+        // And a third press has nothing to add.
+        assertThatThrownBy(() -> spaAppointmentService.billMissingTreatments(appointment.getId(), receptionist.getId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("already on its orders");
+    }
+
+    @Test
+    void billMissing_whileTheSecondOrderIsStillOpen_addsToThatOne_notToAThird() {
+        SpaAppointment appointment = book("10:00");
+        spaAppointmentService.addTreatment(appointment.getId(), new SpaAppointmentTreatmentCreateInput(facial.getId()), receptionist.getId());
+        OrderEntity paidOrder = orderFor(appointment, new OrderItemInput(massage.getId(), 1));
+        markPaid(paidOrder);
+        spaAppointmentService.updateStatus(appointment.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.COMPLETED), receptionist.getId());
+        spaAppointmentService.billMissingTreatments(appointment.getId(), receptionist.getId());
+        List<String> linked = jdbc.queryForList("select \"orderId\" from \"SpaAppointmentOrder\" where \"spaAppointmentId\" = ?", String.class, appointment.getId());
+        // The facial line is taken off the still-open top-up order, so it is missing again.
+        orderItemRepository.deleteAll(orderItemRepository.findByOrderId(linked.get(0)));
+        orderItemRepository.flush();
+
+        spaAppointmentService.billMissingTreatments(appointment.getId(), receptionist.getId());
+
+        // The open top-up order takes it again - no third order is opened.
+        assertThat(jdbc.queryForList("select \"orderId\" from \"SpaAppointmentOrder\" where \"spaAppointmentId\" = ?", String.class, appointment.getId()))
+                .containsExactly(linked.get(0));
+        assertThat(orderItemRepository.findByOrderId(linked.get(0))).singleElement().satisfies(l -> assertThat(l.getMenuItemId()).isEqualTo(facial.getId()));
+    }
+
+    @Test
+    void theWarning_isNotRaisedForATreatmentBilledOnAnotherOfTheAppointmentsOrders() {
+        SpaAppointment appointment = book("10:00");
+        spaAppointmentService.addTreatment(appointment.getId(), new SpaAppointmentTreatmentCreateInput(facial.getId()), receptionist.getId());
+        OrderEntity first = orderFor(appointment, new OrderItemInput(massage.getId(), 1));
+        markPaid(first);
+        // A second order for the same appointment, opened by hand and linked as the top-up is.
+        Order other = orderService.create(new OrderCreateInput().tableId(spaTable.getId()), receptionist.getId());
+        jdbc.update("insert into \"SpaAppointmentOrder\" (\"orderId\", \"spaAppointmentId\") values (?, ?)", other.getId(), appointment.getId());
+        orderService.addItems(other.getId(), List.of(new OrderItemInput(facial.getId(), 1)));
+        spaAppointmentService.updateStatus(appointment.getId(), new SpaAppointmentStatusUpdateInput(SpaAppointmentStatus.COMPLETED), receptionist.getId());
+
+        assertThat(scheduledAppointment(appointment).getMissingTreatmentNames()).isEmpty();
+        // Cancel the second order: its facial no longer counts, so it is missing again.
+        orderService.cancel(other.getId(), new com.sunsetbeach.model.OrderCancelInput(), receptionist.getId(), Role.CASHIER);
+        assertThat(scheduledAppointment(appointment).getMissingTreatmentNames()).hasSize(1);
+    }
+
+    @Test
+    void cancellingTheBooking_withAPaidTopUpOrder_leavesTheAppointmentBooked_andWarns() {
+        SpaAppointment appointment = book("10:00");
+        orderFor(appointment, new OrderItemInput(massage.getId(), 1));
+        Order topUp = orderService.create(new OrderCreateInput().tableId(spaTable.getId()), receptionist.getId());
+        jdbc.update("insert into \"SpaAppointmentOrder\" (\"orderId\", \"spaAppointmentId\") values (?, ?)", topUp.getId(), appointment.getId());
+        orderService.addItems(topUp.getId(), List.of(new OrderItemInput(facial.getId(), 1)));
+        markPaid(orderRepository.findById(topUp.getId()).orElseThrow());
+
+        Booking result = bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CANCELLED));
+
+        assertThat(reload(appointment).getStatus()).isEqualTo(SpaAppointmentStatus.BOOKED);
+        assertThat(result.getWarning()).contains("already paid");
+    }
+
+    private SpaAppointment scheduledAppointment(SpaAppointment appointment) {
+        return spaAppointmentService.getSchedule(IN_STAY).getAppointments().stream()
+                .filter(a -> a.getId().equals(appointment.getId()))
+                .findFirst()
+                .orElseThrow();
     }
 
     @Test

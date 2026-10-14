@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
 import com.sunsetbeach.entity.OrderEntity;
+import com.sunsetbeach.entity.SpaAppointmentOrderEntity;
 import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.entity.SpaAppointmentEntity;
@@ -21,6 +22,8 @@ import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.JobFunction;
 import com.sunsetbeach.model.MenuDepartment;
+import com.sunsetbeach.model.Order;
+import com.sunsetbeach.model.OrderCreateInput;
 import com.sunsetbeach.model.OrderItemInput;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.SpaAppointment;
@@ -41,6 +44,7 @@ import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.MenuItemRepository;
 import com.sunsetbeach.repository.OrderItemRepository;
 import com.sunsetbeach.repository.OrderRepository;
+import com.sunsetbeach.repository.SpaAppointmentOrderRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.repository.SpaAppointmentRepository;
 import com.sunsetbeach.repository.SpaAppointmentTreatmentRepository;
@@ -94,9 +98,11 @@ public class SpaAppointmentService {
     private final MenuItemRepository menuItemRepository;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
+    private final SpaAppointmentOrderRepository spaAppointmentOrderRepository;
     private final TableMapper tableMapper;
     private final AuditLogService auditLogService;
     private final OverstayRule overstayRule;
+    private final java.time.Clock clock;
     private final BookingSegmentRepository bookingSegmentRepository;
     private final RoomUnitRepository roomUnitRepository;
     private final OrderService orderService;
@@ -113,13 +119,16 @@ public class SpaAppointmentService {
             MenuItemRepository menuItemRepository,
             OrderRepository orderRepository,
             OrderItemRepository orderItemRepository,
+            SpaAppointmentOrderRepository spaAppointmentOrderRepository,
             TableMapper tableMapper,
             AuditLogService auditLogService,
             OverstayRule overstayRule,
             BookingSegmentRepository bookingSegmentRepository,
             RoomUnitRepository roomUnitRepository,
             OrderService orderService,
+            java.time.Clock clock,
             org.springframework.core.env.Environment env) {
+        this.clock = clock;
         this.overstayRule = overstayRule;
         this.bookingSegmentRepository = bookingSegmentRepository;
         this.roomUnitRepository = roomUnitRepository;
@@ -132,6 +141,7 @@ public class SpaAppointmentService {
         this.menuItemRepository = menuItemRepository;
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
+        this.spaAppointmentOrderRepository = spaAppointmentOrderRepository;
         this.tableMapper = tableMapper;
         this.auditLogService = auditLogService;
         this.openingTime = LocalTime.parse(env.getProperty("app.spa.opening-time", "09:00"));
@@ -168,10 +178,29 @@ public class SpaAppointmentService {
         // computeMissingTreatmentNames. Every other appointment skips the order/order-item reads
         // entirely, so a day with few completed-and-billed appointments stays cheap regardless of
         // how many BOOKED ones it also holds.
-        Set<String> billableOrderIds = appointmentEntities.stream()
-                .filter(a -> a.getStatus() == SpaAppointmentStatus.COMPLETED && a.getOrderId() != null)
-                .map(SpaAppointmentEntity::getOrderId)
-                .collect(Collectors.toSet());
+        List<String> completedIds = appointmentEntities.stream()
+                .filter(a -> a.getStatus() == SpaAppointmentStatus.COMPLETED)
+                .map(SpaAppointmentEntity::getId)
+                .toList();
+        // An appointment can be billed by several orders (its own plus top-ups, V144): the warning
+        // looks at all of them together.
+        Map<String, List<String>> extraOrderIdsByAppointmentId = spaAppointmentOrderRepository.findBySpaAppointmentIdIn(completedIds).stream()
+                .collect(Collectors.groupingBy(SpaAppointmentOrderEntity::getSpaAppointmentId,
+                        Collectors.mapping(SpaAppointmentOrderEntity::getOrderId, Collectors.toList())));
+        Map<String, List<String>> orderIdsByAppointmentId = new HashMap<>();
+        Set<String> billableOrderIds = new HashSet<>();
+        for (SpaAppointmentEntity a : appointmentEntities) {
+            if (a.getStatus() != SpaAppointmentStatus.COMPLETED) {
+                continue;
+            }
+            List<String> ids = new ArrayList<>();
+            if (a.getOrderId() != null) {
+                ids.add(a.getOrderId());
+            }
+            ids.addAll(extraOrderIdsByAppointmentId.getOrDefault(a.getId(), List.of()));
+            orderIdsByAppointmentId.put(a.getId(), ids);
+            billableOrderIds.addAll(ids);
+        }
         Map<String, OrderEntity> ordersById = orderRepository.findAllById(billableOrderIds).stream().collect(Collectors.toMap(OrderEntity::getId, o -> o));
         Map<String, List<OrderItemEntity>> orderItemsByOrderId =
                 orderItemRepository.findByOrderIdIn(billableOrderIds).stream().collect(Collectors.groupingBy(OrderItemEntity::getOrderId));
@@ -194,9 +223,14 @@ public class SpaAppointmentService {
         List<SpaAppointment> appointments = appointmentEntities.stream()
                 .map(e -> {
                     List<SpaAppointmentTreatmentEntity> treatmentRows = treatmentsByAppointmentId.getOrDefault(e.getId(), List.of());
-                    OrderEntity order = e.getOrderId() != null ? ordersById.get(e.getOrderId()) : null;
-                    boolean orderBills = order != null && order.getStatus() != OrderStatus.CANCELLED;
-                    List<OrderItemEntity> orderItems = orderBills ? orderItemsByOrderId.getOrDefault(e.getOrderId(), List.of()) : List.of();
+                    List<OrderEntity> billing = orderIdsByAppointmentId.getOrDefault(e.getId(), List.of()).stream()
+                            .map(ordersById::get)
+                            .filter(o -> o != null && o.getStatus() != OrderStatus.CANCELLED)
+                            .toList();
+                    boolean orderBills = !billing.isEmpty();
+                    List<OrderItemEntity> orderItems = billing.stream()
+                            .flatMap(o -> orderItemsByOrderId.getOrDefault(o.getId(), List.of()).stream())
+                            .toList();
                     SpaAppointment dto = buildDto(
                             e,
                             bookingsById.get(e.getBookingId()),
@@ -236,6 +270,7 @@ public class SpaAppointmentService {
         requireTherapist(therapist);
         requireSpaTable(table);
         requireServable(booking, date);
+        requireNotInThePast(date, startTime);
         validateWithinOpeningHours(startTime, durationMinutes);
 
         SpaAppointmentEntity entity = new SpaAppointmentEntity();
@@ -263,14 +298,8 @@ public class SpaAppointmentService {
                 "Booked " + treatment.getName() + " for " + booking.getGuestName() + " on " + date + " " + startTime.format(TIME_FORMAT) + " ("
                         + table.getLabel() + ", " + therapist.getName() + ")");
 
-        // Inclusive both ends - the guest is still in the hotel on the departure day (see
-        // CORRECTION 1: this is not the same [checkIn, checkOut) convention room occupancy uses,
-        // which is about when the *room* is free for the next guest, not where the guest is).
-        // A guest still checked in past checkOut is here until checked out (OverstayRule), so
-        // booking them a treatment today isn't "outside their stay".
-        String warning = date.isBefore(booking.getCheckIn()) || date.isAfter(OverstayRule.lastDayInHouse(booking, overstayRule.today()))
-                ? "This date falls outside " + booking.getGuestName() + "'s stay (" + booking.getCheckIn() + " to " + booking.getCheckOut() + ")."
-                : null;
+        // No out-of-stay warning any more: requireServable refuses a date outside the stay outright.
+        String warning = null;
 
         return new SpaAppointmentResult(toDto(saved), warning);
     }
@@ -407,6 +436,7 @@ public class SpaAppointmentService {
         requireTherapist(therapist);
         requireSpaTable(table);
         requireServable(booking, date);
+        requireNotInThePast(date, startTime);
         validateWithinOpeningHours(startTime, entity.getDurationMinutes());
 
         entity.setTableId(table.getId());
@@ -588,13 +618,14 @@ public class SpaAppointmentService {
     }
 
     /**
-     * Whom the spa can serve on {@code date}. A guest in the house ({@code CHECKED_IN}) can be
-     * booked; a guest who has left, a cancelled booking and a no-show can't (409 - the booking is
-     * in the wrong state). A guest who has not arrived yet ({@code NEW}/{@code CONFIRMED}/
-     * {@code PAID}) can be booked only on a day of the stay they actually hold, both ends
-     * included - the same inclusive convention as the out-of-stay warning in {@link #create},
-     * since the guest is still here on the departure day (400 - the date is wrong). A checked-in
-     * guest booked outside their stay still only gets that warning: they may be about to extend.
+     * Whom the spa can serve on {@code date}. A guest who has left, a cancelled booking and a
+     * no-show can't be booked (409 - the booking is in the wrong state). Everyone else - in the
+     * house or not yet arrived, whatever the booking's status ({@code NEW}/{@code CONFIRMED}/
+     * {@code PAID}) - can be booked only on a day of the stay they actually hold, both ends
+     * included, since the guest is still here on the departure day (400 - the date is wrong). A
+     * checked-in guest is held to it too: a treatment after their checkout date would outlive the
+     * stay (and a shortened stay cancels the ones that fall outside it), so the stay is extended
+     * first.
      */
     private static void requireServable(BookingEntity booking, LocalDate date) {
         if (booking.getStatus() == BookingStatus.CANCELLED) {
@@ -603,9 +634,7 @@ public class SpaAppointmentService {
         switch (booking.getOccupancyStatus()) {
             case CHECKED_OUT -> throw new ConflictException(booking.getGuestName() + " has already checked out, so no treatment can be booked for this booking.");
             case NO_SHOW -> throw new ConflictException(booking.getGuestName() + " was marked as a no-show, so no treatment can be booked for this booking.");
-            case CHECKED_IN -> {
-            }
-            case EXPECTED -> {
+            case CHECKED_IN, EXPECTED -> {
                 if (date.isBefore(booking.getCheckIn()) || date.isAfter(booking.getCheckOut())) {
                     throw new BadRequestException(booking.getGuestName() + "'s stay is " + booking.getCheckIn() + " to " + booking.getCheckOut()
                             + ", which doesn't include " + date + " - pick a date within the stay.");
@@ -614,19 +643,64 @@ public class SpaAppointmentService {
         }
     }
 
+    /**
+     * A treatment can't start in the past - but the slot that is under way can still be booked
+     * (it is 10:20 and the 10:00 slot is open: a walk-in is fine). The slots are the grid from
+     * opening time, {@code slotMinutes} apart, in the hotel's time.
+     */
+    private void requireNotInThePast(LocalDate date, LocalTime startTime) {
+        java.time.LocalDateTime now = java.time.LocalDateTime.now(clock);
+        LocalDate today = now.toLocalDate();
+        if (date.isBefore(today)) {
+            throw new BadRequestException("The date " + date + " has already passed - pick today or a later day.");
+        }
+        if (date.isAfter(today)) {
+            return;
+        }
+        LocalTime nowTime = now.toLocalTime();
+        LocalTime currentSlotStart = nowTime.isBefore(openingTime)
+                ? openingTime
+                : openingTime.plusMinutes((Duration.between(openingTime, nowTime).toMinutes() / slotMinutes) * slotMinutes);
+        if (startTime.isBefore(currentSlotStart)) {
+            throw new BadRequestException("The time " + startTime.format(TIME_FORMAT) + " has already passed - the earliest start now is "
+                    + currentSlotStart.format(TIME_FORMAT) + ".");
+        }
+    }
+
     private boolean isOrderPaid(SpaAppointmentEntity appointment) {
-        return appointment.getOrderId() != null
-                && orderRepository.findById(appointment.getOrderId()).map(o -> o.getStatus() == OrderStatus.PAID).orElse(false);
+        return linkedOrders(appointment).stream().anyMatch(o -> o.getStatus() == OrderStatus.PAID);
     }
 
     /**
-     * The partial-payment top-up: a {@code COMPLETED} appointment whose linked order doesn't carry
-     * every treatment gets exactly the missing quantity of each one added to that same order, in
-     * one action. Goes through {@link OrderService#addItems}, so the price is the menu's live one
-     * at this moment (the one pricing rule for POS lines, see CLAUDE.md's Spa billing section)
-     * and the order's total is recomputed there; nothing is charged here - the order is closed
-     * as usual afterwards. Needs an order that can still take lines: a {@code PAID} one can't,
-     * and the 409 says so rather than silently opening a second order for the rest.
+     * Every order that bills this appointment: its own ({@code orderId}) first, then the top-up
+     * orders (V144) oldest first.
+     */
+    private List<OrderEntity> linkedOrders(SpaAppointmentEntity appointment) {
+        List<String> ids = new ArrayList<>();
+        if (appointment.getOrderId() != null) {
+            ids.add(appointment.getOrderId());
+        }
+        spaAppointmentOrderRepository.findBySpaAppointmentId(appointment.getId()).stream()
+                .sorted(Comparator.comparing(SpaAppointmentOrderEntity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .forEach(link -> ids.add(link.getOrderId()));
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<String, OrderEntity> byId = orderRepository.findAllById(ids).stream().collect(Collectors.toMap(OrderEntity::getId, o -> o));
+        return ids.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
+    }
+
+    /**
+     * The partial-payment top-up: a {@code COMPLETED} appointment whose orders don't carry every
+     * treatment gets exactly the missing quantity of each one billed, in one action. What is
+     * "carried" is counted over all of the appointment's orders (its own and earlier top-ups,
+     * cancelled ones excluded). If one of them can still take lines ({@code OPEN}/{@code SENT}) the
+     * missing treatments go onto it; if every order is already {@code PAID} (or cancelled) a new
+     * order for just the missing treatments is opened on the appointment's table and linked to the
+     * same appointment (V144), so a guest who paid for one treatment and then took a second pays
+     * for the second on its own bill. Either way the lines go through {@link OrderService#addItems},
+     * so the price is the menu's live one at this moment (the one pricing rule for POS lines, see
+     * CLAUDE.md's Spa billing section); nothing is charged here - the order is closed as usual.
      */
     @Transactional
     public SpaAppointment billMissingTreatments(String appointmentId, String actorUserId) {
@@ -634,18 +708,19 @@ public class SpaAppointmentService {
         if (entity.getStatus() != SpaAppointmentStatus.COMPLETED) {
             throw new ConflictException("Only a completed appointment's treatments can be added to its bill - this one is " + entity.getStatus().getValue().toLowerCase() + ".");
         }
-        if (entity.getOrderId() == null) {
+        List<OrderEntity> orders = linkedOrders(entity);
+        if (orders.isEmpty()) {
             throw new ConflictException("This appointment has no order yet - open the spa billing to create its bill.");
-        }
-        OrderEntity order = orderRepository.findById(entity.getOrderId()).orElseThrow(() -> new NotFoundException("Order not found"));
-        if (order.getStatus() != OrderStatus.OPEN && order.getStatus() != OrderStatus.SENT) {
-            throw new ConflictException("The linked order #" + order.getNumber() + " is already " + order.getStatus().getValue().toLowerCase()
-                    + " and can't take more lines.");
         }
 
         Map<String, Integer> billed = new HashMap<>();
-        for (OrderItemEntity item : orderItemRepository.findByOrderId(order.getId())) {
-            billed.merge(item.getMenuItemId(), item.getQuantity(), Integer::sum);
+        for (OrderEntity linked : orders) {
+            if (linked.getStatus() == OrderStatus.CANCELLED) {
+                continue;
+            }
+            for (OrderItemEntity item : orderItemRepository.findByOrderId(linked.getId())) {
+                billed.merge(item.getMenuItemId(), item.getQuantity(), Integer::sum);
+            }
         }
         Map<String, Long> booked = spaAppointmentTreatmentRepository.findBySpaAppointmentId(appointmentId).stream()
                 .collect(Collectors.groupingBy(SpaAppointmentTreatmentEntity::getTreatmentMenuItemId, java.util.LinkedHashMap::new, Collectors.counting()));
@@ -657,17 +732,35 @@ public class SpaAppointmentService {
             }
         });
         if (missing.isEmpty()) {
-            throw new ConflictException("Everything this appointment booked is already on its order.");
+            throw new ConflictException("Everything this appointment booked is already on its orders.");
         }
 
-        orderService.addItems(order.getId(), missing);
+        OrderEntity target = orders.stream()
+                .filter(o -> o.getStatus() == OrderStatus.OPEN || o.getStatus() == OrderStatus.SENT)
+                .findFirst()
+                .orElse(null);
+        boolean newOrder = target == null;
+        String targetId;
+        if (newOrder) {
+            // Created empty (a spa-zone table is exempt from "an order starts with its first line"),
+            // linked, and only then given its lines - the link must exist before addItems so the
+            // spa auto-link can't attach this order to some other appointment on the same table.
+            Order created = orderService.create(new OrderCreateInput().tableId(entity.getTableId()), actorUserId);
+            spaAppointmentOrderRepository.saveAndFlush(new SpaAppointmentOrderEntity(created.getId(), entity.getId()));
+            targetId = created.getId();
+        } else {
+            targetId = target.getId();
+        }
+
+        Order result = orderService.addItems(targetId, missing);
 
         auditLogService.record(
                 AuditAction.SPA_APPOINTMENT_TREATMENT_ADDED,
                 AuditEntityType.SPA_APPOINTMENT,
                 entity.getId(),
                 "Added the missing treatments (" + missing.stream().map(i -> i.getQuantity() + "x " + treatmentName(i.getMenuItemId())).collect(Collectors.joining(", "))
-                        + ") to order #" + order.getNumber());
+                        + ") to " + (newOrder ? "a new order #" : "order #") + result.getNumber()
+                        + (newOrder ? " (the earlier order can't take more lines)" : ""));
         return toDto(entity);
     }
 
@@ -764,12 +857,10 @@ public class SpaAppointmentService {
 
         boolean orderBills = false;
         List<OrderItemEntity> orderItems = List.of();
-        if (e.getStatus() == SpaAppointmentStatus.COMPLETED && e.getOrderId() != null) {
-            OrderEntity order = orderRepository.findById(e.getOrderId()).orElse(null);
-            if (order != null && order.getStatus() != OrderStatus.CANCELLED) {
-                orderBills = true;
-                orderItems = orderItemRepository.findByOrderId(e.getOrderId());
-            }
+        if (e.getStatus() == SpaAppointmentStatus.COMPLETED) {
+            List<OrderEntity> billing = linkedOrders(e).stream().filter(o -> o.getStatus() != OrderStatus.CANCELLED).toList();
+            orderBills = !billing.isEmpty();
+            orderItems = billing.isEmpty() ? List.of() : orderItemRepository.findByOrderIdIn(billing.stream().map(OrderEntity::getId).toList());
         }
 
         SpaAppointment dto = buildDto(e, booking, table, therapist, treatmentRows, menuItemsById, orderBills, orderItems);

@@ -64,6 +64,8 @@ public class Booking {
 
   private String balanceDue;
 
+  private Boolean owes;
+
   private BookingStatus status;
 
   private BookingChannel channel;
@@ -411,7 +413,7 @@ public class Booking {
   }
 
   /**
-   * What the guest still owes on this booking right now - `BookingFolio.balanceDue`, computed by the server in one place (`BookingFolioCalculator`) and sent on every booking, whatever its `status` or `occupancyStatus`: a checked-out booking, a `NEW` one whose dates have passed and a `CANCELLED` one with POS charges can all owe money. Decimal(10,2) rendered as a string, never below `\"0.00\"`. A client shows its \"Owes\" badge from this field and never works the balance out itself. 
+   * What the guest still owes on this booking right now - `BookingFolio.balanceDue`, computed by the server in one place (`BookingFolioCalculator`) and sent on every booking, whatever its `status` or `occupancyStatus`: a checked-out booking, a `NEW` one whose dates have passed and a `CANCELLED` one with POS charges can all owe money. Decimal(10,2) rendered as a string, never below `\"0.00\"`. A client shows its \"Owes\" badge from `owes` and never works the balance out itself. A guest marked `NO_SHOW` owes nothing for the room - only other charges on the booking count. 
    * @return balanceDue
    */
   
@@ -422,6 +424,25 @@ public class Booking {
 
   public void setBalanceDue(String balanceDue) {
     this.balanceDue = balanceDue;
+  }
+
+  public Booking owes(Boolean owes) {
+    this.owes = owes;
+    return this;
+  }
+
+  /**
+   * Whether `balanceDue` is a debt that has already fallen due - the one flag a client shows its \"Owes\" badge from. `true` only when `balanceDue` is above zero **and** the guest is in the house or gone (`occupancyStatus` `CHECKED_IN`, including a stay past its `checkOut`, or `CHECKED_OUT`), the booking is `CANCELLED` (what remains is charges), or the stay's dates are over. `false` for a booking that has not arrived yet, however unpaid - that money is still to be collected, not owed. 
+   * @return owes
+   */
+  
+  @JsonProperty("owes")
+  public Boolean getOwes() {
+    return owes;
+  }
+
+  public void setOwes(Boolean owes) {
+    this.owes = owes;
   }
 
   public Booking status(BookingStatus status) {
@@ -760,6 +781,7 @@ public class Booking {
         Objects.equals(this.totalPrice, booking.totalPrice) &&
         Objects.equals(this.earlyDepartureFee, booking.earlyDepartureFee) &&
         Objects.equals(this.balanceDue, booking.balanceDue) &&
+        Objects.equals(this.owes, booking.owes) &&
         Objects.equals(this.status, booking.status) &&
         Objects.equals(this.channel, booking.channel) &&
         Objects.equals(this.purpose, booking.purpose) &&
@@ -780,7 +802,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
   }
 
   @Override
@@ -802,6 +824,7 @@ public class Booking {
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
     sb.append("    earlyDepartureFee: ").append(toIndentedString(earlyDepartureFee)).append("\n");
     sb.append("    balanceDue: ").append(toIndentedString(balanceDue)).append("\n");
+    sb.append("    owes: ").append(toIndentedString(owes)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    channel: ").append(toIndentedString(channel)).append("\n");
     sb.append("    purpose: ").append(toIndentedString(purpose)).append("\n");

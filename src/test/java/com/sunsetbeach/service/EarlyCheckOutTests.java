@@ -27,9 +27,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Import;
+import com.sunsetbeach.support.FixedHotelClockConfig;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -39,21 +38,11 @@ import org.springframework.transaction.annotation.Transactional;
  * checking out never touched the dates. "Today" is pinned to 2034-03-10, midday Bangkok.
  */
 @SpringBootTest
+@Import(FixedHotelClockConfig.class)
 @Transactional
 class EarlyCheckOutTests extends AbstractIntegrationTest {
 
-    private static final ZoneId BANGKOK = ZoneId.of("Asia/Bangkok");
-    private static final Instant NOW = LocalDateTime.parse("2034-03-10T12:00").atZone(BANGKOK).toInstant();
     private static final LocalDate TODAY = LocalDate.parse("2034-03-10");
-
-    @TestConfiguration
-    static class FixedClockConfig {
-        @Bean
-        @Primary
-        Clock fixedClock() {
-            return Clock.fixed(NOW, BANGKOK);
-        }
-    }
 
     @Autowired private BookingService bookingService;
     @Autowired private BookingOccupancyService occupancyService;
@@ -209,9 +198,35 @@ class EarlyCheckOutTests extends AbstractIntegrationTest {
         // Two nights in room 1 and one in room 2.
         assertThat(new BigDecimal(out.getTotalPrice())).isEqualByComparingTo("10500.00");
         assertThat(out.getRoomUnitId().orElse(null)).isEqualTo(otherUnit.getId());
-        // Both rooms the guest slept in are dirty, not only the final one.
+        // Check-out marks the room of the last night only; the first room was marked when the guest moved out of it.
         assertThat(roomUnitRepository.findById(otherUnit.getId()).orElseThrow().getHousekeepingStatus()).isEqualTo(HousekeepingStatus.DIRTY);
         assertThat(roomUnitRepository.findById(unit.getId()).orElseThrow().getHousekeepingStatus()).isEqualTo(HousekeepingStatus.DIRTY);
+    }
+
+    @Test
+    void theRoomTheGuestMovedOutOf_isMarkedDirtyAtTheMove_andLeftAloneAtAnEarlyCheckout() {
+        // Moved from room 1 to room 2 yesterday; the guest is in the house.
+        Booking booking = relocatedStay(TODAY.minusDays(3), TODAY.plusDays(3), TODAY.minusDays(1));
+        assertThat(roomUnitRepository.findById(unit.getId()).orElseThrow().getHousekeepingStatus())
+                .as("marked dirty the moment the guest moved out").isEqualTo(HousekeepingStatus.DIRTY);
+
+        // Housekeeping cleaned it that same day.
+        RoomUnitEntity cleaned = roomUnitRepository.findById(unit.getId()).orElseThrow();
+        cleaned.setHousekeepingStatus(HousekeepingStatus.CLEAN);
+        roomUnitRepository.saveAndFlush(cleaned);
+
+        occupancyService.checkOut(booking.getId(), new CheckOutInput().shortenStay(true).chargeUnusedNights(false));
+
+        assertThat(roomUnitRepository.findById(unit.getId()).orElseThrow().getHousekeepingStatus())
+                .as("an early check-out does not touch the room the guest left earlier").isEqualTo(HousekeepingStatus.CLEAN);
+        assertThat(roomUnitRepository.findById(otherUnit.getId()).orElseThrow().getHousekeepingStatus()).isEqualTo(HousekeepingStatus.DIRTY);
+    }
+
+    @Test
+    void aMoveThatIsStillAhead_doesNotMarkTheCurrentRoomDirty() {
+        relocatedStay(TODAY.minusDays(2), TODAY.plusDays(3), TODAY.plusDays(1));
+
+        assertThat(roomUnitRepository.findById(unit.getId()).orElseThrow().getHousekeepingStatus()).isNotEqualTo(HousekeepingStatus.DIRTY);
     }
 
     @Test

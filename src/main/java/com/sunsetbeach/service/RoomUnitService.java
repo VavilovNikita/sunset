@@ -93,6 +93,7 @@ public class RoomUnitService {
             throw new BadRequestException("Room not found");
         }
 
+        requireLabelFree(input.getLabel(), null);
         RoomUnitEntity entity = new RoomUnitEntity();
         roomUnitMapper.applyInput(entity, input);
         RoomUnitEntity saved;
@@ -107,6 +108,13 @@ public class RoomUnitService {
         return roomUnitMapper.toDto(saved);
     }
 
+    /** A label is unique ignoring case and spaces ("Q1" = "q1"); V143's index holds it under a race. */
+    private void requireLabelFree(String label, String excludeId) {
+        if (label != null && roomUnitRepository.existsByNormalizedLabel(label, excludeId)) {
+            throw new ConflictException("This label is already in use by another room.");
+        }
+    }
+
     @Transactional
     public RoomUnit update(String id, RoomUnitUpdateInput input) {
         RoomUnitEntity entity = findEntity(id);
@@ -117,6 +125,7 @@ public class RoomUnitService {
             throw new ConflictException("Room " + entity.getLabel() + " has an upcoming booking assigned and can't be deactivated.");
         }
 
+        requireLabelFree(input.getLabel(), id);
         roomUnitMapper.applyUpdate(entity, input);
         RoomUnitEntity saved;
         try {

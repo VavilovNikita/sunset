@@ -12,6 +12,7 @@ import com.sunsetbeach.entity.TableEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.ShiftMapper;
 import com.sunsetbeach.mapper.TimestampFormat;
@@ -193,10 +194,22 @@ public class ShiftService {
                     + describeOrders(blocking));
         }
 
+        // A drawer that doesn't match the books is explained, not just recorded: counted cash that
+        // differs from the expected figure (float + cash payments + folio cash) needs a note saying why.
+        String notes = input.getNotes().orElse(null);
+        if (input.getClosingCashCounted() != null && (notes == null || com.sunsetbeach.util.NameText.strip(notes).isEmpty())) {
+            PaymentAggregation.Totals totals = PaymentAggregation.aggregate(paymentRepository.findByShiftId(shift.getId()));
+            BigDecimal expected = expectedCash(shift, totals.cash(), folioTotals(shift.getId()));
+            BigDecimal difference = input.getClosingCashCounted().subtract(expected);
+            if (difference.signum() != 0) {
+                throw ValidationException.field("notes", "The counted cash differs from the expected " + PriceFormat.asDecimalString(expected)
+                        + " by " + PriceFormat.asDecimalString(difference) + " - write a note saying why before closing the shift.");
+            }
+        }
         shift.setClosedByUserId(shift.getOpenedByUserId());
         shift.setClosedAt(TimestampFormat.nowUtc(clock));
         shift.setClosingCashCounted(input.getClosingCashCounted());
-        shift.setNotes(input.getNotes().orElse(null));
+        shift.setNotes(notes == null ? null : com.sunsetbeach.util.NameText.strip(notes));
         shift.setStatus(ShiftStatus.CLOSED);
         ShiftEntity saved = shiftRepository.saveAndFlush(shift);
         printZReport(saved);

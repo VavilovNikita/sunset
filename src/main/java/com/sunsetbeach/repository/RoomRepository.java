@@ -9,8 +9,9 @@ public interface RoomRepository extends JpaRepository<RoomEntity, String> {
 
     /**
      * Whether some room type other than {@code excludeId} (null on create) already has this name,
-     * compared the way the V138 unique index does: ignoring case and spaces at either end.
+     * compared the way the V143 unique index does (sunset_normalize_name): ignoring case, spaces at either
+     * end and the width of a run of spaces inside.
      */
-    @Query("select count(r) > 0 from RoomEntity r where lower(trim(r.name)) = lower(trim(:name)) and (:excludeId is null or r.id <> :excludeId)")
+    @Query("select count(r) > 0 from RoomEntity r where function('sunset_normalize_name', r.name) = function('sunset_normalize_name', :name) and (:excludeId is null or r.id <> :excludeId)")
     boolean existsByNormalizedName(@Param("name") String name, @Param("excludeId") String excludeId);
 }

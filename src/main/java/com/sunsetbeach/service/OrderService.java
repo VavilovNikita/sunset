@@ -45,6 +45,7 @@ import com.sunsetbeach.repository.OrderItemVoidRepository;
 import com.sunsetbeach.repository.OrderRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.ShiftRepository;
+import com.sunsetbeach.repository.SpaAppointmentOrderRepository;
 import com.sunsetbeach.repository.SpaAppointmentRepository;
 import com.sunsetbeach.repository.TableRepository;
 import com.sunsetbeach.repository.UserRepository;
@@ -99,6 +100,7 @@ public class OrderService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final SpaAppointmentRepository spaAppointmentRepository;
+    private final SpaAppointmentOrderRepository spaAppointmentOrderRepository;
     private final OrderMapper orderMapper;
     private final GuestOrderMapper guestOrderMapper;
     private final OrderPrintingService orderPrintingService;
@@ -119,6 +121,7 @@ public class OrderService {
             PaymentRepository paymentRepository,
             UserRepository userRepository,
             SpaAppointmentRepository spaAppointmentRepository,
+            SpaAppointmentOrderRepository spaAppointmentOrderRepository,
             OrderMapper orderMapper,
             GuestOrderMapper guestOrderMapper,
             OrderPrintingService orderPrintingService,
@@ -137,6 +140,7 @@ public class OrderService {
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
         this.spaAppointmentRepository = spaAppointmentRepository;
+        this.spaAppointmentOrderRepository = spaAppointmentOrderRepository;
         this.spaOrderLinkGraceMinutes = spaOrderLinkGraceMinutes;
         this.orderMapper = orderMapper;
         this.guestOrderMapper = guestOrderMapper;
@@ -298,7 +302,7 @@ public class OrderService {
      * risk a spa-table order for a bottle of water would carry on the table axis alone.
      */
     private boolean canAutoLink(OrderEntity order, List<OrderItemEntity> items) {
-        if (spaAppointmentRepository.existsByOrderId(order.getId())) {
+        if (spaAppointmentRepository.existsByOrderId(order.getId()) || spaAppointmentOrderRepository.existsById(order.getId())) {
             return false;
         }
         if (items.stream().map(this::departmentOf).noneMatch(MenuDepartment.SPA::equals)) {
@@ -1020,6 +1024,10 @@ public class OrderService {
         Map<String, String> result = new HashMap<>();
         for (SpaAppointmentEntity appointment : spaAppointmentRepository.findByOrderIdIn(orderIds)) {
             result.putIfAbsent(appointment.getOrderId(), appointment.getId());
+        }
+        // A top-up order (V144) belongs to its appointment too.
+        for (var link : spaAppointmentOrderRepository.findByOrderIdIn(orderIds)) {
+            result.putIfAbsent(link.getOrderId(), link.getSpaAppointmentId());
         }
         return result;
     }

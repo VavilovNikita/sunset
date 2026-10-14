@@ -3,14 +3,18 @@ package com.sunsetbeach.service;
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.SpaAppointmentEntity;
+import com.sunsetbeach.entity.SpaAppointmentOrderEntity;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.OrderStatus;
 import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.repository.OrderRepository;
+import com.sunsetbeach.repository.SpaAppointmentOrderRepository;
 import com.sunsetbeach.repository.SpaAppointmentRepository;
 import com.sunsetbeach.security.IntegrationPrincipal;
 import com.sunsetbeach.security.StaffPrincipal;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.security.core.Authentication;
@@ -38,16 +42,22 @@ public class SpaBookingCancellationService {
     private static final String CANCEL_REASON = "Booking cancelled";
 
     private final SpaAppointmentRepository spaAppointmentRepository;
+    private final SpaAppointmentOrderRepository spaAppointmentOrderRepository;
     private final OrderRepository orderRepository;
+    private final Clock clock;
     private final OrderService orderService;
     private final AuditLogService auditLogService;
 
     public SpaBookingCancellationService(
             SpaAppointmentRepository spaAppointmentRepository,
+            SpaAppointmentOrderRepository spaAppointmentOrderRepository,
             OrderRepository orderRepository,
+            Clock clock,
             OrderService orderService,
             AuditLogService auditLogService) {
         this.spaAppointmentRepository = spaAppointmentRepository;
+        this.spaAppointmentOrderRepository = spaAppointmentOrderRepository;
+        this.clock = clock;
         this.orderRepository = orderRepository;
         this.orderService = orderService;
         this.auditLogService = auditLogService;
@@ -56,40 +66,67 @@ public class SpaBookingCancellationService {
     /** The clean-up for a booking that was just cancelled; returns {@link #paidLeftBehind}'s text, or null. */
     @Transactional
     public String onBookingCancelled(BookingEntity booking) {
-        List<SpaAppointmentEntity> appointments = spaAppointmentRepository.findByBookingId(booking.getId());
-        String actorUserId = staffActorId();
-        for (SpaAppointmentEntity appointment : appointments) {
-            if (appointment.getStatus() != SpaAppointmentStatus.BOOKED) {
-                continue;
-            }
-            OrderEntity order = linkedOrder(appointment);
-            if (order != null && order.getStatus() == OrderStatus.PAID) {
-                continue; // paid: left as it is, reported by paidLeftBehind
-            }
-
-            OrderService.SpaLineCleanup cleanup =
-                    order != null ? orderService.removeUnpaidSpaLines(order.getId()) : OrderService.SpaLineCleanup.empty();
-            appointment.setStatus(SpaAppointmentStatus.CANCELLED);
-            appointment.setCancelledByUserId(actorUserId);
-            appointment.setCancelReason(CANCEL_REASON);
-            spaAppointmentRepository.saveAndFlush(appointment);
-
-            String lines = cleanup.removedLines().isEmpty()
-                    ? ""
-                    : "; took " + String.join(", ", cleanup.removedLines()) + " off order #" + order.getNumber()
-                            + (cleanup.orderCancelled() ? " (order cancelled, nothing else was on it)" : "");
-            record(
-                    AuditAction.SPA_APPOINTMENT_STATUS_CHANGED,
-                    AuditEntityType.SPA_APPOINTMENT,
-                    appointment.getId(),
-                    "Spa appointment " + appointment.getId() + " marked cancelled - " + booking.getGuestName() + "'s booking was cancelled" + lines);
+        for (SpaAppointmentEntity appointment : spaAppointmentRepository.findByBookingId(booking.getId())) {
+            cancelBooked(appointment, "Spa appointment " + appointment.getId() + " marked cancelled - " + booking.getGuestName() + "'s booking was cancelled");
         }
         return paidLeftBehind(booking.getId());
     }
 
     /**
+     * The stay's dates changed (a shortened stay, an early departure's new check-out, a schedule
+     * edit, a SiteMinder date change): every {@code BOOKED} appointment that has not ended and now
+     * lies outside {@code checkIn..checkOut} (both ends inclusive - the guest is still here on the
+     * departure day) is cancelled, the same cascade as a cancelled booking, in the same
+     * transaction. A paid appointment is left as it is. Returns how many were cancelled.
+     */
+    @Transactional
+    public int onStayChanged(BookingEntity booking) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        int cancelled = 0;
+        for (SpaAppointmentEntity appointment : spaAppointmentRepository.findByBookingId(booking.getId())) {
+            boolean outside = appointment.getDate().isBefore(booking.getCheckIn()) || appointment.getDate().isAfter(booking.getCheckOut());
+            LocalDateTime end = LocalDateTime.of(appointment.getDate(), appointment.getStartTime()).plusMinutes(appointment.getDurationMinutes());
+            if (outside && end.isAfter(now)
+                    && cancelBooked(appointment, "Spa appointment " + appointment.getId() + " marked cancelled - " + booking.getGuestName() + "'s stay is now "
+                            + booking.getCheckIn() + " to " + booking.getCheckOut())) {
+                cancelled++;
+            }
+        }
+        return cancelled;
+    }
+
+    /**
+     * Cancels one appointment if it is {@code BOOKED} and nothing on it is paid: the unpaid spa
+     * lines come off every order that bills it. Returns whether it was cancelled.
+     */
+    private boolean cancelBooked(SpaAppointmentEntity appointment, String auditSummary) {
+        if (appointment.getStatus() != SpaAppointmentStatus.BOOKED) {
+            return false;
+        }
+        List<OrderEntity> orders = linkedOrders(appointment);
+        if (orders.stream().anyMatch(o -> o.getStatus() == OrderStatus.PAID)) {
+            return false; // paid: left as it is, reported by paidLeftBehind
+        }
+
+        StringBuilder lines = new StringBuilder();
+        for (OrderEntity order : orders) {
+            OrderService.SpaLineCleanup cleanup = orderService.removeUnpaidSpaLines(order.getId());
+            if (!cleanup.removedLines().isEmpty()) {
+                lines.append("; took ").append(String.join(", ", cleanup.removedLines())).append(" off order #").append(order.getNumber())
+                        .append(cleanup.orderCancelled() ? " (order cancelled, nothing else was on it)" : "");
+            }
+        }
+        appointment.setStatus(SpaAppointmentStatus.CANCELLED);
+        appointment.setCancelledByUserId(staffActorId());
+        appointment.setCancelReason(CANCEL_REASON);
+        spaAppointmentRepository.saveAndFlush(appointment);
+        record(AuditAction.SPA_APPOINTMENT_STATUS_CHANGED, AuditEntityType.SPA_APPOINTMENT, appointment.getId(), auditSummary + lines);
+        return true;
+    }
+
+    /**
      * The warning for a cancelled booking that still has a spa appointment on the books which is
-     * already paid for (order {@code PAID}) - one sentence per appointment, or null when there is
+     * already paid for (an order {@code PAID}) - one sentence per appointment, or null when there is
      * none. Read straight from the data each time rather than stored, so it stays true until staff
      * deal with it (refund, then cancel the appointment) and disappears by itself afterwards. Only
      * {@code BOOKED} appointments count: a {@code COMPLETED} one was delivered and paid, and there
@@ -102,17 +139,21 @@ public class SpaBookingCancellationService {
             if (appointment.getStatus() != SpaAppointmentStatus.BOOKED) {
                 continue;
             }
-            OrderEntity order = linkedOrder(appointment);
-            if (order != null && order.getStatus() == OrderStatus.PAID) {
-                notes.add("The spa appointment on " + appointment.getDate() + " at " + appointment.getStartTime().toString().substring(0, 5)
-                        + " is already paid (order #" + order.getNumber() + ") and was left as it is - refund it and cancel the appointment by hand if it should not go ahead.");
-            }
+            linkedOrders(appointment).stream().filter(o -> o.getStatus() == OrderStatus.PAID).findFirst().ifPresent(order ->
+                    notes.add("The spa appointment on " + appointment.getDate() + " at " + appointment.getStartTime().toString().substring(0, 5)
+                            + " is already paid (order #" + order.getNumber() + ") and was left as it is - refund it and cancel the appointment by hand if it should not go ahead."));
         }
         return notes.isEmpty() ? null : String.join(" ", notes);
     }
 
-    private OrderEntity linkedOrder(SpaAppointmentEntity appointment) {
-        return appointment.getOrderId() != null ? orderRepository.findById(appointment.getOrderId()).orElse(null) : null;
+    /** The appointment's own order plus its top-up orders (V144). */
+    private List<OrderEntity> linkedOrders(SpaAppointmentEntity appointment) {
+        List<String> ids = new ArrayList<>();
+        if (appointment.getOrderId() != null) {
+            ids.add(appointment.getOrderId());
+        }
+        spaAppointmentOrderRepository.findBySpaAppointmentId(appointment.getId()).stream().map(SpaAppointmentOrderEntity::getOrderId).forEach(ids::add);
+        return ids.isEmpty() ? List.of() : orderRepository.findAllById(ids);
     }
 
     /** The staff member behind the call, or null for the import and the sweep (the column is a foreign key to User). */

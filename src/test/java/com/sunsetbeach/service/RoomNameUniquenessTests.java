@@ -72,4 +72,28 @@ class RoomNameUniquenessTests extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> roomRepository.saveAndFlush(duplicate)).isInstanceOf(DataIntegrityViolationException.class);
     }
+
+    @Test
+    void aSecondTypeDifferingOnlyInTheWidthOfInnerSpaces_isRefused() {
+        String base = UUID.randomUUID().toString();
+        roomService.create(input("Standard Room " + base));
+
+        assertThatThrownBy(() -> roomService.create(input("standard    ROOM " + base))).isInstanceOf(ConflictException.class);
+        // A no-break space between the words is a space too.
+        assertThat(roomRepository.existsByNormalizedName("Standard" + (char) 0xA0 + (char) 0xA0 + "Room " + base, null)).isTrue();
+    }
+
+    @Test
+    void theDatabaseIndexAlsoHoldsOnInnerSpaces() {
+        String base = UUID.randomUUID().toString();
+        roomService.create(input("Garden Suite " + base));
+
+        RoomEntity duplicate = new RoomEntity();
+        duplicate.setName("garden   suite " + base);
+        duplicate.setDescription("A room used only by RoomNameUniquenessTests");
+        duplicate.setCapacity(2);
+        duplicate.setBasePrice(new BigDecimal("1500.00"));
+
+        assertThatThrownBy(() -> roomRepository.saveAndFlush(duplicate)).isInstanceOf(DataIntegrityViolationException.class);
+    }
 }

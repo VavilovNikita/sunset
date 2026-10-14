@@ -11,6 +11,7 @@ import com.sunsetbeach.model.GymAcCommand;
 import com.sunsetbeach.model.GymAcCommandInput;
 import com.sunsetbeach.model.GymDevice;
 import com.sunsetbeach.model.GymDeviceList;
+import com.sunsetbeach.model.GymStatus;
 import com.sunsetbeach.model.GymDeviceType;
 import com.sunsetbeach.repository.GymDeviceRepository;
 import com.sunsetbeach.repository.UserRepository;
@@ -57,6 +58,12 @@ public class GymDeviceService {
     private final long confirmDelayMillis;
 
     private final Map<String, CachedRead> cache = new ConcurrentHashMap<>();
+
+    /** {@code GET /gym/status}: configuration facts only - never calls Tuya. */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public GymStatus status() {
+        return new GymStatus(tuya.isConfigured(), devices.findByActiveTrueAndInBookingsTrueOrderBySortOrderAscNameAsc().size());
+    }
 
     public GymDeviceService(
             GymDeviceRepository devices,

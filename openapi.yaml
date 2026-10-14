@@ -4501,18 +4501,23 @@ paths:
     post:
       operationId: billMissingSpaTreatments
       tags: [Spa]
-      summary: Add the treatments the linked order does not carry to that same order
+      summary: Bill the treatments the appointment's orders do not carry
       description: >
-        Requires CASHIER or above. For a `COMPLETED` appointment whose linked order (`orderId`)
-        does not cover every treatment (`missingTreatmentNames` is not empty): adds exactly the
-        missing quantity of each treatment to that same order, in one action and one transaction,
-        through the ordinary order path (`POST /orders/{id}/items`) - so the price is the menu's
-        live price at this moment, like every other POS line. Nothing is charged here; the order is
-        then closed as usual. Returns the appointment with its refreshed `missingTreatmentNames`
-        (empty now).
+        Requires CASHIER or above. For a `COMPLETED` appointment whose orders do not cover every
+        treatment (`missingTreatmentNames` is not empty): bills exactly the missing quantity of
+        each treatment, in one action and one transaction, through the ordinary order path
+        (`POST /orders/{id}/items`) - so the price is the menu's live price at this moment, like
+        every other POS line. Nothing is charged here; the order is then closed as usual. What is
+        "carried" is counted over **all** the appointment's orders (cancelled ones excluded): its own
+        (`orderId`) and the top-up orders opened by earlier calls.
 
-        409 when the appointment is not `COMPLETED`, has no linked order, the linked order is
-        `PAID` or `CANCELLED` (a closed order can't take lines), or nothing is missing.
+        The missing treatments go onto the first of those orders that can still take lines
+        (`OPEN`/`SENT`). When none can - the order is already `PAID` - a **new order** for just the
+        missing treatments is opened on the appointment's table and linked to the same
+        appointment (`Order.spaAppointmentId` names it); the paid order is not touched. Returns the
+        appointment with its refreshed `missingTreatmentNames` (empty now).
+
+        409 when the appointment is not `COMPLETED`, has no order at all, or nothing is missing.
       responses:
         "200":
           description: The appointment after the missing treatments were added to its order.
@@ -10989,6 +10994,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
+  /gym/status:
+    get:
+      operationId: getGymStatus
+      tags: [Gym]
+      summary: Whether the gym equipment can be controlled at all
+      description: >
+        Requires CASHIER or above. Answers from the server's own configuration and database - **no
+        call to Tuya**, so the Gym pages can show "Tuya is not configured" the moment they open,
+        without spending a call or waiting for one to fail. `tuyaConfigured` is false when the
+        server has no Tuya keys; `automatedDeviceCount` is how many active devices the reservation
+        automation switches (`inBookings`). With either at zero a reservation's equipment is never
+        touched, and a screen says the automation is not set up.
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GymStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenCashierPlus"
   /gym/settings/devices:
     get:
       operationId: listGymDeviceConfigs
@@ -12398,7 +12426,11 @@ components:
             `OrderCreateInput` (see that field for exactly how), never computed or amount-bearing
             here. A `COMPLETED` appointment with `orderId: null` is a real, visible gap (a
             treatment settled another way, or one nobody rang up yet) - deliberately not blocked,
-            see the class description.
+            see the class description. This is the appointment's **own, first** order. Further
+            orders can bill the same appointment (the top-up opened by
+            `POST /spa-appointments/{id}/bill-missing-treatments` when the first one is already
+            paid); they are not listed here, but `Order.spaAppointmentId` names the appointment and
+            `missingTreatmentNames` is counted over all of them.
         missingTreatmentNames:
           type: array
           items:
@@ -13457,7 +13489,17 @@ components:
             booking, whatever its `status` or `occupancyStatus`: a checked-out booking, a `NEW` one
             whose dates have passed and a `CANCELLED` one with POS charges can all owe money.
             Decimal(10,2) rendered as a string, never below `"0.00"`. A client shows its "Owes"
-            badge from this field and never works the balance out itself.
+            badge from `owes` and never works the balance out itself. A guest marked `NO_SHOW`
+            owes nothing for the room - only other charges on the booking count.
+        owes:
+          type: boolean
+          description: >
+            Whether `balanceDue` is a debt that has already fallen due - the one flag a client
+            shows its "Owes" badge from. `true` only when `balanceDue` is above zero **and** the guest
+            is in the house or gone (`occupancyStatus` `CHECKED_IN`, including a stay past its
+            `checkOut`, or `CHECKED_OUT`), the booking is `CANCELLED` (what remains is charges), or
+            the stay's dates are over. `false` for a booking that has not arrived yet, however
+            unpaid - that money is still to be collected, not owed.
         status:
           $ref: "#/components/schemas/BookingStatus"
         channel:
@@ -14719,6 +14761,13 @@ components:
           type: string
           nullable: true
           description: Set when `isBlocked` is true (`RoomUnitBlock.reason`).
+        guestName:
+          type: string
+          nullable: true
+          description: >
+            The name on the booking that holds this unit that day - set when `isBooked` is true. A
+            screen shows it in place of `blockReason` on a day that has a booking (a block laid over
+            a booking is still a booking day for the person looking at the room).
 
     AvailabilityDay:
       type: object
@@ -15467,6 +15516,10 @@ components:
           type: string
           nullable: true
           maxLength: 1000
+          description: >
+            Required (400 on `notes`) when `closingCashCounted` differs from the expected cash
+            (opening float + cash payments + cash folio payments of the shift) - the note says why
+            the drawer is over or short. Optional when the drawer matches.
 
     ShiftTotals:
       type: object
@@ -18608,6 +18661,18 @@ components:
           allOf:
             - $ref: "#/components/schemas/GymAcCommand"
           nullable: true
+
+    GymStatus:
+      type: object
+      required: [tuyaConfigured, automatedDeviceCount]
+      properties:
+        tuyaConfigured:
+          type: boolean
+          description: The server has Tuya keys and an API base. Says nothing about whether Tuya is reachable.
+        automatedDeviceCount:
+          type: integer
+          minimum: 0
+          description: Active devices the reservation automation switches (`inBookings`).
 
     GymDeviceList:
       type: object

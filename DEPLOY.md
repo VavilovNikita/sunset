@@ -96,6 +96,25 @@ CREATE UNIQUE INDEX "Room_name_normalized_key" ON "Room" (lower(btrim("name")));
 
 Rolling back to the previous build is safe: the index is just an index.
 
+## V143: names compared ignoring case, outer and repeated spaces
+
+V143 widens V138: a room type's name and a physical room's label (`RoomUnit.label`) are unique after
+lower-casing, trimming and collapsing runs of spaces (also no-break and other Unicode spaces) to one -
+"Standard   Room" = "standard room", "Q1" = "q1". Like V138 it never fails on old data: with duplicates it
+creates no index and logs one WARNING per group (`V143: 2 rooms are labelled "q1": ...`); the services
+still refuse any new duplicate. Check, rename the extras in the admin, then create what was left out:
+
+```sql
+SELECT sunset_normalize_name("name") AS name, count(*), string_agg("id", ', ') FROM "Room" GROUP BY 1 HAVING count(*) > 1;
+SELECT sunset_normalize_name("label") AS label, count(*), string_agg("id", ', ') FROM "RoomUnit" GROUP BY 1 HAVING count(*) > 1;
+
+DROP INDEX IF EXISTS "Room_name_normalized_key";
+CREATE UNIQUE INDEX "Room_name_normalized_key" ON "Room" (sunset_normalize_name("name"));
+CREATE UNIQUE INDEX "RoomUnit_label_normalized_key" ON "RoomUnit" (sunset_normalize_name("label"));
+```
+
+Rolling back to the previous build is safe: these are only an index and a function.
+
 ## Gym equipment (Tuya cloud)
 
 The Gym page (fans on Wi-Fi relays, air conditioners behind IR hubs) talks to the Tuya cloud. It needs three

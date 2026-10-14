@@ -33,13 +33,16 @@ public class AvailabilityService {
     private final RoomUnitBlockRepository roomUnitBlockRepository;
     private final BookingSegmentRepository segmentRepository;
     private final OverstayRule overstayRule;
+    private final com.sunsetbeach.repository.BookingRepository bookingRepository;
 
     public AvailabilityService(
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
             RoomUnitBlockRepository roomUnitBlockRepository,
             BookingSegmentRepository segmentRepository,
-            OverstayRule overstayRule) {
+            OverstayRule overstayRule,
+            com.sunsetbeach.repository.BookingRepository bookingRepository) {
+        this.bookingRepository = bookingRepository;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
@@ -120,13 +123,18 @@ public class AvailabilityService {
                             .filter(o -> o.roomUnitId() != null)
                             .forEach(o -> bookingIdByUnitId.putIfAbsent(o.roomUnitId(), o.bookingId()));
 
+                    Map<String, String> guestNameByBookingId = bookingIdByUnitId.isEmpty()
+                            ? Map.of()
+                            : bookingRepository.findAllById(new java.util.HashSet<>(bookingIdByUnitId.values())).stream()
+                                    .collect(Collectors.toMap(com.sunsetbeach.entity.BookingEntity::getId, com.sunsetbeach.entity.BookingEntity::getGuestName, (a, b) -> a));
                     List<RoomUnitAvailability> units = activeUnits.stream()
                             .map(unit -> {
                                 boolean blocked = blockedUnitIds.contains(unit.getId());
                                 String bookingId = bookingIdByUnitId.get(unit.getId());
                                 boolean booked = bookingId != null;
                                 return new RoomUnitAvailability(unit.getId(), unit.getLabel(), blocked, booked, !blocked && !booked,
-                                        bookingId, blocked ? blockReasonByUnitId.get(unit.getId()) : null);
+                                        bookingId, blocked ? blockReasonByUnitId.get(unit.getId()) : null)
+                                        .guestName(booked ? guestNameByBookingId.get(bookingId) : null);
                             })
                             .toList();
 

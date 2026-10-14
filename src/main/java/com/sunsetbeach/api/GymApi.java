@@ -13,6 +13,7 @@ import com.sunsetbeach.model.GymDeviceConfigInput;
 import com.sunsetbeach.model.GymDeviceList;
 import com.sunsetbeach.model.GymRelayInput;
 import com.sunsetbeach.model.GymReorderInput;
+import com.sunsetbeach.model.GymStatus;
 import com.sunsetbeach.model.GymTuyaUsage;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.TuyaDiscoveredDevice;
@@ -124,6 +125,47 @@ public interface GymApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /gym/status : Whether the gym equipment can be controlled at all
+     * Requires CASHIER or above. Answers from the server&#39;s own configuration and database - **no call to Tuya**, so the Gym pages can show \&quot;Tuya is not configured\&quot; the moment they open, without spending a call or waiting for one to fail. &#x60;tuyaConfigured&#x60; is false when the server has no Tuya keys; &#x60;automatedDeviceCount&#x60; is how many active devices the reservation automation switches (&#x60;inBookings&#x60;). With either at zero a reservation&#39;s equipment is never touched, and a screen says the automation is not set up. 
+     *
+     * @return The status. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/gym/status",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<GymStatus> getGymStatus(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"automatedDeviceCount\" : 0, \"tuyaConfigured\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

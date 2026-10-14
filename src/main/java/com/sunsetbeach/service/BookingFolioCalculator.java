@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.FolioPaymentEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.repository.FolioPaymentRepository;
 import com.sunsetbeach.repository.PaymentRepository;
@@ -22,7 +23,8 @@ import org.springframework.stereotype.Component;
  * can compute it for a whole page in two queries instead of two per row.
  *
  * <p>Charged: the room ({@code totalPrice} + {@code earlyDepartureFee}; nothing for a {@code
- * CANCELLED} booking) and every {@code ROOM_CHARGE} {@link PaymentEntity}. Collected: every {@link
+ * CANCELLED} booking, and nothing for a guest marked {@code NO_SHOW} - the stay never happened and
+ * the hotel does not bill it; whatever else was charged to the booking still counts) and every {@code ROOM_CHARGE} {@link PaymentEntity}. Collected: every {@link
  * FolioPaymentEntity}, applied to the POS charges first and then to the room - so "owes for the
  * bar" clears before the room does, matching how the desk collects. A booking marked {@code PAID}
  * by hand had the rest of its room collected outside this system (an OTA prepayment, a bank
@@ -51,6 +53,27 @@ public class BookingFolioCalculator {
         return breakdown(booking).balanceDue();
     }
 
+    /**
+     * {@code Booking.owes}: whether a positive {@code balanceDue} is a debt that has already fallen
+     * due, as opposed to money that will be collected for a stay that has not started. True for a
+     * guest in the house or gone ({@code CHECKED_IN} - an overdue one included - or {@code
+     * CHECKED_OUT}), for a {@code CANCELLED} booking (what is left on it is charges, the room is
+     * not owed) and for a stay whose dates are over; false for a no-show with nothing else charged
+     * (the balance is zero) and for a booking that has not arrived yet, however unpaid.
+     */
+    public static boolean debtHasFallenDue(BookingEntity booking, BigDecimal balanceDue, java.time.LocalDate today) {
+        if (balanceDue.signum() <= 0) {
+            return false;
+        }
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            return true;
+        }
+        return switch (booking.getOccupancyStatus()) {
+            case CHECKED_IN, CHECKED_OUT -> true;
+            case EXPECTED, NO_SHOW -> booking.getCheckOut().isBefore(today);
+        };
+    }
+
     /** {@link #breakdown} for many bookings at once: one query for the POS charges, one for the payments. */
     public Map<String, FolioBreakdown> breakdowns(Collection<BookingEntity> bookings) {
         if (bookings.isEmpty()) {
@@ -75,7 +98,7 @@ public class BookingFolioCalculator {
         BigDecimal roomChargesGross = charges.stream().map(PaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal paid = payments.stream().map(FolioPaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new FolioBreakdown(
-                booking.getTotalPrice(), booking.getEarlyDepartureFee(), roomChargesGross, charges.size(), paid, booking.getStatus());
+                booking.getTotalPrice(), booking.getEarlyDepartureFee(), roomChargesGross, charges.size(), paid, booking.getStatus(), booking.getOccupancyStatus());
     }
 
     public record FolioBreakdown(
@@ -84,11 +107,12 @@ public class BookingFolioCalculator {
             BigDecimal roomChargesGross,
             int roomChargeCount,
             BigDecimal paid,
-            BookingStatus status) {
+            BookingStatus status,
+            OccupancyStatus occupancy) {
 
-        /** The room as owed: nothing once the booking is cancelled. */
+        /** The room as owed: nothing once the booking is cancelled, nothing for a no-show. */
         public BigDecimal roomOwed() {
-            return status == BookingStatus.CANCELLED ? BigDecimal.ZERO : stayPrice.add(earlyDepartureFee);
+            return status == BookingStatus.CANCELLED || occupancy == OccupancyStatus.NO_SHOW ? BigDecimal.ZERO : stayPrice.add(earlyDepartureFee);
         }
 
         public BigDecimal folioTotal() {
@@ -133,7 +157,7 @@ public class BookingFolioCalculator {
          * from a {@code PAID} one it would be zero.
          */
         public FolioBreakdown asUnsettled() {
-            return new FolioBreakdown(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, BookingStatus.CONFIRMED);
+            return new FolioBreakdown(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, BookingStatus.CONFIRMED, occupancy);
         }
     }
 }

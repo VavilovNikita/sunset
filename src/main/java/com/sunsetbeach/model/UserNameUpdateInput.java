@@ -30,11 +30,11 @@ public class UserNameUpdateInput {
    * Constructor with only required parameters
    */
   public UserNameUpdateInput(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
   }
 
   public UserNameUpdateInput name(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
     return this;
   }
 
@@ -49,7 +49,7 @@ public class UserNameUpdateInput {
   }
 
   public void setName(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
   }
 
   @Override

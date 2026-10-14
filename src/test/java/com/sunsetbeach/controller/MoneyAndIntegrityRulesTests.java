@@ -527,6 +527,19 @@ class MoneyAndIntegrityRulesTests extends AbstractIntegrationTest {
         assertThat(trimmed.get("name").asText()).isEqualTo("Padded Room Name");
     }
 
+    @Test
+    void aNameOfNoBreakSpacesOrZeroWidthCharacters_isA400_andTheyAreTrimmedAtTheEdges() throws Exception {
+        // U+00A0, U+2003 (em space), U+200B (zero width space), U+FEFF (BOM) - none are Character.isWhitespace.
+        String invisible = "\u00a0\u2003\u200b\ufeff";
+        postJson("/rooms", adminAuth, "{\"name\":\"" + invisible + "\",\"description\":\"A description that is long enough\",\"capacity\":2,\"basePrice\":1500}")
+                .andExpect(status().isBadRequest());
+        postJson("/guests", adminAuth, "{\"name\":\"" + invisible + "\"}").andExpect(status().isBadRequest());
+
+        JsonNode trimmed = body(postJson("/rooms", adminAuth, "{\"name\":\"" + invisible + "Padded Unicode Room" + invisible + "\",\"description\":\"A description that is long enough\",\"capacity\":2,\"basePrice\":1500}")
+                .andExpect(status().isCreated()));
+        assertThat(trimmed.get("name").asText()).isEqualTo("Padded Unicode Room");
+    }
+
     // --- 7. Quantities ---------------------------------------------------------------------------------
 
     @Test

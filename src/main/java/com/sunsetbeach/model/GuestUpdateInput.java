@@ -48,13 +48,13 @@ public class GuestUpdateInput {
    * Constructor with only required parameters
    */
   public GuestUpdateInput(String name, Boolean vip, List<@Size(max = 50)String> tags) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
     this.vip = vip;
     this.tags = tags;
   }
 
   public GuestUpdateInput name(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
     return this;
   }
 
@@ -69,7 +69,7 @@ public class GuestUpdateInput {
   }
 
   public void setName(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
   }
 
   public GuestUpdateInput email(String email) {

@@ -175,14 +175,12 @@ public class BookingOccupancyService {
         // change below rewrites.
         LocalDate originalCheckOut = before.getCheckOut();
         BigDecimal priceBefore = before.getTotalPrice();
-        List<String> releasedRoomUnitIds = List.of();
         if (shorten) {
             EarlyDeparture plan = planEarlyDeparture(before);
             if (plan != null) {
                 if (!plan.quote().available()) {
                     throw new ConflictException(plan.quote().reason());
                 }
-                releasedRoomUnitIds = roomsUsedBeforeDeparture(bookingId);
                 BookingScheduleInput schedule = new BookingScheduleInput(before.getCheckIn().toString(), plan.shortenedCheckOut().toString())
                         .roomUnitId(plan.roomUnitId());
                 Booking shortened = bookingService.updateSchedule(bookingId, schedule, true);
@@ -191,28 +189,11 @@ public class BookingOccupancyService {
         }
         BigDecimal releasedAmount = released;
         BigDecimal fee = chargeUnused ? released : BigDecimal.ZERO;
-        List<String> releasedRooms = releasedRoomUnitIds;
-        return checkOutTransaction.execute(status -> completeCheckOut(bookingId, originalCheckOut, releasedAmount, fee, releasedRooms));
-    }
-
-    /**
-     * Every other room of a relocated stay the guest was in by today: the ones they slept in
-     * before a move, and one they moved into today that an early departure now drops. Only the
-     * stay's final room used to be marked dirty, which left the earlier room "clean" with the
-     * guest's night in it. Rooms of segments that start after today are never listed - the guest
-     * was never there.
-     */
-    private List<String> roomsUsedBeforeDeparture(String bookingId) {
-        LocalDate today = LocalDate.now(clock);
-        return segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId).stream()
-                .filter(s -> !s.getCheckIn().isAfter(today) && s.getRoomUnitId() != null)
-                .map(BookingSegmentEntity::getRoomUnitId)
-                .distinct()
-                .toList();
+        return checkOutTransaction.execute(status -> completeCheckOut(bookingId, originalCheckOut, releasedAmount, fee));
     }
 
     private CheckOutResult completeCheckOut(
-            String bookingId, LocalDate originalCheckOut, BigDecimal released, BigDecimal fee, List<String> releasedRoomUnitIds) {
+            String bookingId, LocalDate originalCheckOut, BigDecimal released, BigDecimal fee) {
         BookingEntity booking = bookingRepository.findByIdForUpdate(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         requireCheckedIn(booking);
 
@@ -233,26 +214,6 @@ public class BookingOccupancyService {
             roomUnitRepository.saveAndFlush(unit);
             roomLabel = unit.getLabel();
         }
-        StringBuilder alsoDirty = new StringBuilder();
-        for (String unitId : releasedRoomUnitIds) {
-            if (unitId.equals(saved.getRoomUnitId())) {
-                continue;
-            }
-            // Not a room somebody else is in tonight - it was cleaned and re-let since the move.
-            boolean takenByAnother = !segmentRepository
-                    .findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThanAndBookingIdNot(
-                            unitId, BookingStatus.CANCELLED, LocalDate.now(clock).plusDays(1), LocalDate.now(clock), bookingId)
-                    .isEmpty();
-            if (takenByAnother) {
-                continue;
-            }
-            roomUnitRepository.findById(unitId).ifPresent(u -> {
-                u.setHousekeepingStatus(HousekeepingStatus.DIRTY);
-                roomUnitRepository.saveAndFlush(u);
-                alsoDirty.append(alsoDirty.length() == 0 ? "" : ", ").append(u.getLabel());
-            });
-        }
-
         BigDecimal outstanding = bookingService.computeOutstandingBalance(bookingId);
 
         String shortened = "";
@@ -267,7 +228,7 @@ public class BookingOccupancyService {
                 AuditEntityType.BOOKING,
                 saved.getId(),
                 "Checked out " + saved.getGuestName() + (roomLabel != null ? " (" + roomLabel + ", now marked dirty)" : "")
-                        + (alsoDirty.length() > 0 ? "; released room " + alsoDirty + " also marked dirty" : "") + shortened
+                        + shortened
                         + (gymCancelled > 0 ? "; " + gymCancelled + " gym reservation(s) cancelled" : "")
                         + (outstanding.signum() > 0
                                 ? "; checkout confirmed with ฿" + PriceFormat.asDecimalString(outstanding) + " unpaid"

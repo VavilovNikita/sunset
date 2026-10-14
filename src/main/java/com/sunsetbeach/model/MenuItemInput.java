@@ -48,13 +48,13 @@ public class MenuItemInput {
    * Constructor with only required parameters
    */
   public MenuItemInput(String name, String category, BigDecimal price) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
     this.category = category;
     this.price = price;
   }
 
   public MenuItemInput name(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
     return this;
   }
 
@@ -69,7 +69,7 @@ public class MenuItemInput {
   }
 
   public void setName(String name) {
-    this.name = name == null ? null : name.strip();
+    this.name = com.sunsetbeach.util.NameText.strip(name);
   }
 
   public MenuItemInput description(String description) {

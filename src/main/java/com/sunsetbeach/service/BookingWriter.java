@@ -849,11 +849,12 @@ public class BookingWriter {
         assertContinuity(booking, updated);
         syncBookingFromSegments(booking, updated);
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
-        return new RelocationResult(saved, oldRoom, oldUnitLabel, newRoom, newUnit);
+        return new RelocationResult(saved, oldRoom, target.getRoomUnitId(), oldUnitLabel, newRoom, newUnit);
     }
 
     /** {@link #relocate}'s saved booking plus the old/new room identity, for the audit summary ("from X to Y"). */
-    public record RelocationResult(BookingEntity booking, RoomEntity oldRoom, String oldUnitLabel, RoomEntity newRoom, RoomUnitEntity newUnit) {
+    public record RelocationResult(
+            BookingEntity booking, RoomEntity oldRoom, String oldUnitId, String oldUnitLabel, RoomEntity newRoom, RoomUnitEntity newUnit) {
     }
 
     /**
@@ -991,7 +992,7 @@ public class BookingWriter {
         assertContinuity(booking, updated);
         syncBookingFromSegments(booking, updated);
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
-        return new RelocationResult(saved, discardedRoom, discardedUnitLabel, room,
+        return new RelocationResult(saved, discardedRoom, null, discardedUnitLabel, room,
                 before.getRoomUnitId() != null ? roomUnitRepository.findById(before.getRoomUnitId()).orElse(null) : null);
     }
 
