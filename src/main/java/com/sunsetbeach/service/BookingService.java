@@ -1129,7 +1129,7 @@ public class BookingService {
     @Transactional(readOnly = true)
     public BigDecimal computeOutstandingBalanceWithStayPrice(String bookingId, BigDecimal stayPrice) {
         FolioBreakdown b = computeFolioBreakdown(bookingId);
-        return new FolioBreakdown(stayPrice, b.earlyDepartureFee(), b.roomChargesGross(), b.roomChargeCount(), b.paid(), b.status(), b.occupancy())
+        return new FolioBreakdown(stayPrice, b.earlyDepartureFee(), b.roomChargesGross(), b.roomChargeCount(), b.paid(), b.status(), b.occupancy(), b.neverArrivedAndOver())
                 .balanceDue();
     }
 

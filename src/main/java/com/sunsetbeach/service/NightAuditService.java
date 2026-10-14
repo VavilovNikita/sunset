@@ -90,6 +90,7 @@ public class NightAuditService {
         return new NightAudit(
                 iso,
                 toBookingDtos(missedArrivals(day), null),
+                toBookingDtos(notArrived(day), null),
                 toBookingDtos(missedDepartures(day), day),
                 unpaidBalances(day),
                 reportService.occupancy(iso, iso).getTotal(),
@@ -149,9 +150,23 @@ public class NightAuditService {
         return rows;
     }
 
+    /** Arrivals still expected whose stay is not over yet (a past stay is in {@link #notArrived}). */
     private List<BookingEntity> missedArrivals(LocalDate day) {
         return bookingRepository.findByOccupancyStatusAndStatusNotAndCheckInLessThanEqualOrderByCheckInAsc(
-                OccupancyStatus.EXPECTED, BookingStatus.CANCELLED, day);
+                        OccupancyStatus.EXPECTED, BookingStatus.CANCELLED, day).stream()
+                .filter(b -> !b.getCheckOut().isBefore(day))
+                .toList();
+    }
+
+    /**
+     * Stays whose dates have passed and whose guest never checked in - neither no-show nor
+     * cancelled. The room is not a debt for them; the desk is asked to mark each no-show or cancel it.
+     */
+    private List<BookingEntity> notArrived(LocalDate day) {
+        return bookingRepository.findByOccupancyStatusAndStatusNotAndCheckInLessThanEqualOrderByCheckInAsc(
+                        OccupancyStatus.EXPECTED, BookingStatus.CANCELLED, day).stream()
+                .filter(b -> b.getCheckOut().isBefore(day))
+                .toList();
     }
 
     private List<BookingEntity> missedDepartures(LocalDate day) {

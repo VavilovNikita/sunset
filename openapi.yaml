@@ -17645,14 +17645,25 @@ components:
     NightAudit:
       type: object
       description: '`GET /night-audit` - see that operation for what each list contains.'
-      required: [date, missedArrivals, missedDepartures, unpaidBalances, snapshot, closure]
+      required: [date, missedArrivals, notArrived, missedDepartures, unpaidBalances, snapshot, closure]
       properties:
         date:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
         missedArrivals:
           type: array
-          description: Sorted by `checkIn`, oldest first.
+          description: >
+            Arrivals still expected (`occupancyStatus` `EXPECTED`, not cancelled) whose stay is not
+            over yet. Sorted by `checkIn`, oldest first.
+          items:
+            $ref: "#/components/schemas/NightAuditBooking"
+        notArrived:
+          type: array
+          description: >
+            Stays whose dates have passed (`checkOut` before `date`) and whose guest never checked
+            in - still `EXPECTED`, not `NO_SHOW`, not cancelled. The room is **not** a debt for
+            them (`balanceDue` counts only other charges); the screen asks the desk to mark each
+            one no-show or cancel it. Sorted by `checkIn`, oldest first.
           items:
             $ref: "#/components/schemas/NightAuditBooking"
         missedDepartures:
@@ -17664,7 +17675,8 @@ components:
           type: array
           description: >
             Bookings whose stay is over (checked out, or `checkOut` on or before `date` and not
-            still checked in) or that are `CANCELLED`, and that still owe money
+            still checked in) or that are `CANCELLED`, and that still owe money (a no-show or a
+            never-arrived past stay owes no room - only other charges)
             (`balanceDue` above zero) - whatever their `status`. Sorted by `checkOut`, oldest first.
             Each row carries `balanceDue`.
           items:

@@ -175,6 +175,9 @@ public class BookingOccupancyService {
         // change below rewrites.
         LocalDate originalCheckOut = before.getCheckOut();
         BigDecimal priceBefore = before.getTotalPrice();
+        // The room the guest is physically in now, read before an early departure drops trailing segments
+        // (a move that took effect today puts them in the new room, which the shortened stay forgets).
+        String currentRoomUnitId = currentRoomUnitId(bookingId, before.getRoomUnitId());
         if (shorten) {
             EarlyDeparture plan = planEarlyDeparture(before);
             if (plan != null) {
@@ -189,11 +192,28 @@ public class BookingOccupancyService {
         }
         BigDecimal releasedAmount = released;
         BigDecimal fee = chargeUnused ? released : BigDecimal.ZERO;
-        return checkOutTransaction.execute(status -> completeCheckOut(bookingId, originalCheckOut, releasedAmount, fee));
+        return checkOutTransaction.execute(status -> completeCheckOut(bookingId, originalCheckOut, releasedAmount, fee, currentRoomUnitId));
+    }
+
+    /**
+     * The unit of the segment that holds today; for an overdue guest (today past the last segment) the
+     * last one, before the first night the first. {@code fallback} when the booking has no segments.
+     */
+    private String currentRoomUnitId(String bookingId, String fallback) {
+        LocalDate today = LocalDate.now(clock);
+        List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+        if (segments.isEmpty()) {
+            return fallback;
+        }
+        BookingSegmentEntity chosen = segments.stream()
+                .filter(s -> !today.isBefore(s.getCheckIn()) && today.isBefore(s.getCheckOut()))
+                .findFirst()
+                .orElse(today.isBefore(segments.get(0).getCheckIn()) ? segments.get(0) : segments.get(segments.size() - 1));
+        return chosen.getRoomUnitId() != null ? chosen.getRoomUnitId() : fallback;
     }
 
     private CheckOutResult completeCheckOut(
-            String bookingId, LocalDate originalCheckOut, BigDecimal released, BigDecimal fee) {
+            String bookingId, LocalDate originalCheckOut, BigDecimal released, BigDecimal fee, String currentRoomUnitId) {
         BookingEntity booking = bookingRepository.findByIdForUpdate(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         requireCheckedIn(booking);
 
@@ -207,9 +227,10 @@ public class BookingOccupancyService {
         int gymCancelled = gymReservations.onBookingEnded(saved, "Guest checked out");
 
         String roomLabel = null;
-        if (saved.getRoomUnitId() != null) {
+        String dirtyUnitId = currentRoomUnitId != null ? currentRoomUnitId : saved.getRoomUnitId();
+        if (dirtyUnitId != null) {
             RoomUnitEntity unit =
-                    roomUnitRepository.findById(saved.getRoomUnitId()).orElseThrow(() -> new NotFoundException("Room unit not found"));
+                    roomUnitRepository.findById(dirtyUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
             unit.setHousekeepingStatus(HousekeepingStatus.DIRTY);
             roomUnitRepository.saveAndFlush(unit);
             roomLabel = unit.getLabel();

@@ -32,6 +32,9 @@ public class NightAudit {
   private List<@Valid NightAuditBooking> missedArrivals = new ArrayList<>();
 
   @Valid
+  private List<@Valid NightAuditBooking> notArrived = new ArrayList<>();
+
+  @Valid
   private List<@Valid NightAuditBooking> missedDepartures = new ArrayList<>();
 
   @Valid
@@ -48,9 +51,10 @@ public class NightAudit {
   /**
    * Constructor with only required parameters
    */
-  public NightAudit(String date, List<@Valid NightAuditBooking> missedArrivals, List<@Valid NightAuditBooking> missedDepartures, List<@Valid NightAuditBooking> unpaidBalances, OccupancyReportRow snapshot, NightAuditClosure closure) {
+  public NightAudit(String date, List<@Valid NightAuditBooking> missedArrivals, List<@Valid NightAuditBooking> notArrived, List<@Valid NightAuditBooking> missedDepartures, List<@Valid NightAuditBooking> unpaidBalances, OccupancyReportRow snapshot, NightAuditClosure closure) {
     this.date = date;
     this.missedArrivals = missedArrivals;
+    this.notArrived = notArrived;
     this.missedDepartures = missedDepartures;
     this.unpaidBalances = unpaidBalances;
     this.snapshot = snapshot;
@@ -90,7 +94,7 @@ public class NightAudit {
   }
 
   /**
-   * Sorted by `checkIn`, oldest first.
+   * Arrivals still expected (`occupancyStatus` `EXPECTED`, not cancelled) whose stay is not over yet. Sorted by `checkIn`, oldest first. 
    * @return missedArrivals
    */
   @NotNull @Valid 
@@ -101,6 +105,33 @@ public class NightAudit {
 
   public void setMissedArrivals(List<@Valid NightAuditBooking> missedArrivals) {
     this.missedArrivals = missedArrivals;
+  }
+
+  public NightAudit notArrived(List<@Valid NightAuditBooking> notArrived) {
+    this.notArrived = notArrived;
+    return this;
+  }
+
+  public NightAudit addNotArrivedItem(NightAuditBooking notArrivedItem) {
+    if (this.notArrived == null) {
+      this.notArrived = new ArrayList<>();
+    }
+    this.notArrived.add(notArrivedItem);
+    return this;
+  }
+
+  /**
+   * Stays whose dates have passed (`checkOut` before `date`) and whose guest never checked in - still `EXPECTED`, not `NO_SHOW`, not cancelled. The room is **not** a debt for them (`balanceDue` counts only other charges); the screen asks the desk to mark each one no-show or cancel it. Sorted by `checkIn`, oldest first. 
+   * @return notArrived
+   */
+  @NotNull @Valid 
+  @JsonProperty("notArrived")
+  public List<@Valid NightAuditBooking> getNotArrived() {
+    return notArrived;
+  }
+
+  public void setNotArrived(List<@Valid NightAuditBooking> notArrived) {
+    this.notArrived = notArrived;
   }
 
   public NightAudit missedDepartures(List<@Valid NightAuditBooking> missedDepartures) {
@@ -144,7 +175,7 @@ public class NightAudit {
   }
 
   /**
-   * Bookings whose stay is over (checked out, or `checkOut` on or before `date` and not still checked in) or that are `CANCELLED`, and that still owe money (`balanceDue` above zero) - whatever their `status`. Sorted by `checkOut`, oldest first. Each row carries `balanceDue`. 
+   * Bookings whose stay is over (checked out, or `checkOut` on or before `date` and not still checked in) or that are `CANCELLED`, and that still owe money (a no-show or a never-arrived past stay owes no room - only other charges) (`balanceDue` above zero) - whatever their `status`. Sorted by `checkOut`, oldest first. Each row carries `balanceDue`. 
    * @return unpaidBalances
    */
   @NotNull @Valid 
@@ -206,6 +237,7 @@ public class NightAudit {
     NightAudit nightAudit = (NightAudit) o;
     return Objects.equals(this.date, nightAudit.date) &&
         Objects.equals(this.missedArrivals, nightAudit.missedArrivals) &&
+        Objects.equals(this.notArrived, nightAudit.notArrived) &&
         Objects.equals(this.missedDepartures, nightAudit.missedDepartures) &&
         Objects.equals(this.unpaidBalances, nightAudit.unpaidBalances) &&
         Objects.equals(this.snapshot, nightAudit.snapshot) &&
@@ -214,7 +246,7 @@ public class NightAudit {
 
   @Override
   public int hashCode() {
-    return Objects.hash(date, missedArrivals, missedDepartures, unpaidBalances, snapshot, closure);
+    return Objects.hash(date, missedArrivals, notArrived, missedDepartures, unpaidBalances, snapshot, closure);
   }
 
   @Override
@@ -223,6 +255,7 @@ public class NightAudit {
     sb.append("class NightAudit {\n");
     sb.append("    date: ").append(toIndentedString(date)).append("\n");
     sb.append("    missedArrivals: ").append(toIndentedString(missedArrivals)).append("\n");
+    sb.append("    notArrived: ").append(toIndentedString(notArrived)).append("\n");
     sb.append("    missedDepartures: ").append(toIndentedString(missedDepartures)).append("\n");
     sb.append("    unpaidBalances: ").append(toIndentedString(unpaidBalances)).append("\n");
     sb.append("    snapshot: ").append(toIndentedString(snapshot)).append("\n");

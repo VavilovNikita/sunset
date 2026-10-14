@@ -37,8 +37,10 @@ public class BookingFolioCalculator {
 
     private final PaymentRepository paymentRepository;
     private final FolioPaymentRepository folioPaymentRepository;
+    private final java.time.Clock clock;
 
-    public BookingFolioCalculator(PaymentRepository paymentRepository, FolioPaymentRepository folioPaymentRepository) {
+    public BookingFolioCalculator(PaymentRepository paymentRepository, FolioPaymentRepository folioPaymentRepository, java.time.Clock clock) {
+        this.clock = clock;
         this.paymentRepository = paymentRepository;
         this.folioPaymentRepository = folioPaymentRepository;
     }
@@ -61,6 +63,17 @@ public class BookingFolioCalculator {
      * not owed) and for a stay whose dates are over; false for a no-show with nothing else charged
      * (the balance is zero) and for a booking that has not arrived yet, however unpaid.
      */
+    /**
+     * A booking whose dates have passed and whose guest never checked in (not cancelled, not marked
+     * no-show): the room is not a debt - the desk is asked to mark it no-show or cancel it (night
+     * audit, "Not arrived"). Other charges on it still count.
+     */
+    public static boolean neverArrivedAndOver(BookingEntity booking, java.time.LocalDate today) {
+        return booking.getStatus() != BookingStatus.CANCELLED
+                && booking.getOccupancyStatus() == OccupancyStatus.EXPECTED
+                && booking.getCheckOut().isBefore(today);
+    }
+
     public static boolean debtHasFallenDue(BookingEntity booking, BigDecimal balanceDue, java.time.LocalDate today) {
         if (balanceDue.signum() <= 0) {
             return false;
@@ -70,6 +83,7 @@ public class BookingFolioCalculator {
         }
         return switch (booking.getOccupancyStatus()) {
             case CHECKED_IN, CHECKED_OUT -> true;
+            // Not arrived: the room is not owed (neverArrivedAndOver / no-show); any balance left is other charges.
             case EXPECTED, NO_SHOW -> booking.getCheckOut().isBefore(today);
         };
     }
@@ -94,11 +108,11 @@ public class BookingFolioCalculator {
         return result;
     }
 
-    private static FolioBreakdown build(BookingEntity booking, List<PaymentEntity> charges, List<FolioPaymentEntity> payments) {
+    private FolioBreakdown build(BookingEntity booking, List<PaymentEntity> charges, List<FolioPaymentEntity> payments) {
         BigDecimal roomChargesGross = charges.stream().map(PaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal paid = payments.stream().map(FolioPaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new FolioBreakdown(
-                booking.getTotalPrice(), booking.getEarlyDepartureFee(), roomChargesGross, charges.size(), paid, booking.getStatus(), booking.getOccupancyStatus());
+                booking.getTotalPrice(), booking.getEarlyDepartureFee(), roomChargesGross, charges.size(), paid, booking.getStatus(), booking.getOccupancyStatus(), neverArrivedAndOver(booking, java.time.LocalDate.now(clock)));
     }
 
     public record FolioBreakdown(
@@ -108,11 +122,14 @@ public class BookingFolioCalculator {
             int roomChargeCount,
             BigDecimal paid,
             BookingStatus status,
-            OccupancyStatus occupancy) {
+            OccupancyStatus occupancy,
+            boolean neverArrivedAndOver) {
 
-        /** The room as owed: nothing once the booking is cancelled, nothing for a no-show. */
+        /** The room as owed: nothing once the booking is cancelled, nothing for a no-show or a past stay nobody arrived for. */
         public BigDecimal roomOwed() {
-            return status == BookingStatus.CANCELLED || occupancy == OccupancyStatus.NO_SHOW ? BigDecimal.ZERO : stayPrice.add(earlyDepartureFee);
+            return status == BookingStatus.CANCELLED || occupancy == OccupancyStatus.NO_SHOW || neverArrivedAndOver
+                    ? BigDecimal.ZERO
+                    : stayPrice.add(earlyDepartureFee);
         }
 
         public BigDecimal folioTotal() {
@@ -157,7 +174,7 @@ public class BookingFolioCalculator {
          * from a {@code PAID} one it would be zero.
          */
         public FolioBreakdown asUnsettled() {
-            return new FolioBreakdown(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, BookingStatus.CONFIRMED, occupancy);
+            return new FolioBreakdown(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, BookingStatus.CONFIRMED, occupancy, neverArrivedAndOver);
         }
     }
 }

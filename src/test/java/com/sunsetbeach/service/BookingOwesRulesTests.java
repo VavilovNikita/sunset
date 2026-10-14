@@ -97,14 +97,14 @@ class BookingOwesRulesTests extends AbstractIntegrationTest {
     @Test
     void aNoShowsRoom_isNotOwed_butOtherChargesStillAre() {
         BigDecimal stay = new BigDecimal("3000.00");
-        FolioBreakdown noShow = new FolioBreakdown(stay, BigDecimal.ZERO, BigDecimal.ZERO, 0, BigDecimal.ZERO, BookingStatus.CONFIRMED, OccupancyStatus.NO_SHOW);
+        FolioBreakdown noShow = new FolioBreakdown(stay, BigDecimal.ZERO, BigDecimal.ZERO, 0, BigDecimal.ZERO, BookingStatus.CONFIRMED, OccupancyStatus.NO_SHOW, false);
         assertThat(noShow.balanceDue()).isEqualByComparingTo("0.00");
 
-        FolioBreakdown withCharges = new FolioBreakdown(stay, BigDecimal.ZERO, new BigDecimal("450.00"), 1, BigDecimal.ZERO, BookingStatus.CONFIRMED, OccupancyStatus.NO_SHOW);
+        FolioBreakdown withCharges = new FolioBreakdown(stay, BigDecimal.ZERO, new BigDecimal("450.00"), 1, BigDecimal.ZERO, BookingStatus.CONFIRMED, OccupancyStatus.NO_SHOW, false);
         assertThat(withCharges.balanceDue()).isEqualByComparingTo("450.00");
 
         // The same stay, had the guest come, is owed in full.
-        FolioBreakdown arrived = new FolioBreakdown(stay, BigDecimal.ZERO, BigDecimal.ZERO, 0, BigDecimal.ZERO, BookingStatus.CONFIRMED, OccupancyStatus.CHECKED_OUT);
+        FolioBreakdown arrived = new FolioBreakdown(stay, BigDecimal.ZERO, BigDecimal.ZERO, 0, BigDecimal.ZERO, BookingStatus.CONFIRMED, OccupancyStatus.CHECKED_OUT, false);
         assertThat(arrived.balanceDue()).isEqualByComparingTo("3000.00");
     }
 
@@ -125,9 +125,15 @@ class BookingOwesRulesTests extends AbstractIntegrationTest {
                 room.getId(), "No Show Guest", TODAY.minusDays(4).toString(), TODAY.minusDays(2).toString(), BookingChannel.WALK_IN, 1));
         String id = created.getId();
 
-        // Before the label: the finished, unpaid stay is a debt and is listed.
-        assertThat(bookingService.getById(id).getOwes()).isTrue();
-        assertThat(unpaidIds()).contains(id);
+        // Dates passed, nobody arrived, not yet labelled: the room is not a debt - the night audit asks
+        // the desk to mark it no-show or cancel it instead.
+        Booking notArrived = bookingService.getById(id);
+        assertThat(notArrived.getBalanceDue()).isEqualTo("0.00");
+        assertThat(notArrived.getOwes()).isFalse();
+        assertThat(unpaidIds()).doesNotContain(id);
+        NightAudit audit = nightAuditService.get(TODAY.toString());
+        assertThat(audit.getNotArrived().stream().map(b -> b.getId())).contains(id);
+        assertThat(audit.getMissedArrivals().stream().map(b -> b.getId())).doesNotContain(id);
 
         BookingEntity entity = bookingRepository.findById(id).orElseThrow();
         entity.setOccupancyStatus(OccupancyStatus.NO_SHOW);
@@ -137,6 +143,26 @@ class BookingOwesRulesTests extends AbstractIntegrationTest {
         assertThat(noShow.getBalanceDue()).isEqualTo("0.00");
         assertThat(noShow.getOwes()).isFalse();
         assertThat(unpaidIds()).doesNotContain(id);
+        // Once labelled, it leaves the "not arrived" block.
+        assertThat(nightAuditService.get(TODAY.toString()).getNotArrived().stream().map(b -> b.getId())).doesNotContain(id);
+    }
+
+    @Test
+    void aStayThatIsOverAndNeverArrivedFor_owesNothingForTheRoom_butOtherChargesStill() {
+        BigDecimal stay = new BigDecimal("3000.00");
+        assertThat(new FolioBreakdown(stay, BigDecimal.ZERO, BigDecimal.ZERO, 0, BigDecimal.ZERO, BookingStatus.CONFIRMED, OccupancyStatus.EXPECTED, true).balanceDue())
+                .isEqualByComparingTo("0.00");
+        assertThat(new FolioBreakdown(stay, BigDecimal.ZERO, new BigDecimal("450.00"), 1, BigDecimal.ZERO, BookingStatus.CONFIRMED, OccupancyStatus.EXPECTED, true).balanceDue())
+                .isEqualByComparingTo("450.00");
+        // The same stay still ahead of us (or one in the house) is not waived.
+        assertThat(new FolioBreakdown(stay, BigDecimal.ZERO, BigDecimal.ZERO, 0, BigDecimal.ZERO, BookingStatus.CONFIRMED, OccupancyStatus.EXPECTED, false).balanceDue())
+                .isEqualByComparingTo("3000.00");
+
+        BookingEntity past = booking(BookingStatus.NEW, OccupancyStatus.EXPECTED, TODAY.minusDays(5), TODAY.minusDays(3));
+        assertThat(BookingFolioCalculator.neverArrivedAndOver(past, TODAY)).isTrue();
+        assertThat(BookingFolioCalculator.neverArrivedAndOver(booking(BookingStatus.NEW, OccupancyStatus.EXPECTED, TODAY.minusDays(1), TODAY), TODAY)).as("departure day").isFalse();
+        assertThat(BookingFolioCalculator.neverArrivedAndOver(booking(BookingStatus.CANCELLED, OccupancyStatus.EXPECTED, TODAY.minusDays(5), TODAY.minusDays(3)), TODAY)).isFalse();
+        assertThat(BookingFolioCalculator.neverArrivedAndOver(booking(BookingStatus.NEW, OccupancyStatus.CHECKED_IN, TODAY.minusDays(5), TODAY.minusDays(3)), TODAY)).isFalse();
     }
 
     private java.util.List<String> unpaidIds() {

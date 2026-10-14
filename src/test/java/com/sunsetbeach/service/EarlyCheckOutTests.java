@@ -223,6 +223,21 @@ class EarlyCheckOutTests extends AbstractIntegrationTest {
     }
 
     @Test
+    void movedToday_thenLeftEarlyToday_bothTheOldAndTheCurrentRoomAreDirty() {
+        // 201 -> 202 took effect today; the guest is in 202 when they leave early, and the shortened stay forgets 202.
+        Booking booking = relocatedStay(TODAY.minusDays(2), TODAY.plusDays(3), TODAY);
+        RoomUnitEntity oldRoom = roomUnitRepository.findById(unit.getId()).orElseThrow();
+        assertThat(oldRoom.getHousekeepingStatus()).as("marked at the move").isEqualTo(HousekeepingStatus.DIRTY);
+
+        CheckOutResult result = occupancyService.checkOut(booking.getId(), new CheckOutInput().shortenStay(true).chargeUnusedNights(false));
+
+        assertThat(result.getBooking().getRoomUnitId().orElse(null)).isEqualTo(unit.getId());
+        assertThat(roomUnitRepository.findById(otherUnit.getId()).orElseThrow().getHousekeepingStatus())
+                .as("the room the guest was in at the moment of departure").isEqualTo(HousekeepingStatus.DIRTY);
+        assertThat(roomUnitRepository.findById(unit.getId()).orElseThrow().getHousekeepingStatus()).isEqualTo(HousekeepingStatus.DIRTY);
+    }
+
+    @Test
     void aMoveThatIsStillAhead_doesNotMarkTheCurrentRoomDirty() {
         relocatedStay(TODAY.minusDays(2), TODAY.plusDays(3), TODAY.plusDays(1));
 
