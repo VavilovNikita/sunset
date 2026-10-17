@@ -188,6 +188,39 @@ beyond `btree_gist`, which is already installed for the spa.
 
 Migrations V139 (tables) and V140 (audit values) are additive; there is nothing to restore on rollback.
 
+## Lighting (WLED controllers)
+
+The Lighting page talks to WLED controllers on the hotel LAN over plain HTTP (`/json/info`, `/json/state`, `/presets.json`).
+The backend runs on the VPS, so - exactly like the ESC/POS printers and the fingerprint terminal - it reaches them **only
+through the wg-hotel WireGuard tunnel**:
+
+1. **The tunnel must route the subnet the controllers are on.** On the VPS the `AllowedIPs` of the hotel peer in the wg-hotel
+   config must contain that subnet (for example `192.168.1.0/24`), and the hotel-side router/peer must route it back. If the
+   printers already work, their subnet is probably the same one - check that the controllers' addresses are inside it.
+2. **Give every controller a fixed address** (a DHCP reservation in the hotel router, or a static IP in WLED's Wi-Fi settings).
+   The page stores an address, not a MAC.
+3. **Check reachability from the backend container** before adding a controller in Settings -> Lighting:
+   ```bash
+   docker compose exec backend curl -s -m 3 http://<controller-ip>/json/info
+   ```
+   It must print a JSON object with `"ver"` and `"leds"`. If `curl` is missing in the image, run it on the VPS host
+   instead (`curl -s -m 3 http://<controller-ip>/json/info`) - but a host that can reach it while the container cannot
+   points at docker's network/forwarding rules, not at the tunnel. No output or a timeout: look at `wg show` (a recent
+   handshake) and at the tunnel's `AllowedIPs`.
+4. **Narrow what the backend may reach (recommended).** The server refuses any address that is not private (10/8, 172.16/12,
+   192.168/16), loopback, link-local or one of its own - but docker's own networks are also in 172.16/12. Set
+   `LIGHTING_ALLOWED_CIDRS` in the backend's `.env` to the hotel LAN, e.g. `LIGHTING_ALLOWED_CIDRS=192.168.1.0/24`
+   (comma-separated for several), then `docker compose up -d backend` (a plain restart does not re-read `.env`). A malformed
+   value stops the backend from starting, on purpose.
+5. Optional timeouts: `LIGHTING_CONNECT_TIMEOUT_MS` (2000), `LIGHTING_REQUEST_TIMEOUT_MS` (2500), `LIGHTING_STATE_CACHE_SECONDS` (10).
+
+The address is checked when it is saved and again on every request, so a controller whose DNS name or address later
+points somewhere not allowed simply shows as unreachable. Nothing polls the controllers; one that is switched off at the
+wall shows "offline" until someone refreshes the page. WLED has no password on its JSON API - the tunnel is what keeps it
+private, so do not forward a controller's port to the internet.
+
+Migrations V146 (table) and V147 (audit values) only add things; rolling back to the previous build is safe.
+
 ## Uploads (room photos, floor plans, maintenance photos)
 
 Everything staff upload - room photos, the property, spa and restaurant plans, maintenance task

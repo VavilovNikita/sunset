@@ -80,7 +80,9 @@ public enum AuditEntityType {
   
   GYM_RESERVATION("GYM_RESERVATION"),
   
-  GYM_HALL_SETTINGS("GYM_HALL_SETTINGS");
+  GYM_HALL_SETTINGS("GYM_HALL_SETTINGS"),
+  
+  LIGHTING_DEVICE("LIGHTING_DEVICE");
 
   private String value;
 

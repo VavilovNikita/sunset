@@ -30,6 +30,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 public class SecurityConfig {
 
+    /** Lowest role that may read the lighting state and send commands (the settings are always ADMIN). */
+    private static final com.sunsetbeach.model.Role LIGHTING_CONTROL_ROLE = com.sunsetbeach.model.Role.MANAGER;
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -87,6 +90,12 @@ public class SecurityConfig {
                         // desk work. Specific matcher first: /gym/settings/** must not fall into /gym/**.
                         .requestMatchers("/gym/settings/**").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
                         .requestMatchers("/gym/**").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // WLED lighting controllers. The controller list (and the address test, which makes the
+                        // server send a request to an address an admin typed) is ADMIN; reading the live state and
+                        // sending commands is LIGHTING_CONTROL_ROLE - the one place to change if the owner picks
+                        // another role. Specific matcher first: /lighting/settings/** must not fall into /lighting/**.
+                        .requestMatchers("/lighting/settings/**").hasRole(com.sunsetbeach.model.Role.ADMIN.getValue())
+                        .requestMatchers("/lighting/**").hasRole(LIGHTING_CONTROL_ROLE.getValue())
                         // Night audit (checklist read and closing a day): CASHIER+, not the MANAGER+
                         // of /reports/** - it's routine front-desk work done every day, same reasoning
                         // as PATCH /room-units/*/housekeeping's lower bar below. The snapshot reuses

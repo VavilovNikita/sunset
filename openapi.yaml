@@ -35,6 +35,11 @@ tags:
     description: >
       Gym equipment (fans on Wi-Fi relays, air conditioners behind IR hubs) controlled through the Tuya cloud API.
       Control is CASHIER+, the device list and the Tuya setup are ADMIN. State is read only on request, never polled.
+  - name: Lighting
+    description: >
+      WLED lighting controllers on the hotel LAN, reached over the wg-hotel tunnel with WLED's local JSON
+      API. Control is MANAGER+, the controller list and its address test are ADMIN. State is read only on
+      request, never polled; a controller's address must resolve to a private LAN address.
   - name: Auth
     description: >
       Self-hosted authentication - this app owns the `User` table and issues/verifies
@@ -11302,6 +11307,294 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /lighting/devices:
+    get:
+      operationId: listLightingDevices
+      tags: [Lighting]
+      summary: Lighting controllers with their live state
+      description: >
+        Requires MANAGER or above (one matcher in `SecurityConfig.LIGHTING_CONTROL_ROLE`). Every **active**
+        WLED controller in display order, read over the hotel LAN in parallel with a short timeout
+        (`app.lighting.request-timeout-ms`, about 2.5 s), so one dead controller costs the page one
+        timeout, not one per device. A controller that does not answer has `online` false and
+        `stateError` set; the rest of the list is still returned. State and the preset list are
+        served from a short server-side cache (`app.lighting.state-cache-seconds`, 10 s);
+        `refresh=true` bypasses it and is what the page's "Refresh" button sends. Nothing polls in the
+        background - a controller is contacted only when someone opens the page, refreshes, or sends
+        a command.
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Active controllers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LightingDeviceList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+  /lighting/devices/{id}/state:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: setLightingState
+      tags: [Lighting]
+      summary: Switch a controller, set its brightness or apply a preset
+      description: >
+        Requires MANAGER or above. Any combination of `isOn`, `brightness` and `presetId`, at least one.
+        The command is sent to the controller, then its state is read back and returned - what WLED
+        reports, not what was asked for (a preset is applied by WLED a moment after the request).
+        Note that WLED treats brightness 0 as "off". Audited with who, which controller, what was
+        asked and the outcome, success or failure. 409 when the controller is disabled in settings.
+        502 (the message names the controller) when it cannot be reached, answers with an error, or its
+        stored address is not an allowed private address any more.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LightingStateInput"
+      responses:
+        "200":
+          description: The controller after the command.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LightingDevice"
+        "400":
+          description: Body failed validation, or carries none of the three fields.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Controller not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The controller is disabled in settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "502":
+          description: The controller could not be reached or refused the command; `error` names it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /lighting/settings/devices:
+    get:
+      operationId: listLightingDeviceConfigs
+      tags: [Lighting]
+      summary: Configured lighting controllers (settings)
+      description: Requires ADMIN. Every configured controller, active or not. No call to the controllers.
+      responses:
+        "200":
+          description: All configured controllers in display order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LightingDeviceConfig"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: createLightingDeviceConfig
+      tags: [Lighting]
+      summary: Add a lighting controller
+      description: >
+        Requires ADMIN. `host` must be an IP address or hostname that resolves to a **private LAN
+        address** (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, narrowed further by
+        `app.lighting.allowed-cidrs` when set); loopback, link-local (169.254.x.x), this server's own
+        addresses and anything public are a 400 on `host`. The address is checked again on every
+        request to the controller, not only here. Added last in the display order. The name is unique
+        ignoring case and spaces (409).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LightingDeviceCreateInput"
+      responses:
+        "201":
+          description: Controller added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LightingDeviceConfig"
+        "400":
+          description: Body failed validation, or `host` is not an allowed address.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Another controller already has this name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+  /lighting/settings/devices/check:
+    post:
+      operationId: checkLightingDevice
+      tags: [Lighting]
+      summary: Test a controller address before saving it
+      description: >
+        Requires ADMIN. Asks the controller at `host:port` for `/json/info` without saving anything,
+        so the form can test before saving. A controller that does not answer is a **200** with
+        `reachable` false and a short `error` - that is the result of the test, not a failure of the
+        request. A `host` that is not an allowed private address is a 400, exactly as on save.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LightingDeviceCheckInput"
+      responses:
+        "200":
+          description: The outcome of the test.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LightingDeviceCheckResult"
+        "400":
+          description: Body failed validation, or `host` is not an allowed address.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /lighting/settings/devices/reorder:
+    post:
+      operationId: reorderLightingDeviceConfigs
+      tags: [Lighting]
+      summary: Set the display order
+      description: Requires ADMIN. `ids` is the full list of configured controller ids in the wanted order; any id missing from it or unknown is a 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LightingReorderInput"
+      responses:
+        "200":
+          description: The controllers in the new order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LightingDeviceConfig"
+        "400":
+          description: The list is not exactly the configured controllers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /lighting/settings/devices/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      operationId: updateLightingDeviceConfig
+      tags: [Lighting]
+      summary: Update a lighting controller
+      description: >
+        Requires ADMIN. Only the fields sent change. `location` sent as an empty string clears it.
+        A changed `host` is checked like on create. The display order is changed through `reorder`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LightingDeviceUpdateInput"
+      responses:
+        "200":
+          description: Updated controller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LightingDeviceConfig"
+        "400":
+          description: Body failed validation, or `host` is not an allowed address.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Controller not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Another controller already has this name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+    delete:
+      operationId: deleteLightingDeviceConfig
+      tags: [Lighting]
+      summary: Remove a lighting controller
+      description: Requires ADMIN. Removes it from the page; the audit entries about it stay. To hide a controller temporarily, set `active` false instead.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkTrue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Controller not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -15963,6 +16256,10 @@ components:
         - GYM_RESERVATION_CANCELLED
         - GYM_AUTOMATION_RESULT
         - GYM_HALL_SETTINGS_UPDATED
+        - LIGHTING_DEVICE_CREATED
+        - LIGHTING_DEVICE_UPDATED
+        - LIGHTING_DEVICE_DELETED
+        - LIGHTING_DEVICE_COMMAND
 
     AuditEntityType:
       type: string
@@ -15976,7 +16273,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING, RESTAURANT_MAP, GYM_DEVICE, GYM_RESERVATION, GYM_HALL_SETTINGS]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING, RESTAURANT_MAP, GYM_DEVICE, GYM_RESERVATION, GYM_HALL_SETTINGS, LIGHTING_DEVICE]
 
     AuditLogEntry:
       type: object
@@ -19156,6 +19453,211 @@ components:
         name:
           type: string
           nullable: true
+
+    LightingDeviceConfig:
+      type: object
+      required: [id, name, host, port, active, sortOrder]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        location:
+          type: string
+          nullable: true
+          description: Free text ("Pool bar, roof"), shown next to the name.
+        active:
+          type: boolean
+        sortOrder:
+          type: integer
+
+    LightingDeviceCreateInput:
+      type: object
+      required: [name, host]
+      properties:
+        name:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 120
+        host:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 253
+          description: IP address or hostname; must resolve to a private LAN address (see `POST /lighting/settings/devices`).
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 80
+        location:
+          type: string
+          maxLength: 200
+        active:
+          type: boolean
+          default: true
+
+    LightingDeviceUpdateInput:
+      type: object
+      description: Partial update - only the fields present change.
+      properties:
+        name:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 120
+        host:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 253
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        location:
+          type: string
+          maxLength: 200
+          description: Empty string clears the location.
+        active:
+          type: boolean
+
+    LightingReorderInput:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+
+    LightingDeviceCheckInput:
+      type: object
+      required: [host]
+      properties:
+        host:
+          type: string
+          x-trim: true
+          minLength: 1
+          maxLength: 253
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 80
+
+    LightingDeviceInfo:
+      type: object
+      description: What the controller's `/json/info` says about itself.
+      required: [name, version, ledCount, mac]
+      properties:
+        name:
+          type: string
+          description: The controller's own friendly name.
+        version:
+          type: string
+          description: WLED version (`ver`), for example `0.15.0`.
+        ledCount:
+          type: integer
+        mac:
+          type: string
+          description: Lower case, no colons, as WLED reports it.
+
+    LightingDeviceCheckResult:
+      type: object
+      required: [reachable]
+      properties:
+        reachable:
+          type: boolean
+        error:
+          type: string
+          description: Short plain-words reason when `reachable` is false. Never contains what the device sent back.
+        info:
+          $ref: "#/components/schemas/LightingDeviceInfo"
+
+    LightingPreset:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          description: WLED preset id, 1-250 - what `presetId` takes.
+        name:
+          type: string
+
+    LightingDevice:
+      type: object
+      description: >
+        A controller with its live state. When `online` is false, `isOn`, `brightness` and `presetId`
+        are absent and `stateError` says why.
+      required: [id, name, online, presets]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        location:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+        online:
+          type: boolean
+        isOn:
+          type: boolean
+          description: Whether the lights are on. Absent when offline.
+        brightness:
+          type: integer
+          minimum: 0
+          maximum: 255
+          description: WLED's `bri` - the last brightness when the lights are off. Absent when offline.
+        presetId:
+          type: integer
+          nullable: true
+          description: The preset currently applied; null when none (WLED clears it when the look is changed by hand). Absent when offline.
+        presets:
+          type: array
+          description: Presets stored on this controller (they differ per controller); empty when offline or when they could not be read.
+          items:
+            $ref: "#/components/schemas/LightingPreset"
+        stateReadAt:
+          type: string
+          format: date-time
+          description: When the state was read from the controller (it may be a few seconds old - see the cache note on the list).
+        stateError:
+          type: string
+
+    LightingDeviceList:
+      type: object
+      required: [devices, fetchedAt]
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/LightingDevice"
+        fetchedAt:
+          type: string
+          format: date-time
+
+    LightingStateInput:
+      type: object
+      description: At least one field.
+      properties:
+        isOn:
+          type: boolean
+        brightness:
+          type: integer
+          minimum: 0
+          maximum: 255
+        presetId:
+          type: integer
+          minimum: 1
+          maximum: 250
 
     GymTuyaUsage:
       type: object

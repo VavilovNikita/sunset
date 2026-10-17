@@ -92,6 +92,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(new ErrorMessage(ex.getMessage()));
     }
 
+    /**
+     * A WLED lighting controller could not be reached or refused (the lighting module). The message is
+     * already worded, names the controller and never carries what the device sent back.
+     */
+    @ExceptionHandler(com.sunsetbeach.lighting.WledException.class)
+    public ResponseEntity<ErrorMessage> handleWled(com.sunsetbeach.lighting.WledException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(new ErrorMessage(ex.getMessage()));
+    }
+
     @ExceptionHandler(TooManyRequestsException.class)
     public ResponseEntity<ErrorMessage> handleTooManyRequests(TooManyRequestsException ex) {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(new ErrorMessage(ex.getMessage()));
