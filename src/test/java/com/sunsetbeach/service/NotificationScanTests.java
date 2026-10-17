@@ -269,6 +269,63 @@ class NotificationScanTests extends NotificationTestBase {
         assertThat(notificationsOf(director, "ABSENT").get(0).getText()).contains("16:00");
     }
 
+    private com.sunsetbeach.model.TodayShiftState todayStateOf(UserEntity who) {
+        return attendanceService.getTodayShiftBoard().stream().filter(s -> s.getEmployeeUserId().equals(who.getId())).findFirst().orElseThrow().getState();
+    }
+
+    @Test
+    void splitShift_onePairAcrossBothIntervals_isFinished_andNothingIsSent() {
+        roster(employee, split("11:00", "14:00", "16:00", "21:00"), manager);
+        at("21:30");
+        punchIn(employee, "11:00", manager);
+        punchOut(employee, "21:00");
+
+        assertThat(todayStateOf(employee)).isEqualTo(com.sunsetbeach.model.TodayShiftState.FINISHED);
+        scanService.runOnce();
+
+        assertThat(notificationsOf(employee)).isEmpty();
+        assertThat(notificationsOf(director)).isEmpty();
+        assertThat(notificationsOf(supervisor)).isEmpty();
+    }
+
+    @Test
+    void splitShift_openInAcrossTheSecondIntervalStart_isOnShift_andNothingIsSent() {
+        roster(employee, split("11:00", "14:00", "16:00", "21:00"), manager);
+        at("16:30");
+        punchIn(employee, "11:00", manager);
+
+        assertThat(todayStateOf(employee)).isEqualTo(com.sunsetbeach.model.TodayShiftState.ON_SHIFT);
+        scanService.runOnce();
+
+        assertThat(notificationsOf(employee)).isEmpty();
+        assertThat(notificationsOf(director)).isEmpty();
+    }
+
+    @Test
+    void splitShift_backForTheSecondIntervalTwentyMinutesLate_isOnShift() {
+        roster(employee, split("11:00", "14:00", "16:00", "21:00"), manager);
+        at("16:20");
+        punchIn(employee, "11:00", manager);
+        punchOut(employee, "14:00");
+        punchIn(employee, "16:20", manager);
+
+        assertThat(todayStateOf(employee)).isEqualTo(com.sunsetbeach.model.TodayShiftState.ON_SHIFT);
+    }
+
+    @Test
+    void splitShift_leftAtTheEndOfTheFirstIntervalAndNotBack_isMissedAndTheDirectorsAreTold() {
+        roster(employee, split("11:00", "14:00", "16:00", "21:00"), manager);
+        at("21:30");
+        punchIn(employee, "11:00", manager);
+        punchOut(employee, "14:00");
+
+        assertThat(todayStateOf(employee)).isEqualTo(com.sunsetbeach.model.TodayShiftState.MISSED);
+        scanService.runOnce();
+
+        assertThat(notificationsOf(director, "ABSENT")).hasSize(1);
+        assertThat(notificationsOf(director, "ABSENT").get(0).getText()).contains("16:00");
+    }
+
     // ---- arrival after an absence message ---------------------------------------------------------
 
     @Test

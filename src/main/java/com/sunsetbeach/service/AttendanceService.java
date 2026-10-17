@@ -474,9 +474,9 @@ public class AttendanceService {
     /**
      * One employee's live state - see {@code TodayShiftState}'s own openapi.yaml description for
      * the rules this implements. {@code OPEN_SCHEDULE} (no intervals) only ever reaches three of
-     * the eight states; a fixed-interval code (1 or 2) walks to the first interval not yet
-     * satisfied by a complete pair, matched positionally exactly like {@code
-     * RosterExportService#writeLateAndLeftEarlyRows}.
+     * the eight states; a fixed-interval code (1 or 2) walks to the first interval nobody was
+     * present for ({@link AttendancePunchPairing#presenceIn} - a pair or an open IN covers every
+     * interval it overlaps, the same rule the export and the notification scan use).
      */
     private TodayShiftStatus toTodayShiftStatus(
             UserEntity employee, ShiftCodeEntity shiftCode, List<AttendancePunchEntity> dayPunches, LocalDate today, LocalDateTime now) {
@@ -484,9 +484,16 @@ public class AttendanceService {
         if (shiftCode.getStartTime1() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime1(), shiftCode.getEndTime1()});
         if (shiftCode.getStartTime2() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime2(), shiftCode.getEndTime2()});
 
-        boolean hasTrailingUnmatchedIn =
-                dayPunches.size() % 2 == 1 && dayPunches.get(dayPunches.size() - 1).getDirection() == PunchDirection.IN;
-        int matched = Math.min(AttendancePunchPairing.pairs(dayPunches).size(), intervals.size());
+        boolean hasTrailingUnmatchedIn = AttendancePunchPairing.hasTrailingUnmatchedIn(dayPunches);
+        // First interval nobody was present for - "present" is AttendancePunchPairing#presenceIn, shared with
+        // the notification scan and the export, so a pair spanning both halves of a split shift covers both.
+        int firstUncovered = intervals.size();
+        for (int i = 0; i < intervals.size(); i++) {
+            if (AttendancePunchPairing.presenceIn(dayPunches, today.atTime(intervals.get(i)[0]), today.atTime(intervals.get(i)[1]), now).isEmpty()) {
+                firstUncovered = i;
+                break;
+            }
+        }
 
         TodayShiftState state;
         LocalDateTime referenceTime;
@@ -503,19 +510,19 @@ public class AttendanceService {
                 state = TodayShiftState.FINISHED;
                 referenceTime = dayPunches.get(dayPunches.size() - 1).getPunchAt();
             }
-        } else if (matched == intervals.size() && !hasTrailingUnmatchedIn) {
-            state = TodayShiftState.FINISHED;
-            referenceTime = dayPunches.get(dayPunches.size() - 1).getPunchAt();
         } else if (hasTrailingUnmatchedIn) {
             state = TodayShiftState.ON_SHIFT;
             referenceTime = dayPunches.get(dayPunches.size() - 1).getPunchAt();
+        } else if (firstUncovered == intervals.size() && !dayPunches.isEmpty()) {
+            state = TodayShiftState.FINISHED;
+            referenceTime = dayPunches.get(dayPunches.size() - 1).getPunchAt();
         } else {
-            LocalTime[] currentInterval = intervals.get(matched);
+            LocalTime[] currentInterval = intervals.get(firstUncovered);
             LocalDateTime intervalStart = today.atTime(currentInterval[0]);
             LocalDateTime intervalEnd = today.atTime(currentInterval[1]);
             LocalDateTime upcomingFrom = intervalStart.minus(upcomingWindow);
 
-            if (matched == 1 && now.isBefore(upcomingFrom)) {
+            if (firstUncovered > 0 && now.isBefore(upcomingFrom)) {
                 // Split shift only: interval 1 is already done, interval 2 isn't due for a while -
                 // distinct from SCHEDULED so a returning employee never reads as not-yet-arrived.
                 state = TodayShiftState.BETWEEN_SHIFTS;

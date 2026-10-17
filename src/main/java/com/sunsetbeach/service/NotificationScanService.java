@@ -11,7 +11,6 @@ import com.sunsetbeach.model.TodayShiftStatus;
 import com.sunsetbeach.notification.NotificationMessages;
 import com.sunsetbeach.entity.AttendancePunchEntity;
 import com.sunsetbeach.entity.NotificationEntity;
-import com.sunsetbeach.model.PunchDirection;
 import com.sunsetbeach.repository.AttendanceDeviceRepository;
 import com.sunsetbeach.repository.AttendancePunchRepository;
 import com.sunsetbeach.repository.NotificationRepository;
@@ -287,7 +286,7 @@ public class NotificationScanService {
             List<AttendancePunchEntity> punches = punchRepository
                     .findByPunchAtBetweenAndVoidedAtIsNullOrderByEmployeeUserIdAscPunchAtAsc(today.atStartOfDay(), today.plusDays(1).atStartOfDay())
                     .stream()
-                    .filter(p -> p.getEmployeeUserId().equals(employeeId) && p.getDirection() == PunchDirection.IN)
+                    .filter(p -> p.getEmployeeUserId().equals(employeeId))
                     .toList();
             for (String interval : absences.stream().map(a -> a.getDedupKey().substring(prefix.length())).distinct().toList()) {
                 LocalTime plannedStart = null;
@@ -299,11 +298,16 @@ public class NotificationScanService {
                     continue;
                 }
                 LocalDateTime start = today.atTime(plannedStart);
-                var arrival = punches.stream().filter(p -> !p.getPunchAt().isBefore(start)).findFirst();
+                var plannedEnd = "2".equals(interval) ? code.getEndTime2() : code.getEndTime1();
+                if (!plannedEnd.isPresent()) {
+                    continue;
+                }
+                // "Arrived" is the shared presence rule, not a second reading of the punches.
+                var arrival = AttendancePunchPairing.presenceIn(punches, start, today.atTime(LocalTime.parse(plannedEnd.get())), LocalDateTime.now(clock));
                 if (arrival.isEmpty()) {
                     continue;
                 }
-                LocalDateTime at = arrival.get().getPunchAt();
+                LocalDateTime at = arrival.get().arrivedAt();
                 List<String> recipients = absences.stream()
                         .filter(a -> a.getDedupKey().endsWith(":" + interval))
                         .map(NotificationEntity::getRecipientUserId)

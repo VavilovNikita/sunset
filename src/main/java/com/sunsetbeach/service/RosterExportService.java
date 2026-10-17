@@ -28,6 +28,7 @@ import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
@@ -585,20 +586,35 @@ public class RosterExportService {
         if (shiftCode.getStartTime1() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime1(), shiftCode.getEndTime1()});
         if (shiftCode.getStartTime2() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime2(), shiftCode.getEndTime2()});
 
+        // LATE and MISSED come from the shared presence rule (a pair or an open IN covers every interval it
+        // overlaps); LEFT_EARLY below still compares the positional pair with its interval, as before.
+        LocalDateTime now = LocalDateTime.now(clock);
+        for (LocalTime[] interval : intervals) {
+            LocalDateTime start = date.atTime(interval[0]);
+            LocalDateTime end = date.atTime(interval[1]);
+            var presence = AttendancePunchPairing.presenceIn(dayPunches, start, end, now);
+            if (presence.isEmpty()) {
+                if (end.isBefore(now)) {
+                    rowIndex = writeAnomalyRow(rows, rowIndex, employeeName, date, "MISSED",
+                            "Nobody clocked in for the " + interval[0].format(TIME_FORMAT) + " shift");
+                }
+                continue;
+            }
+            long lateMinutes = Duration.between(start, presence.get().arrivedAt()).toMinutes();
+            if (lateMinutes > 0) {
+                rowIndex = writeAnomalyRow(rows, rowIndex, employeeName, date, "LATE",
+                        lateMinutes + " min late for the " + interval[0].format(TIME_FORMAT) + " shift (clocked in "
+                                + presence.get().arrivedAt().toLocalTime().format(TIME_FORMAT) + ")");
+            }
+        }
+
         List<AttendancePunchPairing.PunchPair> pairs = AttendancePunchPairing.pairs(dayPunches);
         int matched = Math.min(pairs.size(), intervals.size());
         for (int i = 0; i < matched; i++) {
             AttendancePunchPairing.PunchPair pair = pairs.get(i);
-            LocalTime start = intervals.get(i)[0];
             LocalTime end = intervals.get(i)[1];
-            LocalTime inTime = pair.in().getPunchAt().toLocalTime();
             LocalTime outTime = pair.out().getPunchAt().toLocalTime();
 
-            long lateMinutes = Duration.between(start, inTime).toMinutes();
-            if (lateMinutes > 0) {
-                rowIndex = writeAnomalyRow(rows, rowIndex, employeeName, date, "LATE",
-                        lateMinutes + " min late for the " + start.format(TIME_FORMAT) + " shift (clocked in " + inTime.format(TIME_FORMAT) + ")");
-            }
             long earlyMinutes = Duration.between(outTime, end).toMinutes();
             if (earlyMinutes > 0) {
                 rowIndex = writeAnomalyRow(rows, rowIndex, employeeName, date, "LEFT_EARLY",

@@ -473,6 +473,45 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
         assertThat(cellText(rows.get(0), 3)).contains("12 min late");
     }
 
+    private List<Row> splitDayAnomalies(String name, int day, int[][] punches) {
+        UserEntity mgr = createEmployee(null, "Manager");
+        UserEntity employee = createEmployee(StaffArea.RESTAURANT, name);
+        ShiftCode split = shiftCodeService.create(
+                new ShiftCodeCreateInput("SPLITPRES" + UUID.randomUUID().toString().substring(0, 5), ShiftCodeKind.SPLIT, true, true, "2020-01-01")
+                        .staffArea(StaffArea.RESTAURANT)
+                        .startTime1("11:00").endTime1("14:00")
+                        .startTime2("16:00").endTime2("21:00"),
+                mgr.getId());
+        createdShiftCodeIds.add(split.getId());
+        LocalDate date = LocalDate.of(2027, 11, day);
+        rosterService.createEntry(new RosterEntryCreateInput(employee.getId(), date.toString(), split.getId()), mgr.getId());
+        for (int i = 0; i < punches.length; i++) {
+            punch(employee, mgr, date, punches[i][0], punches[i][1], i % 2 == 0 ? PunchDirection.IN : PunchDirection.OUT);
+        }
+        return punchRowsForEmployee(exportActualsWorkbook(2027, 11).getSheetAt(2), employee.getName());
+    }
+
+    @Test
+    void exportActuals_lateAndAnomalies_onePairAcrossBothHalvesOfASplitShift_isNeitherMissedNorLate() {
+        assertThat(splitDayAnomalies("WholeDay", 8, new int[][] {{11, 0}, {21, 0}})).isEmpty();
+    }
+
+    @Test
+    void exportActuals_lateAndAnomalies_secondHalfStartedTwentyMinutesLate_isLateByTwenty() {
+        List<Row> rows = splitDayAnomalies("LateSecond", 9, new int[][] {{11, 0}, {14, 0}, {16, 20}, {21, 0}});
+        assertThat(rows).hasSize(1);
+        assertThat(cellText(rows.get(0), 2)).isEqualTo("LATE");
+        assertThat(cellText(rows.get(0), 3)).contains("20 min late for the 16:00");
+    }
+
+    @Test
+    void exportActuals_lateAndAnomalies_leftAfterTheFirstHalfAndNotBack_secondHalfIsMissed() {
+        List<Row> rows = splitDayAnomalies("NoReturn", 10, new int[][] {{11, 0}, {14, 0}});
+        assertThat(rows).hasSize(1);
+        assertThat(cellText(rows.get(0), 2)).isEqualTo("MISSED");
+        assertThat(cellText(rows.get(0), 3)).contains("16:00");
+    }
+
     @Test
     void exportActuals_lateAndAnomalies_extraPunchPairBeyondScheduledIntervalsNotFlagged() {
         UserEntity mgr = createEmployee(null, "Manager");
