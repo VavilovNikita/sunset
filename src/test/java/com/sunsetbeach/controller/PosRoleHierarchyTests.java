@@ -271,6 +271,9 @@ class PosRoleHierarchyTests {
     private com.sunsetbeach.service.PrintLayoutService printLayoutService;
 
     @MockitoBean
+    private com.sunsetbeach.service.NotificationSettingsService notificationSettingsService;
+
+    @MockitoBean
     private com.sunsetbeach.service.NightAuditService nightAuditService;
 
     @MockitoBean

@@ -40,6 +40,11 @@ tags:
       WLED lighting controllers on the hotel LAN, reached over the wg-hotel tunnel with WLED's local JSON
       API. Control is MANAGER+, the controller list and its address test are ADMIN. State is read only on
       request, never polled; a controller's address must resolve to a private LAN address.
+  - name: Notifications
+    description: >
+      Staff notification centre: what was raised, to whom and over which channel (Telegram today), the
+      employees' linked chats and languages. MANAGER+; the settings are ADMIN (`/settings/notifications`).
+      Telegram is polled with getUpdates - nothing here is called by Telegram.
   - name: Auth
     description: >
       Self-hosted authentication - this app owns the `User` table and issues/verifies
@@ -11307,6 +11312,291 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /settings/notifications:
+    get:
+      operationId: getNotificationSettings
+      tags: [Settings]
+      summary: Read the staff notification settings
+      description: Requires an authenticated session with role `ADMIN`. See `NotificationSettings`.
+      responses:
+        "200":
+          description: The current settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: updateNotificationSettings
+      tags: [Settings]
+      summary: Replace the staff notification settings
+      description: >
+        Requires `ADMIN`. A full `PUT`, not a patch. `lateGraceMinutes` below the attendance
+        terminal's poll interval (`minLateGraceMinutes`) is a 400 on `lateGraceMinutes`: the
+        terminal cannot have reported a punch any sooner, so a shorter grace would only produce
+        false "late" messages. `absenceMinutes` must not be shorter than `lateGraceMinutes`.
+        Every recipient must be an existing, active user (400 on the list otherwise). Quiet hours
+        with the same start and end are a 400 (turn them off with `quietHoursEnabled: false`).
+        Recorded in the audit log (`NOTIFICATION_SETTINGS_UPDATED`) naming what changed; an
+        unchanged `PUT` writes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationSettingsUpdateInput"
+      responses:
+        "200":
+          description: The updated settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSettings"
+        "400":
+          description: Body failed validation, or a rule above was broken.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /notifications/status:
+    get:
+      operationId: getNotificationStatus
+      tags: [Notifications]
+      summary: Whether notifications can be delivered at all
+      description: >
+        Requires MANAGER or above. Answers from the server's own configuration and its cached
+        `getMe` answer - **no call to Telegram** per request - so the pages can say "Telegram is
+        not configured" the moment they open. `telegramConfigured` is false while the server has no
+        `TELEGRAM_BOT_TOKEN`. `botUsername` is null until the server has asked Telegram for it once
+        (it does so by itself within seconds of starting, and again while it is unknown).
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /notifications/staff:
+    get:
+      operationId: listNotificationStaff
+      tags: [Notifications]
+      summary: Staff with their notification channel and language
+      description: >
+        Requires MANAGER or above. Every staff account (active ones first, then by name) with the
+        one thing the Link Telegram button needs: whether a chat is linked. It exists next to
+        `GET /users` (ADMIN only) because the people who may link a chat are managers.
+      responses:
+        "200":
+          description: The staff.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationStaffMember"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
+  /notifications/staff/{userId}/language:
+    put:
+      operationId: setNotificationStaffLanguage
+      tags: [Notifications]
+      summary: Set one employee's notification language
+      description: >
+        Requires MANAGER or above. `language` omitted or null clears it, so the person gets the
+        default from the settings. Applies to messages raised from then on; a message already
+        raised keeps the language it was written in. Audited (`NOTIFICATION_LANGUAGE_UPDATED`).
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationLanguageInput"
+      responses:
+        "200":
+          description: The employee as it is now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationStaffMember"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /notifications/links/code:
+    post:
+      operationId: createNotificationLinkCode
+      tags: [Notifications]
+      summary: Start linking an employee's chat
+      description: >
+        Requires MANAGER or above. Creates a single-use code that lives 15 minutes and returns the
+        `https://t.me/<bot>?start=<code>` link (show it as a QR). The employee opens it and presses
+        Start; the bot then links the chat and answers "Linked: name" in their language. An earlier
+        unused code of the same employee stops working. 409 when Telegram is not configured on the
+        server, the bot's name is not known yet, or the employee is deactivated. Audited
+        (`NOTIFICATION_LINK_CODE_CREATED`, the code itself is never written down).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationLinkCodeInput"
+      responses:
+        "201":
+          description: The code.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationLinkCode"
+        "400":
+          description: Body failed validation.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: No such user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: Telegram is not configured, the bot is not known yet, or the employee is deactivated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /notifications/links/{userId}:
+    delete:
+      operationId: deleteNotificationLink
+      tags: [Notifications]
+      summary: Unlink an employee's chat
+      description: >
+        Requires MANAGER or above. Removes the link on `channel` (default `TELEGRAM`); pending
+        deliveries to that chat fail with "no linked chat". 404 when nothing was linked.
+        Audited (`NOTIFICATION_CHANNEL_UNLINKED`). The employee can also send /stop to the bot.
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: channel
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/NotificationChannel"
+      responses:
+        "204":
+          description: Unlinked.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+        "404":
+          description: Nothing was linked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /notifications/log:
+    get:
+      operationId: listNotificationLog
+      tags: [Notifications]
+      summary: What was sent to whom, and whether it arrived
+      description: >
+        Requires MANAGER or above. Newest first. `from` / `to` are hotel (Asia/Bangkok) days, both
+        inclusive. `deliveryStatus` `NO_CHANNEL` means the recipient had no linked chat when the
+        message was raised. At most `limit` rows (default 200, at most 500).
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/NotificationType"
+        - name: deliveryStatus
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/NotificationDeliveryStatus"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        "200":
+          description: The entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationLogEntry"
+        "400":
+          description: A date that is not YYYY-MM-DD, or `from` after `to`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
+
   /lighting/status:
     get:
       operationId: getLightingStatus
@@ -12455,6 +12745,13 @@ components:
         maintenanceTask:
           $ref: "#/components/schemas/RoomUnitBlockMaintenanceTask"
           nullable: true
+        responsibleFunction:
+          $ref: "#/components/schemas/BlockResponsibleFunction"
+          description: >
+            Who must close this block (ENGINEER or HOUSEKEEPER): the notification centre tells whoever
+            is on shift with this function. Absent on a block created before the field existed; such a
+            block's reminders go to the director recipients. Deliberately not in `required` (a nullable
+            required property would generate a `@NotNull` that rejects the null).
 
     RoomUnitBlockInput:
       type: object
@@ -12470,6 +12767,9 @@ components:
         reason:
           type: string
           minLength: 1
+        responsibleFunction:
+          $ref: "#/components/schemas/BlockResponsibleFunction"
+          description: Defaults to ENGINEER when omitted.
       # Cross-field rule: fromDate <= toDate (matches RoomUnitBlock_date_range_check).
 
     RoomUnitBlockAffectedBooking:
@@ -16294,6 +16594,11 @@ components:
         - LIGHTING_DEVICE_UPDATED
         - LIGHTING_DEVICE_DELETED
         - LIGHTING_DEVICE_COMMAND
+        - NOTIFICATION_SETTINGS_UPDATED
+        - NOTIFICATION_LINK_CODE_CREATED
+        - NOTIFICATION_CHANNEL_LINKED
+        - NOTIFICATION_CHANNEL_UNLINKED
+        - NOTIFICATION_LANGUAGE_UPDATED
 
     AuditEntityType:
       type: string
@@ -19719,3 +20024,288 @@ components:
         quotaHint:
           type: integer
           description: The trial's monthly quota as configured (`app.tuya.monthly-quota-hint`) - about 26 000, informational only.
+
+    NotificationChannel:
+      type: string
+      enum: [TELEGRAM]
+      description: Where a notification is delivered. Only Telegram today; LINE and WhatsApp are added as further values.
+
+    NotificationLanguage:
+      type: string
+      enum: [EN, TH, RU]
+      description: >
+        Language of a notification text. The Thai texts are a first translation that still needs a
+        native speaker's review.
+
+    NotificationType:
+      type: string
+      enum: [LATE, ABSENT, BLOCK_CREATED, BLOCK_LAST_DAY, BLOCK_EXPIRED_OPEN, TERMINAL_OFFLINE, TERMINAL_ONLINE]
+      description: >
+        `LATE` - an employee has not clocked in `lateGraceMinutes` after the planned start of a
+        shift interval (to them and to the late-recipients). `ABSENT` - still not there
+        `absenceMinutes` after it (to the director recipients). `BLOCK_CREATED`, `BLOCK_LAST_DAY`
+        (the morning of the block's last day) and `BLOCK_EXPIRED_OPEN` (every morning while the
+        block's maintenance task is not DONE) go to whoever is on shift with the block's
+        responsible function, otherwise to the director recipients. `TERMINAL_OFFLINE` /
+        `TERMINAL_ONLINE` - an attendance terminal went silent / came back (to the director
+        recipients).
+
+    NotificationDeliveryStatus:
+      type: string
+      enum: [PENDING, SENT, FAILED, NO_CHANNEL]
+
+    BlockResponsibleFunction:
+      type: string
+      enum: [ENGINEER, HOUSEKEEPER]
+      description: Who is answerable for closing a room block. A subset of `JobFunction`.
+
+    NotificationStatus:
+      type: object
+      required: [telegramConfigured]
+      properties:
+        telegramConfigured:
+          type: boolean
+          description: False when the server has no `TELEGRAM_BOT_TOKEN` - nothing is polled or sent then.
+        botUsername:
+          type: string
+          nullable: true
+          description: The bot's name from Telegram's `getMe`, without the `@`. Null while unknown (or when not configured).
+
+    NotificationSettings:
+      type: object
+      required:
+        - lateEnabled
+        - lateGraceMinutes
+        - minLateGraceMinutes
+        - absenceEnabled
+        - absenceMinutes
+        - blockCreatedEnabled
+        - blockLastDayEnabled
+        - blockExpiredEnabled
+        - terminalAlertsEnabled
+        - terminalSilenceMinutes
+        - quietHoursEnabled
+        - quietStart
+        - quietEnd
+        - morningTime
+        - defaultLanguage
+        - lateRecipientUserIds
+        - directorUserIds
+        - updatedAt
+      properties:
+        lateEnabled:
+          type: boolean
+        lateGraceMinutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          description: Minutes after the planned start of an interval before "late" is sent. Not below `minLateGraceMinutes`.
+        minLateGraceMinutes:
+          type: integer
+          readOnly: true
+          description: The attendance terminal's poll interval in minutes (currently 5) - the lowest grace the server accepts.
+        absenceEnabled:
+          type: boolean
+        absenceMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          description: Minutes after the planned start of an interval before the directors are told the employee is absent.
+        blockCreatedEnabled:
+          type: boolean
+        blockLastDayEnabled:
+          type: boolean
+        blockExpiredEnabled:
+          type: boolean
+        terminalAlertsEnabled:
+          type: boolean
+        terminalSilenceMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          description: >
+            A terminal not reached for longer than this is "silent". While any active terminal is
+            silent, no late or absence message is raised (its punches cannot be seen), and the
+            directors are told once instead.
+        quietHoursEnabled:
+          type: boolean
+        quietStart:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: Hotel time (Asia/Bangkok), inclusive. The window may cross midnight.
+        quietEnd:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: Hotel time, exclusive. Messages raised during quiet hours are sent at this time.
+        morningTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: Hotel time of the morning block reminders (last day, expired block with an open task).
+        defaultLanguage:
+          $ref: "#/components/schemas/NotificationLanguage"
+        lateRecipientUserIds:
+          type: array
+          items:
+            type: string
+          description: Besides the employee themself, who is told that an employee is late.
+        directorUserIds:
+          type: array
+          items:
+            type: string
+          description: Who is told about absences, terminal outages and blocks nobody on shift can take.
+        updatedAt:
+          type: string
+          format: date-time
+
+    NotificationSettingsUpdateInput:
+      type: object
+      description: Body of `PUT /settings/notifications` - every field of `NotificationSettings` except `minLateGraceMinutes` and `updatedAt`.
+      required:
+        - lateEnabled
+        - lateGraceMinutes
+        - absenceEnabled
+        - absenceMinutes
+        - blockCreatedEnabled
+        - blockLastDayEnabled
+        - blockExpiredEnabled
+        - terminalAlertsEnabled
+        - terminalSilenceMinutes
+        - quietHoursEnabled
+        - quietStart
+        - quietEnd
+        - morningTime
+        - defaultLanguage
+        - lateRecipientUserIds
+        - directorUserIds
+      properties:
+        lateEnabled:
+          type: boolean
+        lateGraceMinutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+        absenceEnabled:
+          type: boolean
+        absenceMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+        blockCreatedEnabled:
+          type: boolean
+        blockLastDayEnabled:
+          type: boolean
+        blockExpiredEnabled:
+          type: boolean
+        terminalAlertsEnabled:
+          type: boolean
+        terminalSilenceMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+        quietHoursEnabled:
+          type: boolean
+        quietStart:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        quietEnd:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        morningTime:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        defaultLanguage:
+          $ref: "#/components/schemas/NotificationLanguage"
+        lateRecipientUserIds:
+          type: array
+          maxItems: 200
+          items:
+            type: string
+        directorUserIds:
+          type: array
+          maxItems: 200
+          items:
+            type: string
+
+    NotificationStaffMember:
+      type: object
+      required: [userId, name, role, isActive, telegramLinked]
+      properties:
+        userId:
+          type: string
+        name:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+        isActive:
+          type: boolean
+        language:
+          $ref: "#/components/schemas/NotificationLanguage"
+        telegramLinked:
+          type: boolean
+        telegramLinkedAt:
+          type: string
+          format: date-time
+          description: When the chat was linked; absent when not linked.
+
+    NotificationLanguageInput:
+      type: object
+      description: Body of `PUT /notifications/staff/{userId}/language`. `language` omitted or null clears it.
+      properties:
+        language:
+          $ref: "#/components/schemas/NotificationLanguage"
+
+    NotificationLinkCodeInput:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          minLength: 1
+
+    NotificationLinkCode:
+      type: object
+      required: [userId, url, expiresAt]
+      properties:
+        userId:
+          type: string
+        url:
+          type: string
+          description: "`https://t.me/<bot>?start=<code>` - open it or show it as a QR. Single use, valid until `expiresAt`."
+        expiresAt:
+          type: string
+          format: date-time
+
+    NotificationLogEntry:
+      type: object
+      required: [id, type, recipientUserId, recipientName, language, text, createdAt, deliveryStatus, attempts]
+      properties:
+        id:
+          type: string
+        type:
+          $ref: "#/components/schemas/NotificationType"
+        recipientUserId:
+          type: string
+        recipientName:
+          type: string
+        language:
+          $ref: "#/components/schemas/NotificationLanguage"
+        text:
+          type: string
+          description: The message exactly as it was written for the recipient.
+        createdAt:
+          type: string
+          format: date-time
+        deliveryStatus:
+          $ref: "#/components/schemas/NotificationDeliveryStatus"
+        attempts:
+          type: integer
+        sendAfter:
+          type: string
+          format: date-time
+          description: While `PENDING`, the earliest moment it will be sent (the end of quiet hours, or the next retry).
+        sentAt:
+          type: string
+          format: date-time
+        error:
+          type: string
+          description: Why the last attempt failed, in our own words.

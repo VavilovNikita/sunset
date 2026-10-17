@@ -5,10 +5,21 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface RoomUnitBlockRepository extends JpaRepository<RoomUnitBlockEntity, String> {
 
     List<RoomUnitBlockEntity> findByRoomUnitId(String roomUnitId);
+
+    /** Blocks whose last day is {@code toDate} - the morning "last day" reminder. */
+    List<RoomUnitBlockEntity> findByToDate(LocalDate toDate);
+
+    /** Blocks that ended before {@code today} while the maintenance task linked to them is not {@code done} - the daily "close it" reminder. */
+    @Query("select b from RoomUnitBlockEntity b where b.toDate < :today and exists "
+            + "(select 1 from MaintenanceTaskEntity t where t.blockId = b.id and t.status <> :done)")
+    List<RoomUnitBlockEntity> findEndedWithOpenTask(
+            @Param("today") LocalDate today, @Param("done") com.sunsetbeach.model.MaintenanceTaskStatus done);
 
     Optional<RoomUnitBlockEntity> findByIdAndRoomUnitId(String id, String roomUnitId);
 

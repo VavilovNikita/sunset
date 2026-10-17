@@ -40,6 +40,7 @@ public class UserService {
     private final AuditLogService auditLogService;
     private final SpaAppointmentRepository spaAppointmentRepository;
     private final Clock clock;
+    private final NotificationChannelService notificationChannelService;
 
     public UserService(
             UserRepository userRepository,
@@ -47,8 +48,10 @@ public class UserService {
             PasswordEncoder passwordEncoder,
             AuditLogService auditLogService,
             SpaAppointmentRepository spaAppointmentRepository,
+            NotificationChannelService notificationChannelService,
             Clock clock) {
         this.clock = clock;
+        this.notificationChannelService = notificationChannelService;
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
@@ -262,6 +265,10 @@ public class UserService {
                 AuditEntityType.USER,
                 saved.getId(),
                 "User " + saved.getEmail() + " " + (active ? "re-enabled" : "disabled"));
+        // A deactivated person receives nothing any more: their messenger link goes with the account.
+        if (!active) {
+            notificationChannelService.onUserDeactivated(saved);
+        }
 
         String warning = !active ? futureBookedAppointmentWarning(saved.getId()) : null;
         return new UserUpdateResult(userMapper.toDto(saved), warning);

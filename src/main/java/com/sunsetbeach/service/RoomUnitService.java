@@ -57,6 +57,7 @@ public class RoomUnitService {
     private final UserRepository userRepository;
     private final MaintenanceTaskRepository maintenanceTaskRepository;
     private final Clock clock;
+    private final NotificationEvents notificationEvents;
 
     public RoomUnitService(
             RoomRepository roomRepository,
@@ -68,8 +69,10 @@ public class RoomUnitService {
             AuditLogService auditLogService,
             UserRepository userRepository,
             MaintenanceTaskRepository maintenanceTaskRepository,
+            NotificationEvents notificationEvents,
             Clock clock) {
         this.clock = clock;
+        this.notificationEvents = notificationEvents;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.roomUnitBlockRepository = roomUnitBlockRepository;
@@ -322,7 +325,11 @@ public class RoomUnitService {
         entity.setToDate(toDate);
         entity.setReason(input.getReason().trim());
         entity.setCreatedByUserId(actorUserId);
+        // Who must close it. Omitted means ENGINEER (a block made from an engineer's task, or the common case).
+        entity.setResponsibleFunction(input.getResponsibleFunction() == null ? "ENGINEER" : input.getResponsibleFunction().getValue());
         RoomUnitBlockEntity saved = roomUnitBlockRepository.saveAndFlush(entity);
+        // Told only after this transaction commits, and never able to fail it.
+        notificationEvents.blockCreated(saved.getId());
 
         List<RoomUnitBlockAffectedBooking> affectedBookings = findAffectedBookings(roomUnitId, fromDate, toDate);
         List<RoomUnitBlockAffectedBooking> affectedUnassignedBookings = findAffectedUnassignedBookings(unit.getRoomId(), fromDate, toDate);

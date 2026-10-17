@@ -8,6 +8,8 @@ package com.sunsetbeach.api;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.LifecycleEmailSettings;
 import com.sunsetbeach.model.LifecycleEmailSettingsUpdateInput;
+import com.sunsetbeach.model.NotificationSettings;
+import com.sunsetbeach.model.NotificationSettingsUpdateInput;
 import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.PrintLayout;
 import com.sunsetbeach.model.PrintLayoutDocument;
@@ -103,6 +105,47 @@ public interface SettingsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"preArrivalEnabled\" : true, \"postStayReviewUrl\" : \"postStayReviewUrl\", \"preArrivalDaysBefore\" : 0, \"postStayDaysAfter\" : 6, \"winBackMonthsSinceStay\" : 1, \"winBackEnabled\" : true, \"postStayEnabled\" : true, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /settings/notifications : Read the staff notification settings
+     * Requires an authenticated session with role &#x60;ADMIN&#x60;. See &#x60;NotificationSettings&#x60;.
+     *
+     * @return The current settings. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/settings/notifications",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<NotificationSettings> getNotificationSettings(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"lateGraceMinutes\" : 20, \"terminalAlertsEnabled\" : true, \"absenceMinutes\" : 211, \"quietEnd\" : \"quietEnd\", \"lateEnabled\" : true, \"terminalSilenceMinutes\" : 858, \"minLateGraceMinutes\" : 6, \"quietStart\" : \"quietStart\", \"defaultLanguage\" : \"EN\", \"blockLastDayEnabled\" : true, \"blockCreatedEnabled\" : true, \"morningTime\" : \"morningTime\", \"lateRecipientUserIds\" : [ \"lateRecipientUserIds\", \"lateRecipientUserIds\" ], \"absenceEnabled\" : true, \"quietHoursEnabled\" : true, \"directorUserIds\" : [ \"directorUserIds\", \"directorUserIds\" ], \"blockExpiredEnabled\" : true, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -322,6 +365,55 @@ public interface SettingsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"preArrivalEnabled\" : true, \"postStayReviewUrl\" : \"postStayReviewUrl\", \"preArrivalDaysBefore\" : 0, \"postStayDaysAfter\" : 6, \"winBackMonthsSinceStay\" : 1, \"winBackEnabled\" : true, \"postStayEnabled\" : true, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PUT /settings/notifications : Replace the staff notification settings
+     * Requires &#x60;ADMIN&#x60;. A full &#x60;PUT&#x60;, not a patch. &#x60;lateGraceMinutes&#x60; below the attendance terminal&#39;s poll interval (&#x60;minLateGraceMinutes&#x60;) is a 400 on &#x60;lateGraceMinutes&#x60;: the terminal cannot have reported a punch any sooner, so a shorter grace would only produce false \&quot;late\&quot; messages. &#x60;absenceMinutes&#x60; must not be shorter than &#x60;lateGraceMinutes&#x60;. Every recipient must be an existing, active user (400 on the list otherwise). Quiet hours with the same start and end are a 400 (turn them off with &#x60;quietHoursEnabled: false&#x60;). Recorded in the audit log (&#x60;NOTIFICATION_SETTINGS_UPDATED&#x60;) naming what changed; an unchanged &#x60;PUT&#x60; writes nothing. 
+     *
+     * @param notificationSettingsUpdateInput  (required)
+     * @return The updated settings. (status code 200)
+     *         or Body failed validation, or a rule above was broken. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.PUT,
+        value = "/settings/notifications",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<NotificationSettings> updateNotificationSettings(
+         @Valid @RequestBody NotificationSettingsUpdateInput notificationSettingsUpdateInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"lateGraceMinutes\" : 20, \"terminalAlertsEnabled\" : true, \"absenceMinutes\" : 211, \"quietEnd\" : \"quietEnd\", \"lateEnabled\" : true, \"terminalSilenceMinutes\" : 858, \"minLateGraceMinutes\" : 6, \"quietStart\" : \"quietStart\", \"defaultLanguage\" : \"EN\", \"blockLastDayEnabled\" : true, \"blockCreatedEnabled\" : true, \"morningTime\" : \"morningTime\", \"lateRecipientUserIds\" : [ \"lateRecipientUserIds\", \"lateRecipientUserIds\" ], \"absenceEnabled\" : true, \"quietHoursEnabled\" : true, \"directorUserIds\" : [ \"directorUserIds\", \"directorUserIds\" ], \"blockExpiredEnabled\" : true, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

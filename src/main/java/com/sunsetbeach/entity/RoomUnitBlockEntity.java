@@ -27,6 +27,9 @@ public class RoomUnitBlockEntity {
     /** Nullable - a block created before this was tracked has no way to know who created it. */
     private String createdByUserId;
 
+    /** ENGINEER or HOUSEKEEPER; null on a block created before V148. Who the notification centre tells to close it. */
+    private String responsibleFunction;
+
     @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
@@ -76,6 +79,14 @@ public class RoomUnitBlockEntity {
 
     public void setCreatedByUserId(String createdByUserId) {
         this.createdByUserId = createdByUserId;
+    }
+
+    public String getResponsibleFunction() {
+        return responsibleFunction;
+    }
+
+    public void setResponsibleFunction(String responsibleFunction) {
+        this.responsibleFunction = responsibleFunction;
     }
 
     public LocalDateTime getCreatedAt() {

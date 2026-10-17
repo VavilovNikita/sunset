@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.BlockResponsibleFunction;
 import com.sunsetbeach.model.RoomUnitBlockMaintenanceTask;
 import java.time.OffsetDateTime;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -39,6 +41,8 @@ public class RoomUnitBlock {
   private JsonNullable<String> createdByEmail = JsonNullable.<String>undefined();
 
   private RoomUnitBlockMaintenanceTask maintenanceTask;
+
+  private BlockResponsibleFunction responsibleFunction;
 
   public RoomUnitBlock() {
     super();
@@ -210,6 +214,25 @@ public class RoomUnitBlock {
     this.maintenanceTask = maintenanceTask;
   }
 
+  public RoomUnitBlock responsibleFunction(BlockResponsibleFunction responsibleFunction) {
+    this.responsibleFunction = responsibleFunction;
+    return this;
+  }
+
+  /**
+   * Get responsibleFunction
+   * @return responsibleFunction
+   */
+  @Valid 
+  @JsonProperty("responsibleFunction")
+  public BlockResponsibleFunction getResponsibleFunction() {
+    return responsibleFunction;
+  }
+
+  public void setResponsibleFunction(BlockResponsibleFunction responsibleFunction) {
+    this.responsibleFunction = responsibleFunction;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -226,12 +249,13 @@ public class RoomUnitBlock {
         Objects.equals(this.reason, roomUnitBlock.reason) &&
         Objects.equals(this.createdAt, roomUnitBlock.createdAt) &&
         Objects.equals(this.createdByEmail, roomUnitBlock.createdByEmail) &&
-        Objects.equals(this.maintenanceTask, roomUnitBlock.maintenanceTask);
+        Objects.equals(this.maintenanceTask, roomUnitBlock.maintenanceTask) &&
+        Objects.equals(this.responsibleFunction, roomUnitBlock.responsibleFunction);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomUnitId, fromDate, toDate, reason, createdAt, createdByEmail, maintenanceTask);
+    return Objects.hash(id, roomUnitId, fromDate, toDate, reason, createdAt, createdByEmail, maintenanceTask, responsibleFunction);
   }
 
   @Override
@@ -246,6 +270,7 @@ public class RoomUnitBlock {
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    createdByEmail: ").append(toIndentedString(createdByEmail)).append("\n");
     sb.append("    maintenanceTask: ").append(toIndentedString(maintenanceTask)).append("\n");
+    sb.append("    responsibleFunction: ").append(toIndentedString(responsibleFunction)).append("\n");
     sb.append("}");
     return sb.toString();
   }

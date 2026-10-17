@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.BlockResponsibleFunction;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -25,6 +27,8 @@ public class RoomUnitBlockInput {
   private String toDate;
 
   private String reason;
+
+  private BlockResponsibleFunction responsibleFunction;
 
   public RoomUnitBlockInput() {
     super();
@@ -96,6 +100,25 @@ public class RoomUnitBlockInput {
     this.reason = reason;
   }
 
+  public RoomUnitBlockInput responsibleFunction(BlockResponsibleFunction responsibleFunction) {
+    this.responsibleFunction = responsibleFunction;
+    return this;
+  }
+
+  /**
+   * Get responsibleFunction
+   * @return responsibleFunction
+   */
+  @Valid 
+  @JsonProperty("responsibleFunction")
+  public BlockResponsibleFunction getResponsibleFunction() {
+    return responsibleFunction;
+  }
+
+  public void setResponsibleFunction(BlockResponsibleFunction responsibleFunction) {
+    this.responsibleFunction = responsibleFunction;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -107,12 +130,13 @@ public class RoomUnitBlockInput {
     RoomUnitBlockInput roomUnitBlockInput = (RoomUnitBlockInput) o;
     return Objects.equals(this.fromDate, roomUnitBlockInput.fromDate) &&
         Objects.equals(this.toDate, roomUnitBlockInput.toDate) &&
-        Objects.equals(this.reason, roomUnitBlockInput.reason);
+        Objects.equals(this.reason, roomUnitBlockInput.reason) &&
+        Objects.equals(this.responsibleFunction, roomUnitBlockInput.responsibleFunction);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(fromDate, toDate, reason);
+    return Objects.hash(fromDate, toDate, reason, responsibleFunction);
   }
 
   @Override
@@ -122,6 +146,7 @@ public class RoomUnitBlockInput {
     sb.append("    fromDate: ").append(toIndentedString(fromDate)).append("\n");
     sb.append("    toDate: ").append(toIndentedString(toDate)).append("\n");
     sb.append("    reason: ").append(toIndentedString(reason)).append("\n");
+    sb.append("    responsibleFunction: ").append(toIndentedString(responsibleFunction)).append("\n");
     sb.append("}");
     return sb.toString();
   }

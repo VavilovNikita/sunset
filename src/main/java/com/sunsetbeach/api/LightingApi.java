@@ -98,7 +98,7 @@ public interface LightingApi {
 
     /**
      * POST /lighting/settings/devices : Add a lighting controller
-     * Requires ADMIN. &#x60;host&#x60; must be an IP address or hostname that resolves to a **private LAN address** (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, and inside the networks of &#x60;app.lighting.allowed-cidrs&#x60; (which the server must have set); loopback, link-local (169.254.x.x), this server&#39;s own addresses and anything public are a 400 on &#x60;host&#x60;. The address is checked again on every request to the controller, not only here. Added last in the display order. The name is unique ignoring case and spaces (409). Also 409 &#x60;Lighting is not configured on the server&#x60; while &#x60;GET /lighting/status&#x60; says &#x60;configured: false&#x60; - there is then no network a host could be in. 
+     * Requires ADMIN. &#x60;host&#x60; must be an IP address or hostname that resolves to a **private LAN address** (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) and inside the networks of &#x60;app.lighting.allowed-cidrs&#x60; (which the server must have set); loopback, link-local (169.254.x.x), this server&#39;s own addresses and anything public are a 400 on &#x60;host&#x60;. The address is checked again on every request to the controller, not only here. Added last in the display order. The name is unique ignoring case and spaces (409). Also 409 &#x60;Lighting is not configured on the server&#x60; while &#x60;GET /lighting/status&#x60; says &#x60;configured: false&#x60; - there is then no network a host could be in. 
      *
      * @param lightingDeviceCreateInput  (required)
      * @return Controller added. (status code 201)

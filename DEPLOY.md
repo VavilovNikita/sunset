@@ -223,6 +223,47 @@ private, so do not forward a controller's port to the internet.
 
 Migrations V146 (table) and V147 (audit values) only add things; rolling back to the previous build is safe.
 
+## Staff notifications (Telegram)
+
+Late / absence / terminal / room-block messages to staff, over a Telegram bot. The server **polls** Telegram
+(`getUpdates`) - there is no webhook, nothing public listens, no nginx rule and no firewall change; the VPS only needs
+to reach `api.telegram.org` over HTTPS (outbound).
+
+1. **Create the bot** in Telegram with @BotFather (`/newbot`) and copy the token. Treat it like a password: it is in
+   every request URL to Telegram, so the backend never logs a URL, a request or an exception message of that client.
+2. **Put it in the backend's `.env` on the VPS**: `TELEGRAM_BOT_TOKEN=<token>`, then `docker compose up -d backend`
+   (a plain restart does not re-read `.env`). Unset or empty means **Telegram is off**: nothing is polled or sent,
+   `GET /notifications/status` says `telegramConfigured:false` and the admin pages show "Telegram is not configured".
+   `docker-compose.yml` needs no change (`.env` is already the backend's `env_file`).
+3. **Check it came up**: the backend log has no `Telegram ... failed` lines, and Settings -> Notifications no longer shows
+   the banner (the bot's name appears within a few seconds - the server asks `getMe` once and keeps the answer).
+4. **After the deploy, in the admin** (ADMIN): Settings -> Notifications - choose the people who hear about lateness
+   ("late recipients") and the **director recipients** (absences, a silent terminal, blocks nobody on shift can take),
+   check the thresholds, quiet hours (22:00-07:00 by default) and the morning reminder time (09:00).
+   Then, for each employee (MANAGER+): Link Telegram -> show the QR / send the link -> the employee opens it and presses
+   **Start** (the bot answers "Linked: name"). An employee without a link still gets a row in the log, marked
+   "No channel". Set an employee's language there too (EN / TH / RU; the settings hold the default).
+5. Optional (defaults in brackets): `TELEGRAM_POLL_INTERVAL_MS` [3000], `TELEGRAM_LONG_POLL_SECONDS` [1],
+   `NOTIFICATIONS_SCAN_INTERVAL_MS` [60000], `NOTIFICATIONS_DELIVERY_INTERVAL_MS` [5000], `NOTIFICATIONS_MAX_ATTEMPTS` [5].
+
+Things that look wrong but are not:
+
+- **The late grace cannot be saved below the terminal's poll interval** (5 minutes with the default
+  `app.attendance.device-poll-interval-ms`): a punch cannot be seen sooner.
+- **No late / absence message is sent while an attendance terminal has not answered for the silence threshold (15 minutes
+  by default), or when no terminal is active.** The directors get one "terminal not responding" and, later, one "back
+  online". That is the guard against telling someone they are late because the terminal was off.
+- **Messages raised during quiet hours are written at once (the log shows them as pending) and go out when quiet hours
+  end**, each as its own message.
+- The Thai texts are a first translation and need a native speaker's review (they live in `NotificationMessages`).
+- A person who blocks the bot is unlinked automatically (the log shows "The recipient blocked the bot"); linking again
+  is a new code. Deactivating an employee removes their link.
+- A message is the text as it was worded when raised; changing an employee's language later does not rewrite old ones.
+
+Migrations V148 (tables, columns, the settings row) and V149 (audit values) only add things; rolling back to the previous
+build is safe - the new tables are simply unused. To switch the whole feature off without a rollback, unset
+`TELEGRAM_BOT_TOKEN`.
+
 ## Uploads (room photos, floor plans, maintenance photos)
 
 Everything staff upload - room photos, the property, spa and restaurant plans, maintenance task

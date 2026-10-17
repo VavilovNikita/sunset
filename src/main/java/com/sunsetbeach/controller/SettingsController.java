@@ -3,6 +3,8 @@ package com.sunsetbeach.controller;
 import com.sunsetbeach.api.SettingsApi;
 import com.sunsetbeach.model.LifecycleEmailSettings;
 import com.sunsetbeach.model.LifecycleEmailSettingsUpdateInput;
+import com.sunsetbeach.model.NotificationSettings;
+import com.sunsetbeach.model.NotificationSettingsUpdateInput;
 import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.PrintLayout;
 import com.sunsetbeach.model.PrintLayoutDocument;
@@ -12,6 +14,7 @@ import com.sunsetbeach.model.PrintLayouts;
 import com.sunsetbeach.model.VatSettings;
 import com.sunsetbeach.model.VatSettingsUpdateInput;
 import com.sunsetbeach.service.LifecycleEmailSettingsService;
+import com.sunsetbeach.service.NotificationSettingsService;
 import com.sunsetbeach.service.PrintLayoutService;
 import com.sunsetbeach.service.VatSettingsService;
 import org.springframework.http.ResponseEntity;
@@ -24,11 +27,14 @@ public class SettingsController implements SettingsApi {
     private final LifecycleEmailSettingsService lifecycleEmailSettingsService;
     private final VatSettingsService vatSettingsService;
     private final PrintLayoutService printLayoutService;
+    private final NotificationSettingsService notificationSettingsService;
 
     public SettingsController(
             LifecycleEmailSettingsService lifecycleEmailSettingsService,
             VatSettingsService vatSettingsService,
-            PrintLayoutService printLayoutService) {
+            PrintLayoutService printLayoutService,
+            NotificationSettingsService notificationSettingsService) {
+        this.notificationSettingsService = notificationSettingsService;
         this.lifecycleEmailSettingsService = lifecycleEmailSettingsService;
         this.vatSettingsService = vatSettingsService;
         this.printLayoutService = printLayoutService;
@@ -42,6 +48,16 @@ public class SettingsController implements SettingsApi {
     @Override
     public ResponseEntity<LifecycleEmailSettings> updateLifecycleEmailSettings(LifecycleEmailSettingsUpdateInput input) {
         return ResponseEntity.ok(lifecycleEmailSettingsService.update(input));
+    }
+
+    @Override
+    public ResponseEntity<NotificationSettings> getNotificationSettings() {
+        return ResponseEntity.ok(notificationSettingsService.get());
+    }
+
+    @Override
+    public ResponseEntity<NotificationSettings> updateNotificationSettings(NotificationSettingsUpdateInput input) {
+        return ResponseEntity.ok(notificationSettingsService.update(input));
     }
 
     @Override

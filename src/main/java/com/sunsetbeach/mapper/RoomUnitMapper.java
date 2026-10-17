@@ -43,7 +43,7 @@ public class RoomUnitMapper {
      * (a freshly created block never has a task yet - see {@code RoomUnitService#createBlock}).
      */
     public RoomUnitBlock toDto(RoomUnitBlockEntity entity, String createdByEmail, RoomUnitBlockMaintenanceTask maintenanceTask) {
-        return new RoomUnitBlock(
+        RoomUnitBlock dto = new RoomUnitBlock(
                 entity.getId(),
                 entity.getRoomUnitId(),
                 entity.getFromDate().toString(),
@@ -52,5 +52,9 @@ public class RoomUnitMapper {
                 TimestampFormat.toUtc(entity.getCreatedAt()),
                 createdByEmail,
                 maintenanceTask);
+        if (entity.getResponsibleFunction() != null) {
+            dto.responsibleFunction(com.sunsetbeach.model.BlockResponsibleFunction.fromValue(entity.getResponsibleFunction()));
+        }
+        return dto;
     }
 }

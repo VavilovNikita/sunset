@@ -76,6 +76,9 @@ public class UserEntity {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private StaffArea staffArea;
 
+    /** EN / TH / RU; null = the notification settings' default language (V148). */
+    private String notificationLanguage;
+
     @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
@@ -169,6 +172,14 @@ public class UserEntity {
 
     public void setEnrollmentNumber(Integer enrollmentNumber) {
         this.enrollmentNumber = enrollmentNumber;
+    }
+
+    public String getNotificationLanguage() {
+        return notificationLanguage;
+    }
+
+    public void setNotificationLanguage(String notificationLanguage) {
+        this.notificationLanguage = notificationLanguage;
     }
 
     public StaffArea getStaffArea() {

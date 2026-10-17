@@ -1,0 +1,125 @@
+package com.sunsetbeach.notification;
+
+import com.sunsetbeach.model.NotificationLanguage;
+import java.util.EnumMap;
+import java.util.Map;
+
+/**
+ * Every text the notification centre writes, by key, in all three languages. Texts live in code, not
+ * in the database: a wording change is a reviewed commit, and a stored notification keeps the words it
+ * was sent with. A text holds {@code {placeholders}} filled from the params; a message carries a
+ * person's name, a room label, a hotel time and a link - never money or guest data.
+ *
+ * <p><b>The Thai texts are a first translation and need a native speaker's review.</b>
+ */
+public final class NotificationMessages {
+
+    public enum Key {
+        LATE_SELF,
+        LATE_STAFF,
+        ABSENT,
+        BLOCK_CREATED,
+        BLOCK_LAST_DAY,
+        BLOCK_EXPIRED_OPEN,
+        TERMINAL_OFFLINE,
+        TERMINAL_ONLINE,
+        /** The bot's own replies (not notifications). */
+        BOT_LINKED,
+        BOT_LINK_INVALID,
+        BOT_CHAT_TAKEN,
+        BOT_UNLINKED,
+        BOT_NOT_LINKED,
+        BOT_HELP
+    }
+
+    private static final Map<Key, Map<NotificationLanguage, String>> TEXTS = new EnumMap<>(Key.class);
+
+    private static void add(Key key, String en, String th, String ru) {
+        Map<NotificationLanguage, String> byLanguage = new EnumMap<>(NotificationLanguage.class);
+        byLanguage.put(NotificationLanguage.EN, en);
+        byLanguage.put(NotificationLanguage.TH, th);
+        byLanguage.put(NotificationLanguage.RU, ru);
+        TEXTS.put(key, byLanguage);
+    }
+
+    static {
+        add(Key.LATE_SELF,
+                "You are late: your shift started at {time}. Please clock in.\n{link}",
+                "คุณมาสาย: กะของคุณเริ่มเวลา {time} กรุณาสแกนนิ้วเข้างาน\n{link}",
+                "Вы опаздываете: смена началась в {time}. Отметьтесь на терминале.\n{link}");
+        add(Key.LATE_STAFF,
+                "{name} is late: the shift started at {time}, no clock-in yet.\n{link}",
+                "{name} มาสาย: กะเริ่มเวลา {time} ยังไม่มีการสแกนเข้างาน\n{link}",
+                "{name} опаздывает: смена началась в {time}, отметки пока нет.\n{link}");
+        add(Key.ABSENT,
+                "{name} has not shown up: the shift started at {time} and there is still no clock-in.\n{link}",
+                "{name} ยังไม่มาทำงาน: กะเริ่มเวลา {time} และยังไม่มีการสแกนเข้างาน\n{link}",
+                "{name}: нет отметки, смена началась в {time}, сотрудник так и не отметился.\n{link}");
+        add(Key.BLOCK_CREATED,
+                "Room {room} is blocked from {from} to {to}. Responsible: {function}.\n{link}",
+                "ห้อง {room} ถูกปิดตั้งแต่ {from} ถึง {to} ผู้รับผิดชอบ: {function}\n{link}",
+                "Комната {room} заблокирована с {from} по {to}. Ответственный: {function}.\n{link}");
+        add(Key.BLOCK_LAST_DAY,
+                "Room {room}: today is the last day of the block. Close the task or extend the block.\n{link}",
+                "ห้อง {room}: วันนี้เป็นวันสุดท้ายของการปิดห้อง กรุณาปิดงานหรือขยายเวลา\n{link}",
+                "Комната {room}: сегодня последний день блока. Закройте задачу или продлите блок.\n{link}");
+        add(Key.BLOCK_EXPIRED_OPEN,
+                "Room {room}: the block ended on {to} but the maintenance task is still not done. Close the task or extend the block.\n{link}",
+                "ห้อง {room}: การปิดห้องสิ้นสุดเมื่อ {to} แต่งานซ่อมบำรุงยังไม่เสร็จ กรุณาปิดงานหรือขยายเวลา\n{link}",
+                "Комната {room}: блок закончился {to}, но задача обслуживания всё ещё не закрыта. Закройте задачу или продлите блок.\n{link}");
+        add(Key.TERMINAL_OFFLINE,
+                "Attendance terminal \"{device}\" has not responded since {time}. Late and absence alerts are paused until it is back.\n{link}",
+                "เครื่องสแกนนิ้ว \"{device}\" ไม่ตอบสนองตั้งแต่ {time} การแจ้งเตือนการมาสายและการขาดงานหยุดชั่วคราวจนกว่าจะกลับมาทำงาน\n{link}",
+                "Терминал посещаемости «{device}» не отвечает с {time}. Уведомления об опозданиях и отсутствии приостановлены, пока он не вернётся.\n{link}");
+        add(Key.TERMINAL_ONLINE,
+                "Attendance terminal \"{device}\" is back online. Late and absence alerts are active again.\n{link}",
+                "เครื่องสแกนนิ้ว \"{device}\" กลับมาออนไลน์แล้ว การแจ้งเตือนการมาสายและการขาดงานกลับมาทำงานตามปกติ\n{link}",
+                "Терминал посещаемости «{device}» снова на связи. Уведомления об опозданиях и отсутствии снова работают.\n{link}");
+        add(Key.BOT_LINKED,
+                "Linked: {name}",
+                "เชื่อมต่อแล้ว: {name}",
+                "Привязано: {name}");
+        add(Key.BOT_LINK_INVALID,
+                "This link is invalid or has expired. Ask your manager for a new one.",
+                "ลิงก์นี้ไม่ถูกต้องหรือหมดอายุแล้ว กรุณาขอลิงก์ใหม่จากผู้จัดการ",
+                "Ссылка недействительна или устарела. Попросите у менеджера новую.");
+        add(Key.BOT_CHAT_TAKEN,
+                "This chat is already linked to another employee. Ask your manager to unlink it first.",
+                "แชตนี้เชื่อมต่อกับพนักงานคนอื่นอยู่แล้ว กรุณาขอให้ผู้จัดการยกเลิกการเชื่อมต่อก่อน",
+                "Этот чат уже привязан к другому сотруднику. Попросите менеджера сначала отвязать его.");
+        add(Key.BOT_UNLINKED,
+                "Unlinked. You will no longer get notifications here.",
+                "ยกเลิกการเชื่อมต่อแล้ว คุณจะไม่ได้รับการแจ้งเตือนที่นี่อีก",
+                "Отвязано. Уведомления сюда больше не придут.");
+        add(Key.BOT_NOT_LINKED,
+                "This chat is not linked to anyone. Open the link your manager gave you.",
+                "แชตนี้ยังไม่ได้เชื่อมต่อกับใคร กรุณาเปิดลิงก์ที่ผู้จัดการให้",
+                "Этот чат ни к кому не привязан. Откройте ссылку, которую дал менеджер.");
+        add(Key.BOT_HELP,
+                "To get notifications, open the link your manager gave you. Send /stop to stop them.",
+                "หากต้องการรับการแจ้งเตือน กรุณาเปิดลิงก์ที่ผู้จัดการให้ ส่ง /stop เพื่อหยุดรับ",
+                "Чтобы получать уведомления, откройте ссылку, которую дал менеджер. Команда /stop отключает их.");
+    }
+
+    private NotificationMessages() {
+    }
+
+    /** Fills {@code {placeholders}} from {@code params} (a missing one becomes empty) and trims what is left. */
+    public static String render(Key key, NotificationLanguage language, Map<String, String> params) {
+        String text = TEXTS.get(key).get(language);
+        for (Map.Entry<String, String> param : params.entrySet()) {
+            text = text.replace("{" + param.getKey() + "}", param.getValue() == null ? "" : param.getValue());
+        }
+        return text.replaceAll("\\{[a-zA-Z]+}", "").strip();
+    }
+
+    /** The name of a job function in the reader's language. */
+    public static String functionName(String function, NotificationLanguage language) {
+        boolean housekeeper = "HOUSEKEEPER".equals(function);
+        return switch (language) {
+            case EN -> housekeeper ? "Housekeeper" : "Engineer";
+            case TH -> housekeeper ? "แม่บ้าน" : "ช่างซ่อมบำรุง";
+            case RU -> housekeeper ? "горничная" : "инженер";
+        };
+    }
+}

@@ -58,7 +58,7 @@ public abstract class AbstractIntegrationTest {
             // not flaky, since Surefire's run order is stable. Raised well above what this suite
             // could plausibly need, rather than tuned to the current count, so this doesn't need
             // revisiting every time a future test adds one more context.
-            .withCommand("postgres", "-c", "max_connections=300");
+            .withCommand("postgres", "-c", "max_connections=400");
 
     static {
         POSTGRES.start();
@@ -69,5 +69,12 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        // The notification centre's sweeps (scan, delivery, Telegram poll) never fire on their own in any test
+        // context: with the real clock or another test's fixed one they could raise a Notification for a user
+        // that test is about to delete (a foreign key). The notification tests call runOnce() explicitly.
+        registry.add("app.notifications.initial-delay-ms", () -> "3600000");
+        registry.add("app.notifications.scan-interval-ms", () -> "3600000");
+        registry.add("app.notifications.delivery-interval-ms", () -> "3600000");
+        registry.add("app.notifications.telegram.poll-interval-ms", () -> "3600000");
     }
 }

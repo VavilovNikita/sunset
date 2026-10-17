@@ -419,6 +419,11 @@ public class SecurityConfig {
                         .requestMatchers("/roster", "/roster/entries", "/roster/entries/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/staff-area-coverage-rules", "/staff-area-coverage-rules/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/attendance", "/attendance/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // Notification centre: status, the staff list, linking a Telegram chat, language and the
+                        // log are MANAGER+ (a manager who can link a chat must also see who there is to link -
+                        // /users/** is ADMIN-only, so /notifications/staff is its own list). The settings are
+                        // ADMIN through /settings/** above. Telegram is polled, never called in: no public route.
+                        .requestMatchers("/notifications/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         .requestMatchers("/employee-pay-rates", "/employee-pay-rates/**").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // SiteMinder import: the polling script's own credential only (see
                         // IntegrationKeyAuthFilter) - hasAuthority, not hasRole, so no staff role
