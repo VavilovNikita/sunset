@@ -217,6 +217,58 @@ class NotificationScanTests extends NotificationTestBase {
         assertThat(notificationsOf(employee, "LATE")).hasSize(1);
     }
 
+    private ShiftCode split(String s1, String e1, String s2, String e2) {
+        ShiftCode code = shiftCodeService.create(
+                new com.sunsetbeach.model.ShiftCodeCreateInput("S" + java.util.UUID.randomUUID().toString().substring(0, 6), com.sunsetbeach.model.ShiftCodeKind.SPLIT, true, true, "2020-01-01")
+                        .staffArea(com.sunsetbeach.model.StaffArea.RESTAURANT)
+                        .startTime1(s1)
+                        .endTime1(e1)
+                        .startTime2(s2)
+                        .endTime2(e2),
+                manager.getId());
+        shiftCodeIds.add(code.getId());
+        return code;
+    }
+
+    private void punchOut(UserEntity who, String time) {
+        attendanceService.recordPunch(
+                new com.sunsetbeach.model.AttendancePunchCreateInput(
+                        who.getId(), java.time.OffsetDateTime.parse("2033-05-17T" + time + ":00+07:00"), com.sunsetbeach.model.PunchDirection.OUT),
+                manager.getId());
+    }
+
+    @Test
+    void splitShift_clockedInForTheFirstIntervalAndStillIn_isNeitherLateNorAbsentForTheSecond() {
+        roster(employee, split("11:00", "15:00", "16:00", "20:00"), manager);
+        at("17:30"); // a punch can't be recorded in the future, so the day is lived through first
+        punchIn(employee, "11:00", manager);
+
+        var row = attendanceService.getTodayShiftBoard().stream().filter(s -> s.getEmployeeUserId().equals(employee.getId())).findFirst().orElseThrow();
+        assertThat(row.getState()).isEqualTo(com.sunsetbeach.model.TodayShiftState.ON_SHIFT);
+
+        scanService.runOnce();
+        at("18:30");
+        scanService.runOnce();
+
+        assertThat(notificationsOf(employee, "LATE")).isEmpty();
+        assertThat(notificationsOf(director, "ABSENT")).isEmpty();
+    }
+
+    @Test
+    void splitShift_leftAfterTheFirstIntervalAndNotBack_isLateAndAbsentForTheSecond() {
+        roster(employee, split("11:00", "15:00", "16:00", "20:00"), manager);
+        at("17:30");
+        punchIn(employee, "11:00", manager);
+        punchOut(employee, "15:00");
+
+        scanService.runOnce();
+        assertThat(notificationsOf(employee, "LATE")).hasSize(1);
+        at("17:30");
+        scanService.runOnce();
+        assertThat(notificationsOf(director, "ABSENT")).hasSize(1);
+        assertThat(notificationsOf(director, "ABSENT").get(0).getText()).contains("16:00");
+    }
+
     // ---- arrival after an absence message ---------------------------------------------------------
 
     @Test
