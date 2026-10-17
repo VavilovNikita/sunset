@@ -18,6 +18,7 @@ public final class NotificationMessages {
         LATE_SELF,
         LATE_STAFF,
         ABSENT,
+        ARRIVED_AFTER_ABSENT,
         BLOCK_CREATED,
         BLOCK_LAST_DAY,
         BLOCK_EXPIRED_OPEN,
@@ -55,6 +56,10 @@ public final class NotificationMessages {
                 "{name} has not shown up: the shift started at {time} and there is still no clock-in.\n{link}",
                 "{name} ยังไม่มาทำงาน: กะเริ่มเวลา {time} และยังไม่มีการสแกนเข้างาน\n{link}",
                 "{name}: нет отметки, смена началась в {time}, сотрудник так и не отметился.\n{link}");
+        add(Key.ARRIVED_AFTER_ABSENT,
+                "{name} has arrived at {time} ({minutes} min late).\n{link}",
+                "{name} มาถึงเวลา {time} (สาย {minutes} นาที)\n{link}",
+                "{name} пришёл в {time} (опоздание {minutes} мин).\n{link}");
         add(Key.BLOCK_CREATED,
                 "Room {room} is blocked from {from} to {to}. Responsible: {function}.\n{link}",
                 "ห้อง {room} ถูกปิดตั้งแต่ {from} ถึง {to} ผู้รับผิดชอบ: {function}\n{link}",

@@ -2,6 +2,7 @@ package com.sunsetbeach.repository;
 
 import com.sunsetbeach.entity.NotificationEntity;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -29,6 +30,13 @@ public interface NotificationRepository extends JpaRepository<NotificationEntity
             @Param("text") String text,
             @Param("dedupKey") String dedupKey,
             @Param("createdAt") LocalDateTime createdAt);
+
+    List<NotificationEntity> findByDedupKeyStartingWith(String prefix);
+
+    /** Retention: deliveries go with their notification (ON DELETE CASCADE). Returns the rows removed. */
+    @Modifying
+    @Query("delete from NotificationEntity n where n.createdAt < :cutoff")
+    int deleteOlderThan(@Param("cutoff") LocalDateTime cutoff);
 
     boolean existsByDedupKeyAndRecipientUserId(String dedupKey, String recipientUserId);
 }

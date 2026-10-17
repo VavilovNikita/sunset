@@ -217,6 +217,55 @@ class NotificationScanTests extends NotificationTestBase {
         assertThat(notificationsOf(employee, "LATE")).hasSize(1);
     }
 
+    // ---- arrival after an absence message ---------------------------------------------------------
+
+    @Test
+    void clockingInAfterTheAbsenceMessage_tellsTheSameRecipientsOnce_inTheirLanguage() {
+        director.setNotificationLanguage("RU");
+        userRepository.saveAndFlush(director);
+        roster(employee, nineToFive(), manager);
+        at("10:00");
+        scanService.runOnce();
+        assertThat(notificationsOf(director, "ABSENT")).hasSize(1);
+
+        at("10:20");
+        punchIn(employee, "10:12", manager);
+        scanService.runOnce();
+        scanService.runOnce();
+        at("10:40");
+        scanService.runOnce();
+
+        var arrived = notificationsOf(director, "ABSENT").stream().filter(n -> n.getMessageKey().equals("ARRIVED_AFTER_ABSENT")).toList();
+        assertThat(arrived).hasSize(1);
+        assertThat(arrived.get(0).getText()).startsWith("Somchai пришёл в 10:12 (опоздание 72 мин)");
+        assertThat(notificationsOf(supervisor, "ABSENT")).isEmpty(); // not an absence recipient
+        assertThat(notificationsOf(employee, "ABSENT")).isEmpty();
+    }
+
+    @Test
+    void clockingInWithNoAbsenceMessage_saysNothing() {
+        roster(employee, nineToFive(), manager);
+        at("09:40");
+        punchIn(employee, "09:35", manager);
+
+        scanService.runOnce();
+        at("10:30");
+        scanService.runOnce();
+
+        assertThat(notificationsOf(director)).isEmpty();
+        assertThat(notificationsOf(supervisor, "ABSENT")).isEmpty();
+    }
+
+    @Test
+    void stillAbsent_isNotAnArrival() {
+        roster(employee, nineToFive(), manager);
+        at("10:30");
+        scanService.runOnce();
+        scanService.runOnce();
+
+        assertThat(notificationsOf(director, "ABSENT")).hasSize(1).allSatisfy(n -> assertThat(n.getMessageKey()).isEqualTo("ABSENT"));
+    }
+
     // ---- the terminal -------------------------------------------------------------------------------
 
     @Test

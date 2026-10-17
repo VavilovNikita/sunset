@@ -76,5 +76,6 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.notifications.scan-interval-ms", () -> "3600000");
         registry.add("app.notifications.delivery-interval-ms", () -> "3600000");
         registry.add("app.notifications.telegram.poll-interval-ms", () -> "3600000");
+        registry.add("app.notifications.retention-cron", () -> "-");
     }
 }

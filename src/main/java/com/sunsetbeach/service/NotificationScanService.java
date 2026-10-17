@@ -9,7 +9,12 @@ import com.sunsetbeach.model.NotificationType;
 import com.sunsetbeach.model.TodayShiftState;
 import com.sunsetbeach.model.TodayShiftStatus;
 import com.sunsetbeach.notification.NotificationMessages;
+import com.sunsetbeach.entity.AttendancePunchEntity;
+import com.sunsetbeach.entity.NotificationEntity;
+import com.sunsetbeach.model.PunchDirection;
 import com.sunsetbeach.repository.AttendanceDeviceRepository;
+import com.sunsetbeach.repository.AttendancePunchRepository;
+import com.sunsetbeach.repository.NotificationRepository;
 import com.sunsetbeach.repository.TerminalSilenceEpisodeRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.time.Clock;
@@ -65,6 +70,8 @@ public class NotificationScanService {
     private final AttendanceDeviceRepository deviceRepository;
     private final TerminalSilenceEpisodeRepository episodeRepository;
     private final UserRepository userRepository;
+    private final AttendancePunchRepository punchRepository;
+    private final NotificationRepository notificationRepository;
     private final Clock clock;
     private final TransactionTemplate tx;
 
@@ -76,6 +83,8 @@ public class NotificationScanService {
             AttendanceDeviceRepository deviceRepository,
             TerminalSilenceEpisodeRepository episodeRepository,
             UserRepository userRepository,
+            AttendancePunchRepository punchRepository,
+            NotificationRepository notificationRepository,
             Clock clock,
             PlatformTransactionManager transactionManager) {
         this.settingsService = settingsService;
@@ -85,6 +94,8 @@ public class NotificationScanService {
         this.deviceRepository = deviceRepository;
         this.episodeRepository = episodeRepository;
         this.userRepository = userRepository;
+        this.punchRepository = punchRepository;
+        this.notificationRepository = notificationRepository;
         this.clock = clock;
         this.tx = new TransactionTemplate(transactionManager);
     }
@@ -215,7 +226,13 @@ public class NotificationScanService {
         }
         LocalDateTime now = LocalDateTime.now(clock);
         LocalDate today = now.toLocalDate();
-        for (TodayShiftStatus status : attendanceService.getTodayShiftBoard()) {
+        List<TodayShiftStatus> board = attendanceService.getTodayShiftBoard();
+        try {
+            scanArrivals(board, today);
+        } catch (RuntimeException e) {
+            log.error("Arrival-after-absence scan failed", e);
+        }
+        for (TodayShiftStatus status : board) {
             // Someone punching with no plan has no start time to be late for.
             if (Boolean.TRUE.equals(status.getUnscheduled()) || !status.getReferenceTime().isPresent()) {
                 continue;
@@ -243,6 +260,66 @@ public class NotificationScanService {
                 }
             } catch (RuntimeException e) {
                 log.error("Late/absence alert for {} failed", employeeId, e);
+            }
+        }
+    }
+
+    /**
+     * Someone the directors were told is absent has now clocked in: the same recipients get one
+     * "arrived at HH:mm (N min late)". Nothing is sent if no absence message was ever raised for that
+     * interval - the directors never heard they were missing. The arrival is the earliest live IN at or
+     * after the interval's planned start (an absence means no punch covered it until now), and its own
+     * dedupKey makes a repeated pass silent. Quiet hours apply as for any notification.
+     */
+    private void scanArrivals(List<TodayShiftStatus> board, LocalDate today) {
+        for (TodayShiftStatus status : board) {
+            if (Boolean.TRUE.equals(status.getUnscheduled())
+                    || (status.getState() != TodayShiftState.ON_SHIFT && status.getState() != TodayShiftState.FINISHED)) {
+                continue;
+            }
+            String employeeId = status.getEmployeeUserId();
+            String prefix = "ABSENT:" + employeeId + ":" + today + ":";
+            List<NotificationEntity> absences = notificationRepository.findByDedupKeyStartingWith(prefix);
+            if (absences.isEmpty()) {
+                continue;
+            }
+            var code = status.getShiftCode();
+            List<AttendancePunchEntity> punches = punchRepository
+                    .findByPunchAtBetweenAndVoidedAtIsNullOrderByEmployeeUserIdAscPunchAtAsc(today.atStartOfDay(), today.plusDays(1).atStartOfDay())
+                    .stream()
+                    .filter(p -> p.getEmployeeUserId().equals(employeeId) && p.getDirection() == PunchDirection.IN)
+                    .toList();
+            for (String interval : absences.stream().map(a -> a.getDedupKey().substring(prefix.length())).distinct().toList()) {
+                LocalTime plannedStart = null;
+                if (code != null) {
+                    var field = "2".equals(interval) ? code.getStartTime2() : code.getStartTime1();
+                    plannedStart = field.isPresent() ? LocalTime.parse(field.get()) : null;
+                }
+                if (plannedStart == null) {
+                    continue;
+                }
+                LocalDateTime start = today.atTime(plannedStart);
+                var arrival = punches.stream().filter(p -> !p.getPunchAt().isBefore(start)).findFirst();
+                if (arrival.isEmpty()) {
+                    continue;
+                }
+                LocalDateTime at = arrival.get().getPunchAt();
+                List<String> recipients = absences.stream()
+                        .filter(a -> a.getDedupKey().endsWith(":" + interval))
+                        .map(NotificationEntity::getRecipientUserId)
+                        .toList();
+                Map<String, String> params = Map.of(
+                        "name", status.getEmployeeName(),
+                        "time", at.format(HHMM),
+                        "minutes", String.valueOf(Math.max(0, Duration.between(start, at).toMinutes())),
+                        NotificationService.PATH, ATTENDANCE_PATH);
+                try {
+                    String key = "ARRIVED:" + employeeId + ":" + today + ":" + interval;
+                    tx.executeWithoutResult(s -> notificationService.raise(
+                            NotificationType.ABSENT, NotificationMessages.Key.ARRIVED_AFTER_ABSENT, recipients, params, key));
+                } catch (RuntimeException e) {
+                    log.error("Arrival message for {} failed", employeeId, e);
+                }
             }
         }
     }
