@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.LightingDeviceEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.lighting.LanAddressGuard;
 import com.sunsetbeach.lighting.WledClient;
 import com.sunsetbeach.lighting.WledClient.WledPreset;
 import com.sunsetbeach.lighting.WledClient.WledState;
@@ -14,6 +15,7 @@ import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.LightingDevice;
 import com.sunsetbeach.model.LightingDeviceList;
 import com.sunsetbeach.model.LightingPreset;
+import com.sunsetbeach.model.LightingStatus;
 import com.sunsetbeach.model.LightingStateInput;
 import com.sunsetbeach.repository.LightingDeviceRepository;
 import jakarta.annotation.PreDestroy;
@@ -53,6 +55,7 @@ public class LightingService {
 
     private final LightingDeviceRepository devices;
     private final WledClient wled;
+    private final LanAddressGuard guard;
     private final AuditLogService auditLogService;
     private final Clock clock;
     private final long cacheMillis;
@@ -64,12 +67,14 @@ public class LightingService {
     public LightingService(
             LightingDeviceRepository devices,
             WledClient wled,
+            LanAddressGuard guard,
             AuditLogService auditLogService,
             Clock clock,
             @Value("${app.lighting.state-cache-seconds:10}") long cacheSeconds,
             @Value("${app.lighting.confirm-delay-ms:300}") long confirmDelayMillis) {
         this.devices = devices;
         this.wled = wled;
+        this.guard = guard;
         this.auditLogService = auditLogService;
         this.clock = clock;
         this.cacheMillis = cacheSeconds * 1000L;
@@ -81,15 +86,23 @@ public class LightingService {
         readers.shutdownNow();
     }
 
-    /** Active controllers with live state, read in parallel. A controller that cannot be read is {@code online:false} with {@code stateError}. */
+    /** Active controllers with live state, read in parallel. A controller that cannot be read is {@code online:false} with {@code stateError}; with lighting not configured, nothing is contacted. */
+    /** {@code GET /lighting/status}: server configuration only - never contacts a controller. */
+    public LightingStatus status() {
+        return new LightingStatus(guard.isConfigured());
+    }
+
     public LightingDeviceList list(boolean refresh) {
+        if (!guard.isConfigured()) {
+            return new LightingDeviceList(false, List.of(), OffsetDateTime.now(clock));
+        }
         List<LightingDeviceEntity> active = devices.findByActiveTrueOrderBySortOrderAscNameAsc();
         List<CompletableFuture<LightingDevice>> futures = new ArrayList<>();
         for (LightingDeviceEntity device : active) {
             futures.add(CompletableFuture.supplyAsync(() -> read(device, refresh), readers));
         }
         List<LightingDevice> result = futures.stream().map(CompletableFuture::join).toList();
-        return new LightingDeviceList(result, OffsetDateTime.now(clock));
+        return new LightingDeviceList(true, result, OffsetDateTime.now(clock));
     }
 
     /** Forget every cached read - after the configuration changed, so no read outlives the controller it was for. */
@@ -98,6 +111,7 @@ public class LightingService {
     }
 
     public LightingDevice setState(String id, LightingStateInput input) {
+        guard.requireConfigured();
         if (input.getIsOn() == null && input.getBrightness() == null && input.getPresetId() == null) {
             throw ValidationException.field("isOn", "Specify at least one of isOn, brightness and presetId");
         }

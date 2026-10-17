@@ -26,6 +26,8 @@ import jakarta.annotation.Generated;
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class LightingDeviceList {
 
+  private Boolean configured;
+
   @Valid
   private List<@Valid LightingDevice> devices = new ArrayList<>();
 
@@ -39,9 +41,29 @@ public class LightingDeviceList {
   /**
    * Constructor with only required parameters
    */
-  public LightingDeviceList(List<@Valid LightingDevice> devices, OffsetDateTime fetchedAt) {
+  public LightingDeviceList(Boolean configured, List<@Valid LightingDevice> devices, OffsetDateTime fetchedAt) {
+    this.configured = configured;
     this.devices = devices;
     this.fetchedAt = fetchedAt;
+  }
+
+  public LightingDeviceList configured(Boolean configured) {
+    this.configured = configured;
+    return this;
+  }
+
+  /**
+   * Same as `GET /lighting/status`. When false, `devices` is empty.
+   * @return configured
+   */
+  @NotNull 
+  @JsonProperty("configured")
+  public Boolean getConfigured() {
+    return configured;
+  }
+
+  public void setConfigured(Boolean configured) {
+    this.configured = configured;
   }
 
   public LightingDeviceList devices(List<@Valid LightingDevice> devices) {
@@ -99,19 +121,21 @@ public class LightingDeviceList {
       return false;
     }
     LightingDeviceList lightingDeviceList = (LightingDeviceList) o;
-    return Objects.equals(this.devices, lightingDeviceList.devices) &&
+    return Objects.equals(this.configured, lightingDeviceList.configured) &&
+        Objects.equals(this.devices, lightingDeviceList.devices) &&
         Objects.equals(this.fetchedAt, lightingDeviceList.fetchedAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(devices, fetchedAt);
+    return Objects.hash(configured, devices, fetchedAt);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class LightingDeviceList {\n");
+    sb.append("    configured: ").append(toIndentedString(configured)).append("\n");
     sb.append("    devices: ").append(toIndentedString(devices)).append("\n");
     sb.append("    fetchedAt: ").append(toIndentedString(fetchedAt)).append("\n");
     sb.append("}");

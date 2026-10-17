@@ -64,6 +64,7 @@ public class LightingSettingsService {
 
     @Transactional
     public LightingDeviceConfig create(LightingDeviceCreateInput input) {
+        guard.requireConfigured();
         requireAllowedHost(input.getHost());
         requireNameFree(input.getName(), null);
         LightingDeviceEntity entity = new LightingDeviceEntity();
@@ -86,7 +87,14 @@ public class LightingSettingsService {
         String oldHost = entity.getHost();
         int oldPort = entity.getPort();
         boolean oldActive = entity.isActive();
-        if (input.getHost() != null) {
+        // Only an address that actually changes is checked (and needs lighting configured): renaming a
+        // controller sends the unchanged host back and must keep working, configured or not.
+        boolean hostChanges = input.getHost() != null && !input.getHost().trim().equals(oldHost);
+        boolean portChanges = input.getPort() != null && input.getPort() != oldPort;
+        if (hostChanges || portChanges) {
+            guard.requireConfigured();
+        }
+        if (hostChanges) {
             requireAllowedHost(input.getHost());
             entity.setHost(input.getHost().trim());
         }
@@ -154,6 +162,7 @@ public class LightingSettingsService {
      * Not transactional: it is a network call.
      */
     public LightingDeviceCheckResult check(LightingDeviceCheckInput input) {
+        guard.requireConfigured();
         requireAllowedHost(input.getHost());
         int port = input.getPort() == null ? 80 : input.getPort();
         try {

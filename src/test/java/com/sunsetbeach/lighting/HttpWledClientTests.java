@@ -278,7 +278,7 @@ class HttpWledClientTests {
 
     @Test
     void theProductionClient_refusesANonLanAddress_beforeAnyConnection() {
-        LanAddressGuard realGuard = new LanAddressGuard("", InetAddress::getAllByName, a -> false);
+        LanAddressGuard realGuard = new LanAddressGuard("10.0.0.0/8,192.168.0.0/16", InetAddress::getAllByName, a -> false);
         HttpWledClient production = new HttpWledClient(500, 500, realGuard, JsonMapper.builder().build());
 
         for (String host : List.of("127.0.0.1", "169.254.169.254", "8.8.8.8")) {

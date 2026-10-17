@@ -15,7 +15,9 @@ import org.junit.jupiter.api.Test;
  */
 class LanAddressGuardTests {
 
-    private final LanAddressGuard guard = new LanAddressGuard("", InetAddress::getAllByName, a -> false);
+    private static final String PRIVATE_RANGES = "10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16";
+
+    private final LanAddressGuard guard = new LanAddressGuard(PRIVATE_RANGES, InetAddress::getAllByName, a -> false);
 
     @Test
     void privateLanAddresses_areAccepted_andReturnedAsTheAddressToConnectTo() {
@@ -43,7 +45,7 @@ class LanAddressGuardTests {
 
     @Test
     void aNameIsJudgedByEveryAddressItResolvesTo() throws Exception {
-        LanAddressGuard byName = new LanAddressGuard("", host -> switch (host) {
+        LanAddressGuard byName = new LanAddressGuard(PRIVATE_RANGES, host -> switch (host) {
             case "lan.example" -> new InetAddress[] {InetAddress.getByName("192.168.1.9")};
             case "public.example" -> new InetAddress[] {InetAddress.getByName("93.184.216.34")};
             case "mixed.example" -> new InetAddress[] {InetAddress.getByName("192.168.1.9"), InetAddress.getByName("93.184.216.34")};
@@ -61,7 +63,7 @@ class LanAddressGuardTests {
     @Test
     void aNameWhoseAnswerChanges_isCheckedAgainOnTheNextResolve() throws Exception {
         AtomicInteger calls = new AtomicInteger();
-        LanAddressGuard rebinding = new LanAddressGuard("", host -> new InetAddress[] {
+        LanAddressGuard rebinding = new LanAddressGuard(PRIVATE_RANGES, host -> new InetAddress[] {
                 InetAddress.getByName(calls.getAndIncrement() == 0 ? "192.168.1.9" : "127.0.0.1")}, a -> false);
 
         assertThat(rebinding.resolve("rebind.example").getHostAddress()).isEqualTo("192.168.1.9");
@@ -70,7 +72,7 @@ class LanAddressGuardTests {
 
     @Test
     void anAddressOfThisMachine_isRefusedEvenWhenPrivate() {
-        LanAddressGuard withOwn = new LanAddressGuard("", InetAddress::getAllByName, a -> a.getHostAddress().equals("172.18.0.2"));
+        LanAddressGuard withOwn = new LanAddressGuard(PRIVATE_RANGES, InetAddress::getAllByName, a -> a.getHostAddress().equals("172.18.0.2"));
 
         assertThatThrownBy(() -> withOwn.resolve("172.18.0.2")).isInstanceOf(RefusedHostException.class).hasMessageContaining("own");
         assertThat(withOwn.resolve("172.18.0.3")).isNotNull();
@@ -87,6 +89,33 @@ class LanAddressGuardTests {
         // a CIDR cannot widen it: a public range configured here still gets nothing through
         LanAddressGuard widened = new LanAddressGuard("8.8.8.0/24", InetAddress::getAllByName, a -> false);
         assertThatThrownBy(() -> widened.resolve("8.8.8.8")).isInstanceOf(RefusedHostException.class);
+    }
+
+    @Test
+    void withoutAllowedCidrs_lightingIsOff_andNoAddressIsAccepted() {
+        for (String unset : new String[] {"", "   ", ",", null}) {
+            LanAddressGuard off = new LanAddressGuard(unset, InetAddress::getAllByName, a -> false);
+            assertThat(off.isConfigured()).as("[" + unset + "]").isFalse();
+            assertThatThrownBy(off::requireConfigured)
+                    .isInstanceOf(com.sunsetbeach.error.ConflictException.class)
+                    .hasMessage("Lighting is not configured on the server");
+            // "any private address" would include the database container on the compose network
+            for (String host : new String[] {"192.168.1.5", "10.0.0.5", "172.18.0.2"}) {
+                assertThatThrownBy(() -> off.resolve(host)).as(host).isInstanceOf(RefusedHostException.class);
+            }
+        }
+        assertThat(guard.isConfigured()).isTrue();
+        guard.requireConfigured();
+    }
+
+    @Test
+    void theComposeNetworkIsOutsideTheHotelLan() {
+        LanAddressGuard hotel = new LanAddressGuard("192.168.1.0/24", InetAddress::getAllByName, a -> false);
+
+        for (String dockerStyle : new String[] {"172.17.0.1", "172.18.0.2", "172.19.0.5", "172.20.0.3"}) {
+            assertThatThrownBy(() -> hotel.resolve(dockerStyle)).as(dockerStyle).isInstanceOf(RefusedHostException.class);
+        }
+        assertThat(hotel.resolve("192.168.1.40")).isNotNull();
     }
 
     @Test

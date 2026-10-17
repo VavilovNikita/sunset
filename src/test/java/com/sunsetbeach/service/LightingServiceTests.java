@@ -63,7 +63,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * independently, so everything created here is removed in {@code @AfterEach}.
  */
 // Its own context (the WledClient mock), so a small pool: every context holds its pool open for the whole suite.
-@SpringBootTest(properties = {"app.lighting.confirm-delay-ms=0", "spring.datasource.hikari.maximum-pool-size=3"})
+@SpringBootTest(properties = {"app.lighting.confirm-delay-ms=0", "spring.datasource.hikari.maximum-pool-size=3",
+        "app.lighting.allowed-cidrs=10.77.0.0/16"})
 class LightingServiceTests extends AbstractIntegrationTest {
 
     @Autowired private LightingService lightingService;
@@ -293,7 +294,9 @@ class LightingServiceTests extends AbstractIntegrationTest {
 
     @Test
     void anAddressThatIsNotPrivateLan_isRefusedOnSave_andNothingIsStored() {
-        for (String host : List.of("8.8.8.8", "127.0.0.1", "localhost", "169.254.169.254", "0.0.0.0", "::1", "172.32.0.1")) {
+        for (String host : List.of("8.8.8.8", "127.0.0.1", "localhost", "169.254.169.254", "0.0.0.0", "::1", "172.32.0.1",
+                // private, but outside the configured network: the compose network (database, frontend)
+                "172.18.0.5", "10.78.0.1", "192.168.1.5")) {
             assertThatThrownBy(() -> settingsService.create(new LightingDeviceCreateInput("Bad " + host, host)))
                     .as(host)
                     .isInstanceOfSatisfying(ValidationException.class, e -> assertThat(e.getFieldErrors()).containsKey("host"));

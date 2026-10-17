@@ -15,6 +15,7 @@ import com.sunsetbeach.model.LightingDeviceList;
 import com.sunsetbeach.model.LightingDeviceUpdateInput;
 import com.sunsetbeach.model.LightingReorderInput;
 import com.sunsetbeach.model.LightingStateInput;
+import com.sunsetbeach.model.LightingStatus;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.ValidationError;
 import org.springframework.http.HttpStatus;
@@ -42,13 +43,14 @@ public interface LightingApi {
 
     /**
      * POST /lighting/settings/devices/check : Test a controller address before saving it
-     * Requires ADMIN. Asks the controller at &#x60;host:port&#x60; for &#x60;/json/info&#x60; without saving anything, so the form can test before saving. A controller that does not answer is a **200** with &#x60;reachable&#x60; false and a short &#x60;error&#x60; - that is the result of the test, not a failure of the request. A &#x60;host&#x60; that is not an allowed private address is a 400, exactly as on save. 
+     * Requires ADMIN. Asks the controller at &#x60;host:port&#x60; for &#x60;/json/info&#x60; without saving anything, so the form can test before saving. A controller that does not answer is a **200** with &#x60;reachable&#x60; false and a short &#x60;error&#x60; - that is the result of the test, not a failure of the request. A &#x60;host&#x60; that is not an allowed private address is a 400, exactly as on save; 409 when lighting is not configured on the server. 
      *
      * @param lightingDeviceCheckInput  (required)
      * @return The outcome of the test. (status code 200)
      *         or Body failed validation, or &#x60;host&#x60; is not an allowed address. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     *         or Lighting is not configured on the server. (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.POST,
@@ -82,6 +84,11 @@ public interface LightingApi {
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
             }
         });
         return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
@@ -91,14 +98,14 @@ public interface LightingApi {
 
     /**
      * POST /lighting/settings/devices : Add a lighting controller
-     * Requires ADMIN. &#x60;host&#x60; must be an IP address or hostname that resolves to a **private LAN address** (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, narrowed further by &#x60;app.lighting.allowed-cidrs&#x60; when set); loopback, link-local (169.254.x.x), this server&#39;s own addresses and anything public are a 400 on &#x60;host&#x60;. The address is checked again on every request to the controller, not only here. Added last in the display order. The name is unique ignoring case and spaces (409). 
+     * Requires ADMIN. &#x60;host&#x60; must be an IP address or hostname that resolves to a **private LAN address** (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, and inside the networks of &#x60;app.lighting.allowed-cidrs&#x60; (which the server must have set); loopback, link-local (169.254.x.x), this server&#39;s own addresses and anything public are a 400 on &#x60;host&#x60;. The address is checked again on every request to the controller, not only here. Added last in the display order. The name is unique ignoring case and spaces (409). Also 409 &#x60;Lighting is not configured on the server&#x60; while &#x60;GET /lighting/status&#x60; says &#x60;configured: false&#x60; - there is then no network a host could be in. 
      *
      * @param lightingDeviceCreateInput  (required)
      * @return Controller added. (status code 201)
      *         or Body failed validation, or &#x60;host&#x60; is not an allowed address. (status code 400)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
-     *         or Another controller already has this name. (status code 409)
+     *         or Another controller already has this name, or lighting is not configured on the server. (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.POST,
@@ -193,6 +200,47 @@ public interface LightingApi {
 
 
     /**
+     * GET /lighting/status : Whether lighting can be used at all
+     * Requires MANAGER or above. Answers from the server&#39;s own configuration - **no call to any controller** - so the Lighting pages can say \&quot;not configured\&quot; the moment they open. &#x60;configured&#x60; is false until the server has &#x60;LIGHTING_ALLOWED_CIDRS&#x60; set (the networks a controller may be on); while false, nothing can be sent to a controller and the endpoints that would make the server send a request answer 409. 
+     *
+     * @return The status. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/lighting/status",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<LightingStatus> getLightingStatus(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"configured\" : true }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * GET /lighting/settings/devices : Configured lighting controllers (settings)
      * Requires ADMIN. Every configured controller, active or not. No call to the controllers.
      *
@@ -235,7 +283,7 @@ public interface LightingApi {
 
     /**
      * GET /lighting/devices : Lighting controllers with their live state
-     * Requires MANAGER or above (one matcher in &#x60;SecurityConfig#lightingControl&#x60;). Every **active** WLED controller in display order, read over the hotel LAN in parallel with a short timeout (&#x60;app.lighting.request-timeout-ms&#x60;, about 2.5 s), so one dead controller costs the page one timeout, not one per device. A controller that does not answer has &#x60;online&#x60; false and &#x60;stateError&#x60; set; the rest of the list is still returned. State and the preset list are served from a short server-side cache (&#x60;app.lighting.state-cache-seconds&#x60;, 10 s); &#x60;refresh&#x3D;true&#x60; bypasses it and is what the page&#39;s \&quot;Refresh\&quot; button sends. Nothing polls in the background - a controller is contacted only when someone opens the page, refreshes, or sends a command. 
+     * Requires MANAGER or above (one matcher in &#x60;SecurityConfig.LIGHTING_CONTROL_ROLE&#x60;). Every **active** WLED controller in display order, read over the hotel LAN in parallel with a short timeout (&#x60;app.lighting.request-timeout-ms&#x60;, about 2.5 s), so one dead controller costs the page one timeout, not one per device. A controller that does not answer has &#x60;online&#x60; false and &#x60;stateError&#x60; set; the rest of the list is still returned. State and the preset list are served from a short server-side cache (&#x60;app.lighting.state-cache-seconds&#x60;, 10 s); &#x60;refresh&#x3D;true&#x60; bypasses it and is what the page&#39;s \&quot;Refresh\&quot; button sends. Nothing polls in the background - a controller is contacted only when someone opens the page, refreshes, or sends a command. When lighting is not configured on the server (see &#x60;GET /lighting/status&#x60;) this is a 200 with &#x60;configured&#x60; false and an empty &#x60;devices&#x60; list, without contacting anything. 
      *
      * @param refresh  (optional, default to false)
      * @return Active controllers. (status code 200)
@@ -254,7 +302,7 @@ public interface LightingApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"devices\" : [ { \"brightness\" : 153, \"presets\" : [ { \"name\" : \"name\", \"id\" : 5 }, { \"name\" : \"name\", \"id\" : 5 } ], \"stateReadAt\" : \"2000-01-23T04:56:07.000+00:00\", \"sortOrder\" : 0, \"stateError\" : \"stateError\", \"name\" : \"name\", \"isOn\" : true, \"online\" : true, \"location\" : \"location\", \"id\" : \"id\", \"presetId\" : 1 }, { \"brightness\" : 153, \"presets\" : [ { \"name\" : \"name\", \"id\" : 5 }, { \"name\" : \"name\", \"id\" : 5 } ], \"stateReadAt\" : \"2000-01-23T04:56:07.000+00:00\", \"sortOrder\" : 0, \"stateError\" : \"stateError\", \"name\" : \"name\", \"isOn\" : true, \"online\" : true, \"location\" : \"location\", \"id\" : \"id\", \"presetId\" : 1 } ], \"fetchedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"configured\" : true, \"devices\" : [ { \"brightness\" : 153, \"presets\" : [ { \"name\" : \"name\", \"id\" : 5 }, { \"name\" : \"name\", \"id\" : 5 } ], \"stateReadAt\" : \"2000-01-23T04:56:07.000+00:00\", \"sortOrder\" : 0, \"stateError\" : \"stateError\", \"name\" : \"name\", \"isOn\" : true, \"online\" : true, \"location\" : \"location\", \"id\" : \"id\", \"presetId\" : 1 }, { \"brightness\" : 153, \"presets\" : [ { \"name\" : \"name\", \"id\" : 5 }, { \"name\" : \"name\", \"id\" : 5 } ], \"stateReadAt\" : \"2000-01-23T04:56:07.000+00:00\", \"sortOrder\" : 0, \"stateError\" : \"stateError\", \"name\" : \"name\", \"isOn\" : true, \"online\" : true, \"location\" : \"location\", \"id\" : \"id\", \"presetId\" : 1 } ], \"fetchedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -326,7 +374,7 @@ public interface LightingApi {
 
     /**
      * POST /lighting/devices/{id}/state : Switch a controller, set its brightness or apply a preset
-     * Requires MANAGER or above. Any combination of &#x60;isOn&#x60;, &#x60;brightness&#x60; and &#x60;presetId&#x60;, at least one. The command is sent to the controller, then its state is read back and returned - what WLED reports, not what was asked for (a preset is applied by WLED a moment after the request). Note that WLED treats brightness 0 as \&quot;off\&quot;. Audited with who, which controller, what was asked and the outcome, success or failure. 409 when the controller is disabled in settings. 502 (the message names the controller) when it cannot be reached, answers with an error, or its stored address is not an allowed private address any more. 
+     * Requires MANAGER or above. Any combination of &#x60;isOn&#x60;, &#x60;brightness&#x60; and &#x60;presetId&#x60;, at least one. The command is sent to the controller, then its state is read back and returned - what WLED reports, not what was asked for (a preset is applied by WLED a moment after the request). Note that WLED treats brightness 0 as \&quot;off\&quot;. Audited with who, which controller, what was asked and the outcome, success or failure. 409 when the controller is disabled in settings or lighting is not configured on the server (&#x60;Lighting is not configured on the server&#x60;). 502 (the message names the controller) when it cannot be reached, answers with an error, or its stored address is not an allowed private address any more. 
      *
      * @param id  (required)
      * @param lightingStateInput  (required)
@@ -335,7 +383,7 @@ public interface LightingApi {
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
      *         or Controller not found. (status code 404)
-     *         or The controller is disabled in settings. (status code 409)
+     *         or The controller is disabled in settings, or lighting is not configured on the server. (status code 409)
      *         or The controller could not be reached or refused the command; &#x60;error&#x60; names it. (status code 502)
      */
     @RequestMapping(
@@ -395,7 +443,7 @@ public interface LightingApi {
 
     /**
      * PATCH /lighting/settings/devices/{id} : Update a lighting controller
-     * Requires ADMIN. Only the fields sent change. &#x60;location&#x60; sent as an empty string clears it. A changed &#x60;host&#x60; is checked like on create. The display order is changed through &#x60;reorder&#x60;. 
+     * Requires ADMIN. Only the fields sent change. &#x60;location&#x60; sent as an empty string clears it. A changed &#x60;host&#x60; or &#x60;port&#x60; is checked like on create and is a 409 when lighting is not configured on the server; renaming, &#x60;location&#x60; and &#x60;active&#x60; always work. The display order is changed through &#x60;reorder&#x60;. 
      *
      * @param id  (required)
      * @param lightingDeviceUpdateInput  (required)
@@ -404,7 +452,7 @@ public interface LightingApi {
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
      *         or Controller not found. (status code 404)
-     *         or Another controller already has this name. (status code 409)
+     *         or Another controller already has this name, or &#x60;host&#x60;/&#x60;port&#x60; changed while lighting is not configured on the server. (status code 409)
      */
     @RequestMapping(
         method = RequestMethod.PATCH,

@@ -207,11 +207,13 @@ through the wg-hotel WireGuard tunnel**:
    instead (`curl -s -m 3 http://<controller-ip>/json/info`) - but a host that can reach it while the container cannot
    points at docker's network/forwarding rules, not at the tunnel. No output or a timeout: look at `wg show` (a recent
    handshake) and at the tunnel's `AllowedIPs`.
-4. **Narrow what the backend may reach (recommended).** The server refuses any address that is not private (10/8, 172.16/12,
-   192.168/16), loopback, link-local or one of its own - but docker's own networks are also in 172.16/12. Set
-   `LIGHTING_ALLOWED_CIDRS` in the backend's `.env` to the hotel LAN, e.g. `LIGHTING_ALLOWED_CIDRS=192.168.1.0/24`
-   (comma-separated for several), then `docker compose up -d backend` (a plain restart does not re-read `.env`). A malformed
-   value stops the backend from starting, on purpose.
+4. **Set `LIGHTING_ALLOWED_CIDRS` (required).** Put the hotel LAN the controllers are on into the backend's `.env`, as CIDR
+   (comma-separated for several; see `.env.example` for the variable, use your own subnet), then
+   `docker compose up -d backend` (a plain restart does not re-read `.env`). **Without it lighting is off**: the Lighting
+   pages say "not configured" and the server sends nothing to any controller. That is deliberate - the other containers on
+   the compose network (the database, the frontend) are in 172.16/12 as well, so "any private address" would let an admin
+   point a controller at the database. Pick a range that does **not** contain docker's networks (`docker network inspect`
+   shows them). A malformed value stops the backend from starting, on purpose.
 5. Optional timeouts: `LIGHTING_CONNECT_TIMEOUT_MS` (2000), `LIGHTING_REQUEST_TIMEOUT_MS` (2500), `LIGHTING_STATE_CACHE_SECONDS` (10).
 
 The address is checked when it is saved and again on every request, so a controller whose DNS name or address later

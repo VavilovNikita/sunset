@@ -78,8 +78,9 @@ class LightingAccessTests {
             user.setTokenVersion(0);
             when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
         }
-        when(lightingService.list(anyBoolean())).thenReturn(new LightingDeviceList(List.of(), OffsetDateTime.now()));
+        when(lightingService.list(anyBoolean())).thenReturn(new LightingDeviceList(true, List.of(), OffsetDateTime.now()));
         when(lightingService.setState(anyString(), any())).thenReturn(new LightingDevice("d1", "Pool bar", true, List.of()));
+        when(lightingService.status()).thenReturn(new com.sunsetbeach.model.LightingStatus(true));
     }
 
     @Test
@@ -91,6 +92,17 @@ class LightingAccessTests {
                     .andExpect(status().isForbidden());
         }
         verify(lightingService, never()).setState(anyString(), any());
+    }
+
+    @Test
+    void status_isManagerPlus() throws Exception {
+        for (Role role : List.of(Role.WAITER, Role.CASHIER)) {
+            mockMvc.perform(get("/lighting/status").header("Authorization", bearer(role))).andExpect(status().isForbidden());
+        }
+        mockMvc.perform(get("/lighting/status")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/lighting/status").header("Authorization", bearer(Role.MANAGER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configured").value(true));
     }
 
     @Test

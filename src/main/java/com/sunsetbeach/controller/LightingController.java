@@ -9,6 +9,7 @@ import com.sunsetbeach.model.LightingDeviceCreateInput;
 import com.sunsetbeach.model.LightingDeviceList;
 import com.sunsetbeach.model.LightingDeviceUpdateInput;
 import com.sunsetbeach.model.LightingReorderInput;
+import com.sunsetbeach.model.LightingStatus;
 import com.sunsetbeach.model.LightingStateInput;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.service.LightingService;
@@ -27,6 +28,11 @@ public class LightingController implements LightingApi {
     public LightingController(LightingService lightingService, LightingSettingsService settingsService) {
         this.lightingService = lightingService;
         this.settingsService = settingsService;
+    }
+
+    @Override
+    public ResponseEntity<LightingStatus> getLightingStatus() {
+        return ResponseEntity.ok(lightingService.status());
     }
 
     @Override

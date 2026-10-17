@@ -11307,6 +11307,28 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /lighting/status:
+    get:
+      operationId: getLightingStatus
+      tags: [Lighting]
+      summary: Whether lighting can be used at all
+      description: >
+        Requires MANAGER or above. Answers from the server's own configuration - **no call to any
+        controller** - so the Lighting pages can say "not configured" the moment they open.
+        `configured` is false until the server has `LIGHTING_ALLOWED_CIDRS` set (the networks a
+        controller may be on); while false, nothing can be sent to a controller and the endpoints that
+        would make the server send a request answer 409.
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LightingStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/ForbiddenManagerPlus"
   /lighting/devices:
     get:
       operationId: listLightingDevices
@@ -11321,7 +11343,8 @@ paths:
         served from a short server-side cache (`app.lighting.state-cache-seconds`, 10 s);
         `refresh=true` bypasses it and is what the page's "Refresh" button sends. Nothing polls in the
         background - a controller is contacted only when someone opens the page, refreshes, or sends
-        a command.
+        a command. When lighting is not configured on the server (see `GET /lighting/status`) this is a
+        200 with `configured` false and an empty `devices` list, without contacting anything.
       parameters:
         - name: refresh
           in: query
@@ -11356,7 +11379,8 @@ paths:
         The command is sent to the controller, then its state is read back and returned - what WLED
         reports, not what was asked for (a preset is applied by WLED a moment after the request).
         Note that WLED treats brightness 0 as "off". Audited with who, which controller, what was
-        asked and the outcome, success or failure. 409 when the controller is disabled in settings.
+        asked and the outcome, success or failure. 409 when the controller is disabled in settings or lighting
+        is not configured on the server (`Lighting is not configured on the server`).
         502 (the message names the controller) when it cannot be reached, answers with an error, or its
         stored address is not an allowed private address any more.
       requestBody:
@@ -11389,7 +11413,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
-          description: The controller is disabled in settings.
+          description: The controller is disabled in settings, or lighting is not configured on the server.
           content:
             application/json:
               schema:
@@ -11425,11 +11449,12 @@ paths:
       summary: Add a lighting controller
       description: >
         Requires ADMIN. `host` must be an IP address or hostname that resolves to a **private LAN
-        address** (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, narrowed further by
-        `app.lighting.allowed-cidrs` when set); loopback, link-local (169.254.x.x), this server's own
+        address** (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) and inside the
+        networks of `app.lighting.allowed-cidrs` (which the server must have set); loopback, link-local (169.254.x.x), this server's own
         addresses and anything public are a 400 on `host`. The address is checked again on every
         request to the controller, not only here. Added last in the display order. The name is unique
-        ignoring case and spaces (409).
+        ignoring case and spaces (409). Also 409 `Lighting is not configured on the server` while
+        `GET /lighting/status` says `configured: false` - there is then no network a host could be in.
       requestBody:
         required: true
         content:
@@ -11454,7 +11479,7 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "409":
-          description: Another controller already has this name.
+          description: Another controller already has this name, or lighting is not configured on the server.
           content:
             application/json:
               schema:
@@ -11468,7 +11493,8 @@ paths:
         Requires ADMIN. Asks the controller at `host:port` for `/json/info` without saving anything,
         so the form can test before saving. A controller that does not answer is a **200** with
         `reachable` false and a short `error` - that is the result of the test, not a failure of the
-        request. A `host` that is not an allowed private address is a 400, exactly as on save.
+        request. A `host` that is not an allowed private address is a 400, exactly as on save; 409 when lighting
+        is not configured on the server.
       requestBody:
         required: true
         content:
@@ -11492,6 +11518,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Lighting is not configured on the server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
   /lighting/settings/devices/reorder:
     post:
       operationId: reorderLightingDeviceConfigs
@@ -11536,7 +11568,9 @@ paths:
       summary: Update a lighting controller
       description: >
         Requires ADMIN. Only the fields sent change. `location` sent as an empty string clears it.
-        A changed `host` is checked like on create. The display order is changed through `reorder`.
+        A changed `host` or `port` is checked like on create and is a 409 when lighting is not configured
+        on the server; renaming, `location` and `active` always work. The display order is changed through
+        `reorder`.
       requestBody:
         required: true
         content:
@@ -11567,7 +11601,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
-          description: Another controller already has this name.
+          description: Another controller already has this name, or `host`/`port` changed while lighting is not configured on the server.
           content:
             application/json:
               schema:
@@ -19632,10 +19666,21 @@ components:
         stateError:
           type: string
 
+    LightingStatus:
+      type: object
+      required: [configured]
+      properties:
+        configured:
+          type: boolean
+          description: False when the server has no `LIGHTING_ALLOWED_CIDRS` - lighting is then off.
+
     LightingDeviceList:
       type: object
-      required: [devices, fetchedAt]
+      required: [devices, fetchedAt, configured]
       properties:
+        configured:
+          type: boolean
+          description: Same as `GET /lighting/status`. When false, `devices` is empty.
         devices:
           type: array
           items:

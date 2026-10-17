@@ -15,8 +15,10 @@ import org.springframework.stereotype.Component;
 /**
  * The SSRF guard of the lighting module. An admin types a host and this server then sends HTTP
  * requests to it, so the host is accepted only when <em>every</em> address it resolves to is a
- * private IPv4 LAN address: 10/8, 172.16/12 or 192.168/16 (and, when {@code app.lighting.allowed-cidrs}
- * is set, inside one of those CIDRs). Loopback, link-local (169.254/16 - cloud metadata), "this host",
+ * private IPv4 LAN address: 10/8, 172.16/12 or 192.168/16 <em>and</em> inside one of the CIDRs of
+ * {@code app.lighting.allowed-cidrs}. That setting is required: unset or blank means lighting is off
+ * ({@link #isConfigured()}), because "any private address" would include the database and the other
+ * containers on the compose network. Loopback, link-local (169.254/16 - cloud metadata), "this host",
  * multicast, IPv6 and every public address are refused; so is any address that belongs to a network
  * interface of this machine (the docker bridge and the containers live in 172.16/12 too).
  *
@@ -47,6 +49,8 @@ public class LanAddressGuard {
         }
     }
 
+    public static final String NOT_CONFIGURED = "Lighting is not configured on the server";
+
     private static final String PRIVATE_ONLY = "The address must be a private LAN address (10.x.x.x, 172.16-31.x.x or 192.168.x.x)";
 
     private final List<Cidr> allowed;
@@ -64,8 +68,27 @@ public class LanAddressGuard {
         this.isOwnAddress = isOwnAddress;
     }
 
+    /**
+     * Lighting is on only when {@code app.lighting.allowed-cidrs} names at least one network. Without it
+     * "any private address" would include the other containers on the compose network (the database,
+     * the frontend), which are in 172.16/12 too and are not this machine's own address.
+     */
+    public boolean isConfigured() {
+        return !allowed.isEmpty();
+    }
+
+    /** 409 when lighting is off; called before anything that would make the server send a request. */
+    public void requireConfigured() {
+        if (!isConfigured()) {
+            throw new com.sunsetbeach.error.ConflictException(NOT_CONFIGURED);
+        }
+    }
+
     /** The address to connect to (an IPv4 literal), or {@link RefusedHostException}. */
     public InetAddress resolve(String host) {
+        if (!isConfigured()) {
+            throw new RefusedHostException(NOT_CONFIGURED);
+        }
         if (host == null || host.isBlank()) {
             throw new RefusedHostException("Specify the controller's address");
         }
@@ -99,7 +122,7 @@ public class LanAddressGuard {
         if (!isPrivate(value)) {
             throw new RefusedHostException(PRIVATE_ONLY);
         }
-        if (!allowed.isEmpty() && allowed.stream().noneMatch(c -> c.contains(value))) {
+        if (allowed.stream().noneMatch(c -> c.contains(value))) {
             throw new RefusedHostException("The address is outside the networks lighting controllers are allowed on");
         }
         if (isOwnAddress.test(address)) {
