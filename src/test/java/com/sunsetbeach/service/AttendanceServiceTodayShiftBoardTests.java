@@ -192,6 +192,45 @@ class AttendanceServiceTodayShiftBoardTests extends AbstractIntegrationTest {
         assertThat(finishedStatus.getReferenceTime().get()).isEqualTo(at(9, 0));
     }
 
+    private void deactivate(UserEntity user) {
+        user.setActive(false);
+        userRepository.saveAndFlush(user);
+    }
+
+    @Test
+    void deactivatedEmployee_withAShiftToday_isNotOnTheBoard_butTheirEntryStays() {
+        UserEntity mgr = createUser();
+        ShiftCode code = createShiftCode(morningCode("09:00", "17:00"), mgr.getId());
+        UserEntity active = createUser();
+        assignEntry(active, code, mgr.getId());
+        UserEntity gone = createUser();
+        assignEntry(gone, code, mgr.getId());
+        punch(gone, 9, 5, PunchDirection.IN, mgr.getId());
+        deactivate(gone);
+
+        List<TodayShiftStatus> board = attendanceService.getTodayShiftBoard();
+
+        assertThat(board).extracting(TodayShiftStatus::getEmployeeUserId).contains(active.getId()).doesNotContain(gone.getId());
+        assertThat(rosterEntryRepository.findAll()).anyMatch(e -> e.getEmployeeUserId().equals(gone.getId()));
+        assertThat(attendancePunchRepository.findAll()).anyMatch(p -> p.getEmployeeUserId().equals(gone.getId()) && p.getVoidedAt() == null);
+
+        gone.setActive(true);
+        userRepository.saveAndFlush(gone);
+        assertThat(attendanceService.getTodayShiftBoard()).extracting(TodayShiftStatus::getEmployeeUserId).contains(gone.getId());
+    }
+
+    @Test
+    void deactivatedEmployee_whoPunchedWithoutAShift_isNotOnTheBoard() {
+        UserEntity mgr = createUser();
+        createShiftCode(new ShiftCodeCreateInput("OP" + UUID.randomUUID().toString().substring(0, 6), ShiftCodeKind.OPEN_SCHEDULE, true, true, "2020-01-01")
+                .staffArea(StaffArea.MAINTENANCE), mgr.getId());
+        UserEntity walkIn = createUser();
+        punch(walkIn, 8, 0, PunchDirection.IN, mgr.getId());
+        deactivate(walkIn);
+
+        assertThat(attendanceService.getTodayShiftBoard()).extracting(TodayShiftStatus::getEmployeeUserId).doesNotContain(walkIn.getId());
+    }
+
     /** A single-interval code ("9"-shaped), one employee per reachable state, none of them arrived yet except two. */
     @Test
     void singleInterval_everyReachableState() {

@@ -152,6 +152,19 @@ class NotificationScanTests extends NotificationTestBase {
     }
 
     @Test
+    void aDeactivatedEmployee_isNeverLateOrAbsent() {
+        roster(employee, nineToFive(), manager);
+        employee.setActive(false);
+        userRepository.saveAndFlush(employee);
+
+        at("10:30");
+        scanService.runOnce();
+
+        assertThat(notificationsOf(supervisor, "LATE")).isEmpty();
+        assertThat(notificationsOf(director, "ABSENT")).isEmpty();
+    }
+
+    @Test
     void aDirectorWhoIsTheAbsentOne_isNotToldAboutThemselves() {
         roster(director, nineToFive(), manager);
         at("10:30");

@@ -414,6 +414,10 @@ public class AttendanceService {
      * its coverage counts and every report's planned side stay what a manager actually planned,
      * while the punches themselves already count toward actuals on their own. An {@code ABSENCE}
      * entry still keeps someone off the board, punched or not - that is a plan, not a gap in one.
+     *
+     * <p>A deactivated employee is never on the board, rostered or punched. This only hides them:
+     * their entries and punches are untouched, so reactivating brings today's shift back. The
+     * notification scan and block notifications read this board, so they follow.
      */
     @Transactional(readOnly = true)
     public List<TodayShiftStatus> getTodayShiftBoard() {
@@ -445,13 +449,15 @@ public class AttendanceService {
         List<TodayShiftStatus> board = new ArrayList<>();
         for (RosterEntryEntity entry : workingEntries) {
             UserEntity employee = employees.get(entry.getEmployeeUserId());
+            // Deactivated (or missing) employees are hidden, not deleted: their entries and punches stay.
+            if (employee == null || !employee.isActive()) continue;
             ShiftCodeEntity shiftCode = shiftCodesById.get(entry.getShiftCodeId());
             List<AttendancePunchEntity> dayPunches = punchesByEmployee.getOrDefault(employee.getId(), List.of());
             board.add(toTodayShiftStatus(employee, shiftCode, dayPunches, today, now).unscheduled(false));
         }
         for (String employeeId : unscheduledIds) {
             UserEntity employee = employees.get(employeeId);
-            if (employee == null) continue;
+            if (employee == null || !employee.isActive()) continue;
             Optional<ShiftCodeEntity> op = shiftCodeService.resolveActive(employee.getStaffArea(), OPEN_SCHEDULE_CODE);
             if (op.isEmpty()) {
                 log.warn("{} punched today with no roster entry, but no active {} shift code exists to show them under", employee.getName(), OPEN_SCHEDULE_CODE);

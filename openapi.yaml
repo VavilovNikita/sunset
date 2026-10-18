@@ -18189,6 +18189,10 @@ components:
         what a manager planned. If no active `OP` code exists for their area (or area-less), they
         are left out rather than shown under an invented code.
 
+        Only active employees are listed: a deactivated employee never appears, even with a shift
+        or a punch today. Their roster entries and punches are not touched, so reactivating them
+        brings the shift back.
+
         `referenceTime` is deliberately one raw timestamp whose meaning switches with `state`, not
         a pre-formatted "in 23 minutes" string - the frontend derives (and re-derives, every poll
         tick) the relative time itself, so it never goes stale between polls on its own:

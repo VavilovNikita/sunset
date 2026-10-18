@@ -318,6 +318,8 @@ Area was in this key for one round of this feature's life (V78) and it was a mis
 
 **A shift is never assigned to a deactivated employee** - `RosterService#requireActiveEmployee` guards create, move, reassign (target) and swap, `generateMonth` skips their patterns, and both Excel imports refuse the whole commit before writing anything. Their earlier entries stay and can still be deleted. **The two exports list the same people** (`RosterExportService#exportEmployeeIds`): every active employee plus anyone, active or not, with an entry or a live punch in the month - so someone deactivated mid-month is in both files, and an active employee nobody scheduled is a row of zeros in the actuals file. The on-screen grid (`RosterService#listEmployees`) is still active-only.
 
+**The Today board hides deactivated employees, and so does everything that reads it.** `AttendanceService#getTodayShiftBoard` skips anyone with `active = false` (rostered or punched); `NotificationScanService` (late/absent) and `BlockNotificationService` (who is on shift) follow because they read the same board. Nothing is deleted or voided - their entries and punches stay, and reactivating brings the shift back.
+
 ## Roster grid re-import (export -> edit -> re-import)
 
 Distinct from the legacy Excel schedule import above - this is round-tripping the roster *grid* itself (already-committed `RosterEntry` rows) out to Excel, letting a manager edit it there, and syncing the changes back, rather than parsing the hotel's original hand-built file.
