@@ -587,7 +587,7 @@ public class RosterExportService {
         if (shiftCode.getStartTime2() != null) intervals.add(new LocalTime[] {shiftCode.getStartTime2(), shiftCode.getEndTime2()});
 
         // LATE and MISSED come from the shared presence rule (a pair or an open IN covers every interval it
-        // overlaps); LEFT_EARLY below still compares the positional pair with its interval, as before.
+        // overlaps); LEFT_EARLY is the end of that same presence being before the interval's end.
         LocalDateTime now = LocalDateTime.now(clock);
         for (LocalTime[] interval : intervals) {
             LocalDateTime start = date.atTime(interval[0]);
@@ -606,19 +606,14 @@ public class RosterExportService {
                         lateMinutes + " min late for the " + interval[0].format(TIME_FORMAT) + " shift (clocked in "
                                 + presence.get().arrivedAt().toLocalTime().format(TIME_FORMAT) + ")");
             }
-        }
-
-        List<AttendancePunchPairing.PunchPair> pairs = AttendancePunchPairing.pairs(dayPunches);
-        int matched = Math.min(pairs.size(), intervals.size());
-        for (int i = 0; i < matched; i++) {
-            AttendancePunchPairing.PunchPair pair = pairs.get(i);
-            LocalTime end = intervals.get(i)[1];
-            LocalTime outTime = pair.out().getPunchAt().toLocalTime();
-
-            long earlyMinutes = Duration.between(outTime, end).toMinutes();
-            if (earlyMinutes > 0) {
-                rowIndex = writeAnomalyRow(rows, rowIndex, employeeName, date, "LEFT_EARLY",
-                        earlyMinutes + " min left early from the " + end.format(TIME_FORMAT) + " shift (clocked out " + outTime.format(TIME_FORMAT) + ")");
+            // An open IN (leftAt null) is someone still in the house, never LEFT_EARLY.
+            if (presence.get().leftAt() != null) {
+                long earlyMinutes = Duration.between(presence.get().leftAt(), end).toMinutes();
+                if (earlyMinutes > 0) {
+                    rowIndex = writeAnomalyRow(rows, rowIndex, employeeName, date, "LEFT_EARLY",
+                            earlyMinutes + " min left early from the " + interval[1].format(TIME_FORMAT) + " shift (clocked out "
+                                    + presence.get().leftAt().toLocalTime().format(TIME_FORMAT) + ")");
+                }
             }
         }
         return rowIndex;

@@ -513,6 +513,27 @@ class RosterExportServiceTests extends AbstractIntegrationTest {
     }
 
     @Test
+    void exportActuals_lateAndAnomalies_splitShiftOutBeforeSecondHalfEnds_secondHalfLeftEarlyOnly() {
+        List<Row> rows = splitDayAnomalies("EarlySecond", 11, new int[][] {{11, 0}, {19, 0}});
+        assertThat(rows).hasSize(1);
+        assertThat(cellText(rows.get(0), 2)).isEqualTo("LEFT_EARLY");
+        assertThat(cellText(rows.get(0), 3)).contains("120 min left early from the 21:00");
+    }
+
+    @Test
+    void exportActuals_lateAndAnomalies_splitShiftOutAtEndOfSecondHalf_nothingFlagged() {
+        assertThat(splitDayAnomalies("FullSpan", 12, new int[][] {{11, 0}, {21, 0}})).isEmpty();
+    }
+
+    @Test
+    void exportActuals_lateAndAnomalies_splitShiftOutBeforeFirstHalfEnds_firstHalfLeftEarly() {
+        List<Row> rows = splitDayAnomalies("EarlyFirst", 13, new int[][] {{11, 0}, {13, 0}, {16, 0}, {21, 0}});
+        assertThat(rows).hasSize(1);
+        assertThat(cellText(rows.get(0), 2)).isEqualTo("LEFT_EARLY");
+        assertThat(cellText(rows.get(0), 3)).contains("60 min left early from the 14:00");
+    }
+
+    @Test
     void exportActuals_lateAndAnomalies_extraPunchPairBeyondScheduledIntervalsNotFlagged() {
         UserEntity mgr = createEmployee(null, "Manager");
         UserEntity employee = createEmployee(StaffArea.RESTAURANT, "ExtraPair");
