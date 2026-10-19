@@ -19,6 +19,14 @@ public class FakeTelegramClient implements TelegramClient {
     public record Edit(String chatId, String messageId, String text, List<List<Button>> buttons) {
     }
 
+    /** A reply keyboard (the menu under the input field) a message carried. */
+    public record Keyboard(String chatId, String messageText, List<List<String>> rows) {
+    }
+
+    /** What one setMyCommands call set. */
+    public record CommandList(String chatId, String languageCode, List<Command> commands) {
+    }
+
     public volatile boolean configured = true;
     public volatile Route route = Route.DIRECT;
     public volatile boolean proxyConfigured = false;
@@ -27,6 +35,8 @@ public class FakeTelegramClient implements TelegramClient {
     public final List<Edit> edits = new CopyOnWriteArrayList<>();
     public final List<String> answers = new CopyOnWriteArrayList<>();
     public final List<String> commandSets = new CopyOnWriteArrayList<>();
+    public final List<Keyboard> keyboards = new CopyOnWriteArrayList<>();
+    public final List<CommandList> commandLists = new CopyOnWriteArrayList<>();
     public final List<TelegramUpdate> incoming = new CopyOnWriteArrayList<>();
     /** Returns the failure for a chat, or null to let the send succeed. */
     public volatile Function<String, TelegramException> failure = chat -> null;
@@ -49,6 +59,8 @@ public class FakeTelegramClient implements TelegramClient {
         edits.clear();
         answers.clear();
         commandSets.clear();
+        keyboards.clear();
+        commandLists.clear();
         incoming.clear();
         failure = chat -> null;
         lastRequestedOffset = -1;
@@ -116,6 +128,9 @@ public class FakeTelegramClient implements TelegramClient {
         }
         String id = String.valueOf(messageIds.incrementAndGet());
         sent.add(new Sent(chatId, text, id, inlineKeyboard));
+        if (replyKeyboard != null && !replyKeyboard.isEmpty()) {
+            keyboards.add(new Keyboard(chatId, text, replyKeyboard));
+        }
         return id;
     }
 
@@ -135,6 +150,7 @@ public class FakeTelegramClient implements TelegramClient {
 
     @Override
     public void setMyCommands(List<Command> commands, String languageCode, String chatId) {
+        commandLists.add(new CommandList(chatId, languageCode, List.copyOf(commands)));
         commandSets.add((chatId == null ? "default" : chatId) + ":" + (languageCode == null ? "-" : languageCode) + ":" + commands.size());
     }
 }

@@ -1,5 +1,6 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.bot.BotMenuChanged;
 import com.sunsetbeach.entity.ChannelLinkCodeEntity;
 import com.sunsetbeach.entity.StaffChannelLinkEntity;
 import com.sunsetbeach.entity.TelegramBotStateEntity;
@@ -37,6 +38,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -71,6 +73,7 @@ public class NotificationChannelService {
     private final TransactionTemplate tx;
     private final SecureRandom random = new SecureRandom();
     private final TelegramHealth health;
+    private final ApplicationEventPublisher events;
 
     public NotificationChannelService(
             UserRepository userRepository,
@@ -82,8 +85,10 @@ public class NotificationChannelService {
             AuditLogService auditLogService,
             Clock clock,
             PlatformTransactionManager transactionManager,
-            TelegramHealth health) {
+            TelegramHealth health,
+            ApplicationEventPublisher events) {
         this.health = health;
+        this.events = events;
         this.userRepository = userRepository;
         this.linkRepository = linkRepository;
         this.codeRepository = codeRepository;
@@ -166,6 +171,8 @@ public class NotificationChannelService {
                     userId,
                     "Notification language of " + user.getName() + ": " + (before == null ? "default" : before) + " -> "
                             + (user.getNotificationLanguage() == null ? "default" : user.getNotificationLanguage()));
+            // The "/" list of this person's chat is in their language: renewed after the commit, off this thread.
+            events.publishEvent(new BotMenuChanged(userId));
         }
         return toMember(user, linkRepository.findByUserIdAndChannel(userId, TELEGRAM).orElse(null));
     }

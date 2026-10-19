@@ -26,6 +26,8 @@ public class StaffChannelLinkEntity {
     @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
+    private String menuSignature;
+
     public String getId() {
         return id;
     }
@@ -66,4 +68,11 @@ public class StaffChannelLinkEntity {
         this.createdAt = createdAt;
     }
 
+    public String getMenuSignature() {
+        return menuSignature;
+    }
+
+    public void setMenuSignature(String menuSignature) {
+        this.menuSignature = menuSignature;
+    }
 }

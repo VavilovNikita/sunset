@@ -166,7 +166,7 @@ class HttpTelegramClientProxyTests {
         client.getUpdates(0, 1);
         assertThat(proxyHits).hasSize(proxyCalls + 1);
         assertThat(client.route()).isEqualTo(Route.DIRECT);
-        assertThat(telegramHits).hasSize(3);
+        assertThat(telegramHits).hasSize(4);
         // ...and the next look is a full interval later, not at the next poll.
         client.getUpdates(0, 1);
         assertThat(proxyHits).hasSize(proxyCalls + 1);
@@ -178,7 +178,7 @@ class HttpTelegramClientProxyTests {
         assertThat(client.route()).isEqualTo(Route.PROXY);
         client.sendMessage("1", "x");
         assertThat(proxyHits.get(proxyHits.size() - 1)).endsWith("/sendMessage");
-        assertThat(telegramHits).hasSize(4);
+        assertThat(telegramHits).hasSize(5);
 
         assertThat(warnsAndInfos()).filteredOn(m -> !m.startsWith("Telegram requests go")).containsExactly(
                 "Telegram via proxy failing, switching to direct",

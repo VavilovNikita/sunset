@@ -77,6 +77,7 @@ public class StaffBotService {
     private final NotificationSettingsService notificationSettingsService;
     private final NotificationChannelService channelService;
     private final List<BotCommandHandler> commandHandlers;
+    private final BotMenu menu;
     private final Map<String, BotActionHandler> actionHandlers = new HashMap<>();
     private final Map<String, BotDialogueHandler> dialogueHandlers = new HashMap<>();
     private final Clock clock;
@@ -93,6 +94,7 @@ public class StaffBotService {
             NotificationSettingsService notificationSettingsService,
             NotificationChannelService channelService,
             List<BotCommandHandler> commandHandlers,
+            BotMenu menu,
             List<BotActionHandler> actionHandlers,
             List<BotDialogueHandler> dialogueHandlers,
             Clock clock,
@@ -105,6 +107,7 @@ public class StaffBotService {
         this.settingsService = settingsService;
         this.notificationSettingsService = notificationSettingsService;
         this.channelService = channelService;
+        this.menu = menu;
         this.commandHandlers = commandHandlers.stream().sorted(Comparator.comparingInt(BotCommandHandler::order)).toList();
         actionHandlers.forEach(h -> h.kinds().forEach(kind -> this.actionHandlers.put(kind, h)));
         dialogueHandlers.forEach(h -> this.dialogueHandlers.put(h.state(), h));
@@ -122,6 +125,7 @@ public class StaffBotService {
         try {
             if (update.isCallback()) {
                 handleCallback(update);
+                refreshKeyboardIfStale(update.chatId());
                 return;
             }
             if (update.text() == null) {
@@ -136,6 +140,7 @@ public class StaffBotService {
                 return;
             }
             handleMessage(context(update.chatId(), null, null, user.get(), null), text, command);
+            refreshKeyboardIfStale(update.chatId());
         } catch (RuntimeException e) {
             log.error("Handling a bot update failed", e);
         }
@@ -229,31 +234,92 @@ public class StaffBotService {
     }
 
     private void sendMenu(BotContext ctx) {
-        List<BotCommandHandler> visible = commandHandlers.stream()
-                .filter(h -> h.enabled(ctx.settings()) && h.availableTo(ctx.user(), ctx.today()))
-                .toList();
-        List<List<String>> keyboard = new ArrayList<>();
-        List<String> row = new ArrayList<>();
-        for (BotCommandHandler h : visible) {
-            row.add(NotificationMessages.render(h.label(), ctx.language(), Map.of()));
-            if (row.size() == 2) {
-                keyboard.add(row);
-                row = new ArrayList<>();
-            }
-        }
-        if (!row.isEmpty()) {
-            keyboard.add(row);
-        }
+        List<BotCommandHandler> visible = menu.visible(ctx.user(), ctx.settings(), ctx.today());
+        MenuPlan plan = new MenuPlan(ctx.chatId(), linkIdOf(ctx.chatId()), menu.signature(visible, ctx.language()),
+                menu.keyboard(visible, ctx.language()), menu.commands(visible, ctx.language()));
         try {
-            telegram.sendMessage(ctx.chatId(), ctx.t(Key.BOT_MENU), null, keyboard);
-            // This person's own "/" list: the shared one plus what only they may use.
-            List<Command> commands = new ArrayList<>();
-            commands.add(new Command("menu", ctx.t(Key.BOT_MENU)));
-            visible.forEach(h -> commands.add(new Command(h.command(), NotificationMessages.render(h.label(), ctx.language(), Map.of()))));
-            telegram.setMyCommands(commands, null, ctx.chatId());
+            telegram.sendMessage(ctx.chatId(), ctx.t(Key.BOT_MENU), null, plan.keyboard());
+            applied(plan);
         } catch (TelegramException e) {
             log.warn("Could not send the menu: {}", e.getMessage());
         }
+    }
+
+    /**
+     * What a chat's keyboard has to become: the menu as it is <em>now</em>, read afresh, and the "/" list that goes
+     * with it. {@code keyboard} is what Telegram's {@code reply_markup} carries.
+     */
+    private record MenuPlan(String chatId, String linkId, String signature, List<List<String>> keyboard, List<Command> commands) {
+    }
+
+    /**
+     * Called once the keyboard has reached the chat: remembers it (only now - a failed send is tried again with the
+     * next reply) and renews this person's own "/" list (the shared one plus what only they may use).
+     */
+    private void applied(MenuPlan plan) {
+        if (plan.linkId() != null) {
+            linkRepository.setMenuSignature(plan.linkId(), plan.signature());
+        }
+        try {
+            telegram.setMyCommands(plan.commands(), null, plan.chatId());
+        } catch (TelegramException e) {
+            log.warn("Could not set a chat's command list: {}", e.getMessage());
+        }
+    }
+
+    private String linkIdOf(String chatId) {
+        return linkRepository.findByChannelAndExternalId(TELEGRAM, chatId).map(StaffChannelLinkEntity::getId).orElse(null);
+    }
+
+    /**
+     * A reply keyboard can only be replaced by a message that carries one, so the keyboard the chat holds
+     * ({@code StaffChannelLink.menuSignature}) is compared with what this person's menu is <em>now</em>: their
+     * language changed (here, or by a manager), a screen was switched on or off, a role or function changed.
+     * Different - a plan; the same - none; never recorded (a chat from before the signature existed, or one that never
+     * opened the menu: what it holds is unknown) - none, and the current menu is recorded as the baseline for later
+     * changes. A press of an old button works regardless ({@link #labelMatches} knows all three languages).
+     */
+    private Optional<MenuPlan> staleMenu(String chatId) {
+        try {
+            Optional<UserEntity> user = linkedUser(chatId);
+            StaffChannelLinkEntity link = linkRepository.findByChannelAndExternalId(TELEGRAM, chatId).orElse(null);
+            if (user.isEmpty() || link == null) {
+                return Optional.empty();
+            }
+            BotContext ctx = context(chatId, null, null, user.get(), null);
+            List<BotCommandHandler> visible = menu.visible(ctx.user(), ctx.settings(), ctx.today());
+            String current = menu.signature(visible, ctx.language());
+            if (current.equals(link.getMenuSignature())) {
+                return Optional.empty();
+            }
+            if (link.getMenuSignature() == null) {
+                linkRepository.setMenuSignature(link.getId(), current);
+                return Optional.empty();
+            }
+            return Optional.of(new MenuPlan(chatId, link.getId(), current, menu.keyboard(visible, ctx.language()), menu.commands(visible, ctx.language())));
+        } catch (RuntimeException e) {
+            log.warn("Could not check the menu keyboard of a chat", e);
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The keyboard that was not already carried by a plain reply is sent as the menu message (it is the only way to
+     * replace it): after a reply made of buttons or an edit - the language change is exactly that.
+     */
+    private void refreshKeyboardIfStale(String chatId) {
+        staleMenu(chatId).ifPresent(plan -> {
+            try {
+                telegram.sendMessage(chatId, NotificationMessages.render(Key.BOT_MENU, languageOfChat(chatId), Map.of()), null, plan.keyboard());
+                applied(plan);
+            } catch (TelegramException e) {
+                log.warn("Could not send the menu: {}", e.getMessage());
+            }
+        });
+    }
+
+    private NotificationLanguage languageOfChat(String chatId) {
+        return linkedUser(chatId).map(menu::languageOf).orElseGet(this::defaultLanguage);
     }
 
     // ---- buttons ---------------------------------------------------------------------------------------
@@ -331,6 +397,11 @@ public class StaffBotService {
             try {
                 if (reply.isEditCurrent() && ctx.messageId() != null) {
                     telegram.editMessageText(ctx.chatId(), ctx.messageId(), reply.text(), buttons);
+                } else if (buttons == null) {
+                    // A plain reply carries a stale keyboard along: no message of its own is needed for it.
+                    Optional<MenuPlan> stale = staleMenu(ctx.chatId());
+                    telegram.sendMessage(ctx.chatId(), reply.text(), null, stale.map(MenuPlan::keyboard).orElse(null));
+                    stale.ifPresent(this::applied);
                 } else {
                     telegram.sendMessage(ctx.chatId(), reply.text(), buttons, null);
                 }
@@ -378,7 +449,7 @@ public class StaffBotService {
     }
 
     private BotContext context(String chatId, String callbackQueryId, String messageId, UserEntity user, StaffActionEntity action) {
-        NotificationLanguage language = user.getNotificationLanguage() != null ? NotificationLanguage.fromValue(user.getNotificationLanguage()) : defaultLanguage();
+        NotificationLanguage language = menu.languageOf(user);
         StaffBotSettingsEntity settings = settingsService.getEntity();
         return new BotContext(chatId, callbackQueryId, messageId, user, language, settings, LocalDate.now(clock), action);
     }

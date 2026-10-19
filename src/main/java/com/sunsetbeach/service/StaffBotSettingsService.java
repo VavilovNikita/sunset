@@ -1,5 +1,6 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.bot.BotMenuChanged;
 import com.sunsetbeach.entity.StaffBotSettingsEntity;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.TimestampFormat;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -26,8 +28,10 @@ public class StaffBotSettingsService {
 
     private final StaffBotSettingsRepository repository;
     private final AuditLogService auditLogService;
+    private final ApplicationEventPublisher events;
 
-    public StaffBotSettingsService(StaffBotSettingsRepository repository, AuditLogService auditLogService) {
+    public StaffBotSettingsService(StaffBotSettingsRepository repository, AuditLogService auditLogService, ApplicationEventPublisher events) {
+        this.events = events;
         this.repository = repository;
         this.auditLogService = auditLogService;
     }
@@ -149,6 +153,8 @@ public class StaffBotSettingsService {
         StaffBotSettingsEntity saved = repository.saveAndFlush(e);
         auditLogService.record(
                 AuditAction.STAFF_BOT_SETTINGS_UPDATED, AuditEntityType.SETTINGS, null, "Staff bot settings: " + String.join("; ", changes));
+        // Which screens exist changes the "/" list of every linked chat: renewed after the commit, off this thread.
+        events.publishEvent(new BotMenuChanged(null));
         return toDto(saved);
     }
 
