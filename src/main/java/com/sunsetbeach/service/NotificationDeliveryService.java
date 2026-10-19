@@ -3,13 +3,17 @@ package com.sunsetbeach.service;
 import com.sunsetbeach.entity.NotificationDeliveryEntity;
 import com.sunsetbeach.entity.NotificationEntity;
 import com.sunsetbeach.entity.StaffChannelLinkEntity;
+import com.sunsetbeach.entity.StaffActionEntity;
 import com.sunsetbeach.mapper.TimestampFormat;
+import com.sunsetbeach.model.NotificationLanguage;
+import com.sunsetbeach.notification.NotificationMessages;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.notification.TelegramClient;
 import com.sunsetbeach.notification.TelegramClient.TelegramException;
 import com.sunsetbeach.repository.NotificationDeliveryRepository;
 import com.sunsetbeach.repository.NotificationRepository;
+import com.sunsetbeach.repository.StaffActionRepository;
 import com.sunsetbeach.repository.StaffChannelLinkRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -49,6 +53,7 @@ public class NotificationDeliveryService {
     private final NotificationDeliveryRepository deliveryRepository;
     private final NotificationRepository notificationRepository;
     private final StaffChannelLinkRepository linkRepository;
+    private final StaffActionRepository actionRepository;
     private final TelegramClient telegram;
     private final NotificationService notificationService;
     private final AuditLogService auditLogService;
@@ -60,6 +65,7 @@ public class NotificationDeliveryService {
             NotificationDeliveryRepository deliveryRepository,
             NotificationRepository notificationRepository,
             StaffChannelLinkRepository linkRepository,
+            StaffActionRepository actionRepository,
             TelegramClient telegram,
             NotificationService notificationService,
             AuditLogService auditLogService,
@@ -69,6 +75,7 @@ public class NotificationDeliveryService {
         this.deliveryRepository = deliveryRepository;
         this.notificationRepository = notificationRepository;
         this.linkRepository = linkRepository;
+        this.actionRepository = actionRepository;
         this.telegram = telegram;
         this.notificationService = notificationService;
         this.auditLogService = auditLogService;
@@ -106,7 +113,7 @@ public class NotificationDeliveryService {
         return handled;
     }
 
-    private record Prepared(String userId, String chatId, String text) {
+    private record Prepared(String userId, String chatId, String text, List<List<TelegramClient.Button>> buttons) {
     }
 
     private boolean deliverOne(String deliveryId) {
@@ -129,20 +136,30 @@ public class NotificationDeliveryService {
                 fail(d, "No linked chat");
                 return null;
             }
-            return new Prepared(n.getRecipientUserId(), link.get().getExternalId(), n.getText());
+            // What the recipient can do about it becomes buttons whose callback data is only the stored action's id.
+            NotificationLanguage language = NotificationLanguage.fromValue(n.getLanguage());
+            List<StaffActionEntity> actions = actionRepository.findByNotificationIdIn(List.of(n.getId()));
+            List<List<TelegramClient.Button>> buttons = actions.isEmpty()
+                    ? null
+                    : List.of(actions.stream()
+                            .map(a -> new TelegramClient.Button(NotificationMessages.actionLabel(a.getKind(), language), "a:" + a.getId()))
+                            .toList());
+            return new Prepared(n.getRecipientUserId(), link.get().getExternalId(), n.getText(), buttons);
         });
         if (!(prepared instanceof Prepared p)) {
             return false;
         }
 
         TelegramException failure = null;
+        String messageId = null;
         try {
-            telegram.sendMessage(p.chatId(), p.text());
+            messageId = telegram.sendMessage(p.chatId(), p.text(), p.buttons(), null);
         } catch (TelegramException e) {
             failure = e;
         }
 
         TelegramException result = failure;
+        String sentMessageId = messageId;
         tx.executeWithoutResult(status -> {
             NotificationDeliveryEntity d = deliveryRepository.findById(deliveryId).orElseThrow();
             LocalDateTime nowUtc = TimestampFormat.nowUtc(clock);
@@ -150,6 +167,7 @@ public class NotificationDeliveryService {
             if (result == null) {
                 d.setStatus("SENT");
                 d.setSentAt(nowUtc);
+                d.setExternalMessageId(sentMessageId);
                 d.setLastError(null);
             } else if (result.kind() == TelegramException.Kind.BLOCKED) {
                 linkRepository.findByUserIdAndChannel(p.userId(), d.getChannel()).ifPresent(linkRepository::delete);

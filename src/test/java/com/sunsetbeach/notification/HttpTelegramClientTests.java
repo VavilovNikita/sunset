@@ -27,6 +27,7 @@ class HttpTelegramClientTests {
 
     private HttpServer server;
     private final List<String> paths = new CopyOnWriteArrayList<>();
+    private final List<String> bodies = new CopyOnWriteArrayList<>();
     private volatile int status = 200;
     private volatile String body = "{\"ok\":true,\"result\":{}}";
 
@@ -35,7 +36,7 @@ class HttpTelegramClientTests {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
             paths.add(exchange.getRequestURI().getPath());
-            exchange.getRequestBody().readAllBytes();
+            bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(status, bytes.length);
@@ -143,5 +144,63 @@ class HttpTelegramClientTests {
         client(TOKEN).sendMessage("555", "hello");
 
         assertThat(paths).containsExactly("/bot" + TOKEN + "/sendMessage");
+    }
+
+    @Test
+    void getUpdates_returnsAButtonPress_withTheMessageItSatUnder_andAsksForCallbackQueries() throws Exception {
+        body = """
+                {"ok":true,"result":[
+                 {"update_id":20,"callback_query":{"id":"cq-1","data":"a:abc123","message":{"message_id":77,"chat":{"id":555,"type":"private"}}}},
+                 {"update_id":21,"callback_query":{"id":"cq-2","message":{"message_id":78,"chat":{"id":555,"type":"private"}}}},
+                 {"update_id":22,"callback_query":{"id":"cq-3","data":"x","message":{"message_id":79,"chat":{"id":-100,"type":"group"}}}}
+                ]}""";
+
+        List<TelegramUpdate> updates = client(TOKEN).getUpdates(20, 1);
+
+        assertThat(updates.get(0).isCallback()).isTrue();
+        assertThat(updates.get(0).chatId()).isEqualTo("555");
+        assertThat(updates.get(0).callbackData()).isEqualTo("a:abc123");
+        assertThat(updates.get(0).callbackQueryId()).isEqualTo("cq-1");
+        assertThat(updates.get(0).messageId()).isEqualTo("77");
+        // A press with no data, or from a group, is skipped but the offset still moves past it.
+        assertThat(updates.subList(1, 3)).allSatisfy(u -> assertThat(u.chatId()).isNull());
+        assertThat(bodies.get(0)).contains("\"callback_query\"").contains("\"message\"");
+    }
+
+    @Test
+    void sendMessage_withButtons_postsAnInlineKeyboard_andReturnsTheMessageId() throws Exception {
+        body = "{\"ok\":true,\"result\":{\"message_id\":4242}}";
+
+        String id = client(TOKEN).sendMessage("555", "Approve?", List.of(List.of(new TelegramClient.Button("Approve", "a:xyz"))), null);
+
+        assertThat(id).isEqualTo("4242");
+        assertThat(bodies.get(0)).contains("inline_keyboard").contains("\"callback_data\":\"a:xyz\"").contains("\"text\":\"Approve\"");
+    }
+
+    @Test
+    void sendMessage_withAMenu_postsAPersistentReplyKeyboard() throws Exception {
+        client(TOKEN).sendMessage("555", "Menu", null, List.of(List.of("My shifts", "My day")));
+
+        assertThat(bodies.get(0)).contains("\"keyboard\"").contains("My shifts").contains("is_persistent");
+    }
+
+    @Test
+    void editing_answering_andSettingCommands_useTheirOwnMethods() throws Exception {
+        HttpTelegramClient client = client(TOKEN);
+
+        client.editMessageText("555", "77", "Approved by Hana", null);
+        client.answerCallbackQuery("cq-1", "Approved.");
+        client.setMyCommands(List.of(new TelegramClient.Command("shifts", "My shifts")), "ru", "555");
+
+        assertThat(paths).containsExactly("/bot" + TOKEN + "/editMessageText", "/bot" + TOKEN + "/answerCallbackQuery", "/bot" + TOKEN + "/setMyCommands");
+        // Editing without buttons sends an empty keyboard: that is how Telegram removes the old ones.
+        assertThat(bodies.get(0)).contains("\"message_id\":77").contains("\"inline_keyboard\":[]");
+        assertThat(bodies.get(2)).contains("\"language_code\":\"ru\"").contains("\"chat_id\":\"555\"");
+    }
+
+    @Test
+    void aMessageIdThatIsNotANumber_isRefusedBeforeAnyRequest() {
+        assertThatThrownBy(() -> client(TOKEN).editMessageText("555", "not-a-number", "x", null)).isInstanceOf(TelegramException.class);
+        assertThat(paths).isEmpty();
     }
 }

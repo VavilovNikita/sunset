@@ -22,6 +22,7 @@ import com.sunsetbeach.model.StaffArea;
 import com.sunsetbeach.repository.AttendancePunchRepository;
 import com.sunsetbeach.repository.EmployeePatternRepository;
 import com.sunsetbeach.repository.RosterEntryRepository;
+import com.sunsetbeach.repository.ShiftChangeRequestRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
 import com.sunsetbeach.repository.StaffAreaCoverageRuleRepository;
 import com.sunsetbeach.repository.UserRepository;
@@ -50,6 +51,8 @@ public class RosterService {
     private final UserRepository userRepository;
     private final AttendancePunchRepository attendancePunchRepository;
     private final AuditLogService auditLogService;
+    private final RosterChangeTracker changeTracker;
+    private final ShiftChangeRequestRepository shiftChangeRequestRepository;
 
     public RosterService(
             RosterEntryRepository rosterEntryRepository,
@@ -58,7 +61,9 @@ public class RosterService {
             StaffAreaCoverageRuleRepository staffAreaCoverageRuleRepository,
             UserRepository userRepository,
             AttendancePunchRepository attendancePunchRepository,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            RosterChangeTracker changeTracker,
+            ShiftChangeRequestRepository shiftChangeRequestRepository) {
         this.rosterEntryRepository = rosterEntryRepository;
         this.employeePatternRepository = employeePatternRepository;
         this.shiftCodeRepository = shiftCodeRepository;
@@ -66,6 +71,8 @@ public class RosterService {
         this.userRepository = userRepository;
         this.attendancePunchRepository = attendancePunchRepository;
         this.auditLogService = auditLogService;
+        this.changeTracker = changeTracker;
+        this.shiftChangeRequestRepository = shiftChangeRequestRepository;
     }
 
     @Transactional(readOnly = true)
@@ -110,6 +117,15 @@ public class RosterService {
         if (!employee.isActive()) {
             throw new BadRequestException(employee.getName() + " is deactivated - a shift can't be assigned to them");
         }
+    }
+
+    /**
+     * The one definition of "this entry counts toward its department's coverage": a worked shift code of an
+     * active employee who has a department. The month grid's warnings and the shift-request coverage figures
+     * both use it, so the two can never disagree about who is working.
+     */
+    public static boolean countsTowardCoverage(ShiftCodeEntity shiftCode, UserEntity employee) {
+        return shiftCode != null && shiftCode.isCountsAsWorked() && employee != null && employee.isActive() && employee.getStaffArea() != null;
     }
 
     static RosterEmployee toEmployeeDto(UserEntity u) {
@@ -202,6 +218,7 @@ public class RosterService {
         entity.setNote(input.getNote().orElse(null));
         entity.setCreatedByUserId(actorUserId);
         RosterEntryEntity saved = rosterEntryRepository.saveAndFlush(entity);
+        changeTracker.record(saved.getEmployeeUserId(), saved.getDate(), null);
 
         auditLogService.record(
                 AuditAction.ROSTER_ENTRY_CREATED, AuditEntityType.ROSTER_ENTRY, saved.getId(),
@@ -216,6 +233,7 @@ public class RosterService {
         if (entity.isLocked()) {
             throw new BadRequestException("This entry is locked");
         }
+        changeTracker.record(entity.getEmployeeUserId(), entity.getDate(), entity.getShiftCodeId());
         rosterEntryRepository.delete(entity);
         auditLogService.record(AuditAction.ROSTER_ENTRY_DELETED, AuditEntityType.ROSTER_ENTRY, id, "Removed a roster entry");
     }
@@ -235,6 +253,10 @@ public class RosterService {
             });
         }
         LocalDate originalDate = entity.getDate();
+        if (!targetDate.equals(originalDate)) {
+            changeTracker.record(entity.getEmployeeUserId(), originalDate, entity.getShiftCodeId());
+            changeTracker.record(entity.getEmployeeUserId(), targetDate, null);
+        }
         entity.setDate(targetDate);
         RosterEntryEntity saved = rosterEntryRepository.saveAndFlush(entity);
 
@@ -269,6 +291,10 @@ public class RosterService {
         }
 
         UserEntity originalEmployee = userRepository.findById(entity.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found"));
+        if (!targetEmployee.getId().equals(originalEmployee.getId())) {
+            changeTracker.record(originalEmployee.getId(), entity.getDate(), entity.getShiftCodeId());
+            changeTracker.record(targetEmployee.getId(), entity.getDate(), null);
+        }
         entity.setEmployeeUserId(targetEmployee.getId());
         RosterEntryEntity saved = rosterEntryRepository.saveAndFlush(entity);
 
@@ -311,6 +337,14 @@ public class RosterService {
                 || rosterEntryRepository.findByEmployeeUserIdAndDate(other.getEmployeeUserId(), entity.getDate()).filter(e -> !e.getId().equals(other.getId())).isPresent()) {
             throw new BadRequestException("One of these employees already has an entry on the other's date");
         }
+
+        // Four employee-days change hands; each remembers what it was. When both entries are one person's, the
+        // two dates simply trade codes.
+        boolean samePerson = entity.getEmployeeUserId().equals(other.getEmployeeUserId());
+        changeTracker.record(entity.getEmployeeUserId(), entity.getDate(), entity.getShiftCodeId());
+        changeTracker.record(entity.getEmployeeUserId(), other.getDate(), samePerson ? other.getShiftCodeId() : null);
+        changeTracker.record(other.getEmployeeUserId(), other.getDate(), other.getShiftCodeId());
+        changeTracker.record(other.getEmployeeUserId(), entity.getDate(), samePerson ? entity.getShiftCodeId() : null);
 
         LocalDate entityOriginalDate = entity.getDate();
         String entityOriginalShiftCodeId = entity.getShiftCodeId();
@@ -468,7 +502,19 @@ public class RosterService {
         Map<String, UserEntity> employees = resolveUsers(entities.stream().map(RosterEntryEntity::getEmployeeUserId).distinct().toList());
         Map<String, ShiftCodeEntity> shiftCodes = resolveShiftCodes(entities);
 
-        List<RosterEntry> entryDtos = entities.stream().map(e -> toDto(e, employees.get(e.getEmployeeUserId()), shiftCodes.get(e.getShiftCodeId()), null)).toList();
+        // At most one waiting shift request per entry (a partial unique index); the grid shows a marker on it.
+        Map<String, com.sunsetbeach.entity.ShiftChangeRequestEntity> pendingByEntry = entities.isEmpty()
+                ? Map.of()
+                : shiftChangeRequestRepository.findByRosterEntryIdInAndStatus(entities.stream().map(RosterEntryEntity::getId).toList(), "PENDING").stream()
+                        .collect(Collectors.toMap(com.sunsetbeach.entity.ShiftChangeRequestEntity::getRosterEntryId, r -> r, (a, b) -> a));
+        List<RosterEntry> entryDtos = entities.stream().map(e -> {
+            RosterEntry dto = toDto(e, employees.get(e.getEmployeeUserId()), shiftCodes.get(e.getShiftCodeId()), null);
+            com.sunsetbeach.entity.ShiftChangeRequestEntity pending = pendingByEntry.get(e.getId());
+            if (pending != null) {
+                dto.pendingShiftRequestId(pending.getId()).pendingShiftRequestType(com.sunsetbeach.model.ShiftChangeRequestType.fromValue(pending.getType()));
+            }
+            return dto;
+        }).toList();
         List<RosterEmployee> employeeDtos = listEmployeesForMonth(entities, YearMonth.of(year, month));
 
         // Coverage: a countsAsWorked entry counts toward the area of the *employee* it belongs to
@@ -482,7 +528,7 @@ public class RosterService {
         for (RosterEntryEntity e : entities) {
             ShiftCodeEntity shiftCode = shiftCodes.get(e.getShiftCodeId());
             UserEntity employee = employees.get(e.getEmployeeUserId());
-            if (shiftCode != null && shiftCode.isCountsAsWorked() && employee != null && employee.isActive() && employee.getStaffArea() != null) {
+            if (countsTowardCoverage(shiftCode, employee)) {
                 String key = employee.getStaffArea().name() + "|" + e.getDate();
                 workingCountByAreaDate.merge(key, 1, Integer::sum);
             }

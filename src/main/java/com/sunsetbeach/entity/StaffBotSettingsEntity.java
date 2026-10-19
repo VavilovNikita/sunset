@@ -1,0 +1,257 @@
+package com.sunsetbeach.entity;
+
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+
+/**
+ * The single row of staff-bot and shift-request settings (id 1, seeded by V150); only ever updated.
+ */
+@Entity
+@Table(name = "StaffBotSettings")
+public class StaffBotSettingsEntity {
+
+    @Id
+    private Integer id;
+
+    private boolean myShiftsEnabled;
+
+    private boolean myDayEnabled;
+
+    private boolean myMonthEnabled;
+
+    private boolean myRequestsEnabled;
+
+    private boolean botSettingsEnabled;
+
+    private boolean requestsEnabled;
+
+    private boolean moveRequestsEnabled;
+
+    private boolean deleteRequestsEnabled;
+
+    private int requestMinHoursBefore;
+
+    private boolean allowTodayRequests;
+
+    private int moveWindowDays;
+
+    private boolean reasonRequired;
+
+    private int myShiftsDays;
+
+    private boolean fallbackToAdmin;
+
+    private boolean pendingReminderEnabled;
+
+    private int pendingReminderHours;
+
+    private boolean eveReminderEnabled;
+
+    private LocalTime eveReminderTime;
+
+    private boolean eveReminderDefaultOn;
+
+    private boolean rosterChangeEnabled;
+
+    private int rosterChangeHorizonDays;
+
+    private int rosterChangeDelayMinutes;
+
+    @UtcUpdateTimestamp
+    private LocalDateTime updatedAt;
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public boolean isMyShiftsEnabled() {
+        return myShiftsEnabled;
+    }
+
+    public void setMyShiftsEnabled(boolean myShiftsEnabled) {
+        this.myShiftsEnabled = myShiftsEnabled;
+    }
+
+    public boolean isMyDayEnabled() {
+        return myDayEnabled;
+    }
+
+    public void setMyDayEnabled(boolean myDayEnabled) {
+        this.myDayEnabled = myDayEnabled;
+    }
+
+    public boolean isMyMonthEnabled() {
+        return myMonthEnabled;
+    }
+
+    public void setMyMonthEnabled(boolean myMonthEnabled) {
+        this.myMonthEnabled = myMonthEnabled;
+    }
+
+    public boolean isMyRequestsEnabled() {
+        return myRequestsEnabled;
+    }
+
+    public void setMyRequestsEnabled(boolean myRequestsEnabled) {
+        this.myRequestsEnabled = myRequestsEnabled;
+    }
+
+    public boolean isBotSettingsEnabled() {
+        return botSettingsEnabled;
+    }
+
+    public void setBotSettingsEnabled(boolean botSettingsEnabled) {
+        this.botSettingsEnabled = botSettingsEnabled;
+    }
+
+    public boolean isRequestsEnabled() {
+        return requestsEnabled;
+    }
+
+    public void setRequestsEnabled(boolean requestsEnabled) {
+        this.requestsEnabled = requestsEnabled;
+    }
+
+    public boolean isMoveRequestsEnabled() {
+        return moveRequestsEnabled;
+    }
+
+    public void setMoveRequestsEnabled(boolean moveRequestsEnabled) {
+        this.moveRequestsEnabled = moveRequestsEnabled;
+    }
+
+    public boolean isDeleteRequestsEnabled() {
+        return deleteRequestsEnabled;
+    }
+
+    public void setDeleteRequestsEnabled(boolean deleteRequestsEnabled) {
+        this.deleteRequestsEnabled = deleteRequestsEnabled;
+    }
+
+    public int getRequestMinHoursBefore() {
+        return requestMinHoursBefore;
+    }
+
+    public void setRequestMinHoursBefore(int requestMinHoursBefore) {
+        this.requestMinHoursBefore = requestMinHoursBefore;
+    }
+
+    public boolean isAllowTodayRequests() {
+        return allowTodayRequests;
+    }
+
+    public void setAllowTodayRequests(boolean allowTodayRequests) {
+        this.allowTodayRequests = allowTodayRequests;
+    }
+
+    public int getMoveWindowDays() {
+        return moveWindowDays;
+    }
+
+    public void setMoveWindowDays(int moveWindowDays) {
+        this.moveWindowDays = moveWindowDays;
+    }
+
+    public boolean isReasonRequired() {
+        return reasonRequired;
+    }
+
+    public void setReasonRequired(boolean reasonRequired) {
+        this.reasonRequired = reasonRequired;
+    }
+
+    public int getMyShiftsDays() {
+        return myShiftsDays;
+    }
+
+    public void setMyShiftsDays(int myShiftsDays) {
+        this.myShiftsDays = myShiftsDays;
+    }
+
+    public boolean isFallbackToAdmin() {
+        return fallbackToAdmin;
+    }
+
+    public void setFallbackToAdmin(boolean fallbackToAdmin) {
+        this.fallbackToAdmin = fallbackToAdmin;
+    }
+
+    public boolean isPendingReminderEnabled() {
+        return pendingReminderEnabled;
+    }
+
+    public void setPendingReminderEnabled(boolean pendingReminderEnabled) {
+        this.pendingReminderEnabled = pendingReminderEnabled;
+    }
+
+    public int getPendingReminderHours() {
+        return pendingReminderHours;
+    }
+
+    public void setPendingReminderHours(int pendingReminderHours) {
+        this.pendingReminderHours = pendingReminderHours;
+    }
+
+    public boolean isEveReminderEnabled() {
+        return eveReminderEnabled;
+    }
+
+    public void setEveReminderEnabled(boolean eveReminderEnabled) {
+        this.eveReminderEnabled = eveReminderEnabled;
+    }
+
+    public LocalTime getEveReminderTime() {
+        return eveReminderTime;
+    }
+
+    public void setEveReminderTime(LocalTime eveReminderTime) {
+        this.eveReminderTime = eveReminderTime;
+    }
+
+    public boolean isEveReminderDefaultOn() {
+        return eveReminderDefaultOn;
+    }
+
+    public void setEveReminderDefaultOn(boolean eveReminderDefaultOn) {
+        this.eveReminderDefaultOn = eveReminderDefaultOn;
+    }
+
+    public boolean isRosterChangeEnabled() {
+        return rosterChangeEnabled;
+    }
+
+    public void setRosterChangeEnabled(boolean rosterChangeEnabled) {
+        this.rosterChangeEnabled = rosterChangeEnabled;
+    }
+
+    public int getRosterChangeHorizonDays() {
+        return rosterChangeHorizonDays;
+    }
+
+    public void setRosterChangeHorizonDays(int rosterChangeHorizonDays) {
+        this.rosterChangeHorizonDays = rosterChangeHorizonDays;
+    }
+
+    public int getRosterChangeDelayMinutes() {
+        return rosterChangeDelayMinutes;
+    }
+
+    public void setRosterChangeDelayMinutes(int rosterChangeDelayMinutes) {
+        this.rosterChangeDelayMinutes = rosterChangeDelayMinutes;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+}

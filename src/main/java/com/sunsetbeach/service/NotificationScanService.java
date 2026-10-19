@@ -65,6 +65,7 @@ public class NotificationScanService {
     private final NotificationSettingsService settingsService;
     private final NotificationService notificationService;
     private final BlockNotificationService blockNotificationService;
+    private final StaffBotScanService staffBotScanService;
     private final AttendanceService attendanceService;
     private final AttendanceDeviceRepository deviceRepository;
     private final TerminalSilenceEpisodeRepository episodeRepository;
@@ -78,6 +79,7 @@ public class NotificationScanService {
             NotificationSettingsService settingsService,
             NotificationService notificationService,
             BlockNotificationService blockNotificationService,
+            StaffBotScanService staffBotScanService,
             AttendanceService attendanceService,
             AttendanceDeviceRepository deviceRepository,
             TerminalSilenceEpisodeRepository episodeRepository,
@@ -89,6 +91,7 @@ public class NotificationScanService {
         this.settingsService = settingsService;
         this.notificationService = notificationService;
         this.blockNotificationService = blockNotificationService;
+        this.staffBotScanService = staffBotScanService;
         this.attendanceService = attendanceService;
         this.deviceRepository = deviceRepository;
         this.episodeRepository = episodeRepository;
@@ -129,6 +132,8 @@ public class NotificationScanService {
         } catch (RuntimeException e) {
             log.error("Block reminder scan failed", e);
         }
+        // Shift requests, evening reminders, roster-change messages: independent of the terminal guard above.
+        staffBotScanService.runOnce();
     }
 
     // ---- terminals ----------------------------------------------------------------------------

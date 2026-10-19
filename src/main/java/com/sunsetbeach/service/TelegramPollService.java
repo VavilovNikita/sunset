@@ -1,5 +1,6 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.bot.StaffBotService;
 import com.sunsetbeach.entity.TelegramBotStateEntity;
 import com.sunsetbeach.notification.TelegramClient;
 import com.sunsetbeach.notification.TelegramClient.TelegramException;
@@ -15,7 +16,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Reads what people write to the bot ({@code /start <code>}, {@code /stop}) by asking Telegram
+ * Reads what people write to the bot and the buttons they press (linking, commands, shift requests - all routed by
+ * {@link StaffBotService}) by asking Telegram
  * ({@code getUpdates}) on a fixed delay - the project's usual {@code @Scheduled} sweep. No webhook:
  * nothing public listens, no {@code SecurityConfig} rule is needed, and it works from a developer's
  * machine. Telegram only ever answers calls this server makes.
@@ -33,6 +35,7 @@ public class TelegramPollService {
     private final TelegramClient telegram;
     private final TelegramBotStateRepository stateRepository;
     private final NotificationChannelService channelService;
+    private final StaffBotService staffBot;
     private final TransactionTemplate tx;
     private final int longPollSeconds;
 
@@ -40,11 +43,13 @@ public class TelegramPollService {
             TelegramClient telegram,
             TelegramBotStateRepository stateRepository,
             NotificationChannelService channelService,
+            StaffBotService staffBot,
             PlatformTransactionManager transactionManager,
             @Value("${app.notifications.telegram.long-poll-seconds:1}") int longPollSeconds) {
         this.telegram = telegram;
         this.stateRepository = stateRepository;
         this.channelService = channelService;
+        this.staffBot = staffBot;
         this.tx = new TransactionTemplate(transactionManager);
         this.longPollSeconds = longPollSeconds;
     }
@@ -67,6 +72,7 @@ public class TelegramPollService {
         if (!channelService.status().getBotUsername().isPresent()) {
             channelService.refreshBotUsername();
         }
+        staffBot.ensureDefaultCommands();
         long offset = stateRepository.findById(1).map(TelegramBotStateEntity::getUpdateOffset).orElse(0L);
         List<TelegramUpdate> updates;
         try {
@@ -78,7 +84,7 @@ public class TelegramPollService {
         int handled = 0;
         for (TelegramUpdate update : updates) {
             try {
-                channelService.handleUpdate(update);
+                staffBot.handle(update);
                 handled++;
             } catch (RuntimeException e) {
                 log.error("Telegram update {} could not be handled", update.updateId(), e);

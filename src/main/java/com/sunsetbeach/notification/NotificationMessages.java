@@ -30,12 +30,35 @@ public final class NotificationMessages {
         BOT_CHAT_TAKEN,
         BOT_UNLINKED,
         BOT_NOT_LINKED,
-        BOT_HELP
+        BOT_HELP,
+        /** Shift requests and the evening/roster notifications (texts in {@link StaffBotTexts}). */
+        SHIFT_REQUEST_NEW, SHIFT_REQUEST_DECIDED_APPROVED, SHIFT_REQUEST_DECIDED_REJECTED, SHIFT_REQUEST_EXPIRED,
+        SHIFT_REQUEST_REMINDER, SHIFT_EVE_REMINDER, ROSTER_CHANGED,
+        /** Fragments a notification is built from. */
+        FRAG_REASON, FRAG_COMMENT, FRAG_COVERAGE_BELOW, FRAG_COVERAGE_OK, FRAG_DAY_OFF, FRAG_WHAT_MOVE, FRAG_WHAT_DELETE,
+        /** What a decided or expired request's message says after its buttons are gone. */
+        OUTCOME_APPROVED, OUTCOME_REJECTED, OUTCOME_CANCELLED, OUTCOME_EXPIRED,
+        EXP_SHIFT_STARTED, EXP_ENTRY_CHANGED, EXP_ENTRY_GONE, EXP_TARGET_TAKEN, EXP_EMPLOYEE_INACTIVE, EXP_LOCKED, EXP_APPLY_FAILED,
+        /** The bot's menu, buttons and replies. */
+        MENU_SHIFTS, MENU_DAY, MENU_MONTH, MENU_REQUESTS, MENU_SETTINGS, MENU_PENDING, MENU_VACATION,
+        BOT_MENU, BOT_FEATURE_OFF, BOT_NOT_ALLOWED, BOT_BUTTON_EXPIRED, BOT_CANCELLED,
+        BTN_APPROVE, BTN_REJECT, BTN_MOVE, BTN_DELETE, BTN_WITHDRAW, BTN_SKIP, BTN_CANCEL, BTN_EVE_ON, BTN_EVE_OFF, BTN_VAC_SET, BTN_VAC_CLEAR,
+        SHIFTS_TITLE, SHIFTS_NONE, SHIFT_LINE, TAG_TODAY, TAG_TOMORROW, SHIFT_REQUEST_TAG,
+        MOVE_PICK, MOVE_NO_DATES, ASK_REASON, ASK_REASON_OPTIONAL, REASON_TOO_LONG, REQUEST_SENT, REQUEST_WITHDRAWN,
+        REJ_DISABLED, REJ_NOT_YOURS, REJ_LOCKED, REJ_TOO_LATE, REJ_TODAY, REJ_PAST, REJ_TARGET, REJ_TARGET_BUSY, REJ_PENDING,
+        REJ_NOT_A_SHIFT, REJ_REASON_REQUIRED,
+        DAY_TITLE, DAY_NO_SHIFT, DAY_SHIFT, DAY_STATE, DAY_PUNCHES, DAY_NO_PUNCHES, DAY_IN, DAY_OUT,
+        STATE_NOT_YET_ARRIVED, STATE_ON_SHIFT, STATE_FINISHED, STATE_SCHEDULED, STATE_ARRIVING_SOON, STATE_LATE, STATE_BETWEEN_SHIFTS, STATE_MISSED,
+        MONTH_SUMMARY,
+        REQUESTS_TITLE, REQUESTS_NONE, REQUEST_LINE, STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED, STATUS_CANCELLED, STATUS_EXPIRED,
+        SETTINGS_TEXT, WORD_ON, WORD_OFF, LANG_CHANGED, EVE_CHANGED,
+        PENDING_TITLE, PENDING_NONE, PENDING_ITEM, TOAST_APPROVED, TOAST_REJECTED, TOAST_ALREADY,
+        VAC_STATUS, VAC_NONE, VAC_ASK_FROM, VAC_ASK_TO, VAC_BAD_DATE, VAC_SAVED, VAC_CLEARED, VAC_NO_HR
     }
 
     private static final Map<Key, Map<NotificationLanguage, String>> TEXTS = new EnumMap<>(Key.class);
 
-    private static void add(Key key, String en, String th, String ru) {
+    static void add(Key key, String en, String th, String ru) {
         Map<NotificationLanguage, String> byLanguage = new EnumMap<>(NotificationLanguage.class);
         byLanguage.put(NotificationLanguage.EN, en);
         byLanguage.put(NotificationLanguage.TH, th);
@@ -104,6 +127,7 @@ public final class NotificationMessages {
                 "To get notifications, open the link your manager gave you. Send /stop to stop them.",
                 "หากต้องการรับการแจ้งเตือน กรุณาเปิดลิงก์ที่ผู้จัดการให้ ส่ง /stop เพื่อหยุดรับ",
                 "Чтобы получать уведомления, откройте ссылку, которую дал менеджер. Команда /stop отключает их.");
+        StaffBotTexts.register();
     }
 
     private NotificationMessages() {
@@ -118,8 +142,25 @@ public final class NotificationMessages {
         return text.replaceAll("\\{[a-zA-Z]+}", "").strip();
     }
 
+    /** The label of a button for an action kind ({@link NotificationAction.Kinds}) in the reader's language. */
+    public static String actionLabel(String kind, NotificationLanguage language) {
+        Key key = switch (kind) {
+            case NotificationAction.Kinds.SHIFT_REQUEST_APPROVE -> Key.BTN_APPROVE;
+            case NotificationAction.Kinds.SHIFT_REQUEST_REJECT -> Key.BTN_REJECT;
+            default -> null;
+        };
+        return key == null ? kind : render(key, language, Map.of());
+    }
+
     /** The name of a job function in the reader's language. */
     public static String functionName(String function, NotificationLanguage language) {
+        if ("HR".equals(function)) {
+            return switch (language) {
+                case EN -> "HR director";
+                case TH -> "ผู้อำนวยการฝ่ายบุคคล";
+                case RU -> "HR-директор";
+            };
+        }
         boolean housekeeper = "HOUSEKEEPER".equals(function);
         return switch (language) {
             case EN -> housekeeper ? "Housekeeper" : "Engineer";

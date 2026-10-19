@@ -65,6 +65,14 @@ public class UserEntity {
     // PATCH /users/{id}/overtime-eligibility. Nothing computes or accrues overtime from this yet.
     private boolean overtimeEligible = true;
 
+    // The employee's own choice of the evening-before shift reminder; null = the bot settings' default (V150).
+    private Boolean eveReminderEnabled;
+
+    // The HR holder's leave, hotel dates inclusive (V150); both or neither.
+    private java.time.LocalDate hrVacationFrom;
+
+    private java.time.LocalDate hrVacationTo;
+
     // The fingerprint terminal's own numeric PIN for this person, not our id - see User's own
     // openapi.yaml description. Null for staff who never punch; unique when set (see V73).
     private Integer enrollmentNumber;
@@ -188,5 +196,29 @@ public class UserEntity {
 
     public void setStaffArea(StaffArea staffArea) {
         this.staffArea = staffArea;
+    }
+
+    public Boolean getEveReminderEnabled() {
+        return eveReminderEnabled;
+    }
+
+    public void setEveReminderEnabled(Boolean eveReminderEnabled) {
+        this.eveReminderEnabled = eveReminderEnabled;
+    }
+
+    public java.time.LocalDate getHrVacationFrom() {
+        return hrVacationFrom;
+    }
+
+    public void setHrVacationFrom(java.time.LocalDate hrVacationFrom) {
+        this.hrVacationFrom = hrVacationFrom;
+    }
+
+    public java.time.LocalDate getHrVacationTo() {
+        return hrVacationTo;
+    }
+
+    public void setHrVacationTo(java.time.LocalDate hrVacationTo) {
+        this.hrVacationTo = hrVacationTo;
     }
 }

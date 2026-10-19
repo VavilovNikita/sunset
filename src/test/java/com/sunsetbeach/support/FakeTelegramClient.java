@@ -4,29 +4,40 @@ import com.sunsetbeach.notification.TelegramClient;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 /**
- * A Telegram that never touches the network: it records what was sent, can be told to fail a send
- * (by chat id) and hands out queued incoming updates.
+ * A Telegram that never touches the network: it records what was sent (with its buttons), edited and
+ * answered, can be told to fail a send (by chat id) and hands out queued incoming updates.
  */
 public class FakeTelegramClient implements TelegramClient {
 
-    public record Sent(String chatId, String text) {
+    public record Sent(String chatId, String text, String messageId, List<List<Button>> buttons) {
+    }
+
+    public record Edit(String chatId, String messageId, String text, List<List<Button>> buttons) {
     }
 
     public volatile boolean configured = true;
     public volatile String botUsername = "sunset_test_bot";
     public final List<Sent> sent = new CopyOnWriteArrayList<>();
+    public final List<Edit> edits = new CopyOnWriteArrayList<>();
+    public final List<String> answers = new CopyOnWriteArrayList<>();
+    public final List<String> commandSets = new CopyOnWriteArrayList<>();
     public final List<TelegramUpdate> incoming = new CopyOnWriteArrayList<>();
     /** Returns the failure for a chat, or null to let the send succeed. */
     public volatile Function<String, TelegramException> failure = chat -> null;
     public volatile long lastRequestedOffset = -1;
+    private final AtomicLong messageIds = new AtomicLong(1000);
 
     public void reset() {
         configured = true;
         botUsername = "sunset_test_bot";
         sent.clear();
+        edits.clear();
+        answers.clear();
+        commandSets.clear();
         incoming.clear();
         failure = chat -> null;
         lastRequestedOffset = -1;
@@ -34,6 +45,20 @@ public class FakeTelegramClient implements TelegramClient {
 
     public List<String> textsTo(String chatId) {
         return sent.stream().filter(s -> s.chatId().equals(chatId)).map(Sent::text).toList();
+    }
+
+    /** The newest message sent to a chat. */
+    public Sent lastTo(String chatId) {
+        List<Sent> all = sent.stream().filter(s -> s.chatId().equals(chatId)).toList();
+        return all.isEmpty() ? null : all.get(all.size() - 1);
+    }
+
+    /** The callback data of the button with this label under a message (null if none). */
+    public static String callbackOf(Sent message, String label) {
+        if (message == null || message.buttons() == null) {
+            return null;
+        }
+        return message.buttons().stream().flatMap(List::stream).filter(b -> b.text().equals(label)).map(Button::callbackData).findFirst().orElse(null);
     }
 
     @Override
@@ -55,11 +80,28 @@ public class FakeTelegramClient implements TelegramClient {
     }
 
     @Override
-    public void sendMessage(String chatId, String text) throws TelegramException {
+    public String sendMessage(String chatId, String text, List<List<Button>> inlineKeyboard, List<List<String>> replyKeyboard) throws TelegramException {
         TelegramException problem = failure.apply(chatId);
         if (problem != null) {
             throw problem;
         }
-        sent.add(new Sent(chatId, text));
+        String id = String.valueOf(messageIds.incrementAndGet());
+        sent.add(new Sent(chatId, text, id, inlineKeyboard));
+        return id;
+    }
+
+    @Override
+    public void editMessageText(String chatId, String messageId, String text, List<List<Button>> inlineKeyboard) {
+        edits.add(new Edit(chatId, messageId, text, inlineKeyboard));
+    }
+
+    @Override
+    public void answerCallbackQuery(String callbackQueryId, String text) {
+        answers.add(text == null ? "" : text);
+    }
+
+    @Override
+    public void setMyCommands(List<Command> commands, String languageCode, String chatId) {
+        commandSets.add((chatId == null ? "default" : chatId) + ":" + (languageCode == null ? "-" : languageCode) + ":" + commands.size());
     }
 }

@@ -17,6 +17,8 @@ import com.sunsetbeach.model.PrintLayoutInput;
 import com.sunsetbeach.model.PrintLayoutPreview;
 import com.sunsetbeach.model.PrintLayouts;
 import com.sunsetbeach.model.SetRoomPricing400Response;
+import com.sunsetbeach.model.StaffBotSettings;
+import com.sunsetbeach.model.StaffBotSettingsUpdateInput;
 import com.sunsetbeach.model.ValidationError;
 import com.sunsetbeach.model.VatSettings;
 import com.sunsetbeach.model.VatSettingsUpdateInput;
@@ -187,6 +189,47 @@ public interface SettingsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"hasLogo\" : true, \"layouts\" : [ { \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /settings/staff-bot : Read the staff Telegram bot and shift-request settings
+     * Requires an authenticated session with role &#x60;ADMIN&#x60;. See &#x60;StaffBotSettings&#x60;.
+     *
+     * @return The current settings. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/settings/staff-bot",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<StaffBotSettings> getStaffBotSettings(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"myShiftsDays\" : 9, \"eveReminderEnabled\" : true, \"myMonthEnabled\" : true, \"rosterChangeHorizonDays\" : 51, \"fallbackToAdmin\" : true, \"myShiftsEnabled\" : true, \"eveReminderDefaultOn\" : true, \"myRequestsEnabled\" : true, \"reasonRequired\" : true, \"pendingReminderEnabled\" : true, \"requestMinHoursBefore\" : 57, \"moveRequestsEnabled\" : true, \"moveWindowDays\" : 54, \"myDayEnabled\" : true, \"deleteRequestsEnabled\" : true, \"rosterChangeEnabled\" : true, \"botSettingsEnabled\" : true, \"allowTodayRequests\" : true, \"rosterChangeDelayMinutes\" : 56, \"requestsEnabled\" : true, \"pendingReminderHours\" : 100, \"eveReminderTime\" : \"eveReminderTime\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -465,6 +508,55 @@ public interface SettingsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PUT /settings/staff-bot : Replace the staff Telegram bot and shift-request settings
+     * Requires &#x60;ADMIN&#x60;. A full &#x60;PUT&#x60;, not a patch. A number outside its documented range, or an &#x60;eveReminderTime&#x60; that is not &#x60;HH:mm&#x60;, is a 400 on that field. Recorded in the audit log (&#x60;STAFF_BOT_SETTINGS_UPDATED&#x60;) naming what changed; an unchanged &#x60;PUT&#x60; writes nothing. 
+     *
+     * @param staffBotSettingsUpdateInput  (required)
+     * @return The updated settings. (status code 200)
+     *         or Body failed validation, or a rule above was broken. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.PUT,
+        value = "/settings/staff-bot",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<StaffBotSettings> updateStaffBotSettings(
+         @Valid @RequestBody StaffBotSettingsUpdateInput staffBotSettingsUpdateInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"myShiftsDays\" : 9, \"eveReminderEnabled\" : true, \"myMonthEnabled\" : true, \"rosterChangeHorizonDays\" : 51, \"fallbackToAdmin\" : true, \"myShiftsEnabled\" : true, \"eveReminderDefaultOn\" : true, \"myRequestsEnabled\" : true, \"reasonRequired\" : true, \"pendingReminderEnabled\" : true, \"requestMinHoursBefore\" : 57, \"moveRequestsEnabled\" : true, \"moveWindowDays\" : 54, \"myDayEnabled\" : true, \"deleteRequestsEnabled\" : true, \"rosterChangeEnabled\" : true, \"botSettingsEnabled\" : true, \"allowTodayRequests\" : true, \"rosterChangeDelayMinutes\" : 56, \"requestsEnabled\" : true, \"pendingReminderHours\" : 100, \"eveReminderTime\" : \"eveReminderTime\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

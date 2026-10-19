@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.ShiftChangeRequestType;
 import com.sunsetbeach.model.ShiftCode;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
@@ -41,6 +43,10 @@ public class RosterEntry {
   private JsonNullable<String> note = JsonNullable.<String>undefined();
 
   private Boolean locked;
+
+  private String pendingShiftRequestId;
+
+  private ShiftChangeRequestType pendingShiftRequestType;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
@@ -218,6 +224,44 @@ public class RosterEntry {
     this.locked = locked;
   }
 
+  public RosterEntry pendingShiftRequestId(String pendingShiftRequestId) {
+    this.pendingShiftRequestId = pendingShiftRequestId;
+    return this;
+  }
+
+  /**
+   * The id of a `PENDING` shift request on this entry (at most one); absent when there is none.
+   * @return pendingShiftRequestId
+   */
+  
+  @JsonProperty("pendingShiftRequestId")
+  public String getPendingShiftRequestId() {
+    return pendingShiftRequestId;
+  }
+
+  public void setPendingShiftRequestId(String pendingShiftRequestId) {
+    this.pendingShiftRequestId = pendingShiftRequestId;
+  }
+
+  public RosterEntry pendingShiftRequestType(ShiftChangeRequestType pendingShiftRequestType) {
+    this.pendingShiftRequestType = pendingShiftRequestType;
+    return this;
+  }
+
+  /**
+   * Get pendingShiftRequestType
+   * @return pendingShiftRequestType
+   */
+  @Valid 
+  @JsonProperty("pendingShiftRequestType")
+  public ShiftChangeRequestType getPendingShiftRequestType() {
+    return pendingShiftRequestType;
+  }
+
+  public void setPendingShiftRequestType(ShiftChangeRequestType pendingShiftRequestType) {
+    this.pendingShiftRequestType = pendingShiftRequestType;
+  }
+
   public RosterEntry createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -273,6 +317,8 @@ public class RosterEntry {
         Objects.equals(this.shiftCode, rosterEntry.shiftCode) &&
         equalsNullable(this.note, rosterEntry.note) &&
         Objects.equals(this.locked, rosterEntry.locked) &&
+        Objects.equals(this.pendingShiftRequestId, rosterEntry.pendingShiftRequestId) &&
+        Objects.equals(this.pendingShiftRequestType, rosterEntry.pendingShiftRequestType) &&
         Objects.equals(this.createdAt, rosterEntry.createdAt) &&
         Objects.equals(this.updatedAt, rosterEntry.updatedAt);
   }
@@ -283,7 +329,7 @@ public class RosterEntry {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, employeeUserId, employeeName, employeeEmail, date, shiftCode, hashCodeNullable(note), locked, createdAt, updatedAt);
+    return Objects.hash(id, employeeUserId, employeeName, employeeEmail, date, shiftCode, hashCodeNullable(note), locked, pendingShiftRequestId, pendingShiftRequestType, createdAt, updatedAt);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -305,6 +351,8 @@ public class RosterEntry {
     sb.append("    shiftCode: ").append(toIndentedString(shiftCode)).append("\n");
     sb.append("    note: ").append(toIndentedString(note)).append("\n");
     sb.append("    locked: ").append(toIndentedString(locked)).append("\n");
+    sb.append("    pendingShiftRequestId: ").append(toIndentedString(pendingShiftRequestId)).append("\n");
+    sb.append("    pendingShiftRequestType: ").append(toIndentedString(pendingShiftRequestType)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("}");

@@ -98,6 +98,14 @@ import org.springframework.transaction.annotation.Transactional;
  * every exhaustive switch/dropdown over it. A null {@code actorRole} is reserved for this path
  * only; nothing a real staff member does should ever produce one.
  *
+ * <h2>A person acting through a channel with no security context</h2>
+ * The staff Telegram bot is polled, so what someone does there (files a request, approves one) runs on the
+ * poll thread with no {@link StaffPrincipal}. It is a real person's action, not the system's, so it is not
+ * {@link #recordSystemAction}: {@link #recordAs} writes the entry under that person (id, email, role at the
+ * moment) and appends {@code (via Telegram)}. {@link #runAs} binds the same actor to the current thread so
+ * the audit calls inside the business code the bot reuses (e.g. {@code RosterService#moveEntry} when a
+ * request is approved) are attributed to that person too instead of silently writing nothing.
+ *
  * <h2>Integrations</h2>
  * A request authenticated as an {@link IntegrationPrincipal} (the SiteMinder import - see
  * {@code IntegrationKeyAuthFilter}) goes through the ordinary {@link #record}, which writes that
@@ -125,9 +133,59 @@ public class AuditLogService {
         this.clock = clock;
     }
 
+    /** A real person acting without a security context; {@code via} (nullable) names the channel, e.g. {@code Telegram}. */
+    public record Actor(String userId, String email, Role role, String via) {
+    }
+
+    private static final ThreadLocal<Actor> BOUND_ACTOR = new ThreadLocal<>();
+
+    /**
+     * Runs {@code work} with {@code actor} bound to this thread: every {@link #record} inside it (in any
+     * service it calls) is written under that person. Restores whatever was bound before.
+     */
+    public static <T> T runAs(Actor actor, java.util.function.Supplier<T> work) {
+        Actor before = BOUND_ACTOR.get();
+        BOUND_ACTOR.set(actor);
+        try {
+            return work.get();
+        } finally {
+            if (before == null) {
+                BOUND_ACTOR.remove();
+            } else {
+                BOUND_ACTOR.set(before);
+            }
+        }
+    }
+
+    /** The same fail-open, {@code REQUIRES_NEW} write as {@link #record}, for a person with no security context. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordAs(Actor actor, AuditAction action, AuditEntityType entityType, String entityId, String summary) {
+        try {
+            persist(actor.userId(), actor.email(), actor.role(), action, entityType, entityId, withVia(summary, actor));
+        } catch (Exception e) {
+            log.error(
+                    "Failed to record audit log entry as {} (action={}, entityType={}, entityId={}, summary=\"{}\")",
+                    actor.userId(),
+                    action,
+                    entityType,
+                    entityId,
+                    summary,
+                    e);
+        }
+    }
+
+    private static String withVia(String summary, Actor actor) {
+        return actor.via() == null || actor.via().isBlank() ? summary : summary + " (via " + actor.via() + ")";
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(AuditAction action, AuditEntityType entityType, String entityId, String summary) {
         try {
+            Actor bound = BOUND_ACTOR.get();
+            if (bound != null) {
+                persist(bound.userId(), bound.email(), bound.role(), action, entityType, entityId, withVia(summary, bound));
+                return;
+            }
             Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
             if (principal instanceof IntegrationPrincipal integration) {
                 persist(integration.auditActorId(), integration.auditActorEmail(), null, action, entityType, entityId, summary);

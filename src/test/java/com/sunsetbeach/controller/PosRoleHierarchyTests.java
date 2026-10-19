@@ -274,6 +274,15 @@ class PosRoleHierarchyTests {
     private com.sunsetbeach.service.NotificationSettingsService notificationSettingsService;
 
     @MockitoBean
+    private com.sunsetbeach.service.StaffBotSettingsService staffBotSettingsService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.ShiftChangeRequestService shiftChangeRequestService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.ShiftRequestDeciderService shiftRequestDeciderService;
+
+    @MockitoBean
     private com.sunsetbeach.service.NightAuditService nightAuditService;
 
     @MockitoBean

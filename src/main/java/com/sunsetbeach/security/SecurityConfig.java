@@ -407,6 +407,17 @@ public class SecurityConfig {
                         // match the bare path - not worth leaving to an AntPathMatcher edge case
                         // EndpointCoverageTests wouldn't catch either (it confirms every path has
                         // *a* rule, not that the rule actually matches every method on it).
+                        // The HR director (job function HR, a second axis - never a role) READS the month's roster, its
+                        // employees and the attendance summary: whoever decides shift requests must see the data they
+                        // decide on. Reads only - every write stays MANAGER+ below. Specific GET matchers first.
+                        .requestMatchers(HttpMethod.GET, "/roster", "/roster/employees", "/attendance/summary").access(managerPlusOrHr())
+                        // Shift requests (employees' asks to move/remove a shift, filed in the staff bot): reading is
+                        // MANAGER+ or HR; deciding, withdrawing and the HR director's leave are ADMIN or HR here, and the
+                        // service then asks "are you one of today's deciders" (leave dates and the fallback setting
+                        // decide that, which a route can't see). HR is hasAuthority(FUNCTION_HR), never hasRole.
+                        .requestMatchers(HttpMethod.GET, "/shift-change-requests", "/shift-change-requests/deciders").access(managerPlusOrHr())
+                        .requestMatchers(HttpMethod.PUT, "/shift-change-requests/hr-vacation").access(adminOrHr())
+                        .requestMatchers(HttpMethod.POST, "/shift-change-requests/*/decision", "/shift-change-requests/*/cancel").access(adminOrHr())
                         .requestMatchers(HttpMethod.POST, "/shift-codes").hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Not a prefix of the bare "/shift-codes" GET/POST rules above, so order
                         // relative to them doesn't matter - listed here anyway, next to the rest
@@ -502,6 +513,22 @@ public class SecurityConfig {
         managerOrAbove.setRoleHierarchy(roleHierarchy());
         AuthorityAuthorizationManager<RequestAuthorizationContext> engineerFunction = AuthorityAuthorizationManager.hasAuthority("FUNCTION_ENGINEER");
         return AuthorizationManagers.anyOf(managerOrAbove, engineerFunction);
+    }
+
+    /** MANAGER-or-above OR FUNCTION_HR - the read gate of the roster and of shift requests. */
+    private AuthorizationManager<RequestAuthorizationContext> managerPlusOrHr() {
+        AuthorityAuthorizationManager<RequestAuthorizationContext> managerOrAbove =
+                AuthorityAuthorizationManager.hasRole(com.sunsetbeach.model.Role.MANAGER.getValue());
+        managerOrAbove.setRoleHierarchy(roleHierarchy());
+        return AuthorizationManagers.anyOf(managerOrAbove, AuthorityAuthorizationManager.hasAuthority("FUNCTION_HR"));
+    }
+
+    /** ADMIN OR FUNCTION_HR - who may decide shift requests at the route level. */
+    private AuthorizationManager<RequestAuthorizationContext> adminOrHr() {
+        AuthorityAuthorizationManager<RequestAuthorizationContext> admin =
+                AuthorityAuthorizationManager.hasRole(com.sunsetbeach.model.Role.ADMIN.getValue());
+        admin.setRoleHierarchy(roleHierarchy());
+        return AuthorizationManagers.anyOf(admin, AuthorityAuthorizationManager.hasAuthority("FUNCTION_HR"));
     }
 
     /**

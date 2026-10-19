@@ -3,9 +3,10 @@ package com.sunsetbeach.notification;
 import java.util.List;
 
 /**
- * The few Telegram Bot API calls the notification centre needs. An interface so tests (and, one day,
- * another channel's adapter) never touch the network. Every failure is a {@link TelegramException}
- * whose message is in our own words - never Telegram's raw answer, never the bot token.
+ * The few Telegram Bot API calls the notification centre and the staff bot need. An interface so tests
+ * (and, one day, another channel's adapter) never touch the network. Every failure is a
+ * {@link TelegramException} whose message is in our own words - never Telegram's raw answer, never the
+ * bot token.
  */
 public interface TelegramClient {
 
@@ -17,15 +18,57 @@ public interface TelegramClient {
 
     /**
      * {@code getUpdates} from {@code offset} (the id after the last one handled), waiting at most
-     * {@code timeoutSeconds} for a new one. Only private-chat text messages are returned.
+     * {@code timeoutSeconds} for a new one. Only private-chat text messages and button presses
+     * ({@code callback_query}) are returned.
      */
     List<TelegramUpdate> getUpdates(long offset, int timeoutSeconds) throws TelegramException;
 
-    /** Plain text, no parse mode: names and room labels need no escaping. */
-    void sendMessage(String chatId, String text) throws TelegramException;
+    /**
+     * Plain text, no parse mode: names and room labels need no escaping. At most one of the keyboards is
+     * given: {@code inlineKeyboard} (buttons under the message, each carrying opaque callback data) or
+     * {@code replyKeyboard} (the persistent menu under the input field; its buttons just send their text).
+     *
+     * @return the id of the message Telegram created, so it can be edited later
+     */
+    String sendMessage(String chatId, String text, List<List<Button>> inlineKeyboard, List<List<String>> replyKeyboard) throws TelegramException;
 
-    /** One incoming private text message. */
-    record TelegramUpdate(long updateId, String chatId, String text) {
+    default void sendMessage(String chatId, String text) throws TelegramException {
+        sendMessage(chatId, text, null, null);
+    }
+
+    /** Replaces a message's text; {@code inlineKeyboard} null or empty removes the buttons. */
+    void editMessageText(String chatId, String messageId, String text, List<List<Button>> inlineKeyboard) throws TelegramException;
+
+    /** Stops the spinner on a pressed button; {@code text} (nullable) is shown to the person briefly. */
+    void answerCallbackQuery(String callbackQueryId, String text) throws TelegramException;
+
+    /**
+     * {@code setMyCommands}: the "/" menu. {@code chatId} null sets the default for everyone, otherwise only
+     * that chat; {@code languageCode} (nullable) limits it to Telegram clients in that language.
+     */
+    void setMyCommands(List<Command> commands, String languageCode, String chatId) throws TelegramException;
+
+    /** A button under a message. {@code callbackData} is at most 64 bytes - in practice a short opaque id. */
+    record Button(String text, String callbackData) {
+    }
+
+    record Command(String command, String description) {
+    }
+
+    /**
+     * One incoming update: a private text message ({@code text}) or a button press
+     * ({@code callbackQueryId} and {@code callbackData} set, {@code messageId} the message it sat under).
+     * An update that is neither (a group message, a photo) has a null {@code chatId}; the offset still moves past it.
+     */
+    record TelegramUpdate(long updateId, String chatId, String text, String callbackQueryId, String callbackData, String messageId) {
+
+        public TelegramUpdate(long updateId, String chatId, String text) {
+            this(updateId, chatId, text, null, null, null);
+        }
+
+        public boolean isCallback() {
+            return callbackQueryId != null;
+        }
     }
 
     class TelegramException extends Exception {

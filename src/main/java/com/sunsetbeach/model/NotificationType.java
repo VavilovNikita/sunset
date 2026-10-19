@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * `LATE` - an employee has not clocked in `lateGraceMinutes` after the planned start of a shift interval (to them and to the late-recipients). `ABSENT` - still not there `absenceMinutes` after it (to the director recipients). `BLOCK_CREATED`, `BLOCK_LAST_DAY` (the morning of the block's last day) and `BLOCK_EXPIRED_OPEN` (every morning while the block's maintenance task is not DONE) go to whoever is on shift with the block's responsible function, otherwise to the director recipients. `TERMINAL_OFFLINE` / `TERMINAL_ONLINE` - an attendance terminal went silent / came back (to the director recipients). 
+ * `LATE` - an employee has not clocked in `lateGraceMinutes` after the planned start of a shift interval (to them and to the late-recipients). `ABSENT` - still not there `absenceMinutes` after it (to the director recipients). `BLOCK_CREATED`, `BLOCK_LAST_DAY` (the morning of the block's last day) and `BLOCK_EXPIRED_OPEN` (every morning while the block's maintenance task is not DONE) go to whoever is on shift with the block's responsible function, otherwise to the director recipients. `TERMINAL_OFFLINE` / `TERMINAL_ONLINE` - an attendance terminal went silent / came back (to the director recipients). `SHIFT_REQUEST_NEW` - a shift request waits for a decision (to the deciders, with Approve / Reject buttons in Telegram); `SHIFT_REQUEST_DECIDED` / `SHIFT_REQUEST_EXPIRED` - the outcome (to the employee); `SHIFT_REQUEST_REMINDER` - a request has waited too long (to the deciders); `SHIFT_EVE_REMINDER` - tomorrow's shift, the evening before, to those who asked for it; `ROSTER_CHANGED` - a manager changed an employee's shift on a day (one message per employee and day). 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -34,7 +34,19 @@ public enum NotificationType {
   
   TERMINAL_OFFLINE("TERMINAL_OFFLINE"),
   
-  TERMINAL_ONLINE("TERMINAL_ONLINE");
+  TERMINAL_ONLINE("TERMINAL_ONLINE"),
+  
+  SHIFT_REQUEST_NEW("SHIFT_REQUEST_NEW"),
+  
+  SHIFT_REQUEST_DECIDED("SHIFT_REQUEST_DECIDED"),
+  
+  SHIFT_REQUEST_EXPIRED("SHIFT_REQUEST_EXPIRED"),
+  
+  SHIFT_REQUEST_REMINDER("SHIFT_REQUEST_REMINDER"),
+  
+  SHIFT_EVE_REMINDER("SHIFT_EVE_REMINDER"),
+  
+  ROSTER_CHANGED("ROSTER_CHANGED");
 
   private String value;
 

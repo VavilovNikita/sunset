@@ -191,6 +191,7 @@ public class UserService {
         UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
         String[] oldFunctions = entity.getJobFunctions();
         String[] newFunctions = new LinkedHashSet<>(input.getFunctions()).stream().map(JobFunction::getValue).toArray(String[]::new);
+        requireSingleHrHolder(entity, newFunctions, entity.isActive());
         entity.setJobFunctions(newFunctions);
         UserEntity saved = userRepository.save(entity);
         auditLogService.record(
@@ -203,6 +204,25 @@ public class UserService {
         boolean stillTherapist = Arrays.asList(newFunctions).contains(JobFunction.THERAPIST.getValue());
         String warning = wasTherapist && !stillTherapist ? futureBookedAppointmentWarning(saved.getId()) : null;
         return new UserUpdateResult(userMapper.toDto(saved), warning);
+    }
+
+    /**
+     * At most one <em>active</em> user holds {@link JobFunction#HR}: requests to move a shift go to one
+     * person. The functions live in a {@code TEXT[]}, so no index can say "at most one"; instead every change
+     * that could add a holder first takes a transaction-scoped advisory lock and counts under it, so two
+     * simultaneous assignments can't both pass (the second waits for the first to commit, then sees it).
+     */
+    private void requireSingleHrHolder(UserEntity candidate, String[] functions, boolean active) {
+        if (!active || !Arrays.asList(functions).contains(JobFunction.HR.getValue())) {
+            return;
+        }
+        userRepository.lockHrAssignment();
+        userRepository.findActiveHrHolders().stream()
+                .filter(other -> !other.getId().equals(candidate.getId()))
+                .findFirst()
+                .ifPresent(other -> {
+                    throw new ConflictException("The HR function is already assigned to " + other.getName() + " - remove it from them first");
+                });
     }
 
     private static String describeFunctions(String[] functions) {
@@ -257,6 +277,8 @@ public class UserService {
         }
 
         UserEntity entity = userRepository.findById(id).orElseThrow(() -> new NotFoundException("User not found"));
+        // Bringing back a deactivated HR holder must not create a second active one.
+        requireSingleHrHolder(entity, entity.getJobFunctions(), active);
         entity.setActive(active);
         entity.setTokenVersion(entity.getTokenVersion() + 1);
         UserEntity saved = userRepository.save(entity);

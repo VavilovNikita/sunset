@@ -4,6 +4,9 @@ import com.sunsetbeach.api.SettingsApi;
 import com.sunsetbeach.model.LifecycleEmailSettings;
 import com.sunsetbeach.model.LifecycleEmailSettingsUpdateInput;
 import com.sunsetbeach.model.NotificationSettings;
+import com.sunsetbeach.model.StaffBotSettings;
+import com.sunsetbeach.model.StaffBotSettingsUpdateInput;
+import com.sunsetbeach.service.StaffBotSettingsService;
 import com.sunsetbeach.model.NotificationSettingsUpdateInput;
 import com.sunsetbeach.model.PrintAttemptResult;
 import com.sunsetbeach.model.PrintLayout;
@@ -28,12 +31,15 @@ public class SettingsController implements SettingsApi {
     private final VatSettingsService vatSettingsService;
     private final PrintLayoutService printLayoutService;
     private final NotificationSettingsService notificationSettingsService;
+    private final StaffBotSettingsService staffBotSettingsService;
 
     public SettingsController(
             LifecycleEmailSettingsService lifecycleEmailSettingsService,
             VatSettingsService vatSettingsService,
             PrintLayoutService printLayoutService,
-            NotificationSettingsService notificationSettingsService) {
+            NotificationSettingsService notificationSettingsService,
+            StaffBotSettingsService staffBotSettingsService) {
+        this.staffBotSettingsService = staffBotSettingsService;
         this.notificationSettingsService = notificationSettingsService;
         this.lifecycleEmailSettingsService = lifecycleEmailSettingsService;
         this.vatSettingsService = vatSettingsService;
@@ -58,6 +64,16 @@ public class SettingsController implements SettingsApi {
     @Override
     public ResponseEntity<NotificationSettings> updateNotificationSettings(NotificationSettingsUpdateInput input) {
         return ResponseEntity.ok(notificationSettingsService.update(input));
+    }
+
+    @Override
+    public ResponseEntity<StaffBotSettings> getStaffBotSettings() {
+        return ResponseEntity.ok(staffBotSettingsService.get());
+    }
+
+    @Override
+    public ResponseEntity<StaffBotSettings> updateStaffBotSettings(StaffBotSettingsUpdateInput input) {
+        return ResponseEntity.ok(staffBotSettingsService.update(input));
     }
 
     @Override

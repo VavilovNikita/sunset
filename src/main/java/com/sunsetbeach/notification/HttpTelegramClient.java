@@ -15,6 +15,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -66,12 +68,26 @@ public class HttpTelegramClient implements TelegramClient {
 
     @Override
     public List<TelegramUpdate> getUpdates(long offset, int timeoutSeconds) throws TelegramException {
-        String body = "{\"offset\":" + offset + ",\"timeout\":" + timeoutSeconds + ",\"allowed_updates\":[\"message\"]}";
+        String body = "{\"offset\":" + offset + ",\"timeout\":" + timeoutSeconds + ",\"allowed_updates\":[\"message\",\"callback_query\"]}";
         JsonNode result = call("getUpdates", body, Duration.ofSeconds(timeoutSeconds + 10L));
         List<TelegramUpdate> updates = new ArrayList<>();
         for (JsonNode update : result) {
             long id = update.path("update_id").asLong(-1);
             if (id < 0) {
+                continue;
+            }
+            JsonNode callback = update.path("callback_query");
+            if (callback.isObject()) {
+                JsonNode chat = callback.path("message").path("chat");
+                String data = callback.path("data").isString() ? callback.path("data").asString() : null;
+                String queryId = callback.path("id").isString() ? callback.path("id").asString() : null;
+                if (data == null || queryId == null || !"private".equals(chat.path("type").asString("")) || !chat.path("id").isNumber()) {
+                    updates.add(new TelegramUpdate(id, null, null));
+                    continue;
+                }
+                String messageId = callback.path("message").path("message_id").isNumber()
+                        ? String.valueOf(callback.path("message").path("message_id").asLong()) : null;
+                updates.add(new TelegramUpdate(id, String.valueOf(chat.path("id").asLong()), null, queryId, data, messageId));
                 continue;
             }
             JsonNode message = update.path("message");
@@ -88,9 +104,68 @@ public class HttpTelegramClient implements TelegramClient {
     }
 
     @Override
-    public void sendMessage(String chatId, String text) throws TelegramException {
-        String body = json.createObjectNode().put("chat_id", chatId).put("text", text).put("disable_web_page_preview", true).toString();
-        call("sendMessage", body, Duration.ofSeconds(15));
+    public String sendMessage(String chatId, String text, List<List<Button>> inlineKeyboard, List<List<String>> replyKeyboard) throws TelegramException {
+        ObjectNode body = json.createObjectNode().put("chat_id", chatId).put("text", text).put("disable_web_page_preview", true);
+        if (inlineKeyboard != null && !inlineKeyboard.isEmpty()) {
+            body.set("reply_markup", inlineMarkup(inlineKeyboard));
+        } else if (replyKeyboard != null && !replyKeyboard.isEmpty()) {
+            ObjectNode markup = json.createObjectNode();
+            ArrayNode rows = markup.putArray("keyboard");
+            for (List<String> row : replyKeyboard) {
+                ArrayNode r = rows.addArray();
+                row.forEach(label -> r.addObject().put("text", label));
+            }
+            markup.put("resize_keyboard", true).put("is_persistent", true);
+            body.set("reply_markup", markup);
+        }
+        JsonNode result = call("sendMessage", body.toString(), Duration.ofSeconds(15));
+        return result.path("message_id").isNumber() ? String.valueOf(result.path("message_id").asLong()) : null;
+    }
+
+    @Override
+    public void editMessageText(String chatId, String messageId, String text, List<List<Button>> inlineKeyboard) throws TelegramException {
+        ObjectNode body = json.createObjectNode().put("chat_id", chatId).put("text", text).put("disable_web_page_preview", true);
+        try {
+            body.put("message_id", Long.parseLong(messageId));
+        } catch (NumberFormatException e) {
+            throw new TelegramException(TelegramException.Kind.REJECTED, "Not a Telegram message id");
+        }
+        // Always send a markup: an empty one is how the buttons are taken away.
+        body.set("reply_markup", inlineMarkup(inlineKeyboard == null ? List.of() : inlineKeyboard));
+        call("editMessageText", body.toString(), Duration.ofSeconds(15));
+    }
+
+    @Override
+    public void answerCallbackQuery(String callbackQueryId, String text) throws TelegramException {
+        ObjectNode body = json.createObjectNode().put("callback_query_id", callbackQueryId);
+        if (text != null && !text.isBlank()) {
+            body.put("text", text.length() > 190 ? text.substring(0, 190) : text);
+        }
+        call("answerCallbackQuery", body.toString(), Duration.ofSeconds(10));
+    }
+
+    @Override
+    public void setMyCommands(List<Command> commands, String languageCode, String chatId) throws TelegramException {
+        ObjectNode body = json.createObjectNode();
+        ArrayNode list = body.putArray("commands");
+        commands.forEach(c -> list.addObject().put("command", c.command()).put("description", c.description()));
+        if (chatId != null) {
+            body.putObject("scope").put("type", "chat").put("chat_id", chatId);
+        }
+        if (languageCode != null) {
+            body.put("language_code", languageCode);
+        }
+        call("setMyCommands", body.toString(), Duration.ofSeconds(10));
+    }
+
+    private ObjectNode inlineMarkup(List<List<Button>> keyboard) {
+        ObjectNode markup = json.createObjectNode();
+        ArrayNode rows = markup.putArray("inline_keyboard");
+        for (List<Button> row : keyboard) {
+            ArrayNode r = rows.addArray();
+            row.forEach(b -> r.addObject().put("text", b.text()).put("callback_data", b.callbackData()));
+        }
+        return markup;
     }
 
     private JsonNode call(String method, String body, Duration timeout) throws TelegramException {

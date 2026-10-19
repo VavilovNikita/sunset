@@ -7,10 +7,14 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.NotificationLanguage;
 import com.sunsetbeach.model.NotificationType;
+import com.sunsetbeach.entity.StaffActionEntity;
+import com.sunsetbeach.notification.BotText;
+import com.sunsetbeach.notification.NotificationAction;
 import com.sunsetbeach.notification.NotificationMessages;
 import com.sunsetbeach.notification.QuietHours;
 import com.sunsetbeach.repository.NotificationDeliveryRepository;
 import com.sunsetbeach.repository.NotificationRepository;
+import com.sunsetbeach.repository.StaffActionRepository;
 import com.sunsetbeach.repository.StaffChannelLinkRepository;
 import com.sunsetbeach.repository.UserRepository;
 import java.time.Clock;
@@ -58,6 +62,7 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final NotificationDeliveryRepository deliveryRepository;
     private final StaffChannelLinkRepository linkRepository;
+    private final StaffActionRepository actionRepository;
     private final UserRepository userRepository;
     private final NotificationSettingsService settingsService;
     private final Clock clock;
@@ -67,6 +72,7 @@ public class NotificationService {
             NotificationRepository notificationRepository,
             NotificationDeliveryRepository deliveryRepository,
             StaffChannelLinkRepository linkRepository,
+            StaffActionRepository actionRepository,
             UserRepository userRepository,
             NotificationSettingsService settingsService,
             Clock clock,
@@ -74,6 +80,7 @@ public class NotificationService {
         this.notificationRepository = notificationRepository;
         this.deliveryRepository = deliveryRepository;
         this.linkRepository = linkRepository;
+        this.actionRepository = actionRepository;
         this.userRepository = userRepository;
         this.settingsService = settingsService;
         this.clock = clock;
@@ -94,6 +101,22 @@ public class NotificationService {
             java.util.Collection<String> recipientUserIds,
             Map<String, String> params,
             String dedupKey) {
+        return raise(type, key, recipientUserIds, params, dedupKey, List.of());
+    }
+
+    /**
+     * As above, with things the recipient can do about the message ({@link NotificationAction}). The core only
+     * stores them; a channel adapter decides how to offer them (Telegram: buttons). A parameter given as
+     * {@code name.EN} / {@code name.TH} / {@code name.RU} is read as {@code name} in the recipient's language.
+     */
+    @Transactional
+    public int raise(
+            NotificationType type,
+            NotificationMessages.Key key,
+            java.util.Collection<String> recipientUserIds,
+            Map<String, String> params,
+            String dedupKey,
+            List<NotificationAction> actions) {
         NotificationSettingsEntity settings = settingsService.getEntity();
         NotificationLanguage defaultLanguage = NotificationLanguage.fromValue(settings.getDefaultLanguage());
         LocalDateTime nowUtc = TimestampFormat.nowUtc(clock);
@@ -111,7 +134,7 @@ public class NotificationService {
             }
             NotificationLanguage language =
                     user.getNotificationLanguage() != null ? NotificationLanguage.fromValue(user.getNotificationLanguage()) : defaultLanguage;
-            Map<String, String> forRecipient = new HashMap<>(filled);
+            Map<String, String> forRecipient = new HashMap<>(BotText.forLanguage(filled, language));
             if (forRecipient.containsKey("function")) {
                 forRecipient.put("function", NotificationMessages.functionName(forRecipient.get("function"), language));
             }
@@ -122,6 +145,16 @@ public class NotificationService {
                 continue;
             }
             raised++;
+            for (NotificationAction action : actions) {
+                StaffActionEntity row = new StaffActionEntity();
+                row.setId(com.sunsetbeach.service.BotActionIds.next());
+                row.setNotificationId(id);
+                row.setUserId(userId);
+                row.setKind(action.kind());
+                row.setSubjectId(action.subjectId());
+                row.setArg(action.arg());
+                actionRepository.save(row);
+            }
             List<StaffChannelLinkEntity> links = linkRepository.findByUserId(userId);
             for (StaffChannelLinkEntity link : links) {
                 NotificationDeliveryEntity delivery = new NotificationDeliveryEntity();

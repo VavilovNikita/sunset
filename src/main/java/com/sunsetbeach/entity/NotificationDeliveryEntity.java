@@ -31,6 +31,9 @@ public class NotificationDeliveryEntity {
 
     private LocalDateTime sentAt;
 
+    /** The channel's own id of the sent message (Telegram message_id), kept so it can be edited later. */
+    private String externalMessageId;
+
     @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
@@ -106,4 +109,12 @@ public class NotificationDeliveryEntity {
         this.createdAt = createdAt;
     }
 
+
+    public String getExternalMessageId() {
+        return externalMessageId;
+    }
+
+    public void setExternalMessageId(String externalMessageId) {
+        this.externalMessageId = externalMessageId;
+    }
 }

@@ -115,6 +115,11 @@ abstract class NotificationTestBase extends AbstractIntegrationTest {
     @Autowired protected RoomUnitService roomUnitService;
     @Autowired protected MaintenanceTaskService maintenanceTaskService;
     @Autowired protected TelegramClient telegramClient;
+    @Autowired protected StaffBotSettingsRepository botSettingsRepository;
+    @Autowired protected ShiftChangeRequestRepository shiftRequestRepository;
+    @Autowired protected StaffActionRepository staffActionRepository;
+    @Autowired protected BotConversationRepository botConversationRepository;
+    @Autowired protected RosterChangeMarkRepository rosterChangeMarkRepository;
 
     protected final List<String> userIds = new ArrayList<>();
     protected final List<String> shiftCodeIds = new ArrayList<>();
@@ -129,6 +134,7 @@ abstract class NotificationTestBase extends AbstractIntegrationTest {
         clock.set(DAY + "T10:00");
         telegram.reset();
         resetSettings();
+        resetBotSettings();
         // Other test classes may leave active terminals behind; with a 2033 clock they would all be
         // "silent". Set aside every device that is not ours for the length of the test.
         for (AttendanceDeviceEntity d : deviceRepository.findAll()) {
@@ -155,6 +161,11 @@ abstract class NotificationTestBase extends AbstractIntegrationTest {
             deviceRepository.saveAndFlush(d);
         });
         episodeRepository.deleteAll();
+        // The bot's tables reference users, roster entries and shift codes: they go first.
+        shiftRequestRepository.deleteAll(shiftRequestRepository.findAll().stream().filter(r -> userIds.contains(r.getEmployeeUserId())).toList());
+        staffActionRepository.deleteAll(staffActionRepository.findAll().stream().filter(a -> userIds.contains(a.getUserId())).toList());
+        botConversationRepository.deleteAll(botConversationRepository.findAll().stream().filter(c -> userIds.contains(c.getUserId())).toList());
+        rosterChangeMarkRepository.deleteAll(rosterChangeMarkRepository.findAll().stream().filter(m -> userIds.contains(m.getEmployeeUserId())).toList());
         deliveryRepository.deleteAll(deliveryRepository.findAll().stream().filter(d -> notificationRecipient(d.getNotificationId())).toList());
         notificationRepository.deleteAll(notificationRepository.findAll().stream().filter(n -> userIds.contains(n.getRecipientUserId())).toList());
         linkRepository.deleteAll(linkRepository.findByUserIdIn(userIds));
@@ -178,6 +189,7 @@ abstract class NotificationTestBase extends AbstractIntegrationTest {
         }
         otherActiveDeviceIds.clear();
         resetSettings();
+        resetBotSettings();
         userIds.clear();
         shiftCodeIds.clear();
         deviceIds.clear();
@@ -210,6 +222,43 @@ abstract class NotificationTestBase extends AbstractIntegrationTest {
         s.setLateRecipientUserIds(new String[0]);
         s.setDirectorUserIds(new String[0]);
         settingsRepository.saveAndFlush(s);
+    }
+
+    /** The seeded defaults of the staff bot (V150). */
+    protected void resetBotSettings() {
+        var s = botSettingsRepository.findById(1).orElseThrow();
+        s.setMyShiftsEnabled(true);
+        s.setMyDayEnabled(true);
+        s.setMyMonthEnabled(true);
+        s.setMyRequestsEnabled(true);
+        s.setBotSettingsEnabled(true);
+        s.setRequestsEnabled(true);
+        s.setMoveRequestsEnabled(true);
+        s.setDeleteRequestsEnabled(true);
+        s.setRequestMinHoursBefore(24);
+        s.setAllowTodayRequests(false);
+        s.setMoveWindowDays(14);
+        s.setReasonRequired(true);
+        s.setMyShiftsDays(14);
+        s.setFallbackToAdmin(true);
+        s.setPendingReminderEnabled(true);
+        s.setPendingReminderHours(12);
+        s.setEveReminderEnabled(true);
+        s.setEveReminderTime(java.time.LocalTime.of(18, 0));
+        s.setEveReminderDefaultOn(false);
+        // The one departure from the seeded default: off, so the alert tests - which build their roster through the
+        // service and then run the sweep - are not answered with a "your schedule changed" they never asked about.
+        // StaffBotTests switches it on.
+        s.setRosterChangeEnabled(false);
+        s.setRosterChangeHorizonDays(14);
+        s.setRosterChangeDelayMinutes(10);
+        botSettingsRepository.saveAndFlush(s);
+    }
+
+    protected void botSettings(java.util.function.Consumer<com.sunsetbeach.entity.StaffBotSettingsEntity> change) {
+        var s = botSettingsRepository.findById(1).orElseThrow();
+        change.accept(s);
+        botSettingsRepository.saveAndFlush(s);
     }
 
     protected void settings(java.util.function.Consumer<NotificationSettingsEntity> change) {

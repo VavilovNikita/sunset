@@ -264,6 +264,24 @@ Migrations V148 (tables, columns, the settings row) and V149 (audit values) only
 build is safe - the new tables are simply unused. To switch the whole feature off without a rollback, unset
 `TELEGRAM_BOT_TOKEN`.
 
+## Staff bot and shift requests (Telegram)
+
+The same bot, once it is set up as above, is each linked employee's own window onto their schedule (My shifts, My day, My month, My requests, Settings) and the place where the HR director decides requests to move a shift or take a day off. Nothing to configure on the server beyond the token.
+
+1. **Give the HR function to one person** (ADMIN): Users -> the HR checkbox. A second person is refused ("already assigned to ..."). While nobody holds it, or while the holder is on leave, the **administrators** decide - they must have Telegram linked to be messaged, but any administrator can decide on the Shift requests page.
+2. **Link the director's chat** like any employee's (Notification channels). Without a link they still see and decide requests on the Shift requests page.
+3. **Settings -> Notification settings, "Staff bot and shift requests"** (ADMIN): every function can be switched off; notice before a shift (24 h), move window (14 days), whether today's shift may be requested (no), whether a reason is required (yes), reminders for waiting requests (12 h), the evening-before reminder (18:00; each employee chooses, default off) and roster-change messages (10 minutes after the last change, 14 days ahead).
+4. **Department minimums** (Roster -> Coverage) are what the "below minimum" warning in a request is measured against; they warn, they never block.
+
+Things that look wrong but are not:
+
+- **Pressing an old Approve button is safe**: it answers with the request's current status. A request whose shift was changed meanwhile becomes "Expired" and nothing is applied.
+- **A "your schedule changed" message arrives about ten minutes after the manager stopped dragging**, once per person and day, and not at all when the day ended up as it was. Changes made by approving a request are not announced (the employee got the decision).
+- **The HR director can read the roster and attendance summary but not change them** unless they are also a manager.
+- Messages raised during quiet hours (22:00-07:00) wait for the morning, requests included.
+
+Migration V150 (tables, columns, the settings row) and V151 (audit values) only add things; rolling back to the previous build is safe - the new tables are simply unused, and `HR` in a user's functions is only a label to the old code. The old `CHECK` on `Notification.type` and on `User.jobFunctions` is replaced by a wider one; **an old build cannot read a row holding a new notification type** (nothing reads them but the log page), so after a rollback delete those rows if the log page errors: `DELETE FROM "Notification" WHERE type IN ('SHIFT_REQUEST_NEW','SHIFT_REQUEST_DECIDED','SHIFT_REQUEST_EXPIRED','SHIFT_REQUEST_REMINDER','SHIFT_EVE_REMINDER','ROSTER_CHANGED');`.
+
 ## Uploads (room photos, floor plans, maintenance photos)
 
 Everything staff upload - room photos, the property, spa and restaurant plans, maintenance task

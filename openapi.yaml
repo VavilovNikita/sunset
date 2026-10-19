@@ -45,6 +45,11 @@ tags:
       Staff notification centre: what was raised, to whom and over which channel (Telegram today), the
       employees' linked chats and languages. MANAGER+; the settings are ADMIN (`/settings/notifications`).
       Telegram is polled with getUpdates - nothing here is called by Telegram.
+  - name: ShiftRequests
+    description: >
+      Employees' requests (made in the staff Telegram bot) to move or remove one of their shifts, and
+      the HR director's / administrators' decisions. Read: MANAGER+ or the `HR` job function; decide: `HR`
+      (or `ADMIN` while nobody holds it or they are away). An approval is applied through the roster's own code.
   - name: Auth
     description: >
       Self-hosted authentication - this app owns the `User` table and issues/verifies
@@ -7622,7 +7627,9 @@ paths:
         this user on every request already (the same row it re-reads to check `active`/
         `tokenVersion`), so a change here is enforced on the very next request with no re-login
         needed. `warning` in the response is set when this change removes `THERAPIST` from a
-        user who holds future `BOOKED` spa appointments - see `UserUpdateResult`.
+        user who holds future `BOOKED` spa appointments - see `UserUpdateResult`. Giving `HR` to a
+        user while another **active** user already holds it is a 409 naming the holder (the check
+        runs under a lock, so two simultaneous assignments cannot both succeed).
       requestBody:
         required: true
         content:
@@ -7654,6 +7661,12 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: User not found
+        "409":
+          description: Another active user already holds the `HR` function.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /users/{id}/password:
     parameters:
@@ -7783,6 +7796,8 @@ paths:
         cannot disable their own account (blocked before any DB write, same guard as
         `PATCH /users/{id}` for role changes). `warning` in the response is set when disabling
         this user leaves future `BOOKED` spa appointments assigned to them - see `UserUpdateResult`.
+        Re-enabling (`active: true`) a user who holds the `HR` function while another active user
+        holds it is a 409.
       requestBody:
         required: true
         content:
@@ -7819,6 +7834,12 @@ paths:
                 $ref: "#/components/schemas/ErrorMessage"
               example:
                 error: User not found
+        "409":
+          description: Re-enabling would give the `HR` function to a second active user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
 
   /users/{id}/overtime-eligibility:
     parameters:
@@ -11369,6 +11390,267 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /settings/staff-bot:
+    get:
+      operationId: getStaffBotSettings
+      tags: [Settings]
+      summary: Read the staff Telegram bot and shift-request settings
+      description: Requires an authenticated session with role `ADMIN`. See `StaffBotSettings`.
+      responses:
+        "200":
+          description: The current settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffBotSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: updateStaffBotSettings
+      tags: [Settings]
+      summary: Replace the staff Telegram bot and shift-request settings
+      description: >
+        Requires `ADMIN`. A full `PUT`, not a patch. A number outside its documented range, or an
+        `eveReminderTime` that is not `HH:mm`, is a 400 on that field. Recorded in the audit log
+        (`STAFF_BOT_SETTINGS_UPDATED`) naming what changed; an unchanged `PUT` writes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffBotSettingsUpdateInput"
+      responses:
+        "200":
+          description: The updated settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffBotSettings"
+        "400":
+          description: Body failed validation, or a rule above was broken.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /shift-change-requests:
+    get:
+      operationId: listShiftChangeRequests
+      tags: [ShiftRequests]
+      summary: List employees' requests to move or remove a shift
+      description: >
+        Requires MANAGER or above, or the `HR` job function (a read: only `HR` holders and `ADMIN`
+        may decide, see `POST /shift-change-requests/{id}/decision`). Newest first, at most 200.
+        `from` and `to` filter on the date of the shift the request is about (hotel dates, both
+        ends inclusive). Each row carries the snapshot taken when it was filed, so it still reads
+        correctly after the roster entry changed, and `coverage` - how many people of the
+        employee's department would still work on the day(s) concerned against the department's
+        minimum. Coverage below the minimum is information for the decider, never a block.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ShiftChangeRequestStatus"
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: employeeUserId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The requests.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShiftChangeRequest"
+        "400":
+          description: A date is malformed, or `from` is after `to`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /shift-change-requests/deciders:
+    get:
+      operationId: getShiftRequestDeciders
+      tags: [ShiftRequests]
+      summary: Who decides shift requests right now
+      description: >
+        Requires MANAGER or above, or the `HR` job function. The active `HR` holder (at most
+        one), whether they are on leave today, whether `ADMIN` is the fallback (setting
+        `fallbackToAdmin`) and who therefore decides today. `callerMayDecide` is the answer for the
+        caller, so a screen can show or hide the Approve / Reject buttons without guessing.
+      responses:
+        "200":
+          description: The current arrangement.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftRequestDeciders"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /shift-change-requests/hr-vacation:
+    put:
+      operationId: setHrVacation
+      tags: [ShiftRequests]
+      summary: Set or clear the HR director's leave
+      description: >
+        Requires `ADMIN` or the `HR` job function. The `HR` holder sets their own leave; an `ADMIN`
+        sets it for the current holder. During the leave (hotel dates, both ends inclusive)
+        requests go to `ADMIN` instead, if `fallbackToAdmin` is on. Both dates or neither (neither
+        clears the leave); `to` must not be before `from`. 409 when nobody holds `HR`. Audited
+        (`HR_VACATION_CHANGED`); an unchanged value writes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HrVacationInput"
+      responses:
+        "200":
+          description: The arrangement after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftRequestDeciders"
+        "400":
+          description: Dates malformed, only one given, or `to` before `from`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Nobody holds the `HR` function, or the caller is not allowed to set it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /shift-change-requests/{id}/decision:
+    post:
+      operationId: decideShiftChangeRequest
+      tags: [ShiftRequests]
+      summary: Approve or reject a shift request
+      description: >
+        Requires `ADMIN` or the `HR` job function at the route; the service then checks that the
+        caller is one of today's deciders (see `GET /shift-change-requests/deciders`) - 403 with a
+        message otherwise. **Approving applies the change through the same code as the roster
+        grid** (`PATCH /roster/entries/{id}/date` or `DELETE /roster/entries/{id}`), in one
+        transaction, with all of its checks; an approved "delete" removes the entry (a day off is
+        the absence of one). If the entry was changed after the request was filed (moved,
+        deleted, locked, another shift code, employee deactivated) or the target day is no longer
+        free, nothing is applied and the request becomes `EXPIRED` with `expiredReason`. Idempotent:
+        deciding a request that is no longer `PENDING` changes nothing and returns it as it is -
+        two deciders pressing at once apply the change once. Audited as the caller.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShiftChangeDecisionInput"
+      responses:
+        "200":
+          description: The request as it stands after this call.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftChangeRequest"
+        "400":
+          description: Comment too long.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ValidationError"
+                  - $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No such request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
+  /shift-change-requests/{id}/cancel:
+    post:
+      operationId: cancelShiftChangeRequest
+      tags: [ShiftRequests]
+      summary: Withdraw a pending shift request
+      description: >
+        Requires `ADMIN` or the `HR` job function and the same "one of today's deciders" check as
+        the decision (an employee withdraws their own request in the bot). Only a `PENDING` request
+        can be withdrawn; any other status is returned unchanged. Audited.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The request as it stands after this call.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftChangeRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No such request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /notifications/status:
     get:
       operationId: getNotificationStatus
@@ -12017,7 +12299,7 @@ components:
 
     JobFunction:
       type: string
-      enum: [ENGINEER, HOUSEKEEPER, THERAPIST]
+      enum: [ENGINEER, HOUSEKEEPER, THERAPIST, HR]
       description: >
         A second, independent authorization axis alongside `Role` — a sideways job, not a step
         on the ADMIN > MANAGER > CASHIER > WAITER ladder. A function grants access to specific
@@ -12029,6 +12311,14 @@ components:
         whose holder never signs in costs nothing beyond the row itself. No endpoint is gated on
         this function in v1 (there is no therapist self-service screen yet - reception is the
         only surface), so it exists purely as a tag on who counts as a bookable therapist.
+        `HR` marks the HR director, who decides employees' requests to move or remove a shift
+        (`/shift-change-requests`) - in the staff Telegram bot or on the admin screen - and may
+        *read* the month's roster and the attendance summary (`GET /roster`, `GET /roster/employees`,
+        `GET /attendance/summary`) to decide on real data; every write to the roster stays MANAGER+.
+        **At most one active user holds `HR`**: giving it to a second active user (or reactivating a
+        deactivated holder while another holds it) is a 409 naming the current holder. While nobody
+        holds it, or the holder is on leave (`PUT /shift-change-requests/hr-vacation`), the
+        administrators decide, if `StaffBotSettings.fallbackToAdmin` is on.
 
     Zone:
       type: string
@@ -16612,6 +16902,14 @@ components:
         - NOTIFICATION_CHANNEL_LINKED
         - NOTIFICATION_CHANNEL_UNLINKED
         - NOTIFICATION_LANGUAGE_UPDATED
+        - SHIFT_CHANGE_REQUESTED
+        - SHIFT_CHANGE_CANCELLED
+        - SHIFT_CHANGE_APPROVED
+        - SHIFT_CHANGE_REJECTED
+        - SHIFT_CHANGE_EXPIRED
+        - STAFF_BOT_SETTINGS_UPDATED
+        - HR_VACATION_CHANGED
+        - STAFF_EVE_REMINDER_CHANGED
 
     AuditEntityType:
       type: string
@@ -16625,7 +16923,7 @@ components:
         (`entityType=Booking` 400s while `entityType=BOOKING` works), which is exactly the
         asymmetry every other enum in this API avoids by keeping its JSON value identical to its
         Java constant name.
-      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING, RESTAURANT_MAP, GYM_DEVICE, GYM_RESERVATION, GYM_HALL_SETTINGS, LIGHTING_DEVICE]
+      enum: [BOOKING, ROOM, ORDER, SHIFT, USER, ROOM_UNIT, PROPERTY_MAP, PRINT_JOB, MAINTENANCE_TASK, TABLE, SPA_APPOINTMENT, GUEST, SPA_MAP, SHIFT_CODE, ROSTER_ENTRY, STAFF_AREA_COVERAGE_RULE, ATTENDANCE_PUNCH, EMPLOYEE_PAY_RATE, ATTENDANCE_DEVICE, MENU_ITEM, PAYMENT, SETTINGS, NIGHT_AUDIT, LEDGER_ENTRY, LEDGER_ACCOUNT, SITEMINDER_ROOM_TYPE_MAPPING, RESTAURANT_MAP, GYM_DEVICE, GYM_RESERVATION, GYM_HALL_SETTINGS, LIGHTING_DEVICE, SHIFT_CHANGE_REQUEST]
 
     AuditLogEntry:
       type: object
@@ -17235,6 +17533,11 @@ components:
         locked:
           type: boolean
           description: '"Do not move" - see `PATCH /roster/entries/{id}/lock`.'
+        pendingShiftRequestId:
+          type: string
+          description: The id of a `PENDING` shift request on this entry (at most one); absent when there is none.
+        pendingShiftRequestType:
+          $ref: "#/components/schemas/ShiftChangeRequestType"
         createdAt:
           type: string
           format: date-time
@@ -20056,7 +20359,7 @@ components:
 
     NotificationType:
       type: string
-      enum: [LATE, ABSENT, BLOCK_CREATED, BLOCK_LAST_DAY, BLOCK_EXPIRED_OPEN, TERMINAL_OFFLINE, TERMINAL_ONLINE]
+      enum: [LATE, ABSENT, BLOCK_CREATED, BLOCK_LAST_DAY, BLOCK_EXPIRED_OPEN, TERMINAL_OFFLINE, TERMINAL_ONLINE, SHIFT_REQUEST_NEW, SHIFT_REQUEST_DECIDED, SHIFT_REQUEST_EXPIRED, SHIFT_REQUEST_REMINDER, SHIFT_EVE_REMINDER, ROSTER_CHANGED]
       description: >
         `LATE` - an employee has not clocked in `lateGraceMinutes` after the planned start of a
         shift interval (to them and to the late-recipients). `ABSENT` - still not there
@@ -20065,7 +20368,11 @@ components:
         block's maintenance task is not DONE) go to whoever is on shift with the block's
         responsible function, otherwise to the director recipients. `TERMINAL_OFFLINE` /
         `TERMINAL_ONLINE` - an attendance terminal went silent / came back (to the director
-        recipients).
+        recipients). `SHIFT_REQUEST_NEW` - a shift request waits for a decision (to the deciders, with
+        Approve / Reject buttons in Telegram); `SHIFT_REQUEST_DECIDED` / `SHIFT_REQUEST_EXPIRED` - the outcome
+        (to the employee); `SHIFT_REQUEST_REMINDER` - a request has waited too long (to the deciders);
+        `SHIFT_EVE_REMINDER` - tomorrow's shift, the evening before, to those who asked for it;
+        `ROSTER_CHANGED` - a manager changed an employee's shift on a day (one message per employee and day).
 
     NotificationDeliveryStatus:
       type: string
@@ -20075,6 +20382,359 @@ components:
       type: string
       enum: [ENGINEER, HOUSEKEEPER]
       description: Who is answerable for closing a room block. A subset of `JobFunction`.
+
+    ShiftChangeRequestType:
+      type: string
+      enum: [MOVE, DELETE]
+      description: >
+        `MOVE` - the employee asks to work the same shift on another day (`targetDate`). `DELETE` - they
+        ask to be off that day; approving removes the roster entry.
+
+    ShiftChangeRequestStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXPIRED]
+      description: >
+        `PENDING` until decided. `APPROVED` / `REJECTED` by a decider, `CANCELLED` withdrawn,
+        `EXPIRED` - the shift began undecided, or the entry changed after the request was filed so
+        nothing was applied (`expiredReason` says which).
+
+    ShiftChangeRequestChannel:
+      type: string
+      enum: [TELEGRAM, ADMIN_UI]
+
+    ShiftRequestCoverage:
+      type: object
+      description: >
+        How many people of the employee's department (`User.staffArea`) would still work on the day(s)
+        concerned if the request were approved, against the department's minimum
+        (`StaffAreaCoverageRule`). Counted exactly like the roster grid's coverage. A warning for the
+        decider, never a block. Absent when the employee has no department or the department has no minimum.
+      required: [staffArea, minimumWorking, sourceDate, sourceWorkingAfter, belowMinimum]
+      properties:
+        staffArea:
+          $ref: "#/components/schemas/StaffArea"
+        minimumWorking:
+          type: integer
+        sourceDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        sourceWorkingAfter:
+          type: integer
+          description: Working on `sourceDate` after the employee leaves it.
+        targetDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        targetWorkingAfter:
+          type: integer
+          description: Working on `targetDate` after the employee joins it (MOVE only).
+        belowMinimum:
+          type: boolean
+          description: True when either day would be below the minimum.
+
+    ShiftChangeRequest:
+      type: object
+      required: [id, employeeUserId, employeeName, type, status, channel, shiftDate, shiftCode, createdAt, callerMayDecide]
+      properties:
+        id:
+          type: string
+        employeeUserId:
+          type: string
+        employeeName:
+          type: string
+        rosterEntryId:
+          type: string
+          description: The entry concerned; absent once that entry has been deleted.
+        type:
+          $ref: "#/components/schemas/ShiftChangeRequestType"
+        status:
+          $ref: "#/components/schemas/ShiftChangeRequestStatus"
+        channel:
+          $ref: "#/components/schemas/ShiftChangeRequestChannel"
+        reason:
+          type: string
+          description: The employee's reason (up to 300 characters). Absent when none was required or given.
+        shiftDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The date of the shift when the request was filed.
+        shiftCode:
+          type: string
+          description: The shift code's text when the request was filed (a snapshot).
+        shiftTimes:
+          type: string
+          description: The shift's intervals when the request was filed, like `09:00-18:00` or `09:00-13:00, 17:00-21:00`. Absent for a code without times.
+        targetDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: MOVE only.
+        coverage:
+          allOf:
+            - $ref: "#/components/schemas/ShiftRequestCoverage"
+          description: >
+            Present only while the request is `PENDING` (what a decision would do to the department
+            *now*; a settled request has no such figure), and only when the employee has a department with a minimum.
+        createdAt:
+          type: string
+          format: date-time
+        decidedByUserId:
+          type: string
+        decidedByName:
+          type: string
+        decidedAt:
+          type: string
+          format: date-time
+        decisionComment:
+          type: string
+        expiredReason:
+          type: string
+          description: Our own words for why a request became `EXPIRED`.
+        callerMayDecide:
+          type: boolean
+          description: True when the caller is one of today's deciders and the request is still `PENDING`.
+
+    ShiftChangeDecisionInput:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVE, REJECT]
+        comment:
+          type: string
+          maxLength: 300
+          description: Shown to the employee with the decision.
+
+    ShiftRequestDeciders:
+      type: object
+      required: [fallbackToAdmin, onVacationToday, callerMayDecide, effectiveDeciders]
+      properties:
+        hrUserId:
+          type: string
+          description: The active holder of the `HR` job function; absent when nobody holds it.
+        hrName:
+          type: string
+        vacationFrom:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        vacationTo:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        onVacationToday:
+          type: boolean
+        fallbackToAdmin:
+          type: boolean
+        effectiveDeciders:
+          type: array
+          description: Names of those who decide today - the `HR` holder, or the administrators while there is none / they are away and `fallbackToAdmin` is on. Empty means requests wait.
+          items:
+            type: string
+        callerMayDecide:
+          type: boolean
+
+    HrVacationInput:
+      type: object
+      description: Both dates, or neither to clear the leave.
+      properties:
+        from:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        to:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+
+    StaffBotSettings:
+      type: object
+      description: >
+        What the staff Telegram bot offers and how shift requests behave - the one row V150 seeds,
+        separate from `NotificationSettings` (alerts) because it is a different feature with its own
+        defaults. Every threshold, time and switch the bot uses is here; none is a constant in code.
+      required:
+        - myShiftsEnabled
+        - myDayEnabled
+        - myMonthEnabled
+        - myRequestsEnabled
+        - botSettingsEnabled
+        - requestsEnabled
+        - moveRequestsEnabled
+        - deleteRequestsEnabled
+        - requestMinHoursBefore
+        - allowTodayRequests
+        - moveWindowDays
+        - reasonRequired
+        - myShiftsDays
+        - fallbackToAdmin
+        - pendingReminderEnabled
+        - pendingReminderHours
+        - eveReminderEnabled
+        - eveReminderTime
+        - eveReminderDefaultOn
+        - rosterChangeEnabled
+        - rosterChangeHorizonDays
+        - rosterChangeDelayMinutes
+        - updatedAt
+      properties:
+        myShiftsEnabled:
+          type: boolean
+          description: The "My shifts" command.
+        myDayEnabled:
+          type: boolean
+          description: The "My day" command (today's shift and the employee's own punches).
+        myMonthEnabled:
+          type: boolean
+          description: The "My month" command (planned and worked days and hours).
+        myRequestsEnabled:
+          type: boolean
+          description: The "My requests" command.
+        botSettingsEnabled:
+          type: boolean
+          description: The bot's own "Settings" command (language, evening-before reminder).
+        requestsEnabled:
+          type: boolean
+          description: Master switch for shift requests - filing, the deciders' list and the messages about them.
+        moveRequestsEnabled:
+          type: boolean
+        deleteRequestsEnabled:
+          type: boolean
+        requestMinHoursBefore:
+          type: integer
+          minimum: 0
+          maximum: 720
+          description: A request must be filed at least this many hours before the shift starts (default 24).
+        allowTodayRequests:
+          type: boolean
+          description: Allow a request for today's shift (still subject to `requestMinHoursBefore`). Default off.
+        moveWindowDays:
+          type: integer
+          minimum: 1
+          maximum: 90
+          description: A shift can be moved to a day at most this many days ahead (default 14).
+        reasonRequired:
+          type: boolean
+          description: The employee must give a reason (up to 300 characters). Default on.
+        myShiftsDays:
+          type: integer
+          minimum: 1
+          maximum: 60
+          description: How many days ahead "My shifts" shows (default 14).
+        fallbackToAdmin:
+          type: boolean
+          description: Administrators decide while nobody holds `HR` or the holder is on leave (default on).
+        pendingReminderEnabled:
+          type: boolean
+        pendingReminderHours:
+          type: integer
+          minimum: 1
+          maximum: 168
+          description: Remind the deciders of a request waiting this long, at most once a day per request (default 12).
+        eveReminderEnabled:
+          type: boolean
+          description: The evening-before reminder feature as a whole.
+        eveReminderTime:
+          type: string
+          description: Hotel time, `HH:mm` (default 18:00).
+        eveReminderDefaultOn:
+          type: boolean
+          description: Whether an employee who never chose gets the reminder (default off). Each employee overrides it in the bot.
+        rosterChangeEnabled:
+          type: boolean
+          description: Tell an employee when a manager changed their shift.
+        rosterChangeHorizonDays:
+          type: integer
+          minimum: 1
+          maximum: 90
+          description: Only changes to shifts within this many days ahead are announced (default 14).
+        rosterChangeDelayMinutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          description: A change is announced this long after the last change to that employee and day, as one message with the final state (default 10).
+        updatedAt:
+          type: string
+          format: date-time
+
+    StaffBotSettingsUpdateInput:
+      type: object
+      description: Body of `PUT /settings/staff-bot` - every field of `StaffBotSettings` except `updatedAt`.
+      required:
+        - myShiftsEnabled
+        - myDayEnabled
+        - myMonthEnabled
+        - myRequestsEnabled
+        - botSettingsEnabled
+        - requestsEnabled
+        - moveRequestsEnabled
+        - deleteRequestsEnabled
+        - requestMinHoursBefore
+        - allowTodayRequests
+        - moveWindowDays
+        - reasonRequired
+        - myShiftsDays
+        - fallbackToAdmin
+        - pendingReminderEnabled
+        - pendingReminderHours
+        - eveReminderEnabled
+        - eveReminderTime
+        - eveReminderDefaultOn
+        - rosterChangeEnabled
+        - rosterChangeHorizonDays
+        - rosterChangeDelayMinutes
+      properties:
+        myShiftsEnabled:
+          type: boolean
+        myDayEnabled:
+          type: boolean
+        myMonthEnabled:
+          type: boolean
+        myRequestsEnabled:
+          type: boolean
+        botSettingsEnabled:
+          type: boolean
+        requestsEnabled:
+          type: boolean
+        moveRequestsEnabled:
+          type: boolean
+        deleteRequestsEnabled:
+          type: boolean
+        requestMinHoursBefore:
+          type: integer
+          minimum: 0
+          maximum: 720
+        allowTodayRequests:
+          type: boolean
+        moveWindowDays:
+          type: integer
+          minimum: 1
+          maximum: 90
+        reasonRequired:
+          type: boolean
+        myShiftsDays:
+          type: integer
+          minimum: 1
+          maximum: 60
+        fallbackToAdmin:
+          type: boolean
+        pendingReminderEnabled:
+          type: boolean
+        pendingReminderHours:
+          type: integer
+          minimum: 1
+          maximum: 168
+        eveReminderEnabled:
+          type: boolean
+        eveReminderTime:
+          type: string
+        eveReminderDefaultOn:
+          type: boolean
+        rosterChangeEnabled:
+          type: boolean
+        rosterChangeHorizonDays:
+          type: integer
+          minimum: 1
+          maximum: 90
+        rosterChangeDelayMinutes:
+          type: integer
+          minimum: 1
+          maximum: 240
 
     NotificationStatus:
       type: object
