@@ -257,6 +257,22 @@ public class BookingService {
      * allowed.
      */
     public Booking createStaffBooking(StaffBookingCreateInput input, boolean mayBackdate) {
+        return createStaffBooking(input, mayBackdate, mayBackdate);
+    }
+
+    /**
+     * {@code mayEnterPrice}: {@code agreedTotal} is a price typed by staff instead of the rate
+     * plan's - the second deliberate exception to "the server computes every amount" (the first is
+     * SiteMinder), and a manager's call, so a caller who may not is refused with 403 when the field
+     * is present. Without the field nothing changes. The check runs before anything is written.
+     */
+    public Booking createStaffBooking(StaffBookingCreateInput input, boolean mayBackdate, boolean mayEnterPrice) {
+        BigDecimal agreedTotal = input.getAgreedTotal() != null && input.getAgreedTotal().isPresent() && input.getAgreedTotal().get() != null
+                ? new BigDecimal(input.getAgreedTotal().get())
+                : null;
+        if (agreedTotal != null && !mayEnterPrice) {
+            throw new ForbiddenException("Only a manager can set the price of a booking by hand");
+        }
         LocalDate checkIn = LocalDate.parse(input.getCheckIn());
         LocalDate checkOut = LocalDate.parse(input.getCheckOut());
         if (!checkIn.isBefore(checkOut)) {
@@ -276,6 +292,10 @@ public class BookingService {
             throw new NotFoundException("Guest not found");
         }
 
+        // What the rate plan would have charged, for the audit entry next to the typed figure.
+        // Read before the insert so it is not affected by the booking itself.
+        BigDecimal calculatedTotal = agreedTotal != null ? bookingWriter.quoteStaff(room, checkIn, checkOut, null).totalPrice() : null;
+
         BookingEntity saved;
         try {
             saved = bookingWriter.insertStaff(
@@ -289,7 +309,8 @@ public class BookingService {
                     input.getPurpose() != null ? input.getPurpose() : BookingPurpose.STANDARD,
                     input.getAdults(),
                     childrenOrZero(input.getChildren()),
-                    roomUnitId);
+                    roomUnitId,
+                    agreedTotal);
         } catch (DataAccessException | TransactionSystemException e) {
             if (isSerializationFailure(e)) {
                 throw new ConflictException("Someone just booked these dates — please try again.");
@@ -304,7 +325,11 @@ public class BookingService {
                 AuditEntityType.BOOKING,
                 saved.getId(),
                 "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + checkIn + " to " + checkOut + ")"
-                        + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : ""));
+                        + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : "")
+                        + (agreedTotal != null
+                                ? "; price set manually: " + PriceFormat.asDecimalString(agreedTotal) + " (rate plan: "
+                                        + PriceFormat.asDecimalString(calculatedTotal) + ")"
+                                : ""));
         Booking dto = bookingMapper.toDto(saved, room, assignedUnit, guest, loadSegments(saved.getId()));
         int partySize = input.getAdults() + childrenOrZero(input.getChildren());
         if (room.getCapacity() != null && partySize > room.getCapacity()) {

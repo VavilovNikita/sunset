@@ -2705,8 +2705,9 @@ paths:
         not have one on hand), and if `roomUnitId` is given the room is assigned in the same
         `Serializable` transaction as the booking - never a separate call, so there is no window
         where the booking exists without the room the staff member asked for. `totalPrice` is
-        always server-computed from `Room.basePrice`/`RatePlan`, same as every other booking
-        creation path.
+        computed by the server from `Room.basePrice`/`RatePlan`, same as every other booking
+        creation path, unless a MANAGER or above sends `agreedTotal` - the one price a staff
+        member may set (403 for a CASHIER who sends it).
 
 
         This is also the anchor for a broader, deliberate role-scoping decision: at this
@@ -13655,6 +13656,18 @@ components:
             `guestEmail`. `guestName`/`guestEmail`/`guestPhone` are still the booking's own
             snapshot of what was given - the form prefills them from the card, but whatever is sent
             is what's stored.
+        agreedTotal:
+          type: string
+          nullable: true
+          pattern: '^\d{1,8}(\.\d{1,2})?$'
+          description: >
+            Optional price for the whole stay, entered by staff instead of the rate-plan price
+            (a negotiated or package rate). MANAGER or above only - a CASHIER sending it gets 403;
+            leave it out (or `null`) and the stay is priced from `Room.basePrice`/`RatePlan` as
+            usual. Zero or more, at most two decimals (400 on this field otherwise). The total is
+            spread over the nights like a SiteMinder price and frozen per night, so a later
+            extension prices only the new nights at the current rate. The audit entry records
+            that the price was manual, with this figure and the rate-plan figure it replaced.
       # Cross-field rule enforced server-side, not expressible in JSON Schema: checkIn must be strictly before checkOut.
 
     StaffBookingQuoteInput:

@@ -50,6 +50,8 @@ public class StaffBookingCreateInput {
 
   private JsonNullable<String> guestId = JsonNullable.<String>undefined();
 
+  private JsonNullable<@Pattern(regexp = "^\\d{1,8}(\\.\\d{1,2})?$") String> agreedTotal = JsonNullable.<String>undefined();
+
   public StaffBookingCreateInput() {
     super();
   }
@@ -296,6 +298,25 @@ public class StaffBookingCreateInput {
     this.guestId = guestId;
   }
 
+  public StaffBookingCreateInput agreedTotal(String agreedTotal) {
+    this.agreedTotal = JsonNullable.of(agreedTotal);
+    return this;
+  }
+
+  /**
+   * Optional price for the whole stay, entered by staff instead of the rate-plan price (a negotiated or package rate). MANAGER or above only - a CASHIER sending it gets 403; leave it out (or `null`) and the stay is priced from `Room.basePrice`/`RatePlan` as usual. Zero or more, at most two decimals (400 on this field otherwise). The total is spread over the nights like a SiteMinder price and frozen per night, so a later extension prices only the new nights at the current rate. The audit entry records that the price was manual, with this figure and the rate-plan figure it replaced. 
+   * @return agreedTotal
+   */
+  @Pattern(regexp = "^\\d{1,8}(\\.\\d{1,2})?$") 
+  @JsonProperty("agreedTotal")
+  public JsonNullable<@Pattern(regexp = "^\\d{1,8}(\\.\\d{1,2})?$") String> getAgreedTotal() {
+    return agreedTotal;
+  }
+
+  public void setAgreedTotal(JsonNullable<String> agreedTotal) {
+    this.agreedTotal = agreedTotal;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -316,7 +337,8 @@ public class StaffBookingCreateInput {
         Objects.equals(this.purpose, staffBookingCreateInput.purpose) &&
         Objects.equals(this.adults, staffBookingCreateInput.adults) &&
         Objects.equals(this.children, staffBookingCreateInput.children) &&
-        equalsNullable(this.guestId, staffBookingCreateInput.guestId);
+        equalsNullable(this.guestId, staffBookingCreateInput.guestId) &&
+        equalsNullable(this.agreedTotal, staffBookingCreateInput.agreedTotal);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -325,7 +347,7 @@ public class StaffBookingCreateInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomId, guestName, hashCodeNullable(guestEmail), hashCodeNullable(guestPhone), checkIn, checkOut, hashCodeNullable(roomUnitId), channel, purpose, adults, children, hashCodeNullable(guestId));
+    return Objects.hash(roomId, guestName, hashCodeNullable(guestEmail), hashCodeNullable(guestPhone), checkIn, checkOut, hashCodeNullable(roomUnitId), channel, purpose, adults, children, hashCodeNullable(guestId), hashCodeNullable(agreedTotal));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -351,6 +373,7 @@ public class StaffBookingCreateInput {
     sb.append("    adults: ").append(toIndentedString(adults)).append("\n");
     sb.append("    children: ").append(toIndentedString(children)).append("\n");
     sb.append("    guestId: ").append(toIndentedString(guestId)).append("\n");
+    sb.append("    agreedTotal: ").append(toIndentedString(agreedTotal)).append("\n");
     sb.append("}");
     return sb.toString();
   }

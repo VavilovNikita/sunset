@@ -186,6 +186,10 @@ public class BookingWriter {
      * separate {@code PUT /bookings/{id}/room-unit}), there is no window between two writes
      * where the booking exists without the room that was asked for - either both succeed, or
      * the whole transaction rolls back and no booking is created at all.
+     *
+     * <p>{@code agreedTotal} (nullable) is the manager-entered price for the whole stay - see
+     * {@code BookingService#createStaffBooking}. Same checks, same transaction; only the nightly
+     * prices come from it instead of the current rates.
      */
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public BookingEntity insertStaff(
@@ -199,12 +203,17 @@ public class BookingWriter {
             BookingPurpose purpose,
             int adults,
             int children,
-            String roomUnitId) {
+            String roomUnitId,
+            BigDecimal agreedTotal) {
         int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
         if (!isRangeAvailable(room.getId(), unitCount, checkIn, checkOut, null)) {
             throw new ConflictException("Selected dates are no longer available");
         }
-        Map<LocalDate, BigDecimal> nightlyPrices = priceNightsAtCurrentRate(room, DateRangeUtil.getNights(checkIn, checkOut));
+        List<LocalDate> nights = DateRangeUtil.getNights(checkIn, checkOut);
+        // A manager-entered price replaces the rate-plan one, frozen per night the same way a
+        // SiteMinder total is; null prices from the current rates as always.
+        Map<LocalDate, BigDecimal> nightlyPrices =
+                agreedTotal != null ? spreadEvenly(agreedTotal, nights) : priceNightsAtCurrentRate(room, nights);
         BookingEntity entity =
                 newBookingEntity(
                         room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.STAFF, channel, purpose, adults, children,

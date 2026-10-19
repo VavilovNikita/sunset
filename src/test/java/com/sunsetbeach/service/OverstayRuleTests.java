@@ -260,7 +260,7 @@ class OverstayRuleTests extends AbstractIntegrationTest {
 
     private BookingEntity insertStaff(String checkIn, String checkOut, String roomUnitId) {
         return bookingWriter.insertStaff(room, "New Guest", "new@example.com", "+66800000001", LocalDate.parse(checkIn), LocalDate.parse(checkOut),
-                BookingChannel.DIRECT, BookingPurpose.STANDARD, 2, 0, roomUnitId);
+                BookingChannel.DIRECT, BookingPurpose.STANDARD, 2, 0, roomUnitId, null);
     }
 
     private static AvailabilityDay day(List<AvailabilityDay> days, String date) {
