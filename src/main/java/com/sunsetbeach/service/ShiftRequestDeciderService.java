@@ -73,6 +73,49 @@ public class ShiftRequestDeciderService {
         return userRepository.findByRoleIn(List.of(Role.ADMIN)).stream().filter(UserEntity::isActive).toList();
     }
 
+    /** Whether {@code user} holds the HR job function (a second axis next to the role, see {@code JobFunction}). */
+    public static boolean holdsHr(UserEntity user) {
+        return user != null && user.getJobFunctions() != null && java.util.Arrays.asList(user.getJobFunctions()).contains("HR");
+    }
+
+    /**
+     * Who may decide a request filed by {@code employee}. The same people as {@link #effectiveDeciders} - except for
+     * the HR director's <em>own</em> request: the director never decides their own, so it goes to the administrators
+     * (as if nobody held HR) whatever {@code fallbackToAdmin} says, because with it off nobody could ever decide it.
+     * An administrator who is themselves the filer is left out for the same reason.
+     */
+    @Transactional(readOnly = true)
+    public List<UserEntity> decidersFor(UserEntity employee, LocalDate today) {
+        if (holdsHr(employee)) {
+            return userRepository.findByRoleIn(List.of(Role.ADMIN)).stream()
+                    .filter(UserEntity::isActive)
+                    .filter(a -> !a.getId().equals(employee.getId()))
+                    .toList();
+        }
+        return effectiveDeciders(today);
+    }
+
+    /** Whether the person may decide this particular request: one of today's deciders, and not its filer. */
+    @Transactional(readOnly = true)
+    public boolean mayDecide(UserEntity user, String employeeUserId, LocalDate today) {
+        if (user == null || !user.isActive() || user.getId().equals(employeeUserId)) {
+            return false;
+        }
+        UserEntity employee = userRepository.findById(employeeUserId).orElse(null);
+        return employee != null && decidersFor(employee, today).stream().anyMatch(d -> d.getId().equals(user.getId()));
+    }
+
+    /**
+     * Whether this person decides the HR director's own requests without being one of today's deciders in general: an
+     * administrator while an HR director exists (their requests come to the administrators, see {@link #decidersFor}).
+     */
+    @Transactional(readOnly = true)
+    public boolean decidesTheHrDirectorsRequests(UserEntity user) {
+        return user != null && user.isActive() && user.getRole() == Role.ADMIN
+                && activeHr().filter(hr -> !hr.getId().equals(user.getId())).isPresent();
+    }
+
+    /** Whether this person is one of today's deciders at all (the screens that list requests); see {@link #mayDecide(UserEntity, String, LocalDate)} for a given request. */
     @Transactional(readOnly = true)
     public boolean mayDecide(UserEntity user, LocalDate today) {
         return user != null && user.isActive() && effectiveDeciders(today).stream().anyMatch(d -> d.getId().equals(user.getId()));
@@ -83,9 +126,9 @@ public class ShiftRequestDeciderService {
      * linked chat), or - on the fallback - the administrators who have a Telegram chat linked.
      */
     @Transactional(readOnly = true)
-    public List<String> notifyRecipientIds(LocalDate today) {
-        List<UserEntity> deciders = effectiveDeciders(today);
-        boolean fallback = deciders.stream().noneMatch(d -> d.getJobFunctions() != null && java.util.Arrays.asList(d.getJobFunctions()).contains("HR"));
+    public List<String> notifyRecipientIds(UserEntity employee, LocalDate today) {
+        List<UserEntity> deciders = decidersFor(employee, today);
+        boolean fallback = deciders.stream().noneMatch(ShiftRequestDeciderService::holdsHr);
         return deciders.stream()
                 .filter(d -> !fallback || linkRepository.findByUserIdAndChannel(d.getId(), TELEGRAM).isPresent())
                 .map(UserEntity::getId)

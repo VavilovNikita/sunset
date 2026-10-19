@@ -31,6 +31,9 @@ public record NotificationAction(String kind, String subjectId, String arg) {
         public static final String SET_EVE_REMINDER = "SET_EVE_REMINDER";
         public static final String HR_VACATION_SET = "HR_VACATION_SET";
         public static final String HR_VACATION_CLEAR = "HR_VACATION_CLEAR";
+        public static final String TASK_START = "TASK_START";
+        public static final String TASK_DONE = "TASK_DONE";
+        public static final String SET_THERAPIST_MORNING = "SET_THERAPIST_MORNING";
 
         private Kinds() {
         }

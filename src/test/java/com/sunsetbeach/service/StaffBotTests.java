@@ -762,7 +762,14 @@ class StaffBotTests extends NotificationTestBase {
                 current.getRequestMinHoursBefore(), current.getAllowTodayRequests(), current.getMoveWindowDays(), current.getReasonRequired(),
                 current.getMyShiftsDays(), current.getFallbackToAdmin(), current.getPendingReminderEnabled(), current.getPendingReminderHours(),
                 current.getEveReminderEnabled(), current.getEveReminderTime(), current.getEveReminderDefaultOn(),
-                current.getRosterChangeEnabled(), current.getRosterChangeHorizonDays(), current.getRosterChangeDelayMinutes());
+                current.getRosterChangeEnabled(), current.getRosterChangeHorizonDays(), current.getRosterChangeDelayMinutes(),
+                current.getEngineerTasksEnabled(), current.getHousekeeperBlocksEnabled(), current.getHousekeeperBlocksDays(),
+                current.getTherapistScheduleEnabled(), current.getTherapistScheduleDays(),
+                current.getTherapistMorningEnabled(), current.getTherapistMorningTime(), current.getTherapistMorningDefaultOn(),
+                current.getWhoIsOnShiftEnabled(), current.getWhoIsOnShiftForHr(), current.getSummaryCommandEnabled(),
+                current.getMorningSummaryEnabled(), current.getMorningSummaryTime(),
+                current.getSummaryArrivals(), current.getSummaryDepartures(), current.getSummaryInHouse(), current.getSummaryOccupancy(),
+                current.getSummaryRooms(), current.getSummaryStaff(), current.getSummaryRequests());
         long before = countSettingsAudit();
 
         botSettingsService.update(input);
@@ -773,6 +780,18 @@ class StaffBotTests extends NotificationTestBase {
         assertThat(countSettingsAudit()).isEqualTo(before + 1);
 
         input.setEveReminderTime("not a time");
+        assertThatThrownBy(() -> botSettingsService.update(input)).isInstanceOf(com.sunsetbeach.error.ValidationException.class);
+        input.setEveReminderTime(current.getEveReminderTime());
+
+        // The part-two fields: a change is audited, a bad time is refused on its own field.
+        input.setHousekeeperBlocksDays(21);
+        input.setMorningSummaryEnabled(false);
+        assertThat(botSettingsService.update(input).getHousekeeperBlocksDays()).isEqualTo(21);
+        assertThat(countSettingsAudit()).isEqualTo(before + 2);
+        input.setMorningSummaryTime("25:99");
+        assertThatThrownBy(() -> botSettingsService.update(input)).isInstanceOf(com.sunsetbeach.error.ValidationException.class);
+        input.setMorningSummaryTime(current.getMorningSummaryTime());
+        input.setTherapistMorningTime("later");
         assertThatThrownBy(() -> botSettingsService.update(input)).isInstanceOf(com.sunsetbeach.error.ValidationException.class);
     }
 

@@ -12,6 +12,10 @@ public interface RoomUnitBlockRepository extends JpaRepository<RoomUnitBlockEnti
 
     List<RoomUnitBlockEntity> findByRoomUnitId(String roomUnitId);
 
+    /** Blocks a job function answers for that are on at some point of [rangeStart, rangeEnd] (both inclusive) - the housekeeper's bot screen. */
+    List<RoomUnitBlockEntity> findByResponsibleFunctionAndFromDateLessThanEqualAndToDateGreaterThanEqualOrderByFromDateAsc(
+            String responsibleFunction, LocalDate rangeEnd, LocalDate rangeStart);
+
     /** Blocks whose last day is {@code toDate} - the morning "last day" reminder. */
     List<RoomUnitBlockEntity> findByToDate(LocalDate toDate);
 

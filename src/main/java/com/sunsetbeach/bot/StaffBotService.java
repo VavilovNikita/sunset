@@ -149,7 +149,7 @@ public class StaffBotService {
                 List<Command> commands = new ArrayList<>();
                 commands.add(new Command("menu", NotificationMessages.render(Key.BOT_MENU, language, Map.of())));
                 for (BotCommandHandler h : commandHandlers) {
-                    if (!h.command().equals("pending") && !h.command().equals("vacation")) {
+                    if (h.forEveryone()) {
                         commands.add(new Command(h.command(), NotificationMessages.render(h.label(), language, Map.of())));
                     }
                 }

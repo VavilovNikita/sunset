@@ -252,6 +252,29 @@ abstract class NotificationTestBase extends AbstractIntegrationTest {
         s.setRosterChangeEnabled(false);
         s.setRosterChangeHorizonDays(14);
         s.setRosterChangeDelayMinutes(10);
+        // Part two (V152). The morning summary is the other departure from the seeded default (on): the alert tests set
+        // director recipients and count what they receive, and a summary at 08:00 would be one more message they never
+        // asked about. StaffBotScreenTests switches it on.
+        s.setEngineerTasksEnabled(true);
+        s.setHousekeeperBlocksEnabled(true);
+        s.setHousekeeperBlocksDays(7);
+        s.setTherapistScheduleEnabled(true);
+        s.setTherapistScheduleDays(2);
+        s.setTherapistMorningEnabled(true);
+        s.setTherapistMorningTime(java.time.LocalTime.of(8, 0));
+        s.setTherapistMorningDefaultOn(false);
+        s.setWhoIsOnShiftEnabled(true);
+        s.setWhoIsOnShiftForHr(true);
+        s.setSummaryCommandEnabled(true);
+        s.setMorningSummaryEnabled(false);
+        s.setMorningSummaryTime(java.time.LocalTime.of(8, 0));
+        s.setSummaryArrivals(true);
+        s.setSummaryDepartures(true);
+        s.setSummaryInHouse(true);
+        s.setSummaryOccupancy(true);
+        s.setSummaryRooms(true);
+        s.setSummaryStaff(true);
+        s.setSummaryRequests(true);
         botSettingsRepository.saveAndFlush(s);
     }
 

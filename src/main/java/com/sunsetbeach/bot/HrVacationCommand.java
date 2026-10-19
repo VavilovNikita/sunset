@@ -62,6 +62,11 @@ public class HrVacationCommand implements BotCommandHandler, BotActionHandler, B
     }
 
     @Override
+    public boolean forEveryone() {
+        return false;
+    }
+
+    @Override
     public int order() {
         return 70;
     }

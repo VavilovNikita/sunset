@@ -148,7 +148,7 @@ public class NotificationScanService {
         List<AttendanceDeviceEntity> devices = deviceRepository.findByActiveTrue();
         boolean anySilent = false;
         for (AttendanceDeviceEntity device : devices) {
-            boolean silent = isSilent(device, nowUtc, threshold);
+            boolean silent = TerminalHealthService.isSilent(device, nowUtc, threshold);
             anySilent |= silent;
             if (!settings.isTerminalAlertsEnabled()) {
                 continue;
@@ -175,12 +175,6 @@ public class NotificationScanService {
             });
         }
         return !devices.isEmpty() && !anySilent;
-    }
-
-    private static boolean isSilent(AttendanceDeviceEntity device, LocalDateTime nowUtc, Duration threshold) {
-        // A terminal nobody has reached yet is silent once it has been registered longer than the threshold.
-        LocalDateTime reference = device.getLastSeenAt() != null ? device.getLastSeenAt() : device.getCreatedAt();
-        return reference == null || Duration.between(reference, nowUtc).compareTo(threshold) > 0;
     }
 
     private void openEpisode(AttendanceDeviceEntity device, NotificationSettingsEntity settings, LocalDateTime nowUtc) {

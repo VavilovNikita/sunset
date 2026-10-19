@@ -19,8 +19,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The bot's own settings for one person: the language of messages and the evening-before reminder on/off.
- * Both are the employee's own choice - audited as them (via Telegram), and an unchanged press writes nothing.
+ * The bot's own settings for one person: the language of messages, the evening-before reminder on/off and, for a
+ * therapist, the morning message about their procedures on/off.
+ * Each is the employee's own choice - audited as them (via Telegram), and an unchanged press writes nothing.
  */
 @Component
 public class SettingsCommand implements BotCommandHandler, BotActionHandler {
@@ -63,7 +64,7 @@ public class SettingsCommand implements BotCommandHandler, BotActionHandler {
 
     @Override
     public Set<String> kinds() {
-        return Set.of(NotificationAction.Kinds.SET_LANGUAGE, NotificationAction.Kinds.SET_EVE_REMINDER);
+        return Set.of(NotificationAction.Kinds.SET_LANGUAGE, NotificationAction.Kinds.SET_EVE_REMINDER, NotificationAction.Kinds.SET_THERAPIST_MORNING);
     }
 
     @Override
@@ -89,6 +90,16 @@ public class SettingsCommand implements BotCommandHandler, BotActionHandler {
             }
             language = chosen;
             confirmation = Key.LANG_CHANGED;
+        } else if (NotificationAction.Kinds.SET_THERAPIST_MORNING.equals(action.getKind())) {
+            // Only a therapist has this message, and only while the feature is on; a press from anyone else changes nothing.
+            if (BotAccess.hasFunction(user, "THERAPIST") && ctx.settings().isTherapistMorningEnabled()) {
+                boolean on = "on".equals(action.getArg());
+                if (user.getTherapistMorningEnabled() == null || user.getTherapistMorningEnabled() != on) {
+                    user.setTherapistMorningEnabled(on);
+                    userRepository.saveAndFlush(user);
+                    audit(user, AuditAction.STAFF_THERAPIST_MORNING_CHANGED, "Morning procedures message of " + user.getName() + " " + (on ? "on" : "off"));
+                }
+            }
         } else if (ctx.settings().isEveReminderEnabled()) {
             boolean on = "on".equals(action.getArg());
             if (user.getEveReminderEnabled() == null || user.getEveReminderEnabled() != on) {
@@ -104,9 +115,15 @@ public class SettingsCommand implements BotCommandHandler, BotActionHandler {
 
     private BotReply screen(BotContext ctx, UserEntity user, NotificationLanguage language, boolean edit) {
         boolean eve = effectiveEve(user, ctx.settings());
+        boolean therapist = BotAccess.hasFunction(user, "THERAPIST") && ctx.settings().isTherapistMorningEnabled();
+        boolean morning = effectiveMorning(user, ctx.settings());
         String text = NotificationMessages.render(Key.SETTINGS_TEXT, language, Map.of(
                 "language", LANGUAGE_NAMES.get(language),
                 "eve", NotificationMessages.render(eve ? Key.WORD_ON : Key.WORD_OFF, language, Map.of())));
+        if (therapist) {
+            text += "\n" + NotificationMessages.render(Key.SETTINGS_THERAPIST, language, Map.of(
+                    "morning", NotificationMessages.render(morning ? Key.WORD_ON : Key.WORD_OFF, language, Map.of())));
+        }
         BotReply reply = BotReply.text(text);
         reply.row(LANGUAGE_NAMES.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
@@ -117,7 +134,16 @@ public class SettingsCommand implements BotCommandHandler, BotActionHandler {
                     NotificationMessages.render(eve ? Key.BTN_EVE_OFF : Key.BTN_EVE_ON, language, Map.of()),
                     NotificationAction.Kinds.SET_EVE_REMINDER, null, eve ? "off" : "on"));
         }
+        if (therapist) {
+            reply.row(new BotReply.Button(
+                    NotificationMessages.render(morning ? Key.BTN_MORNING_OFF : Key.BTN_MORNING_ON, language, Map.of()),
+                    NotificationAction.Kinds.SET_THERAPIST_MORNING, null, morning ? "off" : "on"));
+        }
         return edit ? reply.editCurrent() : reply;
+    }
+
+    private static boolean effectiveMorning(UserEntity user, StaffBotSettingsEntity settings) {
+        return user.getTherapistMorningEnabled() != null ? user.getTherapistMorningEnabled() : settings.isTherapistMorningDefaultOn();
     }
 
     private static boolean effectiveEve(UserEntity user, StaffBotSettingsEntity settings) {

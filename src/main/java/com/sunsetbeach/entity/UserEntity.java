@@ -68,6 +68,9 @@ public class UserEntity {
     // The employee's own choice of the evening-before shift reminder; null = the bot settings' default (V150).
     private Boolean eveReminderEnabled;
 
+    // A therapist's own choice of the morning "N procedures today" message; null = the bot settings' default (V152).
+    private Boolean therapistMorningEnabled;
+
     // The HR holder's leave, hotel dates inclusive (V150); both or neither.
     private java.time.LocalDate hrVacationFrom;
 
@@ -204,6 +207,14 @@ public class UserEntity {
 
     public void setEveReminderEnabled(Boolean eveReminderEnabled) {
         this.eveReminderEnabled = eveReminderEnabled;
+    }
+
+    public Boolean getTherapistMorningEnabled() {
+        return therapistMorningEnabled;
+    }
+
+    public void setTherapistMorningEnabled(Boolean therapistMorningEnabled) {
+        this.therapistMorningEnabled = therapistMorningEnabled;
     }
 
     public java.time.LocalDate getHrVacationFrom() {

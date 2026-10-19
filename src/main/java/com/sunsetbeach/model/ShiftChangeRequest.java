@@ -69,6 +69,8 @@ public class ShiftChangeRequest {
 
   private Boolean callerMayDecide;
 
+  private Boolean requiresAdministrator;
+
   public ShiftChangeRequest() {
     super();
   }
@@ -76,7 +78,7 @@ public class ShiftChangeRequest {
   /**
    * Constructor with only required parameters
    */
-  public ShiftChangeRequest(String id, String employeeUserId, String employeeName, ShiftChangeRequestType type, ShiftChangeRequestStatus status, ShiftChangeRequestChannel channel, String shiftDate, String shiftCode, OffsetDateTime createdAt, Boolean callerMayDecide) {
+  public ShiftChangeRequest(String id, String employeeUserId, String employeeName, ShiftChangeRequestType type, ShiftChangeRequestStatus status, ShiftChangeRequestChannel channel, String shiftDate, String shiftCode, OffsetDateTime createdAt, Boolean callerMayDecide, Boolean requiresAdministrator) {
     this.id = id;
     this.employeeUserId = employeeUserId;
     this.employeeName = employeeName;
@@ -87,6 +89,7 @@ public class ShiftChangeRequest {
     this.shiftCode = shiftCode;
     this.createdAt = createdAt;
     this.callerMayDecide = callerMayDecide;
+    this.requiresAdministrator = requiresAdministrator;
   }
 
   public ShiftChangeRequest id(String id) {
@@ -456,7 +459,7 @@ public class ShiftChangeRequest {
   }
 
   /**
-   * True when the caller is one of today's deciders and the request is still `PENDING`.
+   * True when the caller is one of today's deciders for *this* request and it is still `PENDING`.
    * @return callerMayDecide
    */
   @NotNull 
@@ -467,6 +470,25 @@ public class ShiftChangeRequest {
 
   public void setCallerMayDecide(Boolean callerMayDecide) {
     this.callerMayDecide = callerMayDecide;
+  }
+
+  public ShiftChangeRequest requiresAdministrator(Boolean requiresAdministrator) {
+    this.requiresAdministrator = requiresAdministrator;
+    return this;
+  }
+
+  /**
+   * True when the request was filed by the HR director: the HR director never decides their own request, so an administrator does (even with `fallbackToAdmin` off). `callerMayDecide` is then false for the HR director and the screen should say who decides instead. 
+   * @return requiresAdministrator
+   */
+  @NotNull 
+  @JsonProperty("requiresAdministrator")
+  public Boolean getRequiresAdministrator() {
+    return requiresAdministrator;
+  }
+
+  public void setRequiresAdministrator(Boolean requiresAdministrator) {
+    this.requiresAdministrator = requiresAdministrator;
   }
 
   @Override
@@ -497,12 +519,13 @@ public class ShiftChangeRequest {
         Objects.equals(this.decidedAt, shiftChangeRequest.decidedAt) &&
         Objects.equals(this.decisionComment, shiftChangeRequest.decisionComment) &&
         Objects.equals(this.expiredReason, shiftChangeRequest.expiredReason) &&
-        Objects.equals(this.callerMayDecide, shiftChangeRequest.callerMayDecide);
+        Objects.equals(this.callerMayDecide, shiftChangeRequest.callerMayDecide) &&
+        Objects.equals(this.requiresAdministrator, shiftChangeRequest.requiresAdministrator);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, employeeUserId, employeeName, rosterEntryId, type, status, channel, reason, shiftDate, shiftCode, shiftTimes, targetDate, coverage, createdAt, decidedByUserId, decidedByName, decidedAt, decisionComment, expiredReason, callerMayDecide);
+    return Objects.hash(id, employeeUserId, employeeName, rosterEntryId, type, status, channel, reason, shiftDate, shiftCode, shiftTimes, targetDate, coverage, createdAt, decidedByUserId, decidedByName, decidedAt, decisionComment, expiredReason, callerMayDecide, requiresAdministrator);
   }
 
   @Override
@@ -529,6 +552,7 @@ public class ShiftChangeRequest {
     sb.append("    decisionComment: ").append(toIndentedString(decisionComment)).append("\n");
     sb.append("    expiredReason: ").append(toIndentedString(expiredReason)).append("\n");
     sb.append("    callerMayDecide: ").append(toIndentedString(callerMayDecide)).append("\n");
+    sb.append("    requiresAdministrator: ").append(toIndentedString(requiresAdministrator)).append("\n");
     sb.append("}");
     return sb.toString();
   }

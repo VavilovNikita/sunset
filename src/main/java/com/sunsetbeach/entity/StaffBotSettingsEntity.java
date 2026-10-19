@@ -60,6 +60,46 @@ public class StaffBotSettingsEntity {
 
     private int rosterChangeDelayMinutes;
 
+    private boolean engineerTasksEnabled;
+
+    private boolean housekeeperBlocksEnabled;
+
+    private int housekeeperBlocksDays;
+
+    private boolean therapistScheduleEnabled;
+
+    private int therapistScheduleDays;
+
+    private boolean therapistMorningEnabled;
+
+    private LocalTime therapistMorningTime;
+
+    private boolean therapistMorningDefaultOn;
+
+    private boolean whoIsOnShiftEnabled;
+
+    private boolean whoIsOnShiftForHr;
+
+    private boolean summaryCommandEnabled;
+
+    private boolean morningSummaryEnabled;
+
+    private LocalTime morningSummaryTime;
+
+    private boolean summaryArrivals;
+
+    private boolean summaryDepartures;
+
+    private boolean summaryInHouse;
+
+    private boolean summaryOccupancy;
+
+    private boolean summaryRooms;
+
+    private boolean summaryStaff;
+
+    private boolean summaryRequests;
+
     @UtcUpdateTimestamp
     private LocalDateTime updatedAt;
 
@@ -245,6 +285,166 @@ public class StaffBotSettingsEntity {
 
     public void setRosterChangeDelayMinutes(int rosterChangeDelayMinutes) {
         this.rosterChangeDelayMinutes = rosterChangeDelayMinutes;
+    }
+
+    public boolean isEngineerTasksEnabled() {
+        return engineerTasksEnabled;
+    }
+
+    public void setEngineerTasksEnabled(boolean engineerTasksEnabled) {
+        this.engineerTasksEnabled = engineerTasksEnabled;
+    }
+
+    public boolean isHousekeeperBlocksEnabled() {
+        return housekeeperBlocksEnabled;
+    }
+
+    public void setHousekeeperBlocksEnabled(boolean housekeeperBlocksEnabled) {
+        this.housekeeperBlocksEnabled = housekeeperBlocksEnabled;
+    }
+
+    public int getHousekeeperBlocksDays() {
+        return housekeeperBlocksDays;
+    }
+
+    public void setHousekeeperBlocksDays(int housekeeperBlocksDays) {
+        this.housekeeperBlocksDays = housekeeperBlocksDays;
+    }
+
+    public boolean isTherapistScheduleEnabled() {
+        return therapistScheduleEnabled;
+    }
+
+    public void setTherapistScheduleEnabled(boolean therapistScheduleEnabled) {
+        this.therapistScheduleEnabled = therapistScheduleEnabled;
+    }
+
+    public int getTherapistScheduleDays() {
+        return therapistScheduleDays;
+    }
+
+    public void setTherapistScheduleDays(int therapistScheduleDays) {
+        this.therapistScheduleDays = therapistScheduleDays;
+    }
+
+    public boolean isTherapistMorningEnabled() {
+        return therapistMorningEnabled;
+    }
+
+    public void setTherapistMorningEnabled(boolean therapistMorningEnabled) {
+        this.therapistMorningEnabled = therapistMorningEnabled;
+    }
+
+    public LocalTime getTherapistMorningTime() {
+        return therapistMorningTime;
+    }
+
+    public void setTherapistMorningTime(LocalTime therapistMorningTime) {
+        this.therapistMorningTime = therapistMorningTime;
+    }
+
+    public boolean isTherapistMorningDefaultOn() {
+        return therapistMorningDefaultOn;
+    }
+
+    public void setTherapistMorningDefaultOn(boolean therapistMorningDefaultOn) {
+        this.therapistMorningDefaultOn = therapistMorningDefaultOn;
+    }
+
+    public boolean isWhoIsOnShiftEnabled() {
+        return whoIsOnShiftEnabled;
+    }
+
+    public void setWhoIsOnShiftEnabled(boolean whoIsOnShiftEnabled) {
+        this.whoIsOnShiftEnabled = whoIsOnShiftEnabled;
+    }
+
+    public boolean isWhoIsOnShiftForHr() {
+        return whoIsOnShiftForHr;
+    }
+
+    public void setWhoIsOnShiftForHr(boolean whoIsOnShiftForHr) {
+        this.whoIsOnShiftForHr = whoIsOnShiftForHr;
+    }
+
+    public boolean isSummaryCommandEnabled() {
+        return summaryCommandEnabled;
+    }
+
+    public void setSummaryCommandEnabled(boolean summaryCommandEnabled) {
+        this.summaryCommandEnabled = summaryCommandEnabled;
+    }
+
+    public boolean isMorningSummaryEnabled() {
+        return morningSummaryEnabled;
+    }
+
+    public void setMorningSummaryEnabled(boolean morningSummaryEnabled) {
+        this.morningSummaryEnabled = morningSummaryEnabled;
+    }
+
+    public LocalTime getMorningSummaryTime() {
+        return morningSummaryTime;
+    }
+
+    public void setMorningSummaryTime(LocalTime morningSummaryTime) {
+        this.morningSummaryTime = morningSummaryTime;
+    }
+
+    public boolean isSummaryArrivals() {
+        return summaryArrivals;
+    }
+
+    public void setSummaryArrivals(boolean summaryArrivals) {
+        this.summaryArrivals = summaryArrivals;
+    }
+
+    public boolean isSummaryDepartures() {
+        return summaryDepartures;
+    }
+
+    public void setSummaryDepartures(boolean summaryDepartures) {
+        this.summaryDepartures = summaryDepartures;
+    }
+
+    public boolean isSummaryInHouse() {
+        return summaryInHouse;
+    }
+
+    public void setSummaryInHouse(boolean summaryInHouse) {
+        this.summaryInHouse = summaryInHouse;
+    }
+
+    public boolean isSummaryOccupancy() {
+        return summaryOccupancy;
+    }
+
+    public void setSummaryOccupancy(boolean summaryOccupancy) {
+        this.summaryOccupancy = summaryOccupancy;
+    }
+
+    public boolean isSummaryRooms() {
+        return summaryRooms;
+    }
+
+    public void setSummaryRooms(boolean summaryRooms) {
+        this.summaryRooms = summaryRooms;
+    }
+
+    public boolean isSummaryStaff() {
+        return summaryStaff;
+    }
+
+    public void setSummaryStaff(boolean summaryStaff) {
+        this.summaryStaff = summaryStaff;
+    }
+
+    public boolean isSummaryRequests() {
+        return summaryRequests;
+    }
+
+    public void setSummaryRequests(boolean summaryRequests) {
+        this.summaryRequests = summaryRequests;
     }
 
     public LocalDateTime getUpdatedAt() {

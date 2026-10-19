@@ -28,6 +28,15 @@ public interface BotCommandHandler {
         return true;
     }
 
+    /**
+     * Whether the command belongs in the "/" list everybody sees before their own list is set (a chat that has not
+     * yet opened the menu, or is not linked). A command only some people may use returns false: it then appears in
+     * a person's own list - and only if {@link #availableTo} says so - and nowhere else.
+     */
+    default boolean forEveryone() {
+        return true;
+    }
+
     /** Menu order, ascending. */
     default int order() {
         return 100;

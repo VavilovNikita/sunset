@@ -16910,6 +16910,7 @@ components:
         - STAFF_BOT_SETTINGS_UPDATED
         - HR_VACATION_CHANGED
         - STAFF_EVE_REMINDER_CHANGED
+        - STAFF_THERAPIST_MORNING_CHANGED
 
     AuditEntityType:
       type: string
@@ -20359,7 +20360,7 @@ components:
 
     NotificationType:
       type: string
-      enum: [LATE, ABSENT, BLOCK_CREATED, BLOCK_LAST_DAY, BLOCK_EXPIRED_OPEN, TERMINAL_OFFLINE, TERMINAL_ONLINE, SHIFT_REQUEST_NEW, SHIFT_REQUEST_DECIDED, SHIFT_REQUEST_EXPIRED, SHIFT_REQUEST_REMINDER, SHIFT_EVE_REMINDER, ROSTER_CHANGED]
+      enum: [LATE, ABSENT, BLOCK_CREATED, BLOCK_LAST_DAY, BLOCK_EXPIRED_OPEN, TERMINAL_OFFLINE, TERMINAL_ONLINE, SHIFT_REQUEST_NEW, SHIFT_REQUEST_DECIDED, SHIFT_REQUEST_EXPIRED, SHIFT_REQUEST_REMINDER, SHIFT_EVE_REMINDER, ROSTER_CHANGED, MORNING_SUMMARY, THERAPIST_MORNING]
       description: >
         `LATE` - an employee has not clocked in `lateGraceMinutes` after the planned start of a
         shift interval (to them and to the late-recipients). `ABSENT` - still not there
@@ -20372,7 +20373,10 @@ components:
         Approve / Reject buttons in Telegram); `SHIFT_REQUEST_DECIDED` / `SHIFT_REQUEST_EXPIRED` - the outcome
         (to the employee); `SHIFT_REQUEST_REMINDER` - a request has waited too long (to the deciders);
         `SHIFT_EVE_REMINDER` - tomorrow's shift, the evening before, to those who asked for it;
-        `ROSTER_CHANGED` - a manager changed an employee's shift on a day (one message per employee and day).
+        `ROSTER_CHANGED` - a manager changed an employee's shift on a day (one message per employee and day);
+        `MORNING_SUMMARY` - the hotel's morning summary (arrivals, departures, in house, occupancy, rooms, staff,
+        waiting requests) to the director recipients, once a day; `THERAPIST_MORNING` - "N procedures today, the
+        first at 10:00", to a therapist who switched it on, once a day.
 
     NotificationDeliveryStatus:
       type: string
@@ -20433,7 +20437,7 @@ components:
 
     ShiftChangeRequest:
       type: object
-      required: [id, employeeUserId, employeeName, type, status, channel, shiftDate, shiftCode, createdAt, callerMayDecide]
+      required: [id, employeeUserId, employeeName, type, status, channel, shiftDate, shiftCode, createdAt, callerMayDecide, requiresAdministrator]
       properties:
         id:
           type: string
@@ -20490,7 +20494,13 @@ components:
           description: Our own words for why a request became `EXPIRED`.
         callerMayDecide:
           type: boolean
-          description: True when the caller is one of today's deciders and the request is still `PENDING`.
+          description: True when the caller is one of today's deciders for *this* request and it is still `PENDING`.
+        requiresAdministrator:
+          type: boolean
+          description: >
+            True when the request was filed by the HR director: the HR director never decides their own request,
+            so an administrator does (even with `fallbackToAdmin` off). `callerMayDecide` is then false for the
+            HR director and the screen should say who decides instead.
 
     ShiftChangeDecisionInput:
       type: object
@@ -20571,6 +20581,26 @@ components:
         - rosterChangeEnabled
         - rosterChangeHorizonDays
         - rosterChangeDelayMinutes
+        - engineerTasksEnabled
+        - housekeeperBlocksEnabled
+        - housekeeperBlocksDays
+        - therapistScheduleEnabled
+        - therapistScheduleDays
+        - therapistMorningEnabled
+        - therapistMorningTime
+        - therapistMorningDefaultOn
+        - whoIsOnShiftEnabled
+        - whoIsOnShiftForHr
+        - summaryCommandEnabled
+        - morningSummaryEnabled
+        - morningSummaryTime
+        - summaryArrivals
+        - summaryDepartures
+        - summaryInHouse
+        - summaryOccupancy
+        - summaryRooms
+        - summaryStaff
+        - summaryRequests
         - updatedAt
       properties:
         myShiftsEnabled:
@@ -20618,7 +20648,10 @@ components:
           description: How many days ahead "My shifts" shows (default 14).
         fallbackToAdmin:
           type: boolean
-          description: Administrators decide while nobody holds `HR` or the holder is on leave (default on).
+          description: >
+            Administrators decide while nobody holds `HR` or the holder is on leave (default on). With it off
+            those requests wait - except a request filed by the HR director themself: it is never decided by them, so
+            it always goes to the administrators, whatever this switch says (otherwise nobody could decide it).
         pendingReminderEnabled:
           type: boolean
         pendingReminderHours:
@@ -20637,7 +20670,10 @@ components:
           description: Whether an employee who never chose gets the reminder (default off). Each employee overrides it in the bot.
         rosterChangeEnabled:
           type: boolean
-          description: Tell an employee when a manager changed their shift.
+          description: >
+            Tell an employee when a manager changed their shift. Only the manual gestures of the roster grid
+            (create, move, delete, reassign, swap) are announced; the month generator, "copy a month" and the
+            Excel imports are bulk set-up and never send this message.
         rosterChangeHorizonDays:
           type: integer
           minimum: 1
@@ -20648,6 +20684,70 @@ components:
           minimum: 1
           maximum: 240
           description: A change is announced this long after the last change to that employee and day, as one message with the final state (default 10).
+        engineerTasksEnabled:
+          type: boolean
+          description: "The engineer's \"Tasks\" screen: open maintenance tasks with Start / Done (ENGINEER, MANAGER+ as the fallback). Default on."
+        housekeeperBlocksEnabled:
+          type: boolean
+          description: "The housekeeper's \"Blocks\" screen: room blocks the housekeeping function is answerable for, read only. Default on."
+        housekeeperBlocksDays:
+          type: integer
+          minimum: 1
+          maximum: 60
+          description: "Blocks that are on now or start within this many days are listed (default 7)."
+        therapistScheduleEnabled:
+          type: boolean
+          description: "The therapist's \"My procedures\" screen. Default on."
+        therapistScheduleDays:
+          type: integer
+          minimum: 1
+          maximum: 14
+          description: "How many days, today included, the My procedures screen shows (default 2)."
+        therapistMorningEnabled:
+          type: boolean
+          description: "The automatic morning message \"N procedures today, the first at 10:00\" to therapists who switched it on themselves. Default on (nothing is sent until a therapist opts in)."
+        therapistMorningTime:
+          type: string
+          description: "Hotel time, `HH:mm`, from which the therapists' morning message goes (default 08:00)."
+        therapistMorningDefaultOn:
+          type: boolean
+          description: "Whether a therapist who never chose gets the morning message. Default off; each therapist overrides it in the bot's Settings."
+        whoIsOnShiftEnabled:
+          type: boolean
+          description: "The \"Who is on shift\" screen for managers. Default on."
+        whoIsOnShiftForHr:
+          type: boolean
+          description: "Whether the HR director, who is not a manager, also sees \"Who is on shift\" (they can already read attendance). Default on."
+        summaryCommandEnabled:
+          type: boolean
+          description: "The \"Summary\" command for MANAGER+. Default on."
+        morningSummaryEnabled:
+          type: boolean
+          description: "The automatic morning summary to the director recipients of `NotificationSettings`. Default on."
+        morningSummaryTime:
+          type: string
+          description: "Hotel time, `HH:mm`, from which the morning summary goes (default 08:00)."
+        summaryArrivals:
+          type: boolean
+          description: "Summary block: arrivals today. Default on."
+        summaryDepartures:
+          type: boolean
+          description: "Summary block: departures today and overdue departures. Default on."
+        summaryInHouse:
+          type: boolean
+          description: "Summary block: rooms and guests in the house. Default on."
+        summaryOccupancy:
+          type: boolean
+          description: "Summary block: occupancy today and rooms still free tonight. Default on."
+        summaryRooms:
+          type: boolean
+          description: "Summary block: rooms blocked and rooms waiting to be cleaned. Default on."
+        summaryStaff:
+          type: boolean
+          description: "Summary block: staff on the roster, on shift now and absent. Default on."
+        summaryRequests:
+          type: boolean
+          description: "Summary block: shift requests waiting for a decision. Default on."
         updatedAt:
           type: string
           format: date-time
@@ -20678,6 +20778,26 @@ components:
         - rosterChangeEnabled
         - rosterChangeHorizonDays
         - rosterChangeDelayMinutes
+        - engineerTasksEnabled
+        - housekeeperBlocksEnabled
+        - housekeeperBlocksDays
+        - therapistScheduleEnabled
+        - therapistScheduleDays
+        - therapistMorningEnabled
+        - therapistMorningTime
+        - therapistMorningDefaultOn
+        - whoIsOnShiftEnabled
+        - whoIsOnShiftForHr
+        - summaryCommandEnabled
+        - morningSummaryEnabled
+        - morningSummaryTime
+        - summaryArrivals
+        - summaryDepartures
+        - summaryInHouse
+        - summaryOccupancy
+        - summaryRooms
+        - summaryStaff
+        - summaryRequests
       properties:
         myShiftsEnabled:
           type: boolean
@@ -20735,6 +20855,50 @@ components:
           type: integer
           minimum: 1
           maximum: 240
+        engineerTasksEnabled:
+          type: boolean
+        housekeeperBlocksEnabled:
+          type: boolean
+        housekeeperBlocksDays:
+          type: integer
+          minimum: 1
+          maximum: 60
+        therapistScheduleEnabled:
+          type: boolean
+        therapistScheduleDays:
+          type: integer
+          minimum: 1
+          maximum: 14
+        therapistMorningEnabled:
+          type: boolean
+        therapistMorningTime:
+          type: string
+        therapistMorningDefaultOn:
+          type: boolean
+        whoIsOnShiftEnabled:
+          type: boolean
+        whoIsOnShiftForHr:
+          type: boolean
+        summaryCommandEnabled:
+          type: boolean
+        morningSummaryEnabled:
+          type: boolean
+        morningSummaryTime:
+          type: string
+        summaryArrivals:
+          type: boolean
+        summaryDepartures:
+          type: boolean
+        summaryInHouse:
+          type: boolean
+        summaryOccupancy:
+          type: boolean
+        summaryRooms:
+          type: boolean
+        summaryStaff:
+          type: boolean
+        summaryRequests:
+          type: boolean
 
     NotificationStatus:
       type: object

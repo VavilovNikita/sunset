@@ -68,7 +68,12 @@ public class PendingRequestsCommand implements BotCommandHandler, BotActionHandl
 
     @Override
     public boolean availableTo(UserEntity user, LocalDate today) {
-        return deciderService.mayDecide(user, today);
+        return deciderService.mayDecide(user, today) || deciderService.decidesTheHrDirectorsRequests(user);
+    }
+
+    @Override
+    public boolean forEveryone() {
+        return false;
     }
 
     @Override
@@ -78,7 +83,9 @@ public class PendingRequestsCommand implements BotCommandHandler, BotActionHandl
 
     @Override
     public List<BotReply> handle(BotContext ctx, String arguments) {
+        // Not the requests this person may not decide (the HR director's own goes to the administrators).
         List<ShiftChangeRequestEntity> pending = requestRepository.findByStatus("PENDING").stream()
+                .filter(r -> deciderService.mayDecide(ctx.user(), r.getEmployeeUserId(), ctx.today()))
                 .sorted(Comparator.comparing(ShiftChangeRequestEntity::getCreatedAt)).limit(SHOWN).toList();
         if (pending.isEmpty()) {
             return List.of(BotReply.text(ctx.t(Key.PENDING_NONE)));

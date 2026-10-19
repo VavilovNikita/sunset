@@ -7,10 +7,13 @@ import com.sunsetbeach.entity.StaffBotSettingsEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.NotificationType;
+import com.sunsetbeach.model.SpaAppointment;
+import com.sunsetbeach.model.SpaAppointmentStatus;
 import com.sunsetbeach.notification.BotText;
 import com.sunsetbeach.notification.NotificationMessages;
 import com.sunsetbeach.notification.NotificationMessages.Key;
 import com.sunsetbeach.repository.BotConversationRepository;
+import com.sunsetbeach.repository.NotificationRepository;
 import com.sunsetbeach.repository.RosterChangeMarkRepository;
 import com.sunsetbeach.repository.RosterEntryRepository;
 import com.sunsetbeach.repository.ShiftCodeRepository;
@@ -19,10 +22,13 @@ import com.sunsetbeach.repository.UserRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -57,6 +63,10 @@ public class StaffBotScanService {
     private final UserRepository userRepository;
     private final StaffActionRepository actionRepository;
     private final BotConversationRepository conversationRepository;
+    private final NotificationRepository notificationRepository;
+    private final NotificationSettingsService notificationSettingsService;
+    private final StaffSummaryService summaryService;
+    private final SpaAppointmentService spaAppointmentService;
     private final Clock clock;
     private final TransactionTemplate tx;
 
@@ -70,6 +80,10 @@ public class StaffBotScanService {
             UserRepository userRepository,
             StaffActionRepository actionRepository,
             BotConversationRepository conversationRepository,
+            NotificationRepository notificationRepository,
+            NotificationSettingsService notificationSettingsService,
+            StaffSummaryService summaryService,
+            SpaAppointmentService spaAppointmentService,
             Clock clock,
             PlatformTransactionManager transactionManager) {
         this.settingsService = settingsService;
@@ -81,6 +95,10 @@ public class StaffBotScanService {
         this.userRepository = userRepository;
         this.actionRepository = actionRepository;
         this.conversationRepository = conversationRepository;
+        this.notificationRepository = notificationRepository;
+        this.notificationSettingsService = notificationSettingsService;
+        this.summaryService = summaryService;
+        this.spaAppointmentService = spaAppointmentService;
         this.clock = clock;
         this.tx = new TransactionTemplate(transactionManager);
     }
@@ -96,6 +114,8 @@ public class StaffBotScanService {
         run("shift request reminders", requestService::remindPending);
         run("evening reminders", () -> sendEveReminders(settings));
         run("roster change messages", () -> announceRosterChanges(settings));
+        run("morning summary", () -> sendMorningSummary(settings));
+        run("therapist morning messages", () -> sendTherapistMorning(settings));
         run("bot housekeeping", this::cleanUp);
     }
 
@@ -139,6 +159,73 @@ public class StaffBotScanService {
             params.put("shift", BotText.shift(code.getCode(), ShiftLabels.times(code)));
             raised += notificationService.raise(
                     NotificationType.SHIFT_EVE_REMINDER, Key.SHIFT_EVE_REMINDER, List.of(user.getId()), params, "EVE:" + user.getId() + ":" + tomorrow);
+        }
+        return raised;
+    }
+
+    // ---- the morning messages -----------------------------------------------------------------------------
+
+    /**
+     * From {@code morningSummaryTime} on, the hotel's summary goes to the director recipients of the notification
+     * settings, once per person and hotel day (dedup {@code MORNING_SUMMARY:{date}} - a repeated or racing pass raises
+     * nothing, and a backend that was down at the time sends it when it is back). The figures are read when it is sent,
+     * and only if somebody has still to get it. Quiet hours hold the delivery, not the message.
+     *
+     * @return how many people were newly told
+     */
+    int sendMorningSummary(StaffBotSettingsEntity settings) {
+        if (!settings.isMorningSummaryEnabled() || LocalDateTime.now(clock).toLocalTime().isBefore(settings.getMorningSummaryTime())) {
+            return 0;
+        }
+        LocalDate today = LocalDate.now(clock);
+        String key = "MORNING_SUMMARY:" + today;
+        List<String> waiting = Arrays.stream(notificationSettingsService.getEntity().getDirectorUserIds())
+                .filter(id -> !notificationRepository.existsByDedupKeyAndRecipientUserId(key, id))
+                .toList();
+        if (waiting.isEmpty()) {
+            return 0;
+        }
+        StaffSummaryService.Data data = summaryService.collect(settings);
+        Map<String, String> params = new HashMap<>();
+        BotText.perLanguage(params, "summary", l -> summaryService.render(data, l));
+        return notificationService.raise(NotificationType.MORNING_SUMMARY, Key.MORNING_SUMMARY, waiting, params, key);
+    }
+
+    /**
+     * From {@code therapistMorningTime} on, each therapist who wants it (their own choice in the bot, else
+     * {@code therapistMorningDefaultOn}) is told how many procedures they have today and when the first is - from the
+     * spa schedule's own read, never a count of their own. Nothing is sent for a day with none. Once per person and day.
+     *
+     * @return how many messages were raised
+     */
+    int sendTherapistMorning(StaffBotSettingsEntity settings) {
+        if (!settings.isTherapistMorningEnabled() || LocalDateTime.now(clock).toLocalTime().isBefore(settings.getTherapistMorningTime())) {
+            return 0;
+        }
+        LocalDate today = LocalDate.now(clock);
+        List<UserEntity> waiting = userRepository.findAll().stream()
+                .filter(UserEntity::isActive)
+                .filter(u -> u.getJobFunctions() != null && Arrays.asList(u.getJobFunctions()).contains("THERAPIST"))
+                .filter(u -> u.getTherapistMorningEnabled() != null ? u.getTherapistMorningEnabled() : settings.isTherapistMorningDefaultOn())
+                .filter(u -> !notificationRepository.existsByDedupKeyAndRecipientUserId("THERAPIST_MORNING:" + u.getId() + ":" + today, u.getId()))
+                .toList();
+        if (waiting.isEmpty()) {
+            return 0;
+        }
+        Map<String, List<SpaAppointment>> byTherapist = spaAppointmentService.getSchedule(today).getAppointments().stream()
+                .filter(a -> a.getStatus() != SpaAppointmentStatus.CANCELLED)
+                .sorted(Comparator.comparing(SpaAppointment::getStartTime))
+                .collect(Collectors.groupingBy(SpaAppointment::getTherapistUserId));
+        int raised = 0;
+        for (UserEntity therapist : waiting) {
+            List<SpaAppointment> mine = byTherapist.getOrDefault(therapist.getId(), List.of());
+            if (mine.isEmpty()) {
+                continue;
+            }
+            raised += notificationService.raise(
+                    NotificationType.THERAPIST_MORNING, Key.THERAPIST_MORNING, List.of(therapist.getId()),
+                    Map.of("count", String.valueOf(mine.size()), "time", mine.get(0).getStartTime()),
+                    "THERAPIST_MORNING:" + therapist.getId() + ":" + today);
         }
         return raised;
     }

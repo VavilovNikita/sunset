@@ -53,7 +53,17 @@ public final class NotificationMessages {
         REQUESTS_TITLE, REQUESTS_NONE, REQUEST_LINE, STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED, STATUS_CANCELLED, STATUS_EXPIRED,
         SETTINGS_TEXT, WORD_ON, WORD_OFF, LANG_CHANGED, EVE_CHANGED,
         PENDING_TITLE, PENDING_NONE, PENDING_ITEM, TOAST_APPROVED, TOAST_REJECTED, TOAST_ALREADY,
-        VAC_STATUS, VAC_NONE, VAC_ASK_FROM, VAC_ASK_TO, VAC_BAD_DATE, VAC_SAVED, VAC_CLEARED, VAC_NO_HR
+        VAC_STATUS, VAC_NONE, VAC_ASK_FROM, VAC_ASK_TO, VAC_BAD_DATE, VAC_SAVED, VAC_CLEARED, VAC_NO_HR,
+        /** Role screens and the morning messages (texts in {@link StaffBotScreenTexts}). */
+        MENU_TASKS, MENU_BLOCKS, MENU_PROCEDURES, MENU_ONSHIFT, MENU_SUMMARY,
+        TASKS_TITLE, TASKS_NONE, TASKS_MORE, TASK_LINE, TASK_CLOSED_LINE, TASK_STATE_OPEN, TASK_STATE_IN_PROGRESS, TASK_STATE_DONE,
+        TASK_BLOCK_UNTIL, TASK_NO_BLOCK, BTN_TASK_START, BTN_TASK_DONE, TOAST_TASK_STARTED, TOAST_TASK_DONE, TOAST_TASK_ALREADY,
+        BLOCKS_TITLE, BLOCKS_NONE, BLOCK_LINE,
+        PROC_TITLE, PROC_NONE, PROC_DAY_NONE, PROC_LINE, PROC_ROOM, THERAPIST_MORNING, SETTINGS_THERAPIST, BTN_MORNING_ON, BTN_MORNING_OFF, MORNING_CHANGED,
+        ONSHIFT_TITLE, ONSHIFT_TERMINAL_SILENT, ONSHIFT_TERMINAL_NONE, ONSHIFT_NOBODY, ONSHIFT_AREA_NONE, ONSHIFT_ROSTER,
+        GROUP_LATE, GROUP_MISSED, GROUP_ON_SHIFT, GROUP_COMING, GROUP_FINISHED,
+        SUM_TITLE, SUM_ARRIVALS, SUM_DEPARTURES, SUM_OVERDUE, SUM_INHOUSE, SUM_OCCUPANCY, SUM_ROOMS, SUM_STAFF, SUM_STAFF_SILENT, SUM_REQUESTS, SUM_NOTHING,
+        MORNING_SUMMARY
     }
 
     private static final Map<Key, Map<NotificationLanguage, String>> TEXTS = new EnumMap<>(Key.class);
@@ -128,6 +138,7 @@ public final class NotificationMessages {
                 "หากต้องการรับการแจ้งเตือน กรุณาเปิดลิงก์ที่ผู้จัดการให้ ส่ง /stop เพื่อหยุดรับ",
                 "Чтобы получать уведомления, откройте ссылку, которую дал менеджер. Команда /stop отключает их.");
         StaffBotTexts.register();
+        StaffBotScreenTexts.register();
     }
 
     private NotificationMessages() {
@@ -147,6 +158,8 @@ public final class NotificationMessages {
         Key key = switch (kind) {
             case NotificationAction.Kinds.SHIFT_REQUEST_APPROVE -> Key.BTN_APPROVE;
             case NotificationAction.Kinds.SHIFT_REQUEST_REJECT -> Key.BTN_REJECT;
+            case NotificationAction.Kinds.TASK_START -> Key.BTN_TASK_START;
+            case NotificationAction.Kinds.TASK_DONE -> Key.BTN_TASK_DONE;
             default -> null;
         };
         return key == null ? kind : render(key, language, Map.of());

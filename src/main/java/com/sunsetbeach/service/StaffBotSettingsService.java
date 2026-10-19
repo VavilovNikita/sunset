@@ -46,12 +46,9 @@ public class StaffBotSettingsService {
     @Transactional
     public StaffBotSettings update(StaffBotSettingsUpdateInput in) {
         // The spec's ranges are enforced by bean validation (400 on the field); only what a schema cannot say is here.
-        LocalTime eveTime;
-        try {
-            eveTime = LocalTime.parse(in.getEveReminderTime());
-        } catch (RuntimeException e) {
-            throw ValidationException.field("eveReminderTime", "Must be a time like 18:00");
-        }
+        LocalTime eveTime = time("eveReminderTime", in.getEveReminderTime());
+        LocalTime therapistMorningTime = time("therapistMorningTime", in.getTherapistMorningTime());
+        LocalTime morningSummaryTime = time("morningSummaryTime", in.getMorningSummaryTime());
 
         StaffBotSettingsEntity e = getEntity();
         List<String> changes = new ArrayList<>();
@@ -77,6 +74,26 @@ public class StaffBotSettingsService {
         change(changes, "roster change messages", e.isRosterChangeEnabled(), in.getRosterChangeEnabled());
         change(changes, "roster change horizon days", e.getRosterChangeHorizonDays(), in.getRosterChangeHorizonDays());
         change(changes, "roster change delay minutes", e.getRosterChangeDelayMinutes(), in.getRosterChangeDelayMinutes());
+        change(changes, "engineer tasks screen", e.isEngineerTasksEnabled(), in.getEngineerTasksEnabled());
+        change(changes, "housekeeper blocks screen", e.isHousekeeperBlocksEnabled(), in.getHousekeeperBlocksEnabled());
+        change(changes, "therapist procedures screen", e.isTherapistScheduleEnabled(), in.getTherapistScheduleEnabled());
+        change(changes, "therapist morning message", e.isTherapistMorningEnabled(), in.getTherapistMorningEnabled());
+        change(changes, "therapist morning default", e.isTherapistMorningDefaultOn(), in.getTherapistMorningDefaultOn());
+        change(changes, "who is on shift screen", e.isWhoIsOnShiftEnabled(), in.getWhoIsOnShiftEnabled());
+        change(changes, "who is on shift for HR", e.isWhoIsOnShiftForHr(), in.getWhoIsOnShiftForHr());
+        change(changes, "summary command", e.isSummaryCommandEnabled(), in.getSummaryCommandEnabled());
+        change(changes, "morning summary", e.isMorningSummaryEnabled(), in.getMorningSummaryEnabled());
+        change(changes, "summary block arrivals", e.isSummaryArrivals(), in.getSummaryArrivals());
+        change(changes, "summary block departures", e.isSummaryDepartures(), in.getSummaryDepartures());
+        change(changes, "summary block in house", e.isSummaryInHouse(), in.getSummaryInHouse());
+        change(changes, "summary block occupancy", e.isSummaryOccupancy(), in.getSummaryOccupancy());
+        change(changes, "summary block rooms", e.isSummaryRooms(), in.getSummaryRooms());
+        change(changes, "summary block staff", e.isSummaryStaff(), in.getSummaryStaff());
+        change(changes, "summary block requests", e.isSummaryRequests(), in.getSummaryRequests());
+        change(changes, "housekeeper blocks days", e.getHousekeeperBlocksDays(), in.getHousekeeperBlocksDays());
+        change(changes, "therapist procedures days", e.getTherapistScheduleDays(), in.getTherapistScheduleDays());
+        change(changes, "therapist morning time", e.getTherapistMorningTime(), therapistMorningTime);
+        change(changes, "morning summary time", e.getMorningSummaryTime(), morningSummaryTime);
 
         // An unchanged PUT writes nothing - not the row, not an audit entry.
         if (changes.isEmpty()) {
@@ -104,10 +121,38 @@ public class StaffBotSettingsService {
         e.setRosterChangeEnabled(in.getRosterChangeEnabled());
         e.setRosterChangeHorizonDays(in.getRosterChangeHorizonDays());
         e.setRosterChangeDelayMinutes(in.getRosterChangeDelayMinutes());
+        e.setEngineerTasksEnabled(in.getEngineerTasksEnabled());
+        e.setHousekeeperBlocksEnabled(in.getHousekeeperBlocksEnabled());
+        e.setTherapistScheduleEnabled(in.getTherapistScheduleEnabled());
+        e.setTherapistMorningEnabled(in.getTherapistMorningEnabled());
+        e.setTherapistMorningDefaultOn(in.getTherapistMorningDefaultOn());
+        e.setWhoIsOnShiftEnabled(in.getWhoIsOnShiftEnabled());
+        e.setWhoIsOnShiftForHr(in.getWhoIsOnShiftForHr());
+        e.setSummaryCommandEnabled(in.getSummaryCommandEnabled());
+        e.setMorningSummaryEnabled(in.getMorningSummaryEnabled());
+        e.setSummaryArrivals(in.getSummaryArrivals());
+        e.setSummaryDepartures(in.getSummaryDepartures());
+        e.setSummaryInHouse(in.getSummaryInHouse());
+        e.setSummaryOccupancy(in.getSummaryOccupancy());
+        e.setSummaryRooms(in.getSummaryRooms());
+        e.setSummaryStaff(in.getSummaryStaff());
+        e.setSummaryRequests(in.getSummaryRequests());
+        e.setHousekeeperBlocksDays(in.getHousekeeperBlocksDays());
+        e.setTherapistScheduleDays(in.getTherapistScheduleDays());
+        e.setTherapistMorningTime(therapistMorningTime);
+        e.setMorningSummaryTime(morningSummaryTime);
         StaffBotSettingsEntity saved = repository.saveAndFlush(e);
         auditLogService.record(
                 AuditAction.STAFF_BOT_SETTINGS_UPDATED, AuditEntityType.SETTINGS, null, "Staff bot settings: " + String.join("; ", changes));
         return toDto(saved);
+    }
+
+    private static LocalTime time(String field, String value) {
+        try {
+            return LocalTime.parse(value);
+        } catch (RuntimeException e) {
+            throw ValidationException.field(field, "Must be a time like 08:00");
+        }
     }
 
     private static void change(List<String> changes, String what, Object before, Object after) {
@@ -124,6 +169,13 @@ public class StaffBotSettingsService {
                 e.isFallbackToAdmin(), e.isPendingReminderEnabled(), e.getPendingReminderHours(),
                 e.isEveReminderEnabled(), e.getEveReminderTime().toString(), e.isEveReminderDefaultOn(),
                 e.isRosterChangeEnabled(), e.getRosterChangeHorizonDays(), e.getRosterChangeDelayMinutes(),
+                e.isEngineerTasksEnabled(), e.isHousekeeperBlocksEnabled(), e.getHousekeeperBlocksDays(),
+                e.isTherapistScheduleEnabled(), e.getTherapistScheduleDays(),
+                e.isTherapistMorningEnabled(), e.getTherapistMorningTime().toString(), e.isTherapistMorningDefaultOn(),
+                e.isWhoIsOnShiftEnabled(), e.isWhoIsOnShiftForHr(), e.isSummaryCommandEnabled(),
+                e.isMorningSummaryEnabled(), e.getMorningSummaryTime().toString(),
+                e.isSummaryArrivals(), e.isSummaryDepartures(), e.isSummaryInHouse(), e.isSummaryOccupancy(),
+                e.isSummaryRooms(), e.isSummaryStaff(), e.isSummaryRequests(),
                 TimestampFormat.toUtc(e.getUpdatedAt()));
     }
 }

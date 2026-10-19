@@ -205,7 +205,8 @@ public class MaintenanceTaskService {
      */
     @Transactional
     public MaintenanceTask updateStatus(String taskId, MaintenanceTaskStatus newStatus) {
-        MaintenanceTaskEntity task = findEntity(taskId);
+        // Locked: a second, simultaneous close waits here, then finds DONE and is refused as a non-forward move.
+        MaintenanceTaskEntity task = maintenanceTaskRepository.findByIdForUpdate(taskId).orElseThrow(() -> new NotFoundException("Task not found"));
         MaintenanceTaskStatus oldStatus = task.getStatus();
         if (!isForwardTransition(oldStatus, newStatus)) {
             throw new ConflictException("Can't move a task from " + oldStatus.getValue() + " to " + newStatus.getValue());

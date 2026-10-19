@@ -290,8 +290,8 @@ public class ShiftChangeRequestService {
      */
     public DecisionResult decide(String requestId, UserEntity decider, boolean approve, String comment, ShiftChangeRequestChannel channel) {
         ShiftChangeRequestEntity current = requestRepository.findById(requestId).orElseThrow(() -> new NotFoundException("Shift request not found"));
-        if (!deciderService.mayDecide(decider, LocalDate.now(clock))) {
-            throw new ForbiddenException("You are not one of the people who decide shift requests right now");
+        if (!deciderService.mayDecide(decider, current.getEmployeeUserId(), LocalDate.now(clock))) {
+            throw new ForbiddenException("You are not one of the people who decide this shift request right now");
         }
         if (!PENDING.equals(current.getStatus())) {
             return new DecisionResult(current, false);
@@ -388,7 +388,7 @@ public class ShiftChangeRequestService {
     public DecisionResult cancel(String requestId, UserEntity by, ShiftChangeRequestChannel channel) {
         ShiftChangeRequestEntity current = requestRepository.findById(requestId).orElseThrow(() -> new NotFoundException("Shift request not found"));
         boolean own = current.getEmployeeUserId().equals(by.getId());
-        if (!by.isActive() || (!own && !deciderService.mayDecide(by, LocalDate.now(clock)))) {
+        if (!by.isActive() || (!own && !deciderService.mayDecide(by, current.getEmployeeUserId(), LocalDate.now(clock)))) {
             throw new ForbiddenException("You can't withdraw this request");
         }
         boolean changed = Boolean.TRUE.equals(tx.execute(status -> requestRepository.cancel(requestId, by.getId(), TimestampFormat.nowUtc(clock)) == 1));
@@ -502,7 +502,7 @@ public class ShiftChangeRequestService {
 
     /** @return how many deciders were newly told */
     private int notifyDeciders(ShiftChangeRequestEntity r, UserEntity employee, NotificationType type, Key key, String dedupKey, long hours) {
-        List<String> recipients = deciderService.notifyRecipientIds(LocalDate.now(clock));
+        List<String> recipients = deciderService.notifyRecipientIds(employee, LocalDate.now(clock));
         if (recipients.isEmpty()) {
             return 0;
         }
@@ -644,7 +644,8 @@ public class ShiftChangeRequestService {
                 ShiftChangeRequestType.fromValue(r.getType()), ShiftChangeRequestStatus.fromValue(r.getStatus()),
                 ShiftChangeRequestChannel.fromValue(r.getChannel()), r.getShiftDate().toString(), r.getShiftCode(),
                 TimestampFormat.toUtc(r.getCreatedAt()),
-                PENDING.equals(r.getStatus()) && caller != null && deciderService.mayDecide(caller, LocalDate.now(clock)));
+                PENDING.equals(r.getStatus()) && caller != null && deciderService.mayDecide(caller, r.getEmployeeUserId(), LocalDate.now(clock)),
+                ShiftRequestDeciderService.holdsHr(employee));
         if (r.getRosterEntryId() != null) {
             dto.rosterEntryId(r.getRosterEntryId());
         }

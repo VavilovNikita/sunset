@@ -66,6 +66,46 @@ public class StaffBotSettings {
 
   private Integer rosterChangeDelayMinutes;
 
+  private Boolean engineerTasksEnabled;
+
+  private Boolean housekeeperBlocksEnabled;
+
+  private Integer housekeeperBlocksDays;
+
+  private Boolean therapistScheduleEnabled;
+
+  private Integer therapistScheduleDays;
+
+  private Boolean therapistMorningEnabled;
+
+  private String therapistMorningTime;
+
+  private Boolean therapistMorningDefaultOn;
+
+  private Boolean whoIsOnShiftEnabled;
+
+  private Boolean whoIsOnShiftForHr;
+
+  private Boolean summaryCommandEnabled;
+
+  private Boolean morningSummaryEnabled;
+
+  private String morningSummaryTime;
+
+  private Boolean summaryArrivals;
+
+  private Boolean summaryDepartures;
+
+  private Boolean summaryInHouse;
+
+  private Boolean summaryOccupancy;
+
+  private Boolean summaryRooms;
+
+  private Boolean summaryStaff;
+
+  private Boolean summaryRequests;
+
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime updatedAt;
 
@@ -76,7 +116,7 @@ public class StaffBotSettings {
   /**
    * Constructor with only required parameters
    */
-  public StaffBotSettings(Boolean myShiftsEnabled, Boolean myDayEnabled, Boolean myMonthEnabled, Boolean myRequestsEnabled, Boolean botSettingsEnabled, Boolean requestsEnabled, Boolean moveRequestsEnabled, Boolean deleteRequestsEnabled, Integer requestMinHoursBefore, Boolean allowTodayRequests, Integer moveWindowDays, Boolean reasonRequired, Integer myShiftsDays, Boolean fallbackToAdmin, Boolean pendingReminderEnabled, Integer pendingReminderHours, Boolean eveReminderEnabled, String eveReminderTime, Boolean eveReminderDefaultOn, Boolean rosterChangeEnabled, Integer rosterChangeHorizonDays, Integer rosterChangeDelayMinutes, OffsetDateTime updatedAt) {
+  public StaffBotSettings(Boolean myShiftsEnabled, Boolean myDayEnabled, Boolean myMonthEnabled, Boolean myRequestsEnabled, Boolean botSettingsEnabled, Boolean requestsEnabled, Boolean moveRequestsEnabled, Boolean deleteRequestsEnabled, Integer requestMinHoursBefore, Boolean allowTodayRequests, Integer moveWindowDays, Boolean reasonRequired, Integer myShiftsDays, Boolean fallbackToAdmin, Boolean pendingReminderEnabled, Integer pendingReminderHours, Boolean eveReminderEnabled, String eveReminderTime, Boolean eveReminderDefaultOn, Boolean rosterChangeEnabled, Integer rosterChangeHorizonDays, Integer rosterChangeDelayMinutes, Boolean engineerTasksEnabled, Boolean housekeeperBlocksEnabled, Integer housekeeperBlocksDays, Boolean therapistScheduleEnabled, Integer therapistScheduleDays, Boolean therapistMorningEnabled, String therapistMorningTime, Boolean therapistMorningDefaultOn, Boolean whoIsOnShiftEnabled, Boolean whoIsOnShiftForHr, Boolean summaryCommandEnabled, Boolean morningSummaryEnabled, String morningSummaryTime, Boolean summaryArrivals, Boolean summaryDepartures, Boolean summaryInHouse, Boolean summaryOccupancy, Boolean summaryRooms, Boolean summaryStaff, Boolean summaryRequests, OffsetDateTime updatedAt) {
     this.myShiftsEnabled = myShiftsEnabled;
     this.myDayEnabled = myDayEnabled;
     this.myMonthEnabled = myMonthEnabled;
@@ -99,6 +139,26 @@ public class StaffBotSettings {
     this.rosterChangeEnabled = rosterChangeEnabled;
     this.rosterChangeHorizonDays = rosterChangeHorizonDays;
     this.rosterChangeDelayMinutes = rosterChangeDelayMinutes;
+    this.engineerTasksEnabled = engineerTasksEnabled;
+    this.housekeeperBlocksEnabled = housekeeperBlocksEnabled;
+    this.housekeeperBlocksDays = housekeeperBlocksDays;
+    this.therapistScheduleEnabled = therapistScheduleEnabled;
+    this.therapistScheduleDays = therapistScheduleDays;
+    this.therapistMorningEnabled = therapistMorningEnabled;
+    this.therapistMorningTime = therapistMorningTime;
+    this.therapistMorningDefaultOn = therapistMorningDefaultOn;
+    this.whoIsOnShiftEnabled = whoIsOnShiftEnabled;
+    this.whoIsOnShiftForHr = whoIsOnShiftForHr;
+    this.summaryCommandEnabled = summaryCommandEnabled;
+    this.morningSummaryEnabled = morningSummaryEnabled;
+    this.morningSummaryTime = morningSummaryTime;
+    this.summaryArrivals = summaryArrivals;
+    this.summaryDepartures = summaryDepartures;
+    this.summaryInHouse = summaryInHouse;
+    this.summaryOccupancy = summaryOccupancy;
+    this.summaryRooms = summaryRooms;
+    this.summaryStaff = summaryStaff;
+    this.summaryRequests = summaryRequests;
     this.updatedAt = updatedAt;
   }
 
@@ -361,7 +421,7 @@ public class StaffBotSettings {
   }
 
   /**
-   * Administrators decide while nobody holds `HR` or the holder is on leave (default on).
+   * Administrators decide while nobody holds `HR` or the holder is on leave (default on). With it off those requests wait - except a request filed by the HR director themself: it is never decided by them, so it always goes to the administrators, whatever this switch says (otherwise nobody could decide it). 
    * @return fallbackToAdmin
    */
   @NotNull 
@@ -477,7 +537,7 @@ public class StaffBotSettings {
   }
 
   /**
-   * Tell an employee when a manager changed their shift.
+   * Tell an employee when a manager changed their shift. Only the manual gestures of the roster grid (create, move, delete, reassign, swap) are announced; the month generator, \"copy a month\" and the Excel imports are bulk set-up and never send this message. 
    * @return rosterChangeEnabled
    */
   @NotNull 
@@ -532,6 +592,390 @@ public class StaffBotSettings {
     this.rosterChangeDelayMinutes = rosterChangeDelayMinutes;
   }
 
+  public StaffBotSettings engineerTasksEnabled(Boolean engineerTasksEnabled) {
+    this.engineerTasksEnabled = engineerTasksEnabled;
+    return this;
+  }
+
+  /**
+   * The engineer's \"Tasks\" screen: open maintenance tasks with Start / Done (ENGINEER, MANAGER+ as the fallback). Default on.
+   * @return engineerTasksEnabled
+   */
+  @NotNull 
+  @JsonProperty("engineerTasksEnabled")
+  public Boolean getEngineerTasksEnabled() {
+    return engineerTasksEnabled;
+  }
+
+  public void setEngineerTasksEnabled(Boolean engineerTasksEnabled) {
+    this.engineerTasksEnabled = engineerTasksEnabled;
+  }
+
+  public StaffBotSettings housekeeperBlocksEnabled(Boolean housekeeperBlocksEnabled) {
+    this.housekeeperBlocksEnabled = housekeeperBlocksEnabled;
+    return this;
+  }
+
+  /**
+   * The housekeeper's \"Blocks\" screen: room blocks the housekeeping function is answerable for, read only. Default on.
+   * @return housekeeperBlocksEnabled
+   */
+  @NotNull 
+  @JsonProperty("housekeeperBlocksEnabled")
+  public Boolean getHousekeeperBlocksEnabled() {
+    return housekeeperBlocksEnabled;
+  }
+
+  public void setHousekeeperBlocksEnabled(Boolean housekeeperBlocksEnabled) {
+    this.housekeeperBlocksEnabled = housekeeperBlocksEnabled;
+  }
+
+  public StaffBotSettings housekeeperBlocksDays(Integer housekeeperBlocksDays) {
+    this.housekeeperBlocksDays = housekeeperBlocksDays;
+    return this;
+  }
+
+  /**
+   * Blocks that are on now or start within this many days are listed (default 7).
+   * minimum: 1
+   * maximum: 60
+   * @return housekeeperBlocksDays
+   */
+  @NotNull @Min(1) @Max(60) 
+  @JsonProperty("housekeeperBlocksDays")
+  public Integer getHousekeeperBlocksDays() {
+    return housekeeperBlocksDays;
+  }
+
+  public void setHousekeeperBlocksDays(Integer housekeeperBlocksDays) {
+    this.housekeeperBlocksDays = housekeeperBlocksDays;
+  }
+
+  public StaffBotSettings therapistScheduleEnabled(Boolean therapistScheduleEnabled) {
+    this.therapistScheduleEnabled = therapistScheduleEnabled;
+    return this;
+  }
+
+  /**
+   * The therapist's \"My procedures\" screen. Default on.
+   * @return therapistScheduleEnabled
+   */
+  @NotNull 
+  @JsonProperty("therapistScheduleEnabled")
+  public Boolean getTherapistScheduleEnabled() {
+    return therapistScheduleEnabled;
+  }
+
+  public void setTherapistScheduleEnabled(Boolean therapistScheduleEnabled) {
+    this.therapistScheduleEnabled = therapistScheduleEnabled;
+  }
+
+  public StaffBotSettings therapistScheduleDays(Integer therapistScheduleDays) {
+    this.therapistScheduleDays = therapistScheduleDays;
+    return this;
+  }
+
+  /**
+   * How many days, today included, the My procedures screen shows (default 2).
+   * minimum: 1
+   * maximum: 14
+   * @return therapistScheduleDays
+   */
+  @NotNull @Min(1) @Max(14) 
+  @JsonProperty("therapistScheduleDays")
+  public Integer getTherapistScheduleDays() {
+    return therapistScheduleDays;
+  }
+
+  public void setTherapistScheduleDays(Integer therapistScheduleDays) {
+    this.therapistScheduleDays = therapistScheduleDays;
+  }
+
+  public StaffBotSettings therapistMorningEnabled(Boolean therapistMorningEnabled) {
+    this.therapistMorningEnabled = therapistMorningEnabled;
+    return this;
+  }
+
+  /**
+   * The automatic morning message \"N procedures today, the first at 10:00\" to therapists who switched it on themselves. Default on (nothing is sent until a therapist opts in).
+   * @return therapistMorningEnabled
+   */
+  @NotNull 
+  @JsonProperty("therapistMorningEnabled")
+  public Boolean getTherapistMorningEnabled() {
+    return therapistMorningEnabled;
+  }
+
+  public void setTherapistMorningEnabled(Boolean therapistMorningEnabled) {
+    this.therapistMorningEnabled = therapistMorningEnabled;
+  }
+
+  public StaffBotSettings therapistMorningTime(String therapistMorningTime) {
+    this.therapistMorningTime = therapistMorningTime;
+    return this;
+  }
+
+  /**
+   * Hotel time, `HH:mm`, from which the therapists' morning message goes (default 08:00).
+   * @return therapistMorningTime
+   */
+  @NotNull 
+  @JsonProperty("therapistMorningTime")
+  public String getTherapistMorningTime() {
+    return therapistMorningTime;
+  }
+
+  public void setTherapistMorningTime(String therapistMorningTime) {
+    this.therapistMorningTime = therapistMorningTime;
+  }
+
+  public StaffBotSettings therapistMorningDefaultOn(Boolean therapistMorningDefaultOn) {
+    this.therapistMorningDefaultOn = therapistMorningDefaultOn;
+    return this;
+  }
+
+  /**
+   * Whether a therapist who never chose gets the morning message. Default off; each therapist overrides it in the bot's Settings.
+   * @return therapistMorningDefaultOn
+   */
+  @NotNull 
+  @JsonProperty("therapistMorningDefaultOn")
+  public Boolean getTherapistMorningDefaultOn() {
+    return therapistMorningDefaultOn;
+  }
+
+  public void setTherapistMorningDefaultOn(Boolean therapistMorningDefaultOn) {
+    this.therapistMorningDefaultOn = therapistMorningDefaultOn;
+  }
+
+  public StaffBotSettings whoIsOnShiftEnabled(Boolean whoIsOnShiftEnabled) {
+    this.whoIsOnShiftEnabled = whoIsOnShiftEnabled;
+    return this;
+  }
+
+  /**
+   * The \"Who is on shift\" screen for managers. Default on.
+   * @return whoIsOnShiftEnabled
+   */
+  @NotNull 
+  @JsonProperty("whoIsOnShiftEnabled")
+  public Boolean getWhoIsOnShiftEnabled() {
+    return whoIsOnShiftEnabled;
+  }
+
+  public void setWhoIsOnShiftEnabled(Boolean whoIsOnShiftEnabled) {
+    this.whoIsOnShiftEnabled = whoIsOnShiftEnabled;
+  }
+
+  public StaffBotSettings whoIsOnShiftForHr(Boolean whoIsOnShiftForHr) {
+    this.whoIsOnShiftForHr = whoIsOnShiftForHr;
+    return this;
+  }
+
+  /**
+   * Whether the HR director, who is not a manager, also sees \"Who is on shift\" (they can already read attendance). Default on.
+   * @return whoIsOnShiftForHr
+   */
+  @NotNull 
+  @JsonProperty("whoIsOnShiftForHr")
+  public Boolean getWhoIsOnShiftForHr() {
+    return whoIsOnShiftForHr;
+  }
+
+  public void setWhoIsOnShiftForHr(Boolean whoIsOnShiftForHr) {
+    this.whoIsOnShiftForHr = whoIsOnShiftForHr;
+  }
+
+  public StaffBotSettings summaryCommandEnabled(Boolean summaryCommandEnabled) {
+    this.summaryCommandEnabled = summaryCommandEnabled;
+    return this;
+  }
+
+  /**
+   * The \"Summary\" command for MANAGER+. Default on.
+   * @return summaryCommandEnabled
+   */
+  @NotNull 
+  @JsonProperty("summaryCommandEnabled")
+  public Boolean getSummaryCommandEnabled() {
+    return summaryCommandEnabled;
+  }
+
+  public void setSummaryCommandEnabled(Boolean summaryCommandEnabled) {
+    this.summaryCommandEnabled = summaryCommandEnabled;
+  }
+
+  public StaffBotSettings morningSummaryEnabled(Boolean morningSummaryEnabled) {
+    this.morningSummaryEnabled = morningSummaryEnabled;
+    return this;
+  }
+
+  /**
+   * The automatic morning summary to the director recipients of `NotificationSettings`. Default on.
+   * @return morningSummaryEnabled
+   */
+  @NotNull 
+  @JsonProperty("morningSummaryEnabled")
+  public Boolean getMorningSummaryEnabled() {
+    return morningSummaryEnabled;
+  }
+
+  public void setMorningSummaryEnabled(Boolean morningSummaryEnabled) {
+    this.morningSummaryEnabled = morningSummaryEnabled;
+  }
+
+  public StaffBotSettings morningSummaryTime(String morningSummaryTime) {
+    this.morningSummaryTime = morningSummaryTime;
+    return this;
+  }
+
+  /**
+   * Hotel time, `HH:mm`, from which the morning summary goes (default 08:00).
+   * @return morningSummaryTime
+   */
+  @NotNull 
+  @JsonProperty("morningSummaryTime")
+  public String getMorningSummaryTime() {
+    return morningSummaryTime;
+  }
+
+  public void setMorningSummaryTime(String morningSummaryTime) {
+    this.morningSummaryTime = morningSummaryTime;
+  }
+
+  public StaffBotSettings summaryArrivals(Boolean summaryArrivals) {
+    this.summaryArrivals = summaryArrivals;
+    return this;
+  }
+
+  /**
+   * Summary block: arrivals today. Default on.
+   * @return summaryArrivals
+   */
+  @NotNull 
+  @JsonProperty("summaryArrivals")
+  public Boolean getSummaryArrivals() {
+    return summaryArrivals;
+  }
+
+  public void setSummaryArrivals(Boolean summaryArrivals) {
+    this.summaryArrivals = summaryArrivals;
+  }
+
+  public StaffBotSettings summaryDepartures(Boolean summaryDepartures) {
+    this.summaryDepartures = summaryDepartures;
+    return this;
+  }
+
+  /**
+   * Summary block: departures today and overdue departures. Default on.
+   * @return summaryDepartures
+   */
+  @NotNull 
+  @JsonProperty("summaryDepartures")
+  public Boolean getSummaryDepartures() {
+    return summaryDepartures;
+  }
+
+  public void setSummaryDepartures(Boolean summaryDepartures) {
+    this.summaryDepartures = summaryDepartures;
+  }
+
+  public StaffBotSettings summaryInHouse(Boolean summaryInHouse) {
+    this.summaryInHouse = summaryInHouse;
+    return this;
+  }
+
+  /**
+   * Summary block: rooms and guests in the house. Default on.
+   * @return summaryInHouse
+   */
+  @NotNull 
+  @JsonProperty("summaryInHouse")
+  public Boolean getSummaryInHouse() {
+    return summaryInHouse;
+  }
+
+  public void setSummaryInHouse(Boolean summaryInHouse) {
+    this.summaryInHouse = summaryInHouse;
+  }
+
+  public StaffBotSettings summaryOccupancy(Boolean summaryOccupancy) {
+    this.summaryOccupancy = summaryOccupancy;
+    return this;
+  }
+
+  /**
+   * Summary block: occupancy today and rooms still free tonight. Default on.
+   * @return summaryOccupancy
+   */
+  @NotNull 
+  @JsonProperty("summaryOccupancy")
+  public Boolean getSummaryOccupancy() {
+    return summaryOccupancy;
+  }
+
+  public void setSummaryOccupancy(Boolean summaryOccupancy) {
+    this.summaryOccupancy = summaryOccupancy;
+  }
+
+  public StaffBotSettings summaryRooms(Boolean summaryRooms) {
+    this.summaryRooms = summaryRooms;
+    return this;
+  }
+
+  /**
+   * Summary block: rooms blocked and rooms waiting to be cleaned. Default on.
+   * @return summaryRooms
+   */
+  @NotNull 
+  @JsonProperty("summaryRooms")
+  public Boolean getSummaryRooms() {
+    return summaryRooms;
+  }
+
+  public void setSummaryRooms(Boolean summaryRooms) {
+    this.summaryRooms = summaryRooms;
+  }
+
+  public StaffBotSettings summaryStaff(Boolean summaryStaff) {
+    this.summaryStaff = summaryStaff;
+    return this;
+  }
+
+  /**
+   * Summary block: staff on the roster, on shift now and absent. Default on.
+   * @return summaryStaff
+   */
+  @NotNull 
+  @JsonProperty("summaryStaff")
+  public Boolean getSummaryStaff() {
+    return summaryStaff;
+  }
+
+  public void setSummaryStaff(Boolean summaryStaff) {
+    this.summaryStaff = summaryStaff;
+  }
+
+  public StaffBotSettings summaryRequests(Boolean summaryRequests) {
+    this.summaryRequests = summaryRequests;
+    return this;
+  }
+
+  /**
+   * Summary block: shift requests waiting for a decision. Default on.
+   * @return summaryRequests
+   */
+  @NotNull 
+  @JsonProperty("summaryRequests")
+  public Boolean getSummaryRequests() {
+    return summaryRequests;
+  }
+
+  public void setSummaryRequests(Boolean summaryRequests) {
+    this.summaryRequests = summaryRequests;
+  }
+
   public StaffBotSettings updatedAt(OffsetDateTime updatedAt) {
     this.updatedAt = updatedAt;
     return this;
@@ -582,12 +1026,32 @@ public class StaffBotSettings {
         Objects.equals(this.rosterChangeEnabled, staffBotSettings.rosterChangeEnabled) &&
         Objects.equals(this.rosterChangeHorizonDays, staffBotSettings.rosterChangeHorizonDays) &&
         Objects.equals(this.rosterChangeDelayMinutes, staffBotSettings.rosterChangeDelayMinutes) &&
+        Objects.equals(this.engineerTasksEnabled, staffBotSettings.engineerTasksEnabled) &&
+        Objects.equals(this.housekeeperBlocksEnabled, staffBotSettings.housekeeperBlocksEnabled) &&
+        Objects.equals(this.housekeeperBlocksDays, staffBotSettings.housekeeperBlocksDays) &&
+        Objects.equals(this.therapistScheduleEnabled, staffBotSettings.therapistScheduleEnabled) &&
+        Objects.equals(this.therapistScheduleDays, staffBotSettings.therapistScheduleDays) &&
+        Objects.equals(this.therapistMorningEnabled, staffBotSettings.therapistMorningEnabled) &&
+        Objects.equals(this.therapistMorningTime, staffBotSettings.therapistMorningTime) &&
+        Objects.equals(this.therapistMorningDefaultOn, staffBotSettings.therapistMorningDefaultOn) &&
+        Objects.equals(this.whoIsOnShiftEnabled, staffBotSettings.whoIsOnShiftEnabled) &&
+        Objects.equals(this.whoIsOnShiftForHr, staffBotSettings.whoIsOnShiftForHr) &&
+        Objects.equals(this.summaryCommandEnabled, staffBotSettings.summaryCommandEnabled) &&
+        Objects.equals(this.morningSummaryEnabled, staffBotSettings.morningSummaryEnabled) &&
+        Objects.equals(this.morningSummaryTime, staffBotSettings.morningSummaryTime) &&
+        Objects.equals(this.summaryArrivals, staffBotSettings.summaryArrivals) &&
+        Objects.equals(this.summaryDepartures, staffBotSettings.summaryDepartures) &&
+        Objects.equals(this.summaryInHouse, staffBotSettings.summaryInHouse) &&
+        Objects.equals(this.summaryOccupancy, staffBotSettings.summaryOccupancy) &&
+        Objects.equals(this.summaryRooms, staffBotSettings.summaryRooms) &&
+        Objects.equals(this.summaryStaff, staffBotSettings.summaryStaff) &&
+        Objects.equals(this.summaryRequests, staffBotSettings.summaryRequests) &&
         Objects.equals(this.updatedAt, staffBotSettings.updatedAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(myShiftsEnabled, myDayEnabled, myMonthEnabled, myRequestsEnabled, botSettingsEnabled, requestsEnabled, moveRequestsEnabled, deleteRequestsEnabled, requestMinHoursBefore, allowTodayRequests, moveWindowDays, reasonRequired, myShiftsDays, fallbackToAdmin, pendingReminderEnabled, pendingReminderHours, eveReminderEnabled, eveReminderTime, eveReminderDefaultOn, rosterChangeEnabled, rosterChangeHorizonDays, rosterChangeDelayMinutes, updatedAt);
+    return Objects.hash(myShiftsEnabled, myDayEnabled, myMonthEnabled, myRequestsEnabled, botSettingsEnabled, requestsEnabled, moveRequestsEnabled, deleteRequestsEnabled, requestMinHoursBefore, allowTodayRequests, moveWindowDays, reasonRequired, myShiftsDays, fallbackToAdmin, pendingReminderEnabled, pendingReminderHours, eveReminderEnabled, eveReminderTime, eveReminderDefaultOn, rosterChangeEnabled, rosterChangeHorizonDays, rosterChangeDelayMinutes, engineerTasksEnabled, housekeeperBlocksEnabled, housekeeperBlocksDays, therapistScheduleEnabled, therapistScheduleDays, therapistMorningEnabled, therapistMorningTime, therapistMorningDefaultOn, whoIsOnShiftEnabled, whoIsOnShiftForHr, summaryCommandEnabled, morningSummaryEnabled, morningSummaryTime, summaryArrivals, summaryDepartures, summaryInHouse, summaryOccupancy, summaryRooms, summaryStaff, summaryRequests, updatedAt);
   }
 
   @Override
@@ -616,6 +1080,26 @@ public class StaffBotSettings {
     sb.append("    rosterChangeEnabled: ").append(toIndentedString(rosterChangeEnabled)).append("\n");
     sb.append("    rosterChangeHorizonDays: ").append(toIndentedString(rosterChangeHorizonDays)).append("\n");
     sb.append("    rosterChangeDelayMinutes: ").append(toIndentedString(rosterChangeDelayMinutes)).append("\n");
+    sb.append("    engineerTasksEnabled: ").append(toIndentedString(engineerTasksEnabled)).append("\n");
+    sb.append("    housekeeperBlocksEnabled: ").append(toIndentedString(housekeeperBlocksEnabled)).append("\n");
+    sb.append("    housekeeperBlocksDays: ").append(toIndentedString(housekeeperBlocksDays)).append("\n");
+    sb.append("    therapistScheduleEnabled: ").append(toIndentedString(therapistScheduleEnabled)).append("\n");
+    sb.append("    therapistScheduleDays: ").append(toIndentedString(therapistScheduleDays)).append("\n");
+    sb.append("    therapistMorningEnabled: ").append(toIndentedString(therapistMorningEnabled)).append("\n");
+    sb.append("    therapistMorningTime: ").append(toIndentedString(therapistMorningTime)).append("\n");
+    sb.append("    therapistMorningDefaultOn: ").append(toIndentedString(therapistMorningDefaultOn)).append("\n");
+    sb.append("    whoIsOnShiftEnabled: ").append(toIndentedString(whoIsOnShiftEnabled)).append("\n");
+    sb.append("    whoIsOnShiftForHr: ").append(toIndentedString(whoIsOnShiftForHr)).append("\n");
+    sb.append("    summaryCommandEnabled: ").append(toIndentedString(summaryCommandEnabled)).append("\n");
+    sb.append("    morningSummaryEnabled: ").append(toIndentedString(morningSummaryEnabled)).append("\n");
+    sb.append("    morningSummaryTime: ").append(toIndentedString(morningSummaryTime)).append("\n");
+    sb.append("    summaryArrivals: ").append(toIndentedString(summaryArrivals)).append("\n");
+    sb.append("    summaryDepartures: ").append(toIndentedString(summaryDepartures)).append("\n");
+    sb.append("    summaryInHouse: ").append(toIndentedString(summaryInHouse)).append("\n");
+    sb.append("    summaryOccupancy: ").append(toIndentedString(summaryOccupancy)).append("\n");
+    sb.append("    summaryRooms: ").append(toIndentedString(summaryRooms)).append("\n");
+    sb.append("    summaryStaff: ").append(toIndentedString(summaryStaff)).append("\n");
+    sb.append("    summaryRequests: ").append(toIndentedString(summaryRequests)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("}");
     return sb.toString();
