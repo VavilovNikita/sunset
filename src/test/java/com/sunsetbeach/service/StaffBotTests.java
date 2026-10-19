@@ -438,7 +438,7 @@ class StaffBotTests extends NotificationTestBase {
 
         assertThat(reload(request).getStatus()).isEqualTo("PENDING");
         assertThat(rosterEntryRepository.findByEmployeeUserIdAndDate(employee.getId(), SHIFT_DAY)).isPresent();
-        assertThat(telegram.answers).last().isEqualTo(NotificationMessages.render(NotificationMessages.Key.BOT_NOT_ALLOWED,
+        assertThat(telegram.textsTo(hrChat)).last().isEqualTo(NotificationMessages.render(NotificationMessages.Key.BOT_NOT_ALLOWED,
                 com.sunsetbeach.model.NotificationLanguage.EN, java.util.Map.of()));
     }
 

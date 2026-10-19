@@ -29,6 +29,13 @@ public class FakeTelegramClient implements TelegramClient {
     /** Returns the failure for a chat, or null to let the send succeed. */
     public volatile Function<String, TelegramException> failure = chat -> null;
     public volatile long lastRequestedOffset = -1;
+    /** When set, getUpdates throws it (Telegram unreachable); getUpdatesCalls counts every try. */
+    public volatile TelegramException updatesFailure;
+    public final java.util.concurrent.atomic.AtomicInteger getUpdatesCalls = new java.util.concurrent.atomic.AtomicInteger();
+    /** When set, answering a button press fails with it. */
+    public volatile TelegramException answerFailure;
+    /** Runs at the moment a press is answered, so a test can see what had (not) been written by then. */
+    public volatile Runnable onAnswer = () -> { };
     private final AtomicLong messageIds = new AtomicLong(1000);
 
     public void reset() {
@@ -41,6 +48,10 @@ public class FakeTelegramClient implements TelegramClient {
         incoming.clear();
         failure = chat -> null;
         lastRequestedOffset = -1;
+        updatesFailure = null;
+        getUpdatesCalls.set(0);
+        answerFailure = null;
+        onAnswer = () -> { };
     }
 
     public List<String> textsTo(String chatId) {
@@ -72,7 +83,11 @@ public class FakeTelegramClient implements TelegramClient {
     }
 
     @Override
-    public List<TelegramUpdate> getUpdates(long offset, int timeoutSeconds) {
+    public List<TelegramUpdate> getUpdates(long offset, int timeoutSeconds) throws TelegramException {
+        getUpdatesCalls.incrementAndGet();
+        if (updatesFailure != null) {
+            throw updatesFailure;
+        }
         lastRequestedOffset = offset;
         List<TelegramUpdate> now = new ArrayList<>(incoming.stream().filter(u -> u.updateId() >= offset).toList());
         incoming.clear();
@@ -96,7 +111,11 @@ public class FakeTelegramClient implements TelegramClient {
     }
 
     @Override
-    public void answerCallbackQuery(String callbackQueryId, String text) {
+    public void answerCallbackQuery(String callbackQueryId, String text) throws TelegramException {
+        onAnswer.run();
+        if (answerFailure != null) {
+            throw answerFailure;
+        }
         answers.add(text == null ? "" : text);
     }
 

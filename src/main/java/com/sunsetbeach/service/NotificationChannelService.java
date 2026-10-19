@@ -70,6 +70,7 @@ public class NotificationChannelService {
     private final Clock clock;
     private final TransactionTemplate tx;
     private final SecureRandom random = new SecureRandom();
+    private final TelegramHealth health;
 
     public NotificationChannelService(
             UserRepository userRepository,
@@ -80,7 +81,9 @@ public class NotificationChannelService {
             NotificationSettingsService settingsService,
             AuditLogService auditLogService,
             Clock clock,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            TelegramHealth health) {
+        this.health = health;
         this.userRepository = userRepository;
         this.linkRepository = linkRepository;
         this.codeRepository = codeRepository;
@@ -94,12 +97,20 @@ public class NotificationChannelService {
 
     // ---- status -----------------------------------------------------------------------------
 
-    /** From configuration and the cached getMe answer - never calls Telegram. */
+    /** From configuration, the cached getMe answer and the poll loop's own record ({@link TelegramHealth}) - never calls Telegram. */
     @Transactional(readOnly = true)
     public NotificationStatus status() {
-        NotificationStatus status = new NotificationStatus(telegram.isConfigured());
+        TelegramHealth.Snapshot health = this.health.snapshot();
+        NotificationStatus status = new NotificationStatus(telegram.isConfigured(), telegram.isConfigured() ? health.consecutiveFailures() : 0);
         if (telegram.isConfigured()) {
             botStateRepository.findById(1).map(TelegramBotStateEntity::getBotUsername).ifPresent(status::botUsername);
+            // Absent (not null) while unknown, like botUsername.
+            if (health.lastSuccessAt() != null) {
+                status.lastSuccessAt(health.lastSuccessAt().atZone(clock.getZone()).toOffsetDateTime());
+            }
+            if (health.failingSince() != null) {
+                status.failingSince(health.failingSince().atZone(clock.getZone()).toOffsetDateTime());
+            }
         }
         return status;
     }

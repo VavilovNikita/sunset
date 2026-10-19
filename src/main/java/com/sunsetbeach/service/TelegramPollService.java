@@ -26,6 +26,18 @@ import org.springframework.transaction.support.TransactionTemplate;
  * update, so a restart neither replays a message nor loses one; an update that fails to be handled is
  * logged and skipped rather than retried forever. With no {@code TELEGRAM_BOT_TOKEN} the sweep does
  * nothing at all. The bot's own name ({@code getMe}) is fetched here until it is known and cached.
+ *
+ * <p><b>A real long poll on a thread of its own.</b> {@code getUpdates} waits up to {@code long-poll-seconds}
+ * (25) for something to arrive, so a press reaches us at once and Telegram is asked a few times a minute, not
+ * every few seconds; the short {@code poll-interval-ms} only separates one request from the next. It does not
+ * share a thread with the other sweeps ({@code spring.task.scheduling.pool.size}): a call that hangs here must
+ * not hold up the gym, the printers or the notification sender, nor they it.
+ *
+ * <p><b>A failure backs off and is logged once.</b> After a failed {@code getUpdates} the next try waits 3, 6,
+ * 12 ... up to 60 seconds ({@link TelegramHealth}) and starts over after a success. The log gets one WARN when a
+ * series of failures begins and one INFO when it ends; {@code GET /notifications/status} shows the same state.
+ * While a series runs, the housekeeping calls (bot name, command list) are left for after it - they would only
+ * add more timeouts.
  */
 @Service
 public class TelegramPollService {
@@ -37,6 +49,7 @@ public class TelegramPollService {
     private final NotificationChannelService channelService;
     private final StaffBotService staffBot;
     private final TransactionTemplate tx;
+    private final TelegramHealth health;
     private final int longPollSeconds;
 
     public TelegramPollService(
@@ -45,17 +58,22 @@ public class TelegramPollService {
             NotificationChannelService channelService,
             StaffBotService staffBot,
             PlatformTransactionManager transactionManager,
-            @Value("${app.notifications.telegram.long-poll-seconds:1}") int longPollSeconds) {
+            TelegramHealth health,
+            @Value("${app.notifications.telegram.long-poll-seconds:25}") int longPollSeconds) {
         this.telegram = telegram;
         this.stateRepository = stateRepository;
         this.channelService = channelService;
         this.staffBot = staffBot;
         this.tx = new TransactionTemplate(transactionManager);
+        this.health = health;
         this.longPollSeconds = longPollSeconds;
     }
 
-    @Scheduled(fixedDelayString = "${app.notifications.telegram.poll-interval-ms:3000}", initialDelayString = "${app.notifications.initial-delay-ms:10000}")
+    @Scheduled(fixedDelayString = "${app.notifications.telegram.poll-interval-ms:200}", initialDelayString = "${app.notifications.initial-delay-ms:10000}")
     public void poll() {
+        if (!health.mayAttempt()) {
+            return;
+        }
         try {
             pollOnce();
         } catch (RuntimeException e) {
@@ -68,19 +86,24 @@ public class TelegramPollService {
         if (!telegram.isConfigured()) {
             return 0;
         }
-        // botUsername is a JsonNullable (nullable in the spec): never null itself, "unknown" is not present.
-        if (!channelService.status().getBotUsername().isPresent()) {
-            channelService.refreshBotUsername();
+        if (!health.failing()) {
+            // botUsername is a JsonNullable (nullable in the spec): never null itself, "unknown" is not present.
+            if (!channelService.status().getBotUsername().isPresent()) {
+                channelService.refreshBotUsername();
+            }
+            staffBot.ensureDefaultCommands();
         }
-        staffBot.ensureDefaultCommands();
         long offset = stateRepository.findById(1).map(TelegramBotStateEntity::getUpdateOffset).orElse(0L);
         List<TelegramUpdate> updates;
         try {
             updates = telegram.getUpdates(offset, longPollSeconds);
         } catch (TelegramException e) {
-            log.warn("Telegram getUpdates failed: {}", e.getMessage());
+            if (health.recordFailure()) {
+                log.warn("Telegram unreachable since {}: {}", health.failingSince(), e.getMessage());
+            }
             return 0;
         }
+        health.recordSuccess().ifPresent(r -> log.info("Telegram is back after {} failed attempts, {} min", r.failures(), r.duration().toMinutes()));
         int handled = 0;
         for (TelegramUpdate update : updates) {
             try {

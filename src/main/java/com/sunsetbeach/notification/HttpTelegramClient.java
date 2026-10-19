@@ -27,6 +27,11 @@ import tools.jackson.databind.json.JsonMapper;
  * exception message.</b> A failure is logged by exception class and Telegram's numeric status only,
  * and the {@link TelegramException} carries a message in our own words. The token is never part of
  * anything returned.
+ *
+ * <p><b>HTTP/1.1 on purpose.</b> {@code java.net.http.HttpClient} defaults to HTTP/2, which multiplexes every call
+ * (the long poll, {@code sendMessage}, {@code answerCallbackQuery}) over one connection; if a middlebox silently
+ * drops that connection, every call waits for its own timeout on it. With HTTP/1.1 each concurrent call has its
+ * own connection and a timed-out one is discarded, so one stuck exchange cannot take the others with it.
  */
 @Component
 public class HttpTelegramClient implements TelegramClient {
@@ -48,7 +53,7 @@ public class HttpTelegramClient implements TelegramClient {
         this.token = token == null ? "" : token.trim();
         this.apiBase = apiBase.endsWith("/") ? apiBase.substring(0, apiBase.length() - 1) : apiBase;
         this.json = json;
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER).build();
+        this.http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER).build();
     }
 
     @Override
@@ -141,7 +146,8 @@ public class HttpTelegramClient implements TelegramClient {
         if (text != null && !text.isBlank()) {
             body.put("text", text.length() > 190 ? text.substring(0, 190) : text);
         }
-        call("answerCallbackQuery", body.toString(), Duration.ofSeconds(10));
+        // Short: Telegram refuses an answer to a press older than ~15 s anyway, so waiting longer is pointless.
+        call("answerCallbackQuery", body.toString(), Duration.ofSeconds(4));
     }
 
     @Override
@@ -185,8 +191,8 @@ public class HttpTelegramClient implements TelegramClient {
             throw new TelegramException(TelegramException.Kind.UNAVAILABLE, "Telegram request was interrupted");
         } catch (IOException | RuntimeException e) {
             // Class name only: the message of a connect failure can contain the URL, and the URL has the token.
-            log.warn("Telegram {} failed: {}", method, e.getClass().getSimpleName());
-            throw new TelegramException(TelegramException.Kind.UNAVAILABLE, "Telegram did not answer");
+            // Not logged here: the callers decide (the poll logs one line per series of failures, not one per try).
+            throw new TelegramException(TelegramException.Kind.UNAVAILABLE, "Telegram did not answer (" + e.getClass().getSimpleName() + ")");
         }
         int status = response.statusCode();
         byte[] raw = response.body() == null ? new byte[0] : response.body();
@@ -201,7 +207,7 @@ public class HttpTelegramClient implements TelegramClient {
         if (status == 200 && parsed != null && parsed.path("ok").asBoolean(false)) {
             return parsed.path("result");
         }
-        log.warn("Telegram {} answered HTTP {}", method, status);
+        log.debug("Telegram {} answered HTTP {}", method, status);
         if (status == 403) {
             throw new TelegramException(TelegramException.Kind.BLOCKED, "The recipient blocked the bot");
         }

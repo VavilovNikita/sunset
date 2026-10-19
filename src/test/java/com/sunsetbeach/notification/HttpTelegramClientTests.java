@@ -11,6 +11,9 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,6 +31,9 @@ class HttpTelegramClientTests {
     private HttpServer server;
     private final List<String> paths = new CopyOnWriteArrayList<>();
     private final List<String> bodies = new CopyOnWriteArrayList<>();
+    private final List<String> upgradeHeaders = new CopyOnWriteArrayList<>();
+    /** While set, a getUpdates request is held until it is counted down (a call that never comes back). */
+    private volatile CountDownLatch holdGetUpdates;
     private volatile int status = 200;
     private volatile String body = "{\"ok\":true,\"result\":{}}";
 
@@ -36,6 +42,15 @@ class HttpTelegramClientTests {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
             paths.add(exchange.getRequestURI().getPath());
+            upgradeHeaders.add(String.valueOf(exchange.getRequestHeaders().getFirst("Upgrade")));
+            CountDownLatch hold = holdGetUpdates;
+            if (hold != null && exchange.getRequestURI().getPath().endsWith("/getUpdates")) {
+                try {
+                    hold.await(20, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -43,6 +58,8 @@ class HttpTelegramClientTests {
             exchange.getResponseBody().write(bytes);
             exchange.close();
         });
+        // One thread per request: the stand-in must be able to hold one request while it answers another.
+        server.setExecutor(Executors.newCachedThreadPool());
         server.start();
     }
 
@@ -202,5 +219,41 @@ class HttpTelegramClientTests {
     void aMessageIdThatIsNotANumber_isRefusedBeforeAnyRequest() {
         assertThatThrownBy(() -> client(TOKEN).editMessageText("555", "not-a-number", "x", null)).isInstanceOf(TelegramException.class);
         assertThat(paths).isEmpty();
+    }
+
+    @Test
+    void itSpeaksHttp11_withoutAskingToUpgradeToHttp2() throws Exception {
+        client(TOKEN).sendMessage("555", "hello");
+
+        // The JDK client's default would offer "Upgrade: h2c" on a plain connection (and negotiate h2 over TLS).
+        assertThat(upgradeHeaders).containsExactly("null");
+    }
+
+    @Test
+    void aCallThatNeverComesBack_doesNotHoldUpTheOthers() throws Exception {
+        holdGetUpdates = new CountDownLatch(1);
+        HttpTelegramClient client = client(TOKEN);
+        Thread longPoll = new Thread(() -> {
+            try {
+                client.getUpdates(0, 1);
+            } catch (TelegramException e) {
+                // released at the end of the test
+            }
+        });
+        longPoll.start();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!paths.stream().anyMatch(p -> p.endsWith("/getUpdates")) && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertThat(paths).anyMatch(p -> p.endsWith("/getUpdates"));
+
+        long started = System.nanoTime();
+        client.answerCallbackQuery("cq-1", null);
+        client.sendMessage("555", "still works");
+        long tookMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+
+        holdGetUpdates.countDown();
+        longPoll.join(15_000);
+        assertThat(tookMs).as("both calls finished while the long poll was still held").isLessThan(3_000);
     }
 }

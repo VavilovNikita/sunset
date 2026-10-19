@@ -243,7 +243,8 @@ to reach `api.telegram.org` over HTTPS (outbound).
    Then, for each employee (MANAGER+): Link Telegram -> show the QR / send the link -> the employee opens it and presses
    **Start** (the bot answers "Linked: name"). An employee without a link still gets a row in the log, marked
    "No channel". Set an employee's language there too (EN / TH / RU; the settings hold the default).
-5. Optional (defaults in brackets): `TELEGRAM_POLL_INTERVAL_MS` [3000], `TELEGRAM_LONG_POLL_SECONDS` [1],
+5. Optional (defaults in brackets): `TELEGRAM_POLL_INTERVAL_MS` [200], `TELEGRAM_LONG_POLL_SECONDS` [25],
+   `TELEGRAM_BACKOFF_BASE_SECONDS` [3], `TELEGRAM_BACKOFF_MAX_SECONDS` [60], `SCHEDULING_POOL_SIZE` [8],
    `NOTIFICATIONS_SCAN_INTERVAL_MS` [60000], `NOTIFICATIONS_DELIVERY_INTERVAL_MS` [5000], `NOTIFICATIONS_MAX_ATTEMPTS` [5].
 
 Things that look wrong but are not:

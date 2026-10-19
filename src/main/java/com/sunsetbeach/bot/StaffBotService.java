@@ -256,45 +256,63 @@ public class StaffBotService {
 
     // ---- buttons ---------------------------------------------------------------------------------------
 
+    /**
+     * <b>The press is acknowledged first, before anything is looked up or written.</b> Telegram keeps the
+     * spinner on a button until it is answered and refuses an answer to a press older than about 15 seconds
+     * (HTTP 400), so answering after the work meant a slow database or a slow Telegram turned into a dead
+     * button. The answer is empty and has a short timeout; if it fails the press is still handled. What the
+     * person should know - the outcome, or why nothing happened - follows as a message or an edit of the
+     * message the button sat under.
+     */
     private void handleCallback(TelegramUpdate update) {
+        acknowledge(update);
         String data = update.callbackData();
         StaffActionEntity action = data != null && data.startsWith(CALLBACK_PREFIX)
                 ? actionRepository.findById(data.substring(CALLBACK_PREFIX.length())).orElse(null)
                 : null;
         Optional<UserEntity> user = linkedUser(update.chatId());
         if (user.isEmpty()) {
-            answer(update, NotificationMessages.render(Key.BOT_NOT_ALLOWED, defaultLanguage(), Map.of()));
+            try {
+                telegram.sendMessage(update.chatId(), NotificationMessages.render(Key.BOT_NOT_ALLOWED, defaultLanguage(), Map.of()));
+            } catch (TelegramException e) {
+                log.warn("Could not answer a Telegram chat: {}", e.getMessage());
+            }
             return;
         }
         BotContext ctx = context(update.chatId(), update.callbackQueryId(), update.messageId(), user.get(), action);
         // A button is for one person: another chat pressing it (a forwarded message) does nothing at all.
         if (action == null || !action.getUserId().equals(user.get().getId())
                 || (action.getExpiresAt() != null && action.getExpiresAt().isBefore(TimestampFormat.nowUtc(clock)))) {
-            answer(update, ctx.t(action != null && !action.getUserId().equals(user.get().getId()) ? Key.BOT_NOT_ALLOWED : Key.BOT_BUTTON_EXPIRED));
+            say(ctx, ctx.t(action != null && !action.getUserId().equals(user.get().getId()) ? Key.BOT_NOT_ALLOWED : Key.BOT_BUTTON_EXPIRED));
             return;
         }
         BotActionHandler handler = actionHandlers.get(action.getKind());
         if (handler == null) {
-            answer(update, ctx.t(Key.BOT_BUTTON_EXPIRED));
+            say(ctx, ctx.t(Key.BOT_BUTTON_EXPIRED));
             return;
         }
         List<BotReply> replies;
         try {
             replies = handler.handle(ctx, action);
         } catch (ForbiddenException e) {
-            answer(update, ctx.t(Key.BOT_NOT_ALLOWED));
+            say(ctx, ctx.t(Key.BOT_NOT_ALLOWED));
             return;
         }
-        answer(update, replies.stream().map(BotReply::toast).filter(t -> t != null).findFirst().orElse(null));
-        deliver(ctx, replies);
+        // A toast needs the press to still be unanswered, which it no longer is: a reply that was only a toast
+        // becomes a message, and one that has its own text or edit already says it.
+        deliver(ctx, replies.stream().map(r -> r.text() == null && r.toast() != null && !r.toast().isBlank() ? BotReply.text(r.toast()) : r).toList());
     }
 
-    private void answer(TelegramUpdate update, String toast) {
+    private void acknowledge(TelegramUpdate update) {
         try {
-            telegram.answerCallbackQuery(update.callbackQueryId(), toast);
+            telegram.answerCallbackQuery(update.callbackQueryId(), null);
         } catch (TelegramException e) {
             log.warn("Could not answer a button press: {}", e.getMessage());
         }
+    }
+
+    private void say(BotContext ctx, String text) {
+        deliver(ctx, List.of(BotReply.text(text)));
     }
 
     // ---- sending -----------------------------------------------------------------------------------------

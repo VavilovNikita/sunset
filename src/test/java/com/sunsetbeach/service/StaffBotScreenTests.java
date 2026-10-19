@@ -196,7 +196,32 @@ class StaffBotScreenTests extends NotificationTestBase {
         var mine = auditLogRepository.findAll().stream().filter(a -> engineer.getId().equals(a.getActorUserId())).toList();
         assertThat(mine).extracting(a -> a.getAction()).containsExactlyInAnyOrder(AuditAction.MAINTENANCE_TASK_STATUS_CHANGED, AuditAction.MAINTENANCE_TASK_BLOCK_LIFTED);
         assertThat(mine).allSatisfy(a -> assertThat(a.getSummary()).endsWith("(via Telegram)"));
-        assertThat(telegram.answers).last().isEqualTo("Done.");
+        // The press was answered at once and empty; the outcome is the edited message.
+        assertThat(telegram.answers).last().isEqualTo("");
+        assertThat(telegram.edits).isNotEmpty();
+    }
+
+    @Test
+    void aButtonPress_isAnsweredFirst_beforeAnythingIsWritten_andItsAnswerFailingDoesNotCancelIt() {
+        UserEntity engineer = user("Eddy Engineer", Role.WAITER, "ENGINEER");
+        String chat = link(engineer);
+        MaintenanceTask task = maintenanceTaskService.create(roomUnit().getId(), "Dripping tap", List.of(), manager.getId());
+        java.util.concurrent.atomic.AtomicReference<MaintenanceTaskStatus> statusWhenAnswered = new java.util.concurrent.atomic.AtomicReference<>();
+        telegram.onAnswer = () -> statusWhenAnswered.set(maintenanceTaskRepository.findById(task.getId()).orElseThrow().getStatus());
+
+        press(chat, button(engineer, "TASK_DONE", task.getId()));
+
+        assertThat(statusWhenAnswered.get()).as("still open when the press was answered").isEqualTo(MaintenanceTaskStatus.OPEN);
+        assertThat(maintenanceTaskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(MaintenanceTaskStatus.DONE);
+        assertThat(telegram.answers).containsExactly("");
+
+        // Telegram refusing or not answering the acknowledgement (a press that is already too old) changes nothing.
+        MaintenanceTask second = maintenanceTaskService.create(roomUnit().getId(), "Loose handle", List.of(), manager.getId());
+        telegram.answerFailure = new com.sunsetbeach.notification.TelegramClient.TelegramException(
+                com.sunsetbeach.notification.TelegramClient.TelegramException.Kind.REJECTED, "Telegram refused the request (HTTP 400)");
+        press(chat, button(engineer, "TASK_DONE", second.getId()));
+
+        assertThat(maintenanceTaskRepository.findById(second.getId()).orElseThrow().getStatus()).isEqualTo(MaintenanceTaskStatus.DONE);
     }
 
     @Test
@@ -207,16 +232,16 @@ class StaffBotScreenTests extends NotificationTestBase {
 
         press(chat, button(engineer, "TASK_START", task.getId()));
         assertThat(maintenanceTaskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(MaintenanceTaskStatus.IN_PROGRESS);
-        assertThat(telegram.answers).last().isEqualTo("Started.");
+        assertThat(telegram.answers).last().isEqualTo("");
 
         press(chat, button(engineer, "TASK_START", task.getId()));
-        assertThat(telegram.answers).last().isEqualTo("Already in progress.");
+        assertThat(telegram.answers).last().isEqualTo("");
 
         press(chat, button(engineer, "TASK_DONE", task.getId()));
         press(chat, button(engineer, "TASK_DONE", task.getId()));
         press(chat, button(engineer, "TASK_START", task.getId()));
         assertThat(maintenanceTaskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(MaintenanceTaskStatus.DONE);
-        assertThat(telegram.answers).last().isEqualTo("Already done.");
+        assertThat(telegram.answers).last().isEqualTo("");
         // One status change per real move: start, done - the repeats wrote nothing.
         assertThat(auditLogRepository.findAll().stream()
                 .filter(a -> engineer.getId().equals(a.getActorUserId()) && a.getAction() == AuditAction.MAINTENANCE_TASK_STATUS_CHANGED)).hasSize(2);
@@ -234,7 +259,7 @@ class StaffBotScreenTests extends NotificationTestBase {
         press(chat, done);
 
         assertThat(maintenanceTaskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(MaintenanceTaskStatus.OPEN);
-        assertThat(telegram.answers).last().isEqualTo(NotificationMessages.render(NotificationMessages.Key.BOT_NOT_ALLOWED, com.sunsetbeach.model.NotificationLanguage.EN, java.util.Map.of()));
+        assertThat(telegram.textsTo(chat)).last().isEqualTo(NotificationMessages.render(NotificationMessages.Key.BOT_NOT_ALLOWED, com.sunsetbeach.model.NotificationLanguage.EN, java.util.Map.of()));
         say(chat, "/tasks");
         assertThat(telegram.lastTo(chat).text()).isEqualTo("You can't do that.");
 
@@ -279,7 +304,7 @@ class StaffBotScreenTests extends NotificationTestBase {
 
         assertThat(maintenanceTaskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(MaintenanceTaskStatus.DONE);
         // One of them closed it; the other was told it was already done. One status change, one block shortening.
-        assertThat(telegram.answers).containsExactlyInAnyOrder("Done.", "Already done.");
+        assertThat(telegram.answers).containsExactly("", "");
         var rows = auditLogRepository.findAll().stream().filter(a -> userIds.contains(a.getActorUserId())).toList();
         assertThat(rows.stream().filter(a -> a.getAction() == AuditAction.MAINTENANCE_TASK_STATUS_CHANGED)).hasSize(1);
         assertThat(rows.stream().filter(a -> a.getAction() == AuditAction.MAINTENANCE_TASK_BLOCK_LIFTED)).hasSize(1);
@@ -710,7 +735,7 @@ class StaffBotScreenTests extends NotificationTestBase {
         assertThatThrownBy(() -> requestService.decide(request.getId(), hr, true, null, ShiftChangeRequestChannel.TELEGRAM)).isInstanceOf(ForbiddenException.class);
         // A button that somehow exists for them (forged, or from before the request was theirs) does nothing.
         press(hrChat, button(hr, com.sunsetbeach.notification.NotificationAction.Kinds.SHIFT_REQUEST_APPROVE, request.getId()));
-        assertThat(telegram.answers).last().isEqualTo("You can't do that.");
+        assertThat(telegram.textsTo(hrChat)).last().isEqualTo("You can't do that.");
         say(hrChat, "/pending");
         assertThat(telegram.lastTo(hrChat).text()).isEqualTo("No requests are waiting.");
         // Over HTTP: the HR director is a decider for others' requests, not for this one.
