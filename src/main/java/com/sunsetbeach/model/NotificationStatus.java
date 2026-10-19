@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -37,6 +38,45 @@ public class NotificationStatus {
 
   private Integer consecutiveFailures;
 
+  /**
+   * How requests to Telegram go out right now. `PROXY` = through the hotel's HTTP proxy (`TELEGRAM_PROXY`), `DIRECT` = straight from the server. With a proxy configured, `DIRECT` means the server fell back after repeated failed polls and is probing the proxy again every few minutes; without one it is always `DIRECT`. 
+   */
+  public enum TelegramRouteEnum {
+    DIRECT("DIRECT"),
+    
+    PROXY("PROXY");
+
+    private String value;
+
+    TelegramRouteEnum(String value) {
+      this.value = value;
+    }
+
+    @JsonValue
+    public String getValue() {
+      return value;
+    }
+
+    @Override
+    public String toString() {
+      return String.valueOf(value);
+    }
+
+    @JsonCreator
+    public static TelegramRouteEnum fromValue(String value) {
+      for (TelegramRouteEnum b : TelegramRouteEnum.values()) {
+        if (b.value.equals(value)) {
+          return b;
+        }
+      }
+      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+    }
+  }
+
+  private TelegramRouteEnum telegramRoute;
+
+  private Boolean telegramProxyConfigured;
+
   public NotificationStatus() {
     super();
   }
@@ -44,9 +84,11 @@ public class NotificationStatus {
   /**
    * Constructor with only required parameters
    */
-  public NotificationStatus(Boolean telegramConfigured, Integer consecutiveFailures) {
+  public NotificationStatus(Boolean telegramConfigured, Integer consecutiveFailures, TelegramRouteEnum telegramRoute, Boolean telegramProxyConfigured) {
     this.telegramConfigured = telegramConfigured;
     this.consecutiveFailures = consecutiveFailures;
+    this.telegramRoute = telegramRoute;
+    this.telegramProxyConfigured = telegramProxyConfigured;
   }
 
   public NotificationStatus telegramConfigured(Boolean telegramConfigured) {
@@ -145,6 +187,44 @@ public class NotificationStatus {
     this.consecutiveFailures = consecutiveFailures;
   }
 
+  public NotificationStatus telegramRoute(TelegramRouteEnum telegramRoute) {
+    this.telegramRoute = telegramRoute;
+    return this;
+  }
+
+  /**
+   * How requests to Telegram go out right now. `PROXY` = through the hotel's HTTP proxy (`TELEGRAM_PROXY`), `DIRECT` = straight from the server. With a proxy configured, `DIRECT` means the server fell back after repeated failed polls and is probing the proxy again every few minutes; without one it is always `DIRECT`. 
+   * @return telegramRoute
+   */
+  @NotNull 
+  @JsonProperty("telegramRoute")
+  public TelegramRouteEnum getTelegramRoute() {
+    return telegramRoute;
+  }
+
+  public void setTelegramRoute(TelegramRouteEnum telegramRoute) {
+    this.telegramRoute = telegramRoute;
+  }
+
+  public NotificationStatus telegramProxyConfigured(Boolean telegramProxyConfigured) {
+    this.telegramProxyConfigured = telegramProxyConfigured;
+    return this;
+  }
+
+  /**
+   * Whether `TELEGRAM_PROXY` is set. The proxy's address is never returned.
+   * @return telegramProxyConfigured
+   */
+  @NotNull 
+  @JsonProperty("telegramProxyConfigured")
+  public Boolean getTelegramProxyConfigured() {
+    return telegramProxyConfigured;
+  }
+
+  public void setTelegramProxyConfigured(Boolean telegramProxyConfigured) {
+    this.telegramProxyConfigured = telegramProxyConfigured;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -158,7 +238,9 @@ public class NotificationStatus {
         equalsNullable(this.botUsername, notificationStatus.botUsername) &&
         equalsNullable(this.lastSuccessAt, notificationStatus.lastSuccessAt) &&
         equalsNullable(this.failingSince, notificationStatus.failingSince) &&
-        Objects.equals(this.consecutiveFailures, notificationStatus.consecutiveFailures);
+        Objects.equals(this.consecutiveFailures, notificationStatus.consecutiveFailures) &&
+        Objects.equals(this.telegramRoute, notificationStatus.telegramRoute) &&
+        Objects.equals(this.telegramProxyConfigured, notificationStatus.telegramProxyConfigured);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -167,7 +249,7 @@ public class NotificationStatus {
 
   @Override
   public int hashCode() {
-    return Objects.hash(telegramConfigured, hashCodeNullable(botUsername), hashCodeNullable(lastSuccessAt), hashCodeNullable(failingSince), consecutiveFailures);
+    return Objects.hash(telegramConfigured, hashCodeNullable(botUsername), hashCodeNullable(lastSuccessAt), hashCodeNullable(failingSince), consecutiveFailures, telegramRoute, telegramProxyConfigured);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -186,6 +268,8 @@ public class NotificationStatus {
     sb.append("    lastSuccessAt: ").append(toIndentedString(lastSuccessAt)).append("\n");
     sb.append("    failingSince: ").append(toIndentedString(failingSince)).append("\n");
     sb.append("    consecutiveFailures: ").append(toIndentedString(consecutiveFailures)).append("\n");
+    sb.append("    telegramRoute: ").append(toIndentedString(telegramRoute)).append("\n");
+    sb.append("    telegramProxyConfigured: ").append(toIndentedString(telegramProxyConfigured)).append("\n");
     sb.append("}");
     return sb.toString();
   }

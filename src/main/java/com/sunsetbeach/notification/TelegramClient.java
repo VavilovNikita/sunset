@@ -13,6 +13,16 @@ public interface TelegramClient {
     /** False while the server has no {@code TELEGRAM_BOT_TOKEN}: nothing is polled or sent. */
     boolean isConfigured();
 
+    /** Which way requests go to Telegram right now. Always {@link Route#DIRECT} for a client without a proxy. */
+    default Route route() {
+        return Route.DIRECT;
+    }
+
+    /** Whether a proxy is configured (its address is never exposed). */
+    default boolean proxyConfigured() {
+        return false;
+    }
+
     /** The bot's username (no leading {@code @}) from {@code getMe}. */
     String getBotUsername() throws TelegramException;
 
@@ -50,6 +60,12 @@ public interface TelegramClient {
 
     /** A button under a message. {@code callbackData} is at most 64 bytes - in practice a short opaque id. */
     record Button(String text, String callbackData) {
+    }
+
+    /** The way a request reaches Telegram: straight from this server, or through the configured HTTP proxy. */
+    enum Route {
+        DIRECT,
+        PROXY
     }
 
     record Command(String command, String description) {

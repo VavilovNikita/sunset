@@ -69,7 +69,7 @@ class HttpTelegramClientTests {
     }
 
     private HttpTelegramClient client(String token) {
-        return new HttpTelegramClient(token, "http://127.0.0.1:" + server.getAddress().getPort(), JsonMapper.builder().build());
+        return new HttpTelegramClient(token, "http://127.0.0.1:" + server.getAddress().getPort(), "", 3, 300, java.time.Clock.systemUTC(), JsonMapper.builder().build());
     }
 
     @Test
@@ -147,7 +147,7 @@ class HttpTelegramClientTests {
     void anUnreachableTelegram_isUnavailable_andTheMessageNamesNeitherUrlNorToken() {
         int port = server.getAddress().getPort();
         server.stop(0);
-        HttpTelegramClient client = new HttpTelegramClient(TOKEN, "http://127.0.0.1:" + port, JsonMapper.builder().build());
+        HttpTelegramClient client = new HttpTelegramClient(TOKEN, "http://127.0.0.1:" + port, "", 3, 300, java.time.Clock.systemUTC(), JsonMapper.builder().build());
 
         assertThatThrownBy(() -> client.sendMessage("1", "x"))
                 .isInstanceOfSatisfying(TelegramException.class, e -> {

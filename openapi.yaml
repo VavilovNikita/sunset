@@ -20917,7 +20917,7 @@ components:
 
     NotificationStatus:
       type: object
-      required: [telegramConfigured, consecutiveFailures]
+      required: [telegramConfigured, consecutiveFailures, telegramRoute, telegramProxyConfigured]
       properties:
         telegramConfigured:
           type: boolean
@@ -20942,6 +20942,16 @@ components:
           type: integer
           minimum: 0
           description: Polls in a row that failed. 0 while Telegram answers; above 0 means a series is running and the server is backing off (3 s, doubling, up to 60 s).
+        telegramRoute:
+          type: string
+          enum: [DIRECT, PROXY]
+          description: |
+            How requests to Telegram go out right now. `PROXY` = through the hotel's HTTP proxy (`TELEGRAM_PROXY`), `DIRECT` =
+            straight from the server. With a proxy configured, `DIRECT` means the server fell back after repeated failed polls
+            and is probing the proxy again every few minutes; without one it is always `DIRECT`.
+        telegramProxyConfigured:
+          type: boolean
+          description: Whether `TELEGRAM_PROXY` is set. The proxy's address is never returned.
 
     NotificationSettings:
       type: object

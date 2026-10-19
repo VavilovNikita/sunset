@@ -14,6 +14,8 @@ import com.sunsetbeach.model.NotificationLinkCode;
 import com.sunsetbeach.model.NotificationSettings;
 import com.sunsetbeach.model.NotificationSettingsUpdateInput;
 import com.sunsetbeach.model.Role;
+import com.sunsetbeach.model.NotificationStatus;
+import com.sunsetbeach.notification.TelegramClient;
 import com.sunsetbeach.notification.TelegramClient.TelegramUpdate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -255,6 +257,21 @@ class NotificationChannelTests extends NotificationTestBase {
         telegram.botUsername = "renamed_bot"; // a later change at Telegram is not seen by a status read
         assertThat(channelService.status().getTelegramConfigured()).isTrue();
         assertThat(channelService.status().getBotUsername().get()).isEqualTo("sunset_test_bot");
+    }
+
+    @Test
+    void statusSaysWhichWayTelegramIsReached_andWhetherAProxyIsSet_withoutAnAddress() {
+        assertThat(channelService.status().getTelegramRoute()).isEqualTo(NotificationStatus.TelegramRouteEnum.DIRECT);
+        assertThat(channelService.status().getTelegramProxyConfigured()).isFalse();
+
+        telegram.proxyConfigured = true;
+        telegram.route = TelegramClient.Route.PROXY;
+        assertThat(channelService.status().getTelegramRoute()).isEqualTo(NotificationStatus.TelegramRouteEnum.PROXY);
+        assertThat(channelService.status().getTelegramProxyConfigured()).isTrue();
+
+        telegram.route = TelegramClient.Route.DIRECT; // fell back: the proxy is still configured
+        assertThat(channelService.status().getTelegramRoute()).isEqualTo(NotificationStatus.TelegramRouteEnum.DIRECT);
+        assertThat(channelService.status().getTelegramProxyConfigured()).isTrue();
     }
 
     @Test

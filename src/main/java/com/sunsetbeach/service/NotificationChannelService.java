@@ -101,7 +101,8 @@ public class NotificationChannelService {
     @Transactional(readOnly = true)
     public NotificationStatus status() {
         TelegramHealth.Snapshot health = this.health.snapshot();
-        NotificationStatus status = new NotificationStatus(telegram.isConfigured(), telegram.isConfigured() ? health.consecutiveFailures() : 0);
+        NotificationStatus status = new NotificationStatus(telegram.isConfigured(), telegram.isConfigured() ? health.consecutiveFailures() : 0,
+                NotificationStatus.TelegramRouteEnum.valueOf(telegram.route().name()), telegram.proxyConfigured());
         if (telegram.isConfigured()) {
             botStateRepository.findById(1).map(TelegramBotStateEntity::getBotUsername).ifPresent(status::botUsername);
             // Absent (not null) while unknown, like botUsername.

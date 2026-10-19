@@ -1,11 +1,14 @@
 package com.sunsetbeach.notification;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +35,12 @@ import tools.jackson.databind.json.JsonMapper;
  * (the long poll, {@code sendMessage}, {@code answerCallbackQuery}) over one connection; if a middlebox silently
  * drops that connection, every call waits for its own timeout on it. With HTTP/1.1 each concurrent call has its
  * own connection and a timed-out one is discarded, so one stuck exchange cannot take the others with it.
+ *
+ * <p><b>An optional HTTP proxy ({@code TELEGRAM_PROXY}, {@code host:port}) for this client only.</b> It is the main path
+ * when set (the hotel's tinyproxy, CONNECT to Telegram only). After {@code route-failure-threshold} failed
+ * {@code getUpdates} in a row the client goes direct and every {@code route-retry-seconds} probes the proxy
+ * again with a short {@code getUpdates} ({@link TelegramRouteSelector}); every other call uses whichever path is current.
+ * The proxy's address may be logged, the token never.
  */
 @Component
 public class HttpTelegramClient implements TelegramClient {
@@ -43,17 +52,80 @@ public class HttpTelegramClient implements TelegramClient {
     private final String token;
     private final String apiBase;
     private final HttpClient http;
+    private final HttpClient viaProxy;
+    private final TelegramRouteSelector routes;
     private final JsonMapper json;
 
     @Autowired
     public HttpTelegramClient(
             @Value("${app.notifications.telegram.bot-token:}") String token,
             @Value("${app.notifications.telegram.api-base:https://api.telegram.org}") String apiBase,
+            @Value("${app.notifications.telegram.proxy:}") String proxy,
+            @Value("${app.notifications.telegram.route-failure-threshold:3}") int routeFailureThreshold,
+            @Value("${app.notifications.telegram.route-retry-seconds:300}") long routeRetrySeconds,
+            Clock clock,
             JsonMapper json) {
         this.token = token == null ? "" : token.trim();
         this.apiBase = apiBase.endsWith("/") ? apiBase.substring(0, apiBase.length() - 1) : apiBase;
         this.json = json;
-        this.http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER).build();
+        this.http = newClient(null);
+        InetSocketAddress proxyAddress = parseProxy(proxy);
+        this.viaProxy = proxyAddress == null ? null : newClient(proxyAddress);
+        this.routes = new TelegramRouteSelector(proxyAddress != null, routeFailureThreshold, Duration.ofSeconds(Math.max(1, routeRetrySeconds)), clock);
+        if (proxyAddress != null) {
+            log.info("Telegram requests go through the proxy {}:{}, falling back to direct after {} failed polls",
+                    proxyAddress.getHostString(), proxyAddress.getPort(), Math.max(1, routeFailureThreshold));
+        }
+    }
+
+    private static HttpClient newClient(InetSocketAddress proxy) {
+        HttpClient.Builder builder = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER);
+        if (proxy != null) {
+            builder.proxy(ProxySelector.of(proxy));
+        }
+        return builder.build();
+    }
+
+    /**
+     * {@code host:port} (or {@code [v6]:port}); empty = no proxy. Anything else stops the backend from starting, with a
+     * message that says what is wrong. The host is left unresolved here so a DNS hiccup at boot is not a startup failure.
+     */
+    static InetSocketAddress parseProxy(String value) {
+        String text = value == null ? "" : value.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        String problem = "TELEGRAM_PROXY must be host:port (for example 10.8.0.2:8888), without http:// or a path";
+        int colon = text.lastIndexOf(':');
+        if (colon <= 0 || colon == text.length() - 1 || text.contains("/") || text.contains(" ") || text.contains("@")) {
+            throw new IllegalStateException(problem);
+        }
+        String host = text.substring(0, colon);
+        if (host.startsWith("[") && host.endsWith("]")) {
+            host = host.substring(1, host.length() - 1);
+        } else if (host.contains(":")) {
+            throw new IllegalStateException(problem + " (wrap an IPv6 address in [])");
+        }
+        int port;
+        try {
+            port = Integer.parseInt(text.substring(colon + 1));
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException(problem);
+        }
+        if (host.isEmpty() || port < 1 || port > 65535) {
+            throw new IllegalStateException(problem + " (port 1-65535)");
+        }
+        return InetSocketAddress.createUnresolved(host, port);
+    }
+
+    @Override
+    public Route route() {
+        return routes.current();
+    }
+
+    @Override
+    public boolean proxyConfigured() {
+        return viaProxy != null;
     }
 
     @Override
@@ -73,8 +145,40 @@ public class HttpTelegramClient implements TelegramClient {
 
     @Override
     public List<TelegramUpdate> getUpdates(long offset, int timeoutSeconds) throws TelegramException {
-        String body = "{\"offset\":" + offset + ",\"timeout\":" + timeoutSeconds + ",\"allowed_updates\":[\"message\",\"callback_query\"]}";
-        JsonNode result = call("getUpdates", body, Duration.ofSeconds(timeoutSeconds + 10L));
+        if (routes.trialDue()) {
+            // On the fallback: a short look at the proxy instead of a long poll, so a proxy that is still down costs
+            // seconds, not a 35 s timeout. Its updates, if any, are real ones and are returned like any other.
+            try {
+                JsonNode result = callOn(Route.PROXY, "getUpdates", updatesBody(offset, 0), Duration.ofSeconds(5));
+                routes.trialAnswered();
+                return parseUpdates(result);
+            } catch (TransportException e) {
+                routes.trialFailed();
+            } catch (TelegramException e) {
+                routes.trialAnswered();
+                throw e;
+            }
+        }
+        Route used = routes.current();
+        JsonNode result;
+        try {
+            result = callOn(used, "getUpdates", updatesBody(offset, timeoutSeconds), Duration.ofSeconds(timeoutSeconds + 10L));
+        } catch (TransportException e) {
+            routes.failed(used);
+            throw e;
+        } catch (TelegramException e) {
+            routes.answered(used);
+            throw e;
+        }
+        routes.answered(used);
+        return parseUpdates(result);
+    }
+
+    private static String updatesBody(long offset, int timeoutSeconds) {
+        return "{\"offset\":" + offset + ",\"timeout\":" + timeoutSeconds + ",\"allowed_updates\":[\"message\",\"callback_query\"]}";
+    }
+
+    private List<TelegramUpdate> parseUpdates(JsonNode result) {
         List<TelegramUpdate> updates = new ArrayList<>();
         for (JsonNode update : result) {
             long id = update.path("update_id").asLong(-1);
@@ -174,7 +278,18 @@ public class HttpTelegramClient implements TelegramClient {
         return markup;
     }
 
+    /** Nothing came back at all (refused, timed out, reset): the only failure that says anything about the path. */
+    private static final class TransportException extends TelegramException {
+        TransportException(String message) {
+            super(Kind.UNAVAILABLE, message);
+        }
+    }
+
     private JsonNode call(String method, String body, Duration timeout) throws TelegramException {
+        return callOn(routes.current(), method, body, timeout);
+    }
+
+    private JsonNode callOn(Route route, String method, String body, Duration timeout) throws TelegramException {
         if (!isConfigured()) {
             throw new TelegramException(TelegramException.Kind.REJECTED, "Telegram is not configured on the server");
         }
@@ -185,14 +300,14 @@ public class HttpTelegramClient implements TelegramClient {
                 .build();
         HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = (route == Route.PROXY && viaProxy != null ? viaProxy : http).send(request, HttpResponse.BodyHandlers.ofByteArray());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new TelegramException(TelegramException.Kind.UNAVAILABLE, "Telegram request was interrupted");
         } catch (IOException | RuntimeException e) {
             // Class name only: the message of a connect failure can contain the URL, and the URL has the token.
             // Not logged here: the callers decide (the poll logs one line per series of failures, not one per try).
-            throw new TelegramException(TelegramException.Kind.UNAVAILABLE, "Telegram did not answer (" + e.getClass().getSimpleName() + ")");
+            throw new TransportException("Telegram did not answer (" + e.getClass().getSimpleName() + ")");
         }
         int status = response.statusCode();
         byte[] raw = response.body() == null ? new byte[0] : response.body();

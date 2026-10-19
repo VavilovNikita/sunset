@@ -20,6 +20,8 @@ public class FakeTelegramClient implements TelegramClient {
     }
 
     public volatile boolean configured = true;
+    public volatile Route route = Route.DIRECT;
+    public volatile boolean proxyConfigured = false;
     public volatile String botUsername = "sunset_test_bot";
     public final List<Sent> sent = new CopyOnWriteArrayList<>();
     public final List<Edit> edits = new CopyOnWriteArrayList<>();
@@ -40,6 +42,8 @@ public class FakeTelegramClient implements TelegramClient {
 
     public void reset() {
         configured = true;
+        route = Route.DIRECT;
+        proxyConfigured = false;
         botUsername = "sunset_test_bot";
         sent.clear();
         edits.clear();
@@ -70,6 +74,16 @@ public class FakeTelegramClient implements TelegramClient {
             return null;
         }
         return message.buttons().stream().flatMap(List::stream).filter(b -> b.text().equals(label)).map(Button::callbackData).findFirst().orElse(null);
+    }
+
+    @Override
+    public Route route() {
+        return route;
+    }
+
+    @Override
+    public boolean proxyConfigured() {
+        return proxyConfigured;
     }
 
     @Override

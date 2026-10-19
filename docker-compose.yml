@@ -10,6 +10,8 @@ services:
     environment:
       # Overridable via .env; safe fallback keeps container logs readable if unset.
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75.0}
+      # host:port of the hotel's HTTP proxy for Telegram (DEPLOY.md, Staff notifications). Empty = straight to Telegram.
+      TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
     # Bound to loopback only: the existing reverse proxy on the VPS (in front of
     # the Next.js app) is expected to proxy /api/* to http://127.0.0.1:8080.
     ports:

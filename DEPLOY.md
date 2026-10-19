@@ -247,6 +247,21 @@ to reach `api.telegram.org` over HTTPS (outbound).
    `TELEGRAM_BACKOFF_BASE_SECONDS` [3], `TELEGRAM_BACKOFF_MAX_SECONDS` [60], `SCHEDULING_POOL_SIZE` [8],
    `NOTIFICATIONS_SCAN_INTERVAL_MS` [60000], `NOTIFICATIONS_DELIVERY_INTERVAL_MS` [5000], `NOTIFICATIONS_MAX_ATTEMPTS` [5].
 
+6. **Telegram through the hotel's proxy (optional)** - when the VPS sometimes cannot reach `api.telegram.org` at all. The
+   hotel runs `tinyproxy` (only `CONNECT` to `api.telegram.org:443`), reachable over the wg-hotel tunnel. On the VPS put its
+   address in the backend's `.env`: `TELEGRAM_PROXY=<host>:<port>` (no `http://`), then `docker compose up -d backend`
+   (a plain restart does not re-read `.env`). Only the Telegram client uses it; nothing else in the backend goes through it.
+   Empty = straight to Telegram, as before. A malformed value stops the backend from starting (the log says
+   "TELEGRAM_PROXY must be host:port ...").
+   - **Check it**: the backend log has `Telegram requests go through the proxy <host>:<port>, ...` at startup, and
+     `GET /notifications/status` (Settings -> Notifications) says `telegramProxyConfigured:true, telegramRoute:"PROXY"`.
+   - **If the proxy or the hotel network is down** the backend does not go quiet: after 3 failed polls in a row
+     (`TELEGRAM_ROUTE_FAILURE_THRESHOLD`) it logs one WARN `Telegram via proxy failing, switching to direct`, status shows
+     `telegramRoute:"DIRECT"` (with the proxy still configured), and every 5 minutes (`TELEGRAM_ROUTE_RETRY_SECONDS`) it
+     looks at the proxy again; when it answers, one INFO `Telegram via proxy answers again, switching back to proxy`.
+     Direct is only a fallback: on a day when the VPS cannot reach Telegram *and* the hotel is offline, the bot is silent
+     (`failingSince` / `consecutiveFailures` in the status say so).
+
 Things that look wrong but are not:
 
 - **The late grace cannot be saved below the terminal's poll interval** (5 minutes with the default
