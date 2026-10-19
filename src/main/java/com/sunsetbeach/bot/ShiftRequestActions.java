@@ -75,13 +75,18 @@ public class ShiftRequestActions implements BotActionHandler, BotDialogueHandler
         if (problem.isPresent()) {
             return refused(ctx, problem.get());
         }
+        // Every eligible day up to moveMaxDaysAhead; the nearest moveWindowDays of them are buttons, the rest are
+        // reached through "Other date..." (the calendar, or a typed date).
         List<LocalDate> targets = requestService.eligibleTargets(ctx.user(), entry);
+        LocalDate lastButtonDay = ctx.today().plusDays(ctx.settings().getMoveWindowDays());
+        List<LocalDate> buttons = targets.stream().filter(d -> !d.isAfter(lastButtonDay)).toList();
+        boolean moreBeyond = targets.stream().anyMatch(d -> d.isAfter(lastButtonDay));
         if (targets.isEmpty()) {
             return List.of(BotReply.text(ctx.t(Key.MOVE_NO_DATES)));
         }
         BotReply reply = BotReply.text(ctx.t(Key.MOVE_PICK, Map.of("date", BotText.date(entry.getDate(), ctx.language()))));
         List<BotReply.Button> row = new ArrayList<>();
-        for (LocalDate target : targets) {
+        for (LocalDate target : buttons) {
             row.add(new BotReply.Button(BotText.date(target, ctx.language()), Kinds.SHIFT_MOVE_DATE, entryId, target.toString()));
             if (row.size() == 3) {
                 reply.row(row);
@@ -91,11 +96,14 @@ public class ShiftRequestActions implements BotActionHandler, BotDialogueHandler
         if (!row.isEmpty()) {
             reply.row(row);
         }
+        if (moreBeyond) {
+            reply.row(BotReply.Button.of(ctx.t(Key.MOVE_OTHER_DATE), Kinds.SHIFT_CAL, entryId));
+        }
         reply.row(BotReply.Button.of(ctx.t(Key.BTN_CANCEL), Kinds.DIALOGUE_CANCEL, null));
         return List.of(reply);
     }
 
-    private List<BotReply> startReason(BotContext ctx, String entryId, ShiftChangeRequestType type, LocalDate target) {
+    List<BotReply> startReason(BotContext ctx, String entryId, ShiftChangeRequestType type, LocalDate target) {
         RosterEntryEntity entry = entryRepository.findById(entryId).orElse(null);
         if (entry == null) {
             return List.of(BotReply.toastOnly(ctx.t(Key.BOT_BUTTON_EXPIRED)));

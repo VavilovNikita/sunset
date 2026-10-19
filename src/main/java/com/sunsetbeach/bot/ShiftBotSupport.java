@@ -32,6 +32,10 @@ final class ShiftBotSupport {
             case PENDING -> Key.REJ_PENDING;
             case TARGET -> Key.REJ_TARGET;
             case TARGET_BUSY -> Key.REJ_TARGET_BUSY;
+            case TARGET_PAST -> Key.REJ_TARGET_PAST;
+            case TARGET_TOO_FAR -> Key.REJ_TARGET_FAR;
+            case TARGET_SAME_DAY -> Key.REJ_TARGET_SAME;
+            case TARGET_TOO_SOON -> Key.REJ_TARGET_SOON;
             case REASON_REQUIRED -> Key.REJ_REASON_REQUIRED;
             case REASON_TOO_LONG -> Key.REASON_TOO_LONG;
         };
@@ -41,6 +45,6 @@ final class ShiftBotSupport {
     static String rejectionText(BotContext ctx, Rejection reason) {
         return ctx.t(rejectionKey(reason), Map.of(
                 "hours", String.valueOf(ctx.settings().getRequestMinHoursBefore()),
-                "days", String.valueOf(ctx.settings().getMoveWindowDays())));
+                "days", String.valueOf(ctx.settings().getMoveMaxDaysAhead())));
     }
 }

@@ -17,6 +17,15 @@ public final class BotReply {
         public static Button of(String label, String kind, String subjectId) {
             return new Button(label, kind, subjectId, null);
         }
+
+        /** A button that does nothing when pressed (a calendar's heading, weekday, empty day): no action row is stored for it. */
+        public static Button inert(String label) {
+            return new Button(label, null, null, null);
+        }
+
+        public boolean isInert() {
+            return kind == null;
+        }
     }
 
     private final String text;

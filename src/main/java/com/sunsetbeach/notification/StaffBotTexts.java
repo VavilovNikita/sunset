@@ -143,6 +143,19 @@ final class StaffBotTexts {
         add(REJ_TODAY, "Today's shift can't be changed here.", "เปลี่ยนกะของวันนี้ที่นี่ไม่ได้", "Сегодняшнюю смену здесь изменить нельзя.");
         add(REJ_PAST, "A shift that has passed can't be changed.", "กะที่ผ่านไปแล้วเปลี่ยนไม่ได้", "Прошедшую смену изменить нельзя.");
         add(REJ_TARGET, "Pick a day within the next {days} days.", "เลือกวันภายใน {days} วันข้างหน้า", "Выберите день в ближайшие {days} дн.");
+        add(REJ_TARGET_PAST, "That day has already passed.", "วันนั้นผ่านไปแล้ว", "Этот день уже прошёл.");
+        add(REJ_TARGET_FAR, "Too far ahead: a shift can be moved at most {days} days ahead.",
+                "ไกลเกินไป: ย้ายกะได้ล่วงหน้าไม่เกิน {days} วัน", "Слишком далеко: смену можно перенести не более чем на {days} дн. вперёд.");
+        add(REJ_TARGET_SAME, "That is the day of the shift itself. Pick another day.", "นั่นคือวันของกะนี้เอง เลือกวันอื่น", "Это день самой смены. Выберите другой день.");
+        add(REJ_TARGET_SOON, "Too close: a shift on that day would start less than {hours} h from now.",
+                "ใกล้เกินไป: กะในวันนั้นจะเริ่มในอีกไม่ถึง {hours} ชม.", "Слишком близко: смена в этот день начнётся менее чем через {hours} ч.");
+        add(MOVE_OTHER_DATE, "Other date...", "วันอื่น...", "Другая дата...");
+        add(MOVE_CALENDAR, "Pick the new day for your shift on {date}, or type a date (e.g. 25.11):",
+                "เลือกวันใหม่สำหรับกะวันที่ {date} หรือพิมพ์วันที่ (เช่น 25.11):", "Выберите новый день для смены {date} или напишите дату (например, 25.11):");
+        add(MOVE_CALENDAR_TYPED, "{why}\n\nPick a day in the calendar or type another date.",
+                "{why}\n\nเลือกวันในปฏิทินหรือพิมพ์วันที่อื่น", "{why}\n\nВыберите день в календаре или напишите другую дату.");
+        add(MOVE_DATE_UNREADABLE, "I could not read that date. Write it like 25.11, 25.11.2026 or 2026-11-25.",
+                "อ่านวันที่ไม่ได้ พิมพ์เช่น 25.11, 25.11.2026 หรือ 2026-11-25", "Не удалось разобрать дату. Напишите, например, 25.11, 25.11.2026 или 2026-11-25.");
         add(REJ_TARGET_BUSY, "You already have a shift on that day.", "คุณมีกะในวันนั้นอยู่แล้ว", "В этот день у вас уже есть смена.");
         add(REJ_PENDING, "There is already a request for this shift.", "มีคำขอสำหรับกะนี้อยู่แล้ว", "По этой смене уже есть заявка.");
         add(REJ_NOT_A_SHIFT, "Only working shifts can be changed.", "เปลี่ยนได้เฉพาะกะทำงาน", "Можно менять только рабочие смены.");

@@ -44,6 +44,8 @@ public class StaffBotSettings {
 
   private Integer moveWindowDays;
 
+  private Integer moveMaxDaysAhead;
+
   private Boolean reasonRequired;
 
   private Integer myShiftsDays;
@@ -116,7 +118,7 @@ public class StaffBotSettings {
   /**
    * Constructor with only required parameters
    */
-  public StaffBotSettings(Boolean myShiftsEnabled, Boolean myDayEnabled, Boolean myMonthEnabled, Boolean myRequestsEnabled, Boolean botSettingsEnabled, Boolean requestsEnabled, Boolean moveRequestsEnabled, Boolean deleteRequestsEnabled, Integer requestMinHoursBefore, Boolean allowTodayRequests, Integer moveWindowDays, Boolean reasonRequired, Integer myShiftsDays, Boolean fallbackToAdmin, Boolean pendingReminderEnabled, Integer pendingReminderHours, Boolean eveReminderEnabled, String eveReminderTime, Boolean eveReminderDefaultOn, Boolean rosterChangeEnabled, Integer rosterChangeHorizonDays, Integer rosterChangeDelayMinutes, Boolean engineerTasksEnabled, Boolean housekeeperBlocksEnabled, Integer housekeeperBlocksDays, Boolean therapistScheduleEnabled, Integer therapistScheduleDays, Boolean therapistMorningEnabled, String therapistMorningTime, Boolean therapistMorningDefaultOn, Boolean whoIsOnShiftEnabled, Boolean whoIsOnShiftForHr, Boolean summaryCommandEnabled, Boolean morningSummaryEnabled, String morningSummaryTime, Boolean summaryArrivals, Boolean summaryDepartures, Boolean summaryInHouse, Boolean summaryOccupancy, Boolean summaryRooms, Boolean summaryStaff, Boolean summaryRequests, OffsetDateTime updatedAt) {
+  public StaffBotSettings(Boolean myShiftsEnabled, Boolean myDayEnabled, Boolean myMonthEnabled, Boolean myRequestsEnabled, Boolean botSettingsEnabled, Boolean requestsEnabled, Boolean moveRequestsEnabled, Boolean deleteRequestsEnabled, Integer requestMinHoursBefore, Boolean allowTodayRequests, Integer moveWindowDays, Integer moveMaxDaysAhead, Boolean reasonRequired, Integer myShiftsDays, Boolean fallbackToAdmin, Boolean pendingReminderEnabled, Integer pendingReminderHours, Boolean eveReminderEnabled, String eveReminderTime, Boolean eveReminderDefaultOn, Boolean rosterChangeEnabled, Integer rosterChangeHorizonDays, Integer rosterChangeDelayMinutes, Boolean engineerTasksEnabled, Boolean housekeeperBlocksEnabled, Integer housekeeperBlocksDays, Boolean therapistScheduleEnabled, Integer therapistScheduleDays, Boolean therapistMorningEnabled, String therapistMorningTime, Boolean therapistMorningDefaultOn, Boolean whoIsOnShiftEnabled, Boolean whoIsOnShiftForHr, Boolean summaryCommandEnabled, Boolean morningSummaryEnabled, String morningSummaryTime, Boolean summaryArrivals, Boolean summaryDepartures, Boolean summaryInHouse, Boolean summaryOccupancy, Boolean summaryRooms, Boolean summaryStaff, Boolean summaryRequests, OffsetDateTime updatedAt) {
     this.myShiftsEnabled = myShiftsEnabled;
     this.myDayEnabled = myDayEnabled;
     this.myMonthEnabled = myMonthEnabled;
@@ -128,6 +130,7 @@ public class StaffBotSettings {
     this.requestMinHoursBefore = requestMinHoursBefore;
     this.allowTodayRequests = allowTodayRequests;
     this.moveWindowDays = moveWindowDays;
+    this.moveMaxDaysAhead = moveMaxDaysAhead;
     this.reasonRequired = reasonRequired;
     this.myShiftsDays = myShiftsDays;
     this.fallbackToAdmin = fallbackToAdmin;
@@ -360,7 +363,7 @@ public class StaffBotSettings {
   }
 
   /**
-   * A shift can be moved to a day at most this many days ahead (default 14).
+   * How many of the nearest days the bot offers as buttons when a shift is moved (default 14). It does not limit the move - `moveMaxDaysAhead` does. 
    * minimum: 1
    * maximum: 90
    * @return moveWindowDays
@@ -373,6 +376,27 @@ public class StaffBotSettings {
 
   public void setMoveWindowDays(Integer moveWindowDays) {
     this.moveWindowDays = moveWindowDays;
+  }
+
+  public StaffBotSettings moveMaxDaysAhead(Integer moveMaxDaysAhead) {
+    this.moveMaxDaysAhead = moveMaxDaysAhead;
+    return this;
+  }
+
+  /**
+   * How far ahead a shift can be moved at all (default 60; never less than `moveWindowDays`, else 400 on this field). Days beyond the buttons are reached with the bot's \"Other date...\" calendar or by typing a date. 
+   * minimum: 1
+   * maximum: 180
+   * @return moveMaxDaysAhead
+   */
+  @NotNull @Min(1) @Max(180) 
+  @JsonProperty("moveMaxDaysAhead")
+  public Integer getMoveMaxDaysAhead() {
+    return moveMaxDaysAhead;
+  }
+
+  public void setMoveMaxDaysAhead(Integer moveMaxDaysAhead) {
+    this.moveMaxDaysAhead = moveMaxDaysAhead;
   }
 
   public StaffBotSettings reasonRequired(Boolean reasonRequired) {
@@ -1015,6 +1039,7 @@ public class StaffBotSettings {
         Objects.equals(this.requestMinHoursBefore, staffBotSettings.requestMinHoursBefore) &&
         Objects.equals(this.allowTodayRequests, staffBotSettings.allowTodayRequests) &&
         Objects.equals(this.moveWindowDays, staffBotSettings.moveWindowDays) &&
+        Objects.equals(this.moveMaxDaysAhead, staffBotSettings.moveMaxDaysAhead) &&
         Objects.equals(this.reasonRequired, staffBotSettings.reasonRequired) &&
         Objects.equals(this.myShiftsDays, staffBotSettings.myShiftsDays) &&
         Objects.equals(this.fallbackToAdmin, staffBotSettings.fallbackToAdmin) &&
@@ -1051,7 +1076,7 @@ public class StaffBotSettings {
 
   @Override
   public int hashCode() {
-    return Objects.hash(myShiftsEnabled, myDayEnabled, myMonthEnabled, myRequestsEnabled, botSettingsEnabled, requestsEnabled, moveRequestsEnabled, deleteRequestsEnabled, requestMinHoursBefore, allowTodayRequests, moveWindowDays, reasonRequired, myShiftsDays, fallbackToAdmin, pendingReminderEnabled, pendingReminderHours, eveReminderEnabled, eveReminderTime, eveReminderDefaultOn, rosterChangeEnabled, rosterChangeHorizonDays, rosterChangeDelayMinutes, engineerTasksEnabled, housekeeperBlocksEnabled, housekeeperBlocksDays, therapistScheduleEnabled, therapistScheduleDays, therapistMorningEnabled, therapistMorningTime, therapistMorningDefaultOn, whoIsOnShiftEnabled, whoIsOnShiftForHr, summaryCommandEnabled, morningSummaryEnabled, morningSummaryTime, summaryArrivals, summaryDepartures, summaryInHouse, summaryOccupancy, summaryRooms, summaryStaff, summaryRequests, updatedAt);
+    return Objects.hash(myShiftsEnabled, myDayEnabled, myMonthEnabled, myRequestsEnabled, botSettingsEnabled, requestsEnabled, moveRequestsEnabled, deleteRequestsEnabled, requestMinHoursBefore, allowTodayRequests, moveWindowDays, moveMaxDaysAhead, reasonRequired, myShiftsDays, fallbackToAdmin, pendingReminderEnabled, pendingReminderHours, eveReminderEnabled, eveReminderTime, eveReminderDefaultOn, rosterChangeEnabled, rosterChangeHorizonDays, rosterChangeDelayMinutes, engineerTasksEnabled, housekeeperBlocksEnabled, housekeeperBlocksDays, therapistScheduleEnabled, therapistScheduleDays, therapistMorningEnabled, therapistMorningTime, therapistMorningDefaultOn, whoIsOnShiftEnabled, whoIsOnShiftForHr, summaryCommandEnabled, morningSummaryEnabled, morningSummaryTime, summaryArrivals, summaryDepartures, summaryInHouse, summaryOccupancy, summaryRooms, summaryStaff, summaryRequests, updatedAt);
   }
 
   @Override
@@ -1069,6 +1094,7 @@ public class StaffBotSettings {
     sb.append("    requestMinHoursBefore: ").append(toIndentedString(requestMinHoursBefore)).append("\n");
     sb.append("    allowTodayRequests: ").append(toIndentedString(allowTodayRequests)).append("\n");
     sb.append("    moveWindowDays: ").append(toIndentedString(moveWindowDays)).append("\n");
+    sb.append("    moveMaxDaysAhead: ").append(toIndentedString(moveMaxDaysAhead)).append("\n");
     sb.append("    reasonRequired: ").append(toIndentedString(reasonRequired)).append("\n");
     sb.append("    myShiftsDays: ").append(toIndentedString(myShiftsDays)).append("\n");
     sb.append("    fallbackToAdmin: ").append(toIndentedString(fallbackToAdmin)).append("\n");

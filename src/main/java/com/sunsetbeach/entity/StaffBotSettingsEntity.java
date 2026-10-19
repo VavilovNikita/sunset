@@ -38,6 +38,8 @@ public class StaffBotSettingsEntity {
 
     private int moveWindowDays;
 
+    private int moveMaxDaysAhead;
+
     private boolean reasonRequired;
 
     private int myShiftsDays;
@@ -197,6 +199,14 @@ public class StaffBotSettingsEntity {
 
     public void setMoveWindowDays(int moveWindowDays) {
         this.moveWindowDays = moveWindowDays;
+    }
+
+    public int getMoveMaxDaysAhead() {
+        return moveMaxDaysAhead;
+    }
+
+    public void setMoveMaxDaysAhead(int moveMaxDaysAhead) {
+        this.moveMaxDaysAhead = moveMaxDaysAhead;
     }
 
     public boolean isReasonRequired() {

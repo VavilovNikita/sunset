@@ -65,6 +65,8 @@ public class StaffBotService {
     private static final String TELEGRAM = "TELEGRAM";
     private static final Duration BUTTON_LIFETIME = Duration.ofHours(24);
     private static final String CALLBACK_PREFIX = "a:";
+    /** What an inert button (a calendar heading or an empty day) carries; a press is acknowledged and nothing else. */
+    static final String INERT_CALLBACK = "x";
 
     private final TelegramClient telegram;
     private final StaffChannelLinkRepository linkRepository;
@@ -267,6 +269,9 @@ public class StaffBotService {
     private void handleCallback(TelegramUpdate update) {
         acknowledge(update);
         String data = update.callbackData();
+        if (INERT_CALLBACK.equals(data)) {
+            return;
+        }
         StaffActionEntity action = data != null && data.startsWith(CALLBACK_PREFIX)
                 ? actionRepository.findById(data.substring(CALLBACK_PREFIX.length())).orElse(null)
                 : null;
@@ -343,6 +348,10 @@ public class StaffBotService {
             for (List<BotReply.Button> row : reply.rows()) {
                 List<Button> converted = new ArrayList<>();
                 for (BotReply.Button b : row) {
+                    if (b.isInert()) {
+                        converted.add(new Button(b.label(), INERT_CALLBACK));
+                        continue;
+                    }
                     StaffActionEntity a = new StaffActionEntity();
                     a.setId(BotActionIds.next());
                     a.setUserId(ctx.user().getId());

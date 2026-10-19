@@ -350,11 +350,20 @@ class StaffBotTests extends NotificationTestBase {
         List<LocalDate> targets = requestService.eligibleTargets(employee, entry);
         // Tomorrow's 09:00 is less than the 24 h notice away from 10:00 today; the day after is not.
         assertThat(targets).doesNotContain(SHIFT_DAY, TARGET_DAY, TODAY, TODAY.plusDays(1)).contains(TODAY.plusDays(2));
-        assertThat(targets).allSatisfy(d -> assertThat(d).isBetween(TODAY, TODAY.plusDays(14)));
+        assertThat(targets).allSatisfy(d -> assertThat(d).isBetween(TODAY, TODAY.plusDays(60)));
+        assertThat(targets).contains(TODAY.plusDays(60)).doesNotContain(TODAY.plusDays(61));
         assertThatThrownBy(() -> file(entry, ShiftChangeRequestType.MOVE, TARGET_DAY, "x"))
                 .isInstanceOfSatisfying(ShiftRequestException.class, e -> assertThat(e.reason()).isEqualTo(Rejection.TARGET_BUSY));
-        assertThatThrownBy(() -> file(entry, ShiftChangeRequestType.MOVE, TODAY.plusDays(40), "x"))
-                .isInstanceOfSatisfying(ShiftRequestException.class, e -> assertThat(e.reason()).isEqualTo(Rejection.TARGET));
+        assertThatThrownBy(() -> file(entry, ShiftChangeRequestType.MOVE, TODAY.plusDays(61), "x"))
+                .isInstanceOfSatisfying(ShiftRequestException.class, e -> assertThat(e.reason()).isEqualTo(Rejection.TARGET_TOO_FAR));
+        assertThatThrownBy(() -> file(entry, ShiftChangeRequestType.MOVE, TODAY.minusDays(1), "x"))
+                .isInstanceOfSatisfying(ShiftRequestException.class, e -> assertThat(e.reason()).isEqualTo(Rejection.TARGET_PAST));
+        assertThatThrownBy(() -> file(entry, ShiftChangeRequestType.MOVE, SHIFT_DAY, "x"))
+                .isInstanceOfSatisfying(ShiftRequestException.class, e -> assertThat(e.reason()).isEqualTo(Rejection.TARGET_SAME_DAY));
+        assertThatThrownBy(() -> file(entry, ShiftChangeRequestType.MOVE, TODAY.plusDays(1), "x"))
+                .isInstanceOfSatisfying(ShiftRequestException.class, e -> assertThat(e.reason()).isEqualTo(Rejection.TARGET_TOO_SOON));
+        // A day beyond the 14 the bot shows as buttons, inside moveMaxDaysAhead, is fine.
+        assertThat(file(entry, ShiftChangeRequestType.MOVE, TODAY.plusDays(45), "x").getTargetDate()).isEqualTo(TODAY.plusDays(45));
     }
 
     @Test
@@ -750,6 +759,212 @@ class StaffBotTests extends NotificationTestBase {
         assertThat(rosterEntryRepository.findByEmployeeUserIdAndDate(employee.getId(), SHIFT_DAY)).isPresent();
     }
 
+    // ---- "Other date..." : the calendar and the typed date ---------------------------------------------------------
+
+    private static final com.sunsetbeach.model.NotificationLanguage EN = com.sunsetbeach.model.NotificationLanguage.EN;
+
+    private static String callbackIn(List<List<com.sunsetbeach.notification.TelegramClient.Button>> rows, String label) {
+        return rows.stream().flatMap(List::stream).filter(b -> b.text().equals(label)).map(com.sunsetbeach.notification.TelegramClient.Button::callbackData).findFirst().orElse(null);
+    }
+
+    private FakeTelegramClient.Edit lastEdit() {
+        return telegram.edits.get(telegram.edits.size() - 1);
+    }
+
+    /** The employee's shift is on SHIFT_DAY; opens "My shifts" -> Move and returns the date-picking message. */
+    private FakeTelegramClient.Sent openMovePicker() {
+        say(employeeChat, "/shifts");
+        press(employeeChat, FakeTelegramClient.callbackOf(telegram.lastTo(employeeChat), "Move " + BotText.date(SHIFT_DAY, EN)));
+        return telegram.lastTo(employeeChat);
+    }
+
+    private FakeTelegramClient.Edit openCalendar() {
+        press(employeeChat, FakeTelegramClient.callbackOf(openMovePicker(), "Other date..."));
+        return lastEdit();
+    }
+
+    private String conversationState() {
+        return botConversationRepository.findById(employeeChat).map(c -> c.getState()).orElse(null);
+    }
+
+    private ShiftChangeRequestEntity newestRequest() {
+        return shiftRequestRepository.findByEmployeeUserIdOrderByCreatedAtDesc(employee.getId(), org.springframework.data.domain.PageRequest.of(0, 5)).get(0);
+    }
+
+    private boolean noRequestsFiled() {
+        return shiftRequestRepository.findByEmployeeUserIdOrderByCreatedAtDesc(employee.getId(), org.springframework.data.domain.PageRequest.of(0, 5)).isEmpty();
+    }
+
+    @Test
+    void aDayBeyondTheButtons_insideTheHorizon_isChosenInTheCalendar_filed_andApproved() {
+        entry(employee, SHIFT_DAY);
+        FakeTelegramClient.Sent picker = openMovePicker();
+        // The nearest 14 days are buttons, the day 30 ahead is not - only the way to the calendar is.
+        assertThat(FakeTelegramClient.callbackOf(picker, BotText.date(TARGET_DAY, EN))).isNotNull();
+        assertThat(FakeTelegramClient.callbackOf(picker, BotText.date(TODAY.plusDays(30), EN))).isNull();
+
+        press(employeeChat, FakeTelegramClient.callbackOf(picker, "Other date..."));
+        FakeTelegramClient.Edit calendar = lastEdit();
+        // It rewrote the message the button sat under (no new message), on the month where the buttons stopped.
+        assertThat(telegram.sent).filteredOn(m -> m.text().contains("type a date")).isEmpty();
+        assertThat(calendar.buttons().get(0).get(1).text()).isEqualTo("June 2033");
+        assertThat(calendar.buttons().get(1).stream().map(b -> b.text()).toList()).containsExactly("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun");
+        assertThat(conversationState()).isEqualTo("SHIFT_DATE");
+
+        press(employeeChat, callbackIn(calendar.buttons(), "20")); // 20 June, 34 days ahead
+        assertThat(conversationState()).isEqualTo("SHIFT_REASON");
+        say(employeeChat, "Visa run");
+
+        ShiftChangeRequestEntity request = newestRequest();
+        assertThat(request.getTargetDate()).isEqualTo(LocalDate.of(2033, 6, 20));
+        deliveryService.runOnce();
+        press(hrChat, FakeTelegramClient.callbackOf(telegram.lastTo(hrChat), "Approve"));
+        assertThat(reload(request).getStatus()).isEqualTo("APPROVED");
+        assertThat(rosterEntryRepository.findByEmployeeUserIdAndDate(employee.getId(), LocalDate.of(2033, 6, 20))).isPresent();
+    }
+
+    @Test
+    void whenNoNearDayIsFree_theCalendarIsTheOnlyChoice_notAMessageThatThereIsNothing() {
+        entry(employee, SHIFT_DAY);
+        botSettings(s -> s.setMoveWindowDays(1)); // today and tomorrow: neither can take the shift (notice period)
+
+        FakeTelegramClient.Sent picker = openMovePicker();
+
+        assertThat(picker.text()).startsWith("Pick the new day");
+        assertThat(FakeTelegramClient.callbackOf(picker, "Other date...")).isNotNull();
+        assertThat(FakeTelegramClient.callbackOf(picker, "Cancel")).isNotNull();
+    }
+
+    @Test
+    void thereIsNoOtherDateButton_whenNothingBeyondTheButtonsIsAllowed() {
+        entry(employee, SHIFT_DAY);
+        botSettings(s -> {
+            s.setMoveWindowDays(14);
+            s.setMoveMaxDaysAhead(14);
+        });
+
+        assertThat(FakeTelegramClient.callbackOf(openMovePicker(), "Other date...")).isNull();
+    }
+
+    @Test
+    void theCalendar_pressesOnlyAllowedDays_andPagesOnlyInsideTheHorizon() {
+        entry(employee, SHIFT_DAY);
+        entry(employee, TODAY.plusDays(20)); // 6 June: busy
+        FakeTelegramClient.Edit june = openCalendar();
+
+        assertThat(callbackIn(june.buttons(), "5")).isNotNull();
+        assertThat(callbackIn(june.buttons(), "6")).isNull(); // busy day: an empty button
+        assertThat(june.buttons().stream().flatMap(List::stream).filter(b -> b.text().equals("·")).allMatch(b -> b.callbackData().equals("x"))).isTrue();
+
+        press(employeeChat, callbackIn(june.buttons(), "◀"));
+        FakeTelegramClient.Edit may = lastEdit();
+        assertThat(may.buttons().get(0).get(1).text()).isEqualTo("May 2033");
+        assertThat(may.buttons().get(0).get(0).callbackData()).isEqualTo("x"); // nothing before the current month
+        // 17 today, 18 too close for the 24 h notice, 20 the shift itself; 19 and 21 are fine.
+        assertThat(List.of("17", "18", "20")).allSatisfy(d -> assertThat(callbackIn(may.buttons(), d)).isNull());
+        assertThat(List.of("19", "21")).allSatisfy(d -> assertThat(callbackIn(may.buttons(), d)).isNotNull());
+
+        press(employeeChat, callbackIn(may.buttons(), "▶"));
+        press(employeeChat, callbackIn(lastEdit().buttons(), "▶"));
+        FakeTelegramClient.Edit july = lastEdit();
+        assertThat(july.buttons().get(0).get(1).text()).isEqualTo("July 2033");
+        assertThat(july.buttons().get(0).get(2).callbackData()).isEqualTo("x"); // the horizon ends 16 July
+        assertThat(callbackIn(july.buttons(), "16")).isNotNull();
+        assertThat(callbackIn(july.buttons(), "17")).isNull();
+
+        // A press on an empty button is acknowledged and does nothing.
+        int sentBefore = telegram.sent.size();
+        int editsBefore = telegram.edits.size();
+        press(employeeChat, "x");
+        assertThat(telegram.sent).hasSize(sentBefore);
+        assertThat(telegram.edits).hasSize(editsBefore);
+    }
+
+    @Test
+    void aTypedDate_isReadInEveryFormat_andTheBuddhistYearToo() {
+        entry(employee, SHIFT_DAY);
+        for (String typed : List.of("25.06", "25/06", "25.06.2033", "2033-06-25", "25.06.2576")) {
+            openCalendar();
+            say(employeeChat, typed);
+            assertThat(conversationState()).as(typed).isEqualTo("SHIFT_REASON");
+            assertThat(botConversationRepository.findById(employeeChat).orElseThrow().getTargetDate()).as(typed).isEqualTo(LocalDate.of(2033, 6, 25));
+        }
+        say(employeeChat, "Family");
+        assertThat(newestRequest().getTargetDate()).isEqualTo(LocalDate.of(2033, 6, 25));
+    }
+
+    @Test
+    void aTypedDateThatIsNotAllowed_isAnsweredInWords_andTheCalendarStaysOpen() {
+        entry(employee, SHIFT_DAY);
+        entry(employee, TODAY.plusDays(20));
+        openCalendar();
+
+        record Case(String typed, String expectedText) {
+        }
+        for (Case c : List.of(
+                new Case("hello", "could not read that date"),
+                new Case("31.02", "could not read that date"),
+                new Case("01.05.2033", "already passed"),
+                new Case("01.05", "Too far ahead"), // no year: the nearest 1 May not before today is next year's
+                new Case("2033-08-01", "Too far ahead"),
+                new Case("20.05", "day of the shift itself"),
+                new Case("17.05", "Too close"),
+                new Case("06.06", "already have a shift"))) {
+            say(employeeChat, c.typed());
+            assertThat(telegram.lastTo(employeeChat).text()).as(c.typed()).contains(c.expectedText());
+            assertThat(conversationState()).as(c.typed()).isEqualTo("SHIFT_DATE");
+        }
+        assertThat(noRequestsFiled()).isTrue();
+
+        // Any command ends the dialogue.
+        say(employeeChat, "/menu");
+        assertThat(conversationState()).isNull();
+    }
+
+    @Test
+    void aYearlessDate_isMeasuredByTheHotelsMidnight_notTheUtcOne() {
+        entry(employee, SHIFT_DAY);
+
+        // 23:30 on the 17th in Bangkok: "17.05" is still today, so it is refused as too close - not as passed or far.
+        clock.set(TODAY + "T23:30");
+        openCalendar();
+        say(employeeChat, "17.05");
+        assertThat(telegram.lastTo(employeeChat).text()).contains("Too close");
+
+        // 00:30 on the 18th: the nearest 17 May is next year's.
+        clock.set(TODAY.plusDays(1) + "T00:30");
+        openCalendar();
+        say(employeeChat, "17.05");
+        assertThat(telegram.lastTo(employeeChat).text()).contains("Too far ahead");
+    }
+
+    @Test
+    void aDayButtonOfAnOldCalendar_afterTheSettingsChanged_refusesInsteadOfFiling() {
+        entry(employee, SHIFT_DAY);
+        FakeTelegramClient.Edit june = openCalendar();
+        String oldButton = callbackIn(june.buttons(), "20"); // 20 June, 34 days ahead
+
+        botSettings(s -> s.setMoveMaxDaysAhead(20));
+        press(employeeChat, oldButton);
+
+        assertThat(telegram.lastTo(employeeChat).text()).contains("Too far ahead").contains("20 days");
+        assertThat(conversationState()).isEqualTo("SHIFT_DATE");
+        assertThat(noRequestsFiled()).isTrue();
+    }
+
+    @Test
+    void aTypedDateTakenWhileTheReasonIsBeingTyped_isRefusedAtFilingToo() {
+        RosterEntryEntity entry = entry(employee, SHIFT_DAY);
+        openCalendar();
+        say(employeeChat, "25.06");
+        entry(employee, LocalDate.of(2033, 6, 25)); // the day gets taken before the reason arrives
+
+        say(employeeChat, "Family");
+
+        assertThat(telegram.lastTo(employeeChat).text()).contains("already have a shift");
+        assertThat(shiftRequestRepository.findByRosterEntryIdInAndStatus(List.of(entry.getId()), "PENDING")).isEmpty();
+    }
+
     // ---- settings --------------------------------------------------------------------------------------------------------
 
     @Test
@@ -759,7 +974,7 @@ class StaffBotTests extends NotificationTestBase {
         var input = new com.sunsetbeach.model.StaffBotSettingsUpdateInput(
                 current.getMyShiftsEnabled(), current.getMyDayEnabled(), current.getMyMonthEnabled(), current.getMyRequestsEnabled(),
                 current.getBotSettingsEnabled(), current.getRequestsEnabled(), current.getMoveRequestsEnabled(), current.getDeleteRequestsEnabled(),
-                current.getRequestMinHoursBefore(), current.getAllowTodayRequests(), current.getMoveWindowDays(), current.getReasonRequired(),
+                current.getRequestMinHoursBefore(), current.getAllowTodayRequests(), current.getMoveWindowDays(), current.getMoveMaxDaysAhead(), current.getReasonRequired(),
                 current.getMyShiftsDays(), current.getFallbackToAdmin(), current.getPendingReminderEnabled(), current.getPendingReminderHours(),
                 current.getEveReminderEnabled(), current.getEveReminderTime(), current.getEveReminderDefaultOn(),
                 current.getRosterChangeEnabled(), current.getRosterChangeHorizonDays(), current.getRosterChangeDelayMinutes(),
@@ -782,6 +997,12 @@ class StaffBotTests extends NotificationTestBase {
         input.setEveReminderTime("not a time");
         assertThatThrownBy(() -> botSettingsService.update(input)).isInstanceOf(com.sunsetbeach.error.ValidationException.class);
         input.setEveReminderTime(current.getEveReminderTime());
+
+        // The horizon is never shorter than the buttons' window: refused on its own field.
+        input.setMoveMaxDaysAhead(current.getMoveWindowDays() - 1);
+        assertThatThrownBy(() -> botSettingsService.update(input))
+                .isInstanceOfSatisfying(com.sunsetbeach.error.ValidationException.class, e -> assertThat(e.getMessage()).contains("nearest days"));
+        input.setMoveMaxDaysAhead(current.getMoveMaxDaysAhead());
 
         // The part-two fields: a change is audited, a bad time is refused on its own field.
         input.setHousekeeperBlocksDays(21);

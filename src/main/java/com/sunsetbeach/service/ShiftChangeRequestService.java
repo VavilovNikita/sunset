@@ -81,7 +81,9 @@ public class ShiftChangeRequestService {
 
     /** Why a request was refused before it was filed - the bot words each in the person's language. */
     public enum Rejection {
-        DISABLED, NOT_YOURS, NOT_A_SHIFT, LOCKED, PAST, TODAY, TOO_LATE, PENDING, TARGET, TARGET_BUSY, REASON_REQUIRED, REASON_TOO_LONG
+        DISABLED, NOT_YOURS, NOT_A_SHIFT, LOCKED, PAST, TODAY, TOO_LATE, PENDING, TARGET, TARGET_BUSY, REASON_REQUIRED, REASON_TOO_LONG,
+        /** A target day that is before today / further than {@code moveMaxDaysAhead} / the shift's own day / too close to start by the notice rule. */
+        TARGET_PAST, TARGET_TOO_FAR, TARGET_SAME_DAY, TARGET_TOO_SOON
     }
 
     public static class ShiftRequestException extends RuntimeException {
@@ -199,12 +201,15 @@ public class ShiftChangeRequestService {
         return Optional.empty();
     }
 
-    /** Days a MOVE can go to: inside the window, free for the employee, and acceptable by the same timing rule. */
+    /**
+     * Every day a MOVE can go to: up to {@code moveMaxDaysAhead} ahead (not just the {@code moveWindowDays} the bot
+     * shows as buttons), free for the employee, and acceptable by the same timing rule.
+     */
     public List<LocalDate> eligibleTargets(UserEntity employee, RosterEntryEntity entry) {
         StaffBotSettingsEntity s = settingsService.getEntity();
         ShiftCodeEntity code = shiftCodeRepository.findById(entry.getShiftCodeId()).orElse(null);
         LocalDate today = LocalDate.now(clock);
-        LocalDate last = today.plusDays(s.getMoveWindowDays());
+        LocalDate last = today.plusDays(s.getMoveMaxDaysAhead());
         Set<LocalDate> busy = entryRepository.findByEmployeeUserIdAndDateBetween(employee.getId(), today, last).stream()
                 .map(RosterEntryEntity::getDate).collect(Collectors.toSet());
         List<LocalDate> dates = new ArrayList<>();
@@ -219,13 +224,22 @@ public class ShiftChangeRequestService {
     public Optional<Rejection> checkTarget(UserEntity employee, RosterEntryEntity entry, LocalDate target) {
         StaffBotSettingsEntity s = settingsService.getEntity();
         LocalDate today = LocalDate.now(clock);
-        if (target == null || target.isBefore(today) || target.isAfter(today.plusDays(s.getMoveWindowDays())) || target.equals(entry.getDate())) {
+        if (target == null) {
             return Optional.of(Rejection.TARGET);
+        }
+        if (target.isBefore(today)) {
+            return Optional.of(Rejection.TARGET_PAST);
+        }
+        if (target.isAfter(today.plusDays(s.getMoveMaxDaysAhead()))) {
+            return Optional.of(Rejection.TARGET_TOO_FAR);
+        }
+        if (target.equals(entry.getDate())) {
+            return Optional.of(Rejection.TARGET_SAME_DAY);
         }
         if (entryRepository.findByEmployeeUserIdAndDate(employee.getId(), target).isPresent()) {
             return Optional.of(Rejection.TARGET_BUSY);
         }
-        return timingProblem(target, shiftCodeRepository.findById(entry.getShiftCodeId()).orElse(null), s);
+        return timingProblem(target, shiftCodeRepository.findById(entry.getShiftCodeId()).orElse(null), s).map(r -> Rejection.TARGET_TOO_SOON);
     }
 
     // ---- filing --------------------------------------------------------------------------------------

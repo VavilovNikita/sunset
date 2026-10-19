@@ -23,6 +23,10 @@ public final class BotText {
     private static final String[] TH_MONTHS = {"ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."};
     private static final String[] RU_MONTHS = {"янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"};
 
+    private static final String[] EN_MONTHS_LONG = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
+    private static final String[] TH_MONTHS_LONG = {"มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"};
+    private static final String[] RU_MONTHS_LONG = {"Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"};
+
     private BotText() {
     }
 
@@ -46,6 +50,26 @@ public final class BotText {
             case RU -> RU_MONTHS[m];
         };
         return name + " " + month.getYear();
+    }
+
+    /** {@code October 2026} / {@code Октябрь 2026} / {@code ตุลาคม 2026} - the calendar's heading. */
+    public static String monthLong(java.time.YearMonth month, NotificationLanguage language) {
+        int m = month.getMonthValue() - 1;
+        String name = switch (language) {
+            case EN -> EN_MONTHS_LONG[m];
+            case TH -> TH_MONTHS_LONG[m];
+            case RU -> RU_MONTHS_LONG[m];
+        };
+        return name + " " + month.getYear();
+    }
+
+    /** The short weekday name, Monday first ({@code dayOfWeek} is {@link java.time.DayOfWeek#getValue()}, 1..7). */
+    public static String weekday(int dayOfWeek, NotificationLanguage language) {
+        return switch (language) {
+            case EN -> EN_DAYS[dayOfWeek - 1];
+            case TH -> TH_DAYS[dayOfWeek - 1];
+            case RU -> RU_DAYS[dayOfWeek - 1];
+        };
     }
 
     /** {@code N1 09:00-18:00}, or just the code for a shift with no times. */

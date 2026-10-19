@@ -24,6 +24,8 @@ public record NotificationAction(String kind, String subjectId, String arg) {
         public static final String SHIFT_REQUEST_CANCEL = "SHIFT_REQUEST_CANCEL";
         public static final String SHIFT_MOVE = "SHIFT_MOVE";
         public static final String SHIFT_MOVE_DATE = "SHIFT_MOVE_DATE";
+        /** "Other date...": opens (and pages) the month calendar of a shift move. */
+        public static final String SHIFT_CAL = "SHIFT_CAL";
         public static final String SHIFT_DELETE = "SHIFT_DELETE";
         public static final String SHIFT_REASON_SKIP = "SHIFT_REASON_SKIP";
         public static final String DIALOGUE_CANCEL = "DIALOGUE_CANCEL";

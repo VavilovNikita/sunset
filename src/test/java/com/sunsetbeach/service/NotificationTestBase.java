@@ -238,6 +238,7 @@ abstract class NotificationTestBase extends AbstractIntegrationTest {
         s.setRequestMinHoursBefore(24);
         s.setAllowTodayRequests(false);
         s.setMoveWindowDays(14);
+        s.setMoveMaxDaysAhead(60);
         s.setReasonRequired(true);
         s.setMyShiftsDays(14);
         s.setFallbackToAdmin(true);

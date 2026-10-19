@@ -49,6 +49,9 @@ public class StaffBotSettingsService {
         LocalTime eveTime = time("eveReminderTime", in.getEveReminderTime());
         LocalTime therapistMorningTime = time("therapistMorningTime", in.getTherapistMorningTime());
         LocalTime morningSummaryTime = time("morningSummaryTime", in.getMorningSummaryTime());
+        if (in.getMoveMaxDaysAhead() < in.getMoveWindowDays()) {
+            throw ValidationException.field("moveMaxDaysAhead", "Must be at least the number of nearest days shown as buttons (" + in.getMoveWindowDays() + ")");
+        }
 
         StaffBotSettingsEntity e = getEntity();
         List<String> changes = new ArrayList<>();
@@ -63,6 +66,7 @@ public class StaffBotSettingsService {
         change(changes, "request notice hours", e.getRequestMinHoursBefore(), in.getRequestMinHoursBefore());
         change(changes, "requests for today", e.isAllowTodayRequests(), in.getAllowTodayRequests());
         change(changes, "move window days", e.getMoveWindowDays(), in.getMoveWindowDays());
+        change(changes, "move max days ahead", e.getMoveMaxDaysAhead(), in.getMoveMaxDaysAhead());
         change(changes, "reason required", e.isReasonRequired(), in.getReasonRequired());
         change(changes, "My shifts days", e.getMyShiftsDays(), in.getMyShiftsDays());
         change(changes, "administrator fallback", e.isFallbackToAdmin(), in.getFallbackToAdmin());
@@ -110,6 +114,7 @@ public class StaffBotSettingsService {
         e.setRequestMinHoursBefore(in.getRequestMinHoursBefore());
         e.setAllowTodayRequests(in.getAllowTodayRequests());
         e.setMoveWindowDays(in.getMoveWindowDays());
+        e.setMoveMaxDaysAhead(in.getMoveMaxDaysAhead());
         e.setReasonRequired(in.getReasonRequired());
         e.setMyShiftsDays(in.getMyShiftsDays());
         e.setFallbackToAdmin(in.getFallbackToAdmin());
@@ -165,7 +170,7 @@ public class StaffBotSettingsService {
         return new StaffBotSettings(
                 e.isMyShiftsEnabled(), e.isMyDayEnabled(), e.isMyMonthEnabled(), e.isMyRequestsEnabled(), e.isBotSettingsEnabled(),
                 e.isRequestsEnabled(), e.isMoveRequestsEnabled(), e.isDeleteRequestsEnabled(),
-                e.getRequestMinHoursBefore(), e.isAllowTodayRequests(), e.getMoveWindowDays(), e.isReasonRequired(), e.getMyShiftsDays(),
+                e.getRequestMinHoursBefore(), e.isAllowTodayRequests(), e.getMoveWindowDays(), e.getMoveMaxDaysAhead(), e.isReasonRequired(), e.getMyShiftsDays(),
                 e.isFallbackToAdmin(), e.isPendingReminderEnabled(), e.getPendingReminderHours(),
                 e.isEveReminderEnabled(), e.getEveReminderTime().toString(), e.isEveReminderDefaultOn(),
                 e.isRosterChangeEnabled(), e.getRosterChangeHorizonDays(), e.getRosterChangeDelayMinutes(),
