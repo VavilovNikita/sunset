@@ -71,8 +71,8 @@ public class EmailService {
 
             String html = "<p>New booking request received.</p>"
                     + "<ul>"
-                    + "<li>Room: " + room.getName() + "</li>"
-                    + "<li>Guest: " + booking.getGuestName() + " (" + booking.getGuestEmail() + ", " + booking.getGuestPhone() + ")</li>"
+                    + "<li>Room: " + esc(room.getName()) + "</li>"
+                    + "<li>Guest: " + esc(booking.getGuestName()) + " (" + esc(booking.getGuestEmail()) + ", " + esc(booking.getGuestPhone()) + ")</li>"
                     + "<li>Check-in: " + booking.getCheckIn() + "</li>"
                     + "<li>Check-out: " + booking.getCheckOut() + "</li>"
                     + "<li>Total: ฿" + formatThb(booking.getTotalPrice()) + "</li>"
@@ -122,13 +122,13 @@ public class EmailService {
                 RoomEntity room = roomsByRoomId.get(booking.getRoomId());
                 String roomName = room != null ? room.getName() : booking.getRoomId();
                 items.append("<li>")
-                        .append(roomName)
+                        .append(esc(roomName))
                         .append(" — ")
-                        .append(booking.getGuestName())
+                        .append(esc(booking.getGuestName()))
                         .append(" (")
-                        .append(booking.getGuestEmail())
+                        .append(esc(booking.getGuestEmail()))
                         .append(", ")
-                        .append(booking.getGuestPhone())
+                        .append(esc(booking.getGuestPhone()))
                         .append("), ")
                         .append(booking.getCheckIn())
                         .append(" → ")
@@ -164,14 +164,14 @@ public class EmailService {
             return;
         }
         try {
-            String stay = room.getName() + " (" + booking.getCheckIn() + " → " + booking.getCheckOut() + ")";
+            String stay = esc(room.getName()) + " (" + booking.getCheckIn() + " → " + booking.getCheckOut() + ")";
             String subject = booking.getStatus() == BookingStatus.PAID
                     ? "Your booking is confirmed & paid — " + room.getName()
                     : "Your booking has been cancelled — " + room.getName();
             String html = booking.getStatus() == BookingStatus.PAID
-                    ? "<p>Hi " + booking.getGuestName() + ",</p><p>Your payment for " + stay
+                    ? "<p>Hi " + escapeName(booking.getGuestName()) + ",</p><p>Your payment for " + stay
                             + " has been received. We look forward to welcoming you!</p>"
-                    : "<p>Hi " + booking.getGuestName() + ",</p><p>Your booking for " + stay
+                    : "<p>Hi " + escapeName(booking.getGuestName()) + ",</p><p>Your booking for " + stay
                             + " has been cancelled. If you have questions, just reply to this email.</p>";
 
             send(List.of(to), subject, html);
@@ -215,11 +215,10 @@ public class EmailService {
      */
     public void sendGuestVerificationEmail(String email, String name, String token) {
         try {
-            String greetingName = (name == null || name.isBlank()) ? "there" : name;
             String link = siteUrl + "/guest/verify?token=" + token;
-            String html = "<p>Hi " + greetingName + ",</p>"
+            String html = "<p>Hi " + escapeName(name) + ",</p>"
                     + "<p>Verify your email to activate your guest account:</p>"
-                    + "<p><a href=\"" + link + "\">Verify email</a></p>"
+                    + "<p><a href=\"" + HtmlUtils.htmlEscape(link) + "\">Verify email</a></p>"
                     + "<p>This link expires in 24 hours. If you didn't request this, you can ignore this email.</p>";
 
             send(List.of(email), "Verify your email — The Sunset Beach Resort & Spa", html);
@@ -323,6 +322,16 @@ public class EmailService {
     private String unsubscribeFooter(String unsubscribeToken) {
         return "<p style=\"font-size:12px;color:#888\">You're receiving this because you have a guest account with us. "
                 + "<a href=\"" + unsubscribeUrl(unsubscribeToken) + "\">Unsubscribe</a> from these emails.</p>";
+    }
+
+    /**
+     * Every value interpolated into an email's HTML goes through this or {@link #escapeName}: guest
+     * names, emails and phones come from unauthenticated forms (the public booking request, guest
+     * registration), and unescaped they put an attacker's links into mail sent from the hotel's own
+     * domain - to staff, and to any address someone registers (audit finding H4).
+     */
+    static String esc(String value) {
+        return value == null ? "" : HtmlUtils.htmlEscape(value);
     }
 
     private static String escapeName(String name) {

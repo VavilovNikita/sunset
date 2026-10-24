@@ -19,8 +19,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * (see {@link GuestJwtService}, signed with its own secret) and grants a single {@code
  * ROLE_GUEST} authority. Registered alongside {@link JwtAuthFilter} at the same filter-chain
  * position (see SecurityConfig) - since the two schemes use different keys, presenting a staff
- * token never satisfies this filter and a guest token never satisfies the other, so both simply
- * run unconditionally on every request with no need to branch on which one a request "is for".
+ * token never satisfies this filter and a guest token never satisfies the other.
+ *
+ * <p>It only acts on {@code /guest/**} (audit finding H1), the same way {@link
+ * IntegrationKeyAuthFilter} only acts on its import path. Before, a guest token authenticated on
+ * every path, so it satisfied every staff route guarded by plain {@code authenticated()} - a
+ * self-registered guest could read any booking's folio, the full menu and the tables, and the
+ * routes that cast the principal to {@link StaffPrincipal} answered a raw 500. Elsewhere a guest
+ * token is now simply no authentication at all.
  */
 public class GuestJwtAuthFilter extends OncePerRequestFilter {
 
@@ -32,6 +38,14 @@ public class GuestJwtAuthFilter extends OncePerRequestFilter {
     public GuestJwtAuthFilter(GuestJwtService guestJwtService, GuestAccountRepository guestAccountRepository) {
         this.guestJwtService = guestJwtService;
         this.guestAccountRepository = guestAccountRepository;
+    }
+
+    private static final String GUEST_PATH_PREFIX = "/guest/";
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        return !path.startsWith(GUEST_PATH_PREFIX);
     }
 
     @Override

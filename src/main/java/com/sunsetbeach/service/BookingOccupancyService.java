@@ -329,7 +329,9 @@ public class BookingOccupancyService {
      */
     @Transactional
     public Booking markNoShow(String bookingId) {
-        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        // Locked like checkIn/updateStatus: the save writes the whole row, and a stale read would
+        // put back a status another request had just changed (audit finding H5).
+        BookingEntity booking = bookingRepository.findByIdForUpdate(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         if (booking.getOccupancyStatus() != OccupancyStatus.EXPECTED) {
             throw new ConflictException("This booking is not awaiting arrival.");
         }

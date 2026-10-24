@@ -38,14 +38,14 @@ public interface ShiftsApi {
 
     /**
      * POST /shifts/{id}/close : Close a shift
-     * Requires role &#x60;CASHIER&#x60; or above.
+     * Requires role &#x60;CASHIER&#x60; or above. A &#x60;CASHIER&#x60; closes only a shift they opened (anyone else&#39;s is a 404, as on &#x60;GET /shifts/{id}&#x60;); &#x60;MANAGER&#x60; and above may close any. The caller is recorded as &#x60;closedByUserId&#x60;. 
      *
      * @param id  (required)
      * @param shiftCloseInput  (required)
      * @return Closed shift (status &#x60;CLOSED&#x60;). (status code 200)
      *         or No valid JWT. (status code 401)
      *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
-     *         or Shift not found. (status code 404)
+     *         or Shift not found, or (for a &#x60;CASHIER&#x60;) another cashier&#39;s shift. (status code 404)
      *         or Already &#x60;CLOSED&#x60;, or this shift still has &#x60;OPEN&#x60;/&#x60;SENT&#x60; orders that belong to it: opened by the shift&#39;s own cashier, or carrying a payment recorded in this shift. Other staff&#39;s open orders do not block the close; they come back as &#x60;Shift.warning&#x60;. Empty &#x60;OPEN&#x60; orders are cancelled automatically, on the audit record.  (status code 409)
      */
     @RequestMapping(

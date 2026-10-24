@@ -117,12 +117,15 @@ class GymReservationAccessTests {
     void creatingMovingAndCancelling_areRefusedForAWaiter_andForAGuestToken() throws Exception {
         String create = "{\"bookingId\":\"b1\",\"date\":\"2031-06-15\",\"startTime\":\"12:00\",\"durationMinutes\":60}";
         String move = "{\"date\":\"2031-06-15\",\"startTime\":\"12:00\",\"durationMinutes\":60}";
-        for (String auth : List.of(staff(Role.WAITER), guest())) {
+        // A waiter is signed in and refused (403); a guest token is no sign-in at all outside /guest/** (401).
+        for (var refusal : List.of(java.util.Map.entry(staff(Role.WAITER), 403), java.util.Map.entry(guest(), 401))) {
+            String auth = refusal.getKey();
+            int expected = refusal.getValue();
             mockMvc.perform(post("/gym/reservations").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON).content(create))
-                    .andExpect(status().isForbidden());
+                    .andExpect(status().is(expected));
             mockMvc.perform(patch("/gym/reservations/r1/schedule").header("Authorization", auth).contentType(MediaType.APPLICATION_JSON).content(move))
-                    .andExpect(status().isForbidden());
-            mockMvc.perform(post("/gym/reservations/r1/cancel").header("Authorization", auth)).andExpect(status().isForbidden());
+                    .andExpect(status().is(expected));
+            mockMvc.perform(post("/gym/reservations/r1/cancel").header("Authorization", auth)).andExpect(status().is(expected));
         }
         verify(reservations, never()).createForStaff(any(), anyString());
         verify(reservations, never()).cancelByStaff(anyString(), any(), anyString());

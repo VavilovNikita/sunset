@@ -326,6 +326,22 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
         assertThat(nightlyPrices(bookingId)).extracting(BigDecimal::toPlainString).containsExactly("2500.00", "2500.00", "2500.00", "2500.00");
     }
 
+    /** Audit finding H10: the nightly re-poll of an unchanged reservation must not undo a staff edit. */
+    @Test
+    void sameVersionRePolled_afterAStaffExtension_keepsTheExtension() {
+        String roomType = mapped(room(2));
+        String reference = newReference();
+        String bookingId = importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, roomType)).getBookingId().orElse(null);
+        actAs(staffAuthentication());
+        bookingService.updateSchedule(bookingId, new com.sunsetbeach.model.BookingScheduleInput("2035-03-10", "2035-03-14").roomUnitId(null));
+        actAs(siteMinderAuthentication());
+
+        SiteMinderImportResult again = importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, roomType));
+
+        assertThat(again.getAction()).isEqualTo(SiteMinderImportAction.UNCHANGED);
+        assertThat(bookingFor(reference).getCheckOut()).isEqualTo(LocalDate.of(2035, 3, 14));
+    }
+
     @Test
     void olderVersionThanTheOneApplied_isSkippedAsStale() {
         String roomType = mapped(room(2));

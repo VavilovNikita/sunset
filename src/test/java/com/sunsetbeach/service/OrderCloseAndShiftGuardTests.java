@@ -108,11 +108,11 @@ class OrderCloseAndShiftGuardTests extends AbstractIntegrationTest {
         Order unrelatedOrder = openOrderWithOneItem(1);
         assertThat(unrelatedOrder.getStatus()).isEqualTo(OrderStatus.OPEN);
 
-        assertThatThrownBy(() -> shiftService.close(shift.getId(), new ShiftCloseInput())).isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> shiftService.close(shift.getId(), new ShiftCloseInput(), shift.getOpenedByUserId(), com.sunsetbeach.model.Role.CASHIER)).isInstanceOf(ConflictException.class);
 
         orderService.cancel(unrelatedOrder.getId(), null, null, Role.WAITER);
 
-        Shift closed = shiftService.close(shift.getId(), new ShiftCloseInput());
+        Shift closed = shiftService.close(shift.getId(), new ShiftCloseInput(), shift.getOpenedByUserId(), com.sunsetbeach.model.Role.CASHIER);
         assertThat(closed.getId()).isEqualTo(shift.getId());
     }
 
@@ -121,7 +121,7 @@ class OrderCloseAndShiftGuardTests extends AbstractIntegrationTest {
         Shift shift = shiftService.open(cashier.getId(), new ShiftOpenInput());
         Order empty = orderService.create(new OrderCreateInput().guestName("Abandoned tap"), cashier.getId());
 
-        Shift closed = shiftService.close(shift.getId(), new ShiftCloseInput());
+        Shift closed = shiftService.close(shift.getId(), new ShiftCloseInput(), shift.getOpenedByUserId(), com.sunsetbeach.model.Role.CASHIER);
 
         assertThat(closed.getStatus()).isEqualTo(com.sunsetbeach.model.ShiftStatus.CLOSED);
         assertThat(orderService.getById(empty.getId()).getStatus()).isEqualTo(OrderStatus.CANCELLED);

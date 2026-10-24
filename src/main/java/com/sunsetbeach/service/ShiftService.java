@@ -154,9 +154,18 @@ public class ShiftService {
         return shiftMapper.toDto(saved);
     }
 
+    /**
+     * Closes a cash shift. A plain CASHIER closes only their own (404 for anyone else's, as in
+     * {@link #getSummary}); MANAGER+ may close any, e.g. one left open overnight. Whoever closes it
+     * is recorded as the closer - it used to be the opener whatever happened, which pinned a
+     * counted figure and its discrepancy on someone who never counted the drawer (audit finding H7).
+     */
     @Transactional
-    public Shift close(String id, ShiftCloseInput input) {
+    public Shift close(String id, ShiftCloseInput input, String callerId, Role callerRole) {
         ShiftEntity shift = shiftRepository.findById(id).orElseThrow(() -> new NotFoundException("Shift not found"));
+        if (callerRole == Role.CASHIER && !shift.getOpenedByUserId().equals(callerId)) {
+            throw new NotFoundException("Shift not found");
+        }
         if (shift.getStatus() == ShiftStatus.CLOSED) {
             throw new ConflictException("Shift is already closed");
         }
@@ -206,7 +215,7 @@ public class ShiftService {
                         + " by " + PriceFormat.asDecimalString(difference) + " - write a note saying why before closing the shift.");
             }
         }
-        shift.setClosedByUserId(shift.getOpenedByUserId());
+        shift.setClosedByUserId(callerId);
         shift.setClosedAt(TimestampFormat.nowUtc(clock));
         shift.setClosingCashCounted(input.getClosingCashCounted());
         shift.setNotes(notes == null ? null : com.sunsetbeach.util.NameText.strip(notes));

@@ -628,7 +628,7 @@ class PrintingTests extends AbstractIntegrationTest {
                     new CloseOrderInput(PaymentMethod.ROOM_CHARGE).bookingId(booking.getId()),
                     cashier.getId());
 
-            shiftService.close(shift.getId(), new ShiftCloseInput().closingCashCounted(new BigDecimal("1200.00")));
+            shiftService.close(shift.getId(), new ShiftCloseInput().closingCashCounted(new BigDecimal("1200.00")), shift.getOpenedByUserId(), com.sunsetbeach.model.Role.CASHIER);
 
             PrintJobEntity job = printJobRepository.findAll().stream()
                     .filter(j -> j.getDocumentType() == PrintDocumentType.Z_REPORT)
@@ -672,7 +672,7 @@ class PrintingTests extends AbstractIntegrationTest {
             Order paidOrder = orderService.create(new OrderCreateInput(), cashier.getId());
             orderService.addItems(paidOrder.getId(), List.of(new OrderItemInput(kitchenItem.getId(), 1)));
             orderService.close(paidOrder.getId(), new CloseOrderInput(PaymentMethod.CASH), cashier.getId()); // -> GUEST_RECEIPT
-            shiftService.close(shift.getId(), new ShiftCloseInput()); // -> Z_REPORT
+            shiftService.close(shift.getId(), new ShiftCloseInput(), shift.getOpenedByUserId(), com.sunsetbeach.model.Role.CASHIER); // -> Z_REPORT
 
             // The dev DB this suite runs against may already carry other jobs (e.g. staff manually
             // trying the feature), so these assert set membership, not exact composition -
