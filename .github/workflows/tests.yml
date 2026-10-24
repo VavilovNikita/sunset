@@ -27,4 +27,4 @@ jobs:
         run: |
           export JWT_SECRET="$(openssl rand -base64 48)"
           export GUEST_JWT_SECRET="$(openssl rand -base64 48)"
-          ./mvnw -B -ntp test
+          sh ./mvnw -B -ntp test
