@@ -251,7 +251,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
 
         ShiftCloseInput closeInput = new ShiftCloseInput();
         closeInput.setClosingCashCounted(new BigDecimal("500.00"));
-        shiftService.close(shift.getId(), closeInput);
+        shiftService.close(shift.getId(), closeInput, shift.getOpenedByUserId(), com.sunsetbeach.model.Role.CASHIER);
 
         List<AuditLogEntity> closeEntries = entriesFor(AuditEntityType.SHIFT, shift.getId()).stream()
                 .filter(e -> e.getAction() == AuditAction.SHIFT_CLOSED)
@@ -270,7 +270,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
         // 450.00 is a deliberate 50.00 shortfall.
         closeInput.setClosingCashCounted(new BigDecimal("450.00"));
         closeInput.setNotes(org.openapitools.jackson.nullable.JsonNullable.of("Short after paying a delivery out of the drawer"));
-        shiftService.close(shift.getId(), closeInput);
+        shiftService.close(shift.getId(), closeInput, shift.getOpenedByUserId(), com.sunsetbeach.model.Role.CASHIER);
 
         List<AuditLogEntity> closeEntries = entriesFor(AuditEntityType.SHIFT, shift.getId()).stream()
                 .filter(e -> e.getAction() == AuditAction.SHIFT_CLOSED)
@@ -291,7 +291,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
             if (note != null) {
                 closeInput.setNotes(org.openapitools.jackson.nullable.JsonNullable.of(note));
             }
-            org.assertj.core.api.Assertions.assertThatThrownBy(() -> shiftService.close(shift.getId(), closeInput))
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> shiftService.close(shift.getId(), closeInput, shift.getOpenedByUserId(), com.sunsetbeach.model.Role.CASHIER))
                     .isInstanceOfSatisfying(com.sunsetbeach.error.ValidationException.class,
                             e -> assertThat(e.getFieldErrors()).containsKey("notes"));
         }
@@ -304,7 +304,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
         createdShiftIds.add(matching.getId());
         ShiftCloseInput exact = new ShiftCloseInput();
         exact.setClosingCashCounted(new BigDecimal("500.00"));
-        assertThat(shiftService.close(matching.getId(), exact).getStatus()).isEqualTo(com.sunsetbeach.model.ShiftStatus.CLOSED);
+        assertThat(shiftService.close(matching.getId(), exact, matching.getOpenedByUserId(), com.sunsetbeach.model.Role.CASHIER).getStatus()).isEqualTo(com.sunsetbeach.model.ShiftStatus.CLOSED);
     }
 
     @Test

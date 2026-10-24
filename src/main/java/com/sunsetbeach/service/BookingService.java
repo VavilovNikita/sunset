@@ -691,7 +691,8 @@ public class BookingService {
             throw ValidationException.field("guestId", "guestId is required (send null to unlink)");
         }
         String guestId = input.getGuestId().get();
-        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        // Locked: the save writes the whole row, so a stale copy would undo a concurrent status change.
+        BookingEntity booking = bookingRepository.findByIdForUpdate(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         GuestEntity guest = guestId != null ? guestRepository.findById(guestId).orElseThrow(() -> new NotFoundException("Guest not found")) : null;
 
         booking.setGuestId(guestId);

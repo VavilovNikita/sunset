@@ -38,7 +38,7 @@ public class ShiftController implements ShiftsApi {
 
     @Override
     public ResponseEntity<Shift> closeShift(String id, ShiftCloseInput shiftCloseInput) {
-        return ResponseEntity.ok(shiftService.close(id, shiftCloseInput));
+        return ResponseEntity.ok(shiftService.close(id, shiftCloseInput, CurrentUser.id(), CurrentUser.role()));
     }
 
     @Override

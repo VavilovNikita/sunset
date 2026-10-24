@@ -76,8 +76,26 @@ class CrossIdentityTokenRejectionTests extends AbstractIntegrationTest {
 
     @Test
     void guestToken_neverSatisfiesAStaffOnlyRoute() throws Exception {
+        // Outside /guest/** a guest token is no authentication at all (audit finding H1), so 401.
         mockMvc.perform(get("/users").header("Authorization", guestToken()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * Audit finding H1: these routes are guarded by plain {@code authenticated()}, so a guest token
+     * used to pass them (and the ones that cast the principal to a staff one answered 500). The guest
+     * filter now only acts on /guest/**, so here a guest token is no authentication at all.
+     */
+    @Test
+    void guestToken_isNoAuthenticationOnStaffRoutesGuardedOnlyByAuthenticated() throws Exception {
+        String token = guestToken();
+        for (String path : java.util.List.of(
+                "/auth/me", "/bookings/" + UUID.randomUUID() + "/folio", "/bookings/" + UUID.randomUUID() + "/pos-orders",
+                "/bookings/" + UUID.randomUUID() + "/folio-payments", "/menu", "/tables", "/restaurant-map",
+                "/shift-codes", "/roster/me", "/maintenance-tasks")) {
+            mockMvc.perform(get(path).header("Authorization", token))
+                    .andExpect(status().isUnauthorized());
+        }
     }
 
     @Test

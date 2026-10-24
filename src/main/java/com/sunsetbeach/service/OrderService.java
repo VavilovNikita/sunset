@@ -368,7 +368,7 @@ public class OrderService {
 
     @Transactional
     public Order update(String id, OrderUpdateInput input) {
-        OrderEntity order = findOrThrow(id);
+        OrderEntity order = lockOrThrow(id);
 
         if (input.getTableId().isPresent()) {
             String tableId = input.getTableId().get();
@@ -401,7 +401,7 @@ public class OrderService {
 
     @Transactional
     public Order addItems(String id, List<OrderItemInput> inputs) {
-        OrderEntity order = findOrThrow(id);
+        OrderEntity order = lockOrThrow(id);
         // Unlike updateItem/deleteItem, adding new lines is allowed on a SENT order too - a
         // guest ordering another round after the ticket went to the kitchen is normal, and it's
         // purely additive (nothing already sent is touched). See openapi.yaml for the merge and
@@ -465,7 +465,7 @@ public class OrderService {
 
     @Transactional
     public Order updateItem(String id, String itemId, OrderItemInput input) {
-        OrderEntity order = findOrThrow(id);
+        OrderEntity order = lockOrThrow(id);
         requireOpen(order);
 
         OrderItemEntity item = orderItemRepository
@@ -484,7 +484,7 @@ public class OrderService {
 
     @Transactional
     public Order deleteItem(String id, String itemId) {
-        OrderEntity order = findOrThrow(id);
+        OrderEntity order = lockOrThrow(id);
         requireOpen(order);
 
         OrderItemEntity item = orderItemRepository
@@ -930,6 +930,9 @@ public class OrderService {
     /** Delegates straight into {@link #addItems} - never a second implementation of its merge/print-dispatch logic. */
     @Transactional
     public GuestOrderView addGuestItems(String orderId, String token, List<OrderItemInput> inputs) {
+        // Locked before anything reads the order, so the access check below sees the row as it is
+        // under the lock and addItems' own lock is a re-entry, not a stale cached copy.
+        orderRepository.findByIdForUpdate(orderId);
         requireGuestAccess(orderId, token);
         requirePubliclyOrderable(inputs);
         addItems(orderId, inputs);
@@ -956,6 +959,16 @@ public class OrderService {
             total = total.add(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
         }
         return total;
+    }
+
+    /**
+     * The order row, locked {@code FOR UPDATE} - for every write that changes the order's own row
+     * (status, total, table, note). {@link #close} and {@link #cancel} lock it too, so a line added
+     * while a cashier closes the bill waits for the close and then finds the order {@code PAID},
+     * instead of writing its stale {@code SENT} and new total over the paid order (audit finding H5).
+     */
+    private OrderEntity lockOrThrow(String id) {
+        return orderRepository.findByIdForUpdate(id).orElseThrow(() -> new NotFoundException("Order not found"));
     }
 
     private OrderEntity findOrThrow(String id) {

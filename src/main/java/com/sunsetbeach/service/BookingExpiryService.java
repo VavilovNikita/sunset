@@ -123,7 +123,7 @@ public class BookingExpiryService {
     @Scheduled(fixedDelayString = "${app.booking.expiry-sweep-interval-ms:900000}")
     @Transactional
     public void sweepUnconfirmedPublicBookings() {
-        List<BookingEntity> candidates = bookingRepository.findByStatusAndSource(BookingStatus.NEW, BookingSource.PUBLIC);
+        List<BookingEntity> candidates = bookingRepository.findByStatusAndSourceForUpdate(BookingStatus.NEW, BookingSource.PUBLIC);
         if (candidates.isEmpty()) {
             return;
         }

@@ -34,6 +34,17 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
     List<BookingEntity> findByStatusAndSource(BookingStatus status, BookingSource source);
 
     /**
+     * {@link #findByStatusAndSource} with every row locked {@code FOR UPDATE} - the expiry sweep's
+     * read. Unlocked, a booking staff confirmed (or marked PAID, with its ledger posting) while the
+     * sweep ran was written back to CANCELLED from the sweep's stale copy (audit finding H5); now
+     * the staff change waits for the sweep, or the sweep for it, and a booking no longer NEW is
+     * not returned.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from BookingEntity b where b.status = :status and b.source = :source")
+    List<BookingEntity> findByStatusAndSourceForUpdate(@Param("status") BookingStatus status, @Param("source") BookingSource source);
+
+    /**
      * Arriving-today list for {@code GET /bookings/today} - see {@code BookingOccupancyService}.
      * The trailing {@code Is} is required, not decorative: Spring Data's query-derivation parser
      * always reads a property ending in "In" as the start of the {@code IN(...)} keyword unless

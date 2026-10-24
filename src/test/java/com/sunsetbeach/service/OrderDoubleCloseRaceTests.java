@@ -153,4 +153,65 @@ class OrderDoubleCloseRaceTests extends AbstractIntegrationTest {
 
         assertThat(paymentRepository.findAll().stream().filter(p -> p.getOrderId().equals(orderId)).count()).isEqualTo(1);
     }
+
+    /**
+     * Audit finding H5: a line added while the cashier closes the bill. Before addItems locked the
+     * order, its stale read (OPEN) was written back over PAID with the bigger total - an order back
+     * to unpaid, a payment for the old total and a line nobody paid for. Whichever runs first, the
+     * order must end PAID for exactly what was charged.
+     */
+    @Test
+    void addItemsRacingClose_neverLeavesAPaidOrderUnpaidOrChargedForLessThanItsLines() throws Exception {
+        UserEntity cashier = new UserEntity();
+        cashier.setEmail("add-vs-close-" + UUID.randomUUID() + "@example.com");
+        cashier.setName(cashier.getEmail());
+        cashier.setPasswordHash("irrelevant-for-this-test");
+        cashier.setRole(Role.CASHIER);
+        cashierId = userRepository.saveAndFlush(cashier).getId();
+
+        MenuItemEntity menuItem = new MenuItemEntity();
+        menuItem.setName("Race Test Item");
+        menuItem.setDescription("Used only by OrderDoubleCloseRaceTests");
+        menuItem.setCategory("Test");
+        menuItem.setPrice(new BigDecimal("100.00"));
+        menuItem.setAvailable(true);
+        menuItemId = menuItemRepository.saveAndFlush(menuItem).getId();
+
+        shiftId = shiftService.open(cashierId, new com.sunsetbeach.model.ShiftOpenInput()).getId();
+
+        orderId = orderService.create(new OrderCreateInput(), cashierId).getId();
+        orderService.addItems(orderId, List.of(new OrderItemInput(menuItemId, 1)));
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Order> close = executor.submit(() -> {
+                barrier.await();
+                return orderService.close(orderId, new CloseOrderInput(PaymentMethod.CASH), cashierId);
+            });
+            Future<Order> add = executor.submit(() -> {
+                barrier.await();
+                return orderService.addItems(orderId, List.of(new OrderItemInput(menuItemId, 2)));
+            });
+            close.get();
+            try {
+                add.get();
+            } catch (Exception e) {
+                // Lost to the close: the order was already paid.
+                assertThat(e.getCause()).isInstanceOf(ConflictException.class);
+            }
+        } finally {
+            executor.shutdown();
+        }
+
+        var order = orderRepository.findById(orderId).orElseThrow();
+        BigDecimal lines = orderItemRepository.findByOrderId(orderId).stream()
+                .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        var payment = paymentRepository.findAll().stream().filter(p -> p.getOrderId().equals(orderId)).toList();
+        assertThat(order.getStatus()).isEqualTo(com.sunsetbeach.model.OrderStatus.PAID);
+        assertThat(payment).hasSize(1);
+        assertThat(payment.get(0).getAmount()).isEqualByComparingTo(order.getTotal());
+        assertThat(order.getTotal()).isEqualByComparingTo(lines);
+    }
 }

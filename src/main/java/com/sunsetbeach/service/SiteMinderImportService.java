@@ -133,6 +133,14 @@ public class SiteMinderImportService {
             return skipped(booking.getId(), "The booking for reservation " + r.reference() + " is cancelled in this system but "
                     + r.status().getValue() + " in SiteMinder. Imports never reinstate a cancelled booking - a person needs to look at it.");
         }
+        // The version already applied, re-posted by the next poll: nothing to do. Re-diffing it
+        // against the booking would undo whatever staff changed since (an extra night, the party
+        // size, a price) - audit finding H10. externalModifiedAt is written only once every step
+        // of an update has succeeded, so a version whose apply failed half-way is still older than
+        // what the poll sends and is retried.
+        if (booking.getExternalModifiedAt() != null && r.lastChangedAt().isEqual(booking.getExternalModifiedAt())) {
+            return new SiteMinderImportResult(SiteMinderImportAction.UNCHANGED, booking.getId(), List.of(), List.of(), null);
+        }
         return update(booking, r);
     }
 

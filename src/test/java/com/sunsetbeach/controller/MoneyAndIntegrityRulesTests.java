@@ -464,6 +464,18 @@ class MoneyAndIntegrityRulesTests extends AbstractIntegrationTest {
         postJson("/shifts/" + shift.getId() + "/close", cashierAAuth, "{}").andExpect(status().isConflict());
     }
 
+    /** Audit finding H7: a cashier can't close a colleague's drawer, and the closer is who really closed it. */
+    @Test
+    void closingAShift_isTheOpenersOrAManagers_andRecordsWhoClosedIt() throws Exception {
+        Shift shift = shiftService.open(cashierA.getId(), new ShiftOpenInput());
+
+        postJson("/shifts/" + shift.getId() + "/close", tokenFor(cashierB), "{}").andExpect(status().isNotFound());
+
+        JsonNode closed = body(postJson("/shifts/" + shift.getId() + "/close", adminAuth, "{}").andExpect(status().isOk()));
+        assertThat(closed.get("closedByUserId").asText()).isEqualTo(admin.getId());
+        assertThat(closed.get("openedByUserId").asText()).isEqualTo(cashierA.getId());
+    }
+
     @Test
     void closingAShift_withOnlySomeoneElsesOpenOrder_succeeds_andWarnsAboutIt() throws Exception {
         Shift shift = shiftService.open(cashierA.getId(), new ShiftOpenInput());
