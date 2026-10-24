@@ -587,8 +587,10 @@ public class OrderService {
             throw new ConflictException("This order has no items - add something or cancel the order.");
         }
 
+        // Share-locked: a concurrent shift close waits for this payment to commit before it totals
+        // the shift, instead of printing a Z-report without it.
         ShiftEntity shift = shiftRepository
-                .findByOpenedByUserIdAndStatus(cashierUserId, ShiftStatus.OPEN)
+                .findByOpenerAndStatusForPayment(cashierUserId, ShiftStatus.OPEN)
                 .orElseThrow(() -> new ConflictException("You don't have an open shift"));
 
         BigDecimal tendered = parseTendered(input, order.getTotal());

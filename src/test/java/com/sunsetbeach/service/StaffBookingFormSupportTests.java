@@ -187,13 +187,6 @@ class StaffBookingFormSupportTests extends AbstractIntegrationTest {
         Booking resent = bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CANCELLED).cancellationReason("something else"));
         assertThat(resent.getCancellationReason().orElse(null)).isEqualTo("Flight cancelled");
 
-        // Reinstated: no stale reason on a live booking.
-        Booking reinstated = bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CONFIRMED));
-        assertThat(reinstated.getCancellationReason().orElse(null)).isNull();
-
-        // Cancelled again without a reason (the system paths): null, not the old one.
-        Booking recancelled = bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CANCELLED));
-        assertThat(recancelled.getCancellationReason().orElse(null)).isNull();
     }
 
     // --- paged search ----------------------------------------------------------------------------

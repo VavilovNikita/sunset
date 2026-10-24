@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,9 +16,8 @@ import org.springframework.stereotype.Component;
  * only counts *failed* logins - here every attempt occupies inventory or at least DB work, so
  * every attempt counts). Same limitations as LoginRateLimiter: in-memory and single-instance
  * (resets on restart, and a multi-instance deployment would need a shared store instead), and
- * the IP itself comes from {@link ClientIpResolver}, which is only trustworthy behind a reverse
- * proxy that overwrites {@code X-Forwarded-For} - without one, this header is attacker-supplied
- * and a flood script can simply rotate it to get a fresh bucket per request.
+ * the IP itself comes from {@link ClientIpResolver} (the last {@code X-Forwarded-For} hop, written
+ * by the proxy in front of this app - see that class for what it can and can't tell apart).
  *
  * <p>This alone does not close the "flood the inventory with fake bookings" business risk - it
  * only slows down a single, unproxied source. See {@link com.sunsetbeach.service.BookingExpiryService}
@@ -38,6 +38,12 @@ public class BookingRateLimiter {
             throw new TooManyRequestsException("Too many booking requests from this address. Please try again later.");
         }
         attempts.addLast(Instant.now());
+    }
+
+    /** Drops buckets with nothing left in the window (see {@link SlidingWindowBuckets}). */
+    @Scheduled(fixedDelay = SlidingWindowBuckets.SWEEP_INTERVAL_MS)
+    void evictIdle() {
+        SlidingWindowBuckets.evictIdle(attemptsByIp, WINDOW);
     }
 
     private int countRecent(Deque<Instant> attempts) {

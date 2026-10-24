@@ -220,7 +220,7 @@ public class BookingFolio {
   }
 
   /**
-   * The payment a change into `PAID` must carry (`BookingStatusInput.payment`): the balance as if the booking were not yet paid and not cancelled - the room (also for a `CANCELLED` booking being reinstated) plus POS room charges, minus what folio payments already cover. Equals `balanceDue` for a `NEW`/`CONFIRMED` booking; for a booking that is already `PAID` or `CANCELLED` it is what `balanceDue` would be if it were not. Decimal(10,2) rendered as a string. 
+   * The payment a change into `PAID` must carry (`BookingStatusInput.payment`): the balance as if the booking were not yet paid - the room plus POS room charges, minus what folio payments already cover. Equals `balanceDue` for a `NEW`/`CONFIRMED` booking; for a booking that is already `PAID` it is what `balanceDue` would be if it were not. A `CANCELLED` booking can't be marked `PAID` at all (it is never reinstated). Decimal(10,2) rendered as a string. 
    * @return amountToMarkPaid
    */
   

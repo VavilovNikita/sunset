@@ -162,7 +162,10 @@ public class ShiftService {
      */
     @Transactional
     public Shift close(String id, ShiftCloseInput input, String callerId, Role callerRole) {
-        ShiftEntity shift = shiftRepository.findById(id).orElseThrow(() -> new NotFoundException("Shift not found"));
+        // Locked: waits for payments being recorded into this shift right now (they share-lock it,
+        // see ShiftRepository#findByOpenerAndStatusForPayment), so the totals below include them, and
+        // makes two concurrent closes of one shift run one after the other.
+        ShiftEntity shift = shiftRepository.findByIdForUpdate(id).orElseThrow(() -> new NotFoundException("Shift not found"));
         if (callerRole == Role.CASHIER && !shift.getOpenedByUserId().equals(callerId)) {
             throw new NotFoundException("Shift not found");
         }

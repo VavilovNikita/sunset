@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,6 +30,12 @@ public class RoomServiceOrderRateLimiter {
             throw new TooManyRequestsException("Too many requests. Please slow down and try again.");
         }
         attempts.addLast(Instant.now());
+    }
+
+    /** Drops buckets with nothing left in the window (see {@link SlidingWindowBuckets}). */
+    @Scheduled(fixedDelay = SlidingWindowBuckets.SWEEP_INTERVAL_MS)
+    void evictIdle() {
+        SlidingWindowBuckets.evictIdle(attemptsByGuestAccountId, WINDOW);
     }
 
     private int countRecent(Deque<Instant> attempts) {
