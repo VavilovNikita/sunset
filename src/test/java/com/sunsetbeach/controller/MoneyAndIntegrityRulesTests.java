@@ -370,17 +370,16 @@ class MoneyAndIntegrityRulesTests extends AbstractIntegrationTest {
     }
 
     @Test
-    void reinstatingACancelledBookingStraightToPaid_owesTheRoomAgain() throws Exception {
+    void aCancelledBooking_isNeverReinstated_itsRoomMayHaveBeenSoldAgain() throws Exception {
         Booking b = booking(2);
         patchStatus(b.getId(), "{\"status\":\"CANCELLED\"}").andExpect(status().isOk());
 
-        patchStatus(b.getId(), "{\"status\":\"PAID\"}").andExpect(status().isConflict());
-        JsonNode folio = body(mockMvc.perform(get("/bookings/" + b.getId() + "/folio").header("Authorization", adminAuth)).andExpect(status().isOk()));
-        assertThat(folio.get("balanceDue").asText()).isEqualTo("0.00"); // cancelled: nothing owed as it stands...
-        assertThat(folio.get("amountToMarkPaid").asText()).isEqualTo("2000.00"); // ...but PAID has to cover the room
+        patchStatus(b.getId(), "{\"status\":\"CONFIRMED\"}").andExpect(status().isConflict());
+        patchStatus(b.getId(), "{\"status\":\"PAID\",\"payment\":{\"method\":\"OTHER\",\"amount\":\"2000.00\"}}").andExpect(status().isConflict());
+        patchStatus(b.getId(), "{\"status\":\"CANCELLED\",\"paymentNote\":\"refund ref 42\"}").andExpect(status().isOk());
 
-        patchStatus(b.getId(), "{\"status\":\"PAID\",\"payment\":{\"method\":\"OTHER\",\"amount\":\"2000.00\"}}").andExpect(status().isOk());
-        assertThat(reload(b.getId()).getStatus()).isEqualTo(BookingStatus.PAID);
+        assertThat(reload(b.getId()).getStatus()).isEqualTo(BookingStatus.CANCELLED);
+        assertThat(bookingService.listFolioPayments(b.getId())).isEmpty();
     }
 
     // --- 3. Transitions the UI used to be the only guard for ---------------------------------------

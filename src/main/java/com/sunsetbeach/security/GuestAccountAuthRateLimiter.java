@@ -7,6 +7,7 @@ import java.util.Deque;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
@@ -42,6 +43,13 @@ public class GuestAccountAuthRateLimiter {
 
     public void checkAllowedAndRecordForToken(String ip) {
         checkAndRecord(attemptsByIp, ip, MAX_PER_IP, IP_WINDOW);
+    }
+
+    /** Drops buckets with nothing left in the window (see {@link SlidingWindowBuckets}). */
+    @Scheduled(fixedDelay = SlidingWindowBuckets.SWEEP_INTERVAL_MS)
+    void evictIdle() {
+        SlidingWindowBuckets.evictIdle(attemptsByIp, IP_WINDOW);
+        SlidingWindowBuckets.evictIdle(attemptsByEmail, EMAIL_WINDOW);
     }
 
     private void checkAndRecord(ConcurrentHashMap<String, Deque<Instant>> buckets, String key, int max, Duration window) {

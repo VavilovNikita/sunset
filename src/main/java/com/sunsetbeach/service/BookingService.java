@@ -43,6 +43,7 @@ import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RepriceInput;
 import com.sunsetbeach.model.RepriceQuote;
 import com.sunsetbeach.model.RoomUnitAssignmentInput;
+import com.sunsetbeach.model.ShiftStatus;
 import com.sunsetbeach.model.SortDirection;
 import com.sunsetbeach.model.StaffBookingCreateInput;
 import com.sunsetbeach.model.StaffBookingQuoteInput;
@@ -57,7 +58,6 @@ import com.sunsetbeach.repository.PaymentRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.repository.ShiftRepository;
-import com.sunsetbeach.model.ShiftStatus;
 import com.sunsetbeach.security.StaffPrincipal;
 import jakarta.persistence.criteria.Predicate;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -429,6 +429,7 @@ public class BookingService {
         BookingStatus oldStatus = booking.getStatus();
         String oldPaymentNote = booking.getPaymentNote();
         requireNotArrivedToCancel(booking, input.getStatus());
+        requireNotReinstated(booking, input.getStatus());
         // PAID never writes money off on its own: what is still owed has to arrive with the request
         // as a payment, recorded here in the same transaction as the status change (see settleForPaid).
         if (input.getStatus() == BookingStatus.PAID && oldStatus != BookingStatus.PAID) {
@@ -470,15 +471,11 @@ public class BookingService {
             booking.setChildren(input.getChildren());
         }
         // The reason belongs to the current cancellation only: written on a move into CANCELLED
-        // (null when none was given - SiteMinder, the expiry sweep), cleared on a move out, so a
-        // reinstated booking never shows a stale one. Re-sending CANCELLED to an already-cancelled
-        // booking isn't a status change and leaves it alone, same as the audit entry.
-        if (oldStatus != input.getStatus()) {
-            if (input.getStatus() == BookingStatus.CANCELLED) {
-                booking.setCancellationReason(cancellationReason(input, BookingStatus.CANCELLED));
-            } else if (oldStatus == BookingStatus.CANCELLED) {
-                booking.setCancellationReason(null);
-            }
+        // (null when none was given - SiteMinder, the expiry sweep). There is no move out
+        // (requireNotReinstated). Re-sending CANCELLED to an already-cancelled booking isn't a
+        // status change and leaves it alone, same as the audit entry.
+        if (oldStatus != input.getStatus() && input.getStatus() == BookingStatus.CANCELLED) {
+            booking.setCancellationReason(cancellationReason(input, BookingStatus.CANCELLED));
         }
         // flush so @UpdateTimestamp (regenerated on every save) is on the object before mapping
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
@@ -572,6 +569,18 @@ public class BookingService {
         }
         if (booking.getOccupancyStatus() == OccupancyStatus.CHECKED_OUT) {
             throw new ConflictException("This guest has already checked out, so the booking can't be cancelled.");
+        }
+    }
+
+    /**
+     * A cancelled booking stays cancelled. Its room went back on sale at the cancellation and may
+     * have been sold since; moving the status back would occupy it again without the availability
+     * check that creating a booking runs, and double-book it. The way back is a new booking.
+     * Re-sending {@code CANCELLED} (with a note, say) is not a change and stays allowed.
+     */
+    private static void requireNotReinstated(BookingEntity booking, BookingStatus requested) {
+        if (booking.getStatus() == BookingStatus.CANCELLED && requested != BookingStatus.CANCELLED) {
+            throw new ConflictException("This booking is cancelled and can't be reinstated - its room may have been sold since. Create a new booking instead.");
         }
     }
 
@@ -1236,7 +1245,7 @@ public class BookingService {
         entity.setMethod(input.getMethod());
         entity.setAmount(amount);
         entity.setRecordedByUserId(actor.id());
-        shiftRepository.findByOpenedByUserIdAndStatus(actor.id(), ShiftStatus.OPEN).ifPresent(shift -> entity.setShiftId(shift.getId()));
+        shiftRepository.findByOpenerAndStatusForPayment(actor.id(), ShiftStatus.OPEN).ifPresent(shift -> entity.setShiftId(shift.getId()));
         FolioPaymentEntity saved = folioPaymentRepository.saveAndFlush(entity);
 
         ledgerService.postFolioPayment(saved, booking.getGuestName());

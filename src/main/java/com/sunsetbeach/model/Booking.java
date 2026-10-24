@@ -660,7 +660,7 @@ public class Booking {
   }
 
   /**
-   * The reason staff gave when this booking was cancelled (`BookingStatusInput.cancellationReason`). Set only while `status` is `CANCELLED`, and only for the current cancellation: cleared if the booking is moved out of `CANCELLED`. Null for a cancellation without a reason (the SiteMinder import, the unconfirmed-booking expiry sweep) and for cancellations made before this field existed - their reason, if any, is only in the audit log. 
+   * The reason staff gave when this booking was cancelled (`BookingStatusInput.cancellationReason`). Set only while `status` is `CANCELLED` (a cancelled booking is never moved out of it). Null for a cancellation without a reason (the SiteMinder import, the unconfirmed-booking expiry sweep) and for cancellations made before this field existed - their reason, if any, is only in the audit log. 
    * @return cancellationReason
    */
   @NotNull 
