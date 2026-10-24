@@ -6,10 +6,16 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
+import com.sunsetbeach.repository.RatePlanRepository;
+import com.sunsetbeach.repository.RoomRepository;
+import com.sunsetbeach.entity.RatePlanEntity;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -74,12 +80,48 @@ public class OverstayRule {
 
     private final BookingRepository bookingRepository;
     private final BookingSegmentRepository segmentRepository;
+    private final RatePlanRepository ratePlanRepository;
+    private final RoomRepository roomRepository;
     private final Clock clock;
 
-    public OverstayRule(BookingRepository bookingRepository, BookingSegmentRepository segmentRepository, Clock clock) {
+    public OverstayRule(
+            BookingRepository bookingRepository,
+            BookingSegmentRepository segmentRepository,
+            RatePlanRepository ratePlanRepository,
+            RoomRepository roomRepository,
+            Clock clock) {
         this.bookingRepository = bookingRepository;
         this.segmentRepository = segmentRepository;
+        this.ratePlanRepository = ratePlanRepository;
+        this.roomRepository = roomRepository;
         this.clock = clock;
+    }
+
+    /**
+     * What the room type's price list says for the nights {@code [from, toExclusive)}: the price
+     * grid's manual price for a date where one is set, {@code Room.basePrice} otherwise. For
+     * <b>reports and the night audit only</b> - the same lookup {@code BookingWriter} uses to price
+     * a new night, but nothing is written: no nightly rate row, no change to {@code totalPrice}, no
+     * folio or ledger effect. A guest's balance is exactly what it was before this existed.
+     */
+    public BigDecimal estimatedPrice(String roomId, LocalDate from, LocalDate toExclusive) {
+        if (!from.isBefore(toExclusive)) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal base = roomRepository.findById(roomId).map(r -> r.getBasePrice()).orElse(BigDecimal.ZERO);
+        List<LocalDate> nights = new ArrayList<>();
+        for (LocalDate d = from; d.isBefore(toExclusive); d = d.plusDays(1)) {
+            nights.add(d);
+        }
+        Map<LocalDate, BigDecimal> overrides = new HashMap<>();
+        for (RatePlanEntity plan : ratePlanRepository.findByRoomIdAndDateIn(roomId, nights)) {
+            overrides.put(plan.getDate(), plan.getPrice());
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        for (LocalDate night : nights) {
+            total = total.add(overrides.getOrDefault(night, base));
+        }
+        return total;
     }
 
     /** The hotel's date from the shared {@link Clock} - see CLAUDE.md, "Clock and time zones". */

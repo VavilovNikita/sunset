@@ -56,6 +56,7 @@ public class NightAuditService {
     private final ReportService reportService;
     private final AuditLogService auditLogService;
     private final BookingFolioCalculator folioCalculator;
+    private final OverstayRule overstayRule;
     private final Clock clock;
 
     public NightAuditService(
@@ -67,7 +68,9 @@ public class NightAuditService {
             ReportService reportService,
             AuditLogService auditLogService,
             BookingFolioCalculator folioCalculator,
+            OverstayRule overstayRule,
             Clock clock) {
+        this.overstayRule = overstayRule;
         this.folioCalculator = folioCalculator;
         this.bookingRepository = bookingRepository;
         this.nightAuditRepository = nightAuditRepository;
@@ -190,7 +193,16 @@ public class NightAuditService {
                         bookings.stream().map(BookingEntity::getRoomUnitId).filter(Objects::nonNull).distinct().toList())
                 .stream().collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
         return bookings.stream()
-                .map(b -> toBookingDto(b, roomNames.get(b.getRoomId()), unitLabels.get(b.getRoomUnitId()), overstayDay == null ? 0 : unpaidOverstayNights(b, overstayDay)))
+                .map(b -> {
+                    int nights = overstayDay == null ? 0 : unpaidOverstayNights(b, overstayDay);
+                    NightAuditBooking dto = toBookingDto(b, roomNames.get(b.getRoomId()), unitLabels.get(b.getRoomUnitId()), nights);
+                    if (nights > 0) {
+                        // Report estimate at the room type's price per date; never the folio's figure.
+                        dto.setUnpaidOverstayValue(PriceFormat.asDecimalString(
+                                overstayRule.estimatedPrice(b.getRoomId(), b.getCheckOut(), b.getCheckOut().plusDays(nights))));
+                    }
+                    return dto;
+                })
                 .toList();
     }
 

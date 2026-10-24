@@ -1,5 +1,6 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.BookingSource;
@@ -169,7 +170,7 @@ public class SiteMinderImportService {
                 AuditEntityType.BOOKING,
                 saved.getId(),
                 "SiteMinder reservation " + r.reference() + " imported for " + saved.getGuestName() + " in " + room.getName() + " ("
-                        + r.checkIn() + " to " + r.checkOut() + "), " + r.rawChannel() + ", ฿" + r.totalPrice()
+                        + r.checkIn() + " to " + r.checkOut() + "), " + r.rawChannel() + ", " + PriceFormat.baht(r.totalPrice())
                         + (r.infants() > 0 ? "; " + r.infants() + (r.infants() == 1 ? " infant" : " infants") + " (not stored)" : ""));
         return new SiteMinderImportResult(SiteMinderImportAction.CREATED, saved.getId(), List.of(), List.of(), null);
     }
@@ -250,8 +251,8 @@ public class SiteMinderImportService {
                         AuditAction.BOOKING_REPRICED,
                         AuditEntityType.BOOKING,
                         bookingId,
-                        "SiteMinder total changed for " + current.getGuestName() + ": ฿" + oldTotal + " → ฿" + r.totalPrice());
-                changes.add("total ฿" + oldTotal + " → ฿" + r.totalPrice());
+                        "SiteMinder total changed for " + current.getGuestName() + ": " + PriceFormat.baht(oldTotal) + " → " + PriceFormat.baht(r.totalPrice()));
+                changes.add("total " + PriceFormat.baht(oldTotal) + " → " + PriceFormat.baht(r.totalPrice()));
                 if (current.getStatus() == BookingStatus.PAID) {
                     warnings.add("The booking is PAID, so this price change isn't posted to the ledger - same as any price change on a PAID booking.");
                 }

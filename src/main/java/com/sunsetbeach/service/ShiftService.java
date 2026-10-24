@@ -150,7 +150,7 @@ public class ShiftService {
                 AuditEntityType.SHIFT,
                 saved.getId(),
                 "Shift opened with opening float "
-                        + (saved.getOpeningCashFloat() != null ? PriceFormat.asDecimalString(saved.getOpeningCashFloat()) : "0.00"));
+                        + PriceFormat.baht(saved.getOpeningCashFloat() != null ? saved.getOpeningCashFloat() : BigDecimal.ZERO));
         return shiftMapper.toDto(saved);
     }
 
@@ -258,17 +258,17 @@ public class ShiftService {
         BigDecimal expectedCash = expectedCash(shift, totals.cash(), folio);
         BigDecimal closingCounted = shift.getClosingCashCounted();
 
-        String summary = "Shift closed, received " + PriceFormat.asDecimalString(totals.receivedTotal()) + " (cash "
-                + PriceFormat.asDecimalString(totals.cash()) + ", card " + PriceFormat.asDecimalString(totals.card()) + ", other "
-                + PriceFormat.asDecimalString(totals.other()) + ")"
-                + (folio.isEmpty() ? "" : ", plus folio payments " + PriceFormat.asDecimalString(folio.total()) + " (cash "
-                        + PriceFormat.asDecimalString(folio.cash()) + ")");
+        String summary = "Shift closed, received " + PriceFormat.baht(totals.receivedTotal()) + " (cash "
+                + PriceFormat.baht(totals.cash()) + ", card " + PriceFormat.baht(totals.card()) + ", other "
+                + PriceFormat.baht(totals.other()) + ")"
+                + (folio.isEmpty() ? "" : ", plus folio payments " + PriceFormat.baht(folio.total()) + " (cash "
+                        + PriceFormat.baht(folio.cash()) + ")");
         if (closingCounted != null) {
             BigDecimal discrepancy = closingCounted.subtract(expectedCash);
-            summary += ", counted cash " + PriceFormat.asDecimalString(closingCounted);
+            summary += ", counted cash " + PriceFormat.baht(closingCounted);
             if (discrepancy.compareTo(BigDecimal.ZERO) != 0) {
-                summary += " — discrepancy of " + PriceFormat.asDecimalString(discrepancy) + " vs. expected "
-                        + PriceFormat.asDecimalString(expectedCash);
+                summary += " — discrepancy of " + PriceFormat.baht(discrepancy) + " vs. expected "
+                        + PriceFormat.baht(expectedCash);
             }
         }
         return summary;
@@ -474,8 +474,11 @@ public class ShiftService {
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        Map<String, String> emailsById =
-                userRepository.findAllById(userIds).stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
+        List<UserEntity> users = userRepository.findAllById(userIds);
+        Map<String, String> emailsById = users.stream().collect(Collectors.toMap(UserEntity::getId, UserEntity::getEmail));
+        // The name when the account has one, otherwise the email - the screen shows one label per person.
+        Map<String, String> namesById = users.stream().collect(Collectors.toMap(
+                UserEntity::getId, u -> u.getName() != null && !u.getName().isBlank() ? u.getName().trim() : u.getEmail()));
 
         return shifts.stream()
                 .map(shift -> {
@@ -483,13 +486,19 @@ public class ShiftService {
                     BigDecimal expectedCash = expectedCash(shift, new BigDecimal(totals.getCash()), folioTotals(shift.getId()));
                     BigDecimal discrepancy =
                             shift.getClosingCashCounted() != null ? shift.getClosingCashCounted().subtract(expectedCash) : null;
-                    return shiftMapper.toListItemDto(
+                    ShiftListItem item = shiftMapper.toListItemDto(
                             shift,
                             emailsById.get(shift.getOpenedByUserId()),
                             shift.getClosedByUserId() != null ? emailsById.get(shift.getClosedByUserId()) : null,
                             totals,
                             expectedCash,
                             discrepancy);
+                    item.setOpenedByName(namesById.get(shift.getOpenedByUserId()));
+                    if (shift.getClosedByUserId() != null) {
+                        item.setClosedByName(namesById.get(shift.getClosedByUserId()));
+                    }
+                    item.setCashNotCounted(shift.getStatus() == ShiftStatus.CLOSED && shift.getClosingCashCounted() == null);
+                    return item;
                 })
                 .toList();
     }

@@ -12503,6 +12503,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+        lastAttemptAt:
+          type: string
+          format: date-time
+          description: When the printer was last tried (automatic or manual). Absent while no attempt has been made.
         dismissedAt:
           type: string
           format: date-time
@@ -12598,6 +12602,18 @@ components:
         `totalPrice` to zero for a comp or house-use stay - it is priced like any other booking.
         `POST /bookings` (the public form) is always `STANDARD`. Bookings made before this field
         existed read `STANDARD`.
+
+    StayStatus:
+      type: string
+      description: >
+        Where a booking stands as a stay, derived by the server from `status` and
+        `occupancyStatus` (never stored): `CANCELLED` (booking cancelled, whatever else),
+        `NO_SHOW`, `CHECKED_OUT`, `IN_HOUSE` (checked in, including an overdue guest) and
+        `UPCOMING` (nobody has arrived yet - a `NEW`/`CONFIRMED`/`PAID` booking that has not
+        started, or whose dates have passed without a check-in and that is not yet marked
+        no-show or cancelled). Show this, not `status`, where the question is "what happened
+        to this stay" (the guest card's stay history).
+      enum: [UPCOMING, IN_HOUSE, CHECKED_OUT, CANCELLED, NO_SHOW]
 
     OccupancyStatus:
       type: string
@@ -13991,7 +14007,10 @@ components:
     BookingSortField:
       type: string
       enum: [GUEST_NAME, ROOM, CHECK_IN, CHECK_OUT, TOTAL_PRICE, STATUS, CREATED_AT]
-      description: Sort column for `GET /bookings/search`. `ROOM` sorts by the room type's name. Defaults to `CHECK_IN`.
+      description: >
+        Sort column for `GET /bookings/search`. `ROOM` sorts by the room type's name. Defaults to `CHECK_IN`.
+        With neither `sort` nor `direction` given the order is not plain check-in descending - the nearest
+        arrivals from today come first (ascending), then earlier stays, latest first.
 
     SortDirection:
       type: string
@@ -14459,6 +14478,8 @@ components:
           x-sensitive: true
         occupancyStatus:
           $ref: "#/components/schemas/OccupancyStatus"
+        stayStatus:
+          $ref: "#/components/schemas/StayStatus"
         checkedInAt:
           type: string
           format: date-time
@@ -16602,6 +16623,18 @@ components:
           type: string
           nullable: true
           description: Decimal(10,2) rendered as a string, or null if closingCashCounted is null.
+        openedByName:
+          type: string
+          description: The opener's name (their email when the account has no name).
+        closedByName:
+          type: string
+          description: The closer's name (their email when the account has no name). Absent while the shift is open.
+        cashNotCounted:
+          type: boolean
+          description: >
+            True for a closed shift whose drawer was never counted (`closingCashCounted` is null) -
+            there is nothing to reconcile, which is different from a counted drawer that matched
+            (`discrepancy` of 0.00). False for an open shift and for any counted one.
 
     BookingPosOrderItem:
       type: object
@@ -18673,7 +18706,14 @@ components:
             more than the days overdue shown next to it. `0` for a guest due out on `date` (the
             departure night is still sellable), for anyone who is not checked in, and on every
             `missedArrivals` and `unpaidBalances` row. A warning only - nothing is charged for
-            these nights and no revenue report counts them.
+            these nights on the guest's folio.
+        unpaidOverstayValue:
+          type: string
+          description: >
+            Decimal(10,2) string: those `unpaidOverstayNights` valued at the room type's price
+            for each date (price grid, else base price) - the same estimate the reports count
+            them at. A report figure only, never on the folio or the balance. Absent when there are
+            no overstay nights.
         guestName:
           type: string
           x-sensitive: true

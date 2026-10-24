@@ -180,7 +180,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
         List<AuditLogEntity> orderEntries = entriesFor(AuditEntityType.ORDER, order.getId());
         assertThat(orderEntries).hasSize(1);
         assertThat(orderEntries.get(0).getAction()).isEqualTo(AuditAction.ORDER_CLOSED);
-        assertThat(orderEntries.get(0).getSummary()).contains("CASH").contains("150.00");
+        assertThat(orderEntries.get(0).getSummary()).contains("CASH").contains("฿150");
     }
 
     @Test
@@ -223,7 +223,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
                 .filter(e -> e.getAction() == AuditAction.ROOM_CHARGE_POSTED)
                 .toList();
         assertThat(bookingEntries).hasSize(1);
-        assertThat(bookingEntries.get(0).getSummary()).contains("150.00").contains("Guest");
+        assertThat(bookingEntries.get(0).getSummary()).contains("฿150").contains("Guest");
     }
 
     @Test
@@ -247,7 +247,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
                 .filter(e -> e.getAction() == AuditAction.SHIFT_OPENED)
                 .toList();
         assertThat(openEntries).hasSize(1);
-        assertThat(openEntries.get(0).getSummary()).contains("500.00");
+        assertThat(openEntries.get(0).getSummary()).contains("฿500");
 
         ShiftCloseInput closeInput = new ShiftCloseInput();
         closeInput.setClosingCashCounted(new BigDecimal("500.00"));
@@ -276,7 +276,7 @@ class OrderShiftAuditLogTests extends AbstractIntegrationTest {
                 .filter(e -> e.getAction() == AuditAction.SHIFT_CLOSED)
                 .toList();
         assertThat(closeEntries).hasSize(1);
-        assertThat(closeEntries.get(0).getSummary()).contains("discrepancy").contains("-50.00");
+        assertThat(closeEntries.get(0).getSummary()).contains("discrepancy").contains("-฿50");
     }
 
     @Test

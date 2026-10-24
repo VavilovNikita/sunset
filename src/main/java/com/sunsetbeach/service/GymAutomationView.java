@@ -77,7 +77,7 @@ final class GymAutomationView {
             r.skipReason(GymAutomationDeviceResult.SkipReasonEnum.fromValue(a.getSkipReason()));
         }
         if (a.getLastError() != null && !GymReservationActionEntity.OK.equals(a.getStatus())) {
-            r.error(a.getLastError());
+            r.error(com.sunsetbeach.tuya.TuyaMessages.forViewer(a.getLastError()));
         }
         return r;
     }

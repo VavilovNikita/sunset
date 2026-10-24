@@ -93,7 +93,7 @@ class RoomPricingAuditLogTests extends AbstractIntegrationTest {
         List<AuditLogEntity> entries = entriesFor(room.getId());
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).getAction()).isEqualTo(AuditAction.ROOM_PRICE_CHANGED);
-        assertThat(entries.get(0).getSummary()).contains("1000.00").contains("1200.00");
+        assertThat(entries.get(0).getSummary()).contains("฿1,000").contains("฿1,200");
     }
 
     @Test
@@ -120,6 +120,6 @@ class RoomPricingAuditLogTests extends AbstractIntegrationTest {
                 .toList();
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).getEntityType()).isEqualTo(AuditEntityType.ROOM);
-        assertThat(entries.get(0).getSummary()).contains("1500").contains(from.toString()).contains(to.toString());
+        assertThat(entries.get(0).getSummary()).contains("฿1,500").contains(from.toString()).contains(to.toString());
     }
 }

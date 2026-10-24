@@ -192,10 +192,13 @@ public class ReportService {
      * non-{@code CANCELLED} booking, clipped to the range's nights, its {@code totalPrice}
      * prorated to them unrounded. One definition, so the reports always agree for the same range.
      *
-     * <p>Plus every {@link OverstayRule} overstay's nights in the range, as a zero-revenue slice
-     * of the last segment's room. A guest still checked in past {@code checkOut} is physically in
-     * that room, so it is occupied and they are in the house; nothing was agreed or priced for
-     * those nights, so they add no revenue. These used to be added by the in-house list alone,
+     * <p>Plus every {@link OverstayRule} overstay's nights in the range, as a slice of the last
+     * segment's room. A guest still checked in past {@code checkOut} is physically in that room,
+     * so it is occupied and they are in the house. Nothing was agreed for those nights, so each
+     * is valued at the room type's price for that date (price grid, else base price) - a report
+     * estimate only, never on the guest's folio. They used to count at zero, which left ADR and
+     * RevPAR understated; the booking's own channel/purpose decides their segment like any
+     * other night. These used to be added by the in-house list alone,
      * which is how the manager report came to say "0 occupied" on a night In house listed a
      * guest. Like every other overstay reader this only knows about guests still checked in: once
      * an overdue guest is checked out, a past night's figures lose their extra nights.
@@ -219,7 +222,9 @@ public class ReportService {
         for (OverstayRule.Overstay overstay : overstayRule.current()) {
             if (!overstay.overlaps(range.from(), rangeEnd)) continue;
             long inRange = ChronoUnit.DAYS.between(max(overstay.from(), range.from()), min(overstay.toExclusive(), rangeEnd));
-            slices.add(new SegmentInRange(overstay.lastSegment(), inRange, BigDecimal.ZERO));
+            LocalDate from = max(overstay.from(), range.from());
+            BigDecimal estimate = overstayRule.estimatedPrice(overstay.roomId(), from, min(overstay.toExclusive(), rangeEnd));
+            slices.add(new SegmentInRange(overstay.lastSegment(), inRange, estimate));
         }
         return slices;
     }
@@ -824,6 +829,15 @@ public class ReportService {
         for (BookingSegmentEntity segment : segmentRepository.findByBookingIdIn(bookingIds)) {
             nightsByGuest.merge(guestByBooking.get(segment.getBookingId()), ChronoUnit.DAYS.between(segment.getCheckIn(), segment.getCheckOut()), Long::sum);
         }
+        // Nights a guest is still in the house past checkOut: counted, and valued at the room
+        // type's price like every other report. The ranking itself was cut in SQL on agreed prices.
+        Map<String, BigDecimal> overstayRevenueByGuest = new HashMap<>();
+        for (OverstayRule.Overstay overstay : overstayRule.current()) {
+            String guestId = guestByBooking.get(overstay.bookingId());
+            if (guestId == null) continue;
+            nightsByGuest.merge(guestId, ChronoUnit.DAYS.between(overstay.from(), overstay.toExclusive()), Long::sum);
+            overstayRevenueByGuest.merge(guestId, overstayRule.estimatedPrice(overstay.roomId(), overstay.from(), overstay.toExclusive()), BigDecimal::add);
+        }
         Map<String, BigDecimal> chargesByGuest = new HashMap<>();
         for (PaymentEntity payment : paymentRepository.findByBookingIdInAndMethod(bookingIds, PaymentMethod.ROOM_CHARGE)) {
             chargesByGuest.merge(guestByBooking.get(payment.getBookingId()), payment.getAmount(), BigDecimal::add);
@@ -838,7 +852,7 @@ public class ReportService {
                             guest.getEmail(),
                             Math.toIntExact(t.getBookingCount()),
                             Math.toIntExact(nightsByGuest.getOrDefault(t.getGuestId(), 0L)),
-                            money(t.getRoomRevenue()),
+                            money(t.getRoomRevenue().add(overstayRevenueByGuest.getOrDefault(t.getGuestId(), BigDecimal.ZERO))),
                             money(chargesByGuest.getOrDefault(t.getGuestId(), BigDecimal.ZERO)),
                             t.getFirstCheckIn().toString(),
                             t.getLastCheckIn().toString());

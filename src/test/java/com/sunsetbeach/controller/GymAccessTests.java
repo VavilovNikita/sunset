@@ -163,6 +163,12 @@ class GymAccessTests {
         mockMvc.perform(post("/gym/devices/d1/relay").header("Authorization", bearer(Role.CASHIER)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"isOn\":true}"))
                 .andExpect(status().isServiceUnavailable())
+                // A cashier reads one short sentence; the technical wording is for an administrator.
+                .andExpect(jsonPath("$.error").value("Gym equipment control isn't set up yet"));
+
+        mockMvc.perform(post("/gym/devices/d1/relay").header("Authorization", bearer(Role.ADMIN)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"isOn\":true}"))
+                .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.error").value(text));
     }
 

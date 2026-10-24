@@ -241,8 +241,8 @@ public class BookingOccupancyService {
         if (!saved.getCheckOut().equals(originalCheckOut)) {
             shortened = "; stay shortened from " + originalCheckOut + " to " + saved.getCheckOut()
                     + (fee.signum() > 0
-                            ? ", unused nights (฿" + PriceFormat.asDecimalString(fee) + ") charged as early departure"
-                            : ", unused nights (฿" + PriceFormat.asDecimalString(released) + ") not charged");
+                            ? ", unused nights (" + PriceFormat.baht(fee) + ") charged as early departure"
+                            : ", unused nights (" + PriceFormat.baht(released) + ") not charged");
         }
         auditLogService.record(
                 AuditAction.BOOKING_CHECKED_OUT,
@@ -252,7 +252,7 @@ public class BookingOccupancyService {
                         + shortened
                         + (gymCancelled > 0 ? "; " + gymCancelled + " gym reservation(s) cancelled" : "")
                         + (outstanding.signum() > 0
-                                ? "; checkout confirmed with ฿" + PriceFormat.asDecimalString(outstanding) + " unpaid"
+                                ? "; checkout confirmed with " + PriceFormat.baht(outstanding) + " unpaid"
                                 : ""));
 
         return new CheckOutResult(toDto(saved), PriceFormat.asDecimalString(outstanding));

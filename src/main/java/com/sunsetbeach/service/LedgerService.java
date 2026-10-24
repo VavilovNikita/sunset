@@ -353,7 +353,7 @@ public class LedgerService {
                 AuditAction.LEDGER_ENTRY_POSTED,
                 AuditEntityType.LEDGER_ENTRY,
                 entry.getId(),
-                "Manual journal entry of " + PriceFormat.asDecimalString(debits) + " dated " + entryDate + ": " + description);
+                "Manual journal entry of " + PriceFormat.baht(debits) + " dated " + entryDate + ": " + description);
         return toDtos(List.of(entry)).get(0);
     }
 

@@ -1,5 +1,6 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
@@ -96,8 +97,8 @@ public class RoomService {
                     AuditEntityType.ROOM,
                     saved.getId(),
                     "Base price for " + saved.getName() + " changed from "
-                            + oldBasePrice.setScale(2, RoundingMode.HALF_UP) + " to "
-                            + saved.getBasePrice().setScale(2, RoundingMode.HALF_UP));
+                            + PriceFormat.baht(oldBasePrice) + " to "
+                            + PriceFormat.baht(saved.getBasePrice()));
         }
 
         return roomMapper.toDto(saved);

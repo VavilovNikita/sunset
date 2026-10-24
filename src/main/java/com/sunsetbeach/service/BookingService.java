@@ -635,11 +635,32 @@ public class BookingService {
             primary = primary.ignoreCase();
         }
         Sort order = Sort.by(primary, Sort.Order.asc("id"));
-
-        Specification<BookingEntity> spec = buildSpecification(from, to, status, null, overstayRule.today()).and(textSearch(q));
+        LocalDate today = overstayRule.today();
+        Specification<BookingEntity> spec = buildSpecification(from, to, status, null, today).and(textSearch(q));
+        if (sort == null && direction == null) {
+            // No sort asked for: the nearest arrivals from today first, then the past, latest first -
+            // not the furthest future dates a plain "check-in descending" puts on top.
+            spec = spec.and(nearestArrivalsFirst(today));
+            order = Sort.unsorted(); // a pageable sort would replace the specification's own ordering
+        }
         Page<BookingEntity> result = bookingRepository.findAll(spec, PageRequest.of(pageNumber, size, order));
         List<Booking> items = toDtos(result.getContent());
         return new BookingPage(items, pageNumber, size, (int) result.getTotalElements());
+    }
+
+    /** Upcoming arrivals by date ascending (today first); every past one sorts after them, by the pageable's check-in descending. */
+    private static Specification<BookingEntity> nearestArrivalsFirst(LocalDate today) {
+        return (root, query, cb) -> {
+            if (query.getResultType() != Long.class && query.getResultType() != long.class) {
+                query.orderBy(
+                        cb.asc(cb.selectCase()
+                                .when(cb.greaterThanOrEqualTo(root.<LocalDate>get("checkIn"), today), root.<LocalDate>get("checkIn"))
+                                .otherwise(cb.nullLiteral(LocalDate.class))),
+                        cb.desc(root.get("checkIn")),
+                        cb.asc(root.get("id")));
+            }
+            return null;
+        };
     }
 
     private static String sortProperty(BookingSortField field) {
@@ -1060,8 +1081,8 @@ public class BookingService {
                 AuditAction.BOOKING_REPRICED,
                 AuditEntityType.BOOKING,
                 saved.getId(),
-                "Repriced " + result.nightsRepriced() + " night(s) for " + saved.getGuestName() + ": ฿" + result.oldSegmentTotal()
-                        + " → ฿" + result.newSegmentTotal());
+                "Repriced " + result.nightsRepriced() + " night(s) for " + saved.getGuestName() + ": " + PriceFormat.baht(result.oldSegmentTotal())
+                        + " → " + PriceFormat.baht(result.newSegmentTotal()));
         return bookingMapper.toDto(saved, room, unit, findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
@@ -1253,7 +1274,7 @@ public class BookingService {
                 AuditAction.BOOKING_FOLIO_PAYMENT_RECORDED,
                 AuditEntityType.BOOKING,
                 booking.getId(),
-                "Recorded ฿" + PriceFormat.asDecimalString(amount) + " (" + input.getMethod().getValue() + ") against "
+                "Recorded " + PriceFormat.baht(amount) + " (" + input.getMethod().getValue() + ") against "
                         + booking.getGuestName() + "'s folio");
         return saved;
     }

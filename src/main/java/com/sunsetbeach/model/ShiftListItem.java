@@ -53,6 +53,12 @@ public class ShiftListItem {
 
   private JsonNullable<String> discrepancy = JsonNullable.<String>undefined();
 
+  private String openedByName;
+
+  private String closedByName;
+
+  private Boolean cashNotCounted;
+
   public ShiftListItem() {
     super();
   }
@@ -323,6 +329,63 @@ public class ShiftListItem {
     this.discrepancy = discrepancy;
   }
 
+  public ShiftListItem openedByName(String openedByName) {
+    this.openedByName = openedByName;
+    return this;
+  }
+
+  /**
+   * The opener's name (their email when the account has no name).
+   * @return openedByName
+   */
+  
+  @JsonProperty("openedByName")
+  public String getOpenedByName() {
+    return openedByName;
+  }
+
+  public void setOpenedByName(String openedByName) {
+    this.openedByName = openedByName;
+  }
+
+  public ShiftListItem closedByName(String closedByName) {
+    this.closedByName = closedByName;
+    return this;
+  }
+
+  /**
+   * The closer's name (their email when the account has no name). Absent while the shift is open.
+   * @return closedByName
+   */
+  
+  @JsonProperty("closedByName")
+  public String getClosedByName() {
+    return closedByName;
+  }
+
+  public void setClosedByName(String closedByName) {
+    this.closedByName = closedByName;
+  }
+
+  public ShiftListItem cashNotCounted(Boolean cashNotCounted) {
+    this.cashNotCounted = cashNotCounted;
+    return this;
+  }
+
+  /**
+   * True for a closed shift whose drawer was never counted (`closingCashCounted` is null) - there is nothing to reconcile, which is different from a counted drawer that matched (`discrepancy` of 0.00). False for an open shift and for any counted one. 
+   * @return cashNotCounted
+   */
+  
+  @JsonProperty("cashNotCounted")
+  public Boolean getCashNotCounted() {
+    return cashNotCounted;
+  }
+
+  public void setCashNotCounted(Boolean cashNotCounted) {
+    this.cashNotCounted = cashNotCounted;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -344,12 +407,15 @@ public class ShiftListItem {
         Objects.equals(this.status, shiftListItem.status) &&
         Objects.equals(this.totals, shiftListItem.totals) &&
         Objects.equals(this.expectedCash, shiftListItem.expectedCash) &&
-        Objects.equals(this.discrepancy, shiftListItem.discrepancy);
+        Objects.equals(this.discrepancy, shiftListItem.discrepancy) &&
+        Objects.equals(this.openedByName, shiftListItem.openedByName) &&
+        Objects.equals(this.closedByName, shiftListItem.closedByName) &&
+        Objects.equals(this.cashNotCounted, shiftListItem.cashNotCounted);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, openedByUserId, openedByEmail, openedAt, closedByUserId, closedByEmail, closedAt, openingCashFloat, closingCashCounted, status, totals, expectedCash, discrepancy);
+    return Objects.hash(id, openedByUserId, openedByEmail, openedAt, closedByUserId, closedByEmail, closedAt, openingCashFloat, closingCashCounted, status, totals, expectedCash, discrepancy, openedByName, closedByName, cashNotCounted);
   }
 
   @Override
@@ -369,6 +435,9 @@ public class ShiftListItem {
     sb.append("    totals: ").append(toIndentedString(totals)).append("\n");
     sb.append("    expectedCash: ").append(toIndentedString(expectedCash)).append("\n");
     sb.append("    discrepancy: ").append(toIndentedString(discrepancy)).append("\n");
+    sb.append("    openedByName: ").append(toIndentedString(openedByName)).append("\n");
+    sb.append("    closedByName: ").append(toIndentedString(closedByName)).append("\n");
+    sb.append("    cashNotCounted: ").append(toIndentedString(cashNotCounted)).append("\n");
     sb.append("}");
     return sb.toString();
   }

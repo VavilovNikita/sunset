@@ -18,6 +18,7 @@ public class PrintJobMapper {
                 entity.getLastError(),
                 TimestampFormat.toUtc(entity.getCreatedAt()),
                 TimestampFormat.toUtc(entity.getUpdatedAt()))
+                .lastAttemptAt(entity.getLastAttemptAt() == null ? null : TimestampFormat.toUtc(entity.getLastAttemptAt()))
                 .dismissedAt(entity.getDismissedAt() == null ? null : TimestampFormat.toUtc(entity.getDismissedAt()))
                 .dismissedByUserId(entity.getDismissedByUserId())
                 .dismissNote(entity.getDismissNote());

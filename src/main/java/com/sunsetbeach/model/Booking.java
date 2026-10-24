@@ -13,6 +13,7 @@ import com.sunsetbeach.model.Guest;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.Room;
 import com.sunsetbeach.model.RoomUnit;
+import com.sunsetbeach.model.StayStatus;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -79,6 +80,8 @@ public class Booking {
   private JsonNullable<String> paymentNote = JsonNullable.<String>undefined();
 
   private OccupancyStatus occupancyStatus;
+
+  private StayStatus stayStatus;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private JsonNullable<OffsetDateTime> checkedInAt = JsonNullable.<OffsetDateTime>undefined();
@@ -578,6 +581,25 @@ public class Booking {
     this.occupancyStatus = occupancyStatus;
   }
 
+  public Booking stayStatus(StayStatus stayStatus) {
+    this.stayStatus = stayStatus;
+    return this;
+  }
+
+  /**
+   * Get stayStatus
+   * @return stayStatus
+   */
+  @Valid 
+  @JsonProperty("stayStatus")
+  public StayStatus getStayStatus() {
+    return stayStatus;
+  }
+
+  public void setStayStatus(StayStatus stayStatus) {
+    this.stayStatus = stayStatus;
+  }
+
   public Booking checkedInAt(OffsetDateTime checkedInAt) {
     this.checkedInAt = JsonNullable.of(checkedInAt);
     return this;
@@ -789,6 +811,7 @@ public class Booking {
         Objects.equals(this.children, booking.children) &&
         Objects.equals(this.paymentNote, booking.paymentNote) &&
         Objects.equals(this.occupancyStatus, booking.occupancyStatus) &&
+        Objects.equals(this.stayStatus, booking.stayStatus) &&
         Objects.equals(this.checkedInAt, booking.checkedInAt) &&
         Objects.equals(this.checkedOutAt, booking.checkedOutAt) &&
         Objects.equals(this.externalReference, booking.externalReference) &&
@@ -802,7 +825,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, occupancyStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, occupancyStatus, stayStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
   }
 
   @Override
@@ -832,6 +855,7 @@ public class Booking {
     sb.append("    children: ").append(toIndentedString(children)).append("\n");
     sb.append("    paymentNote: ").append("[REDACTED]").append("\n");
     sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
+    sb.append("    stayStatus: ").append(toIndentedString(stayStatus)).append("\n");
     sb.append("    checkedInAt: ").append(toIndentedString(checkedInAt)).append("\n");
     sb.append("    checkedOutAt: ").append(toIndentedString(checkedOutAt)).append("\n");
     sb.append("    externalReference: ").append(toIndentedString(externalReference)).append("\n");

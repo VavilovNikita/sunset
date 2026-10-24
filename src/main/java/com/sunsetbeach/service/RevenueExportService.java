@@ -136,7 +136,7 @@ public class RevenueExportService {
 
             auditLogService.record(
                     AuditAction.REVENUE_EXPORTED, AuditEntityType.PAYMENT, null,
-                    "Exported revenue for " + fromDate + " to " + toDate + ": ฿" + PriceFormat.asDecimalString(grandTotal) + " collected ("
+                    "Exported revenue for " + fromDate + " to " + toDate + ": " + PriceFormat.baht(grandTotal) + " collected ("
                             + payments.size() + " POS payment(s), " + folioPayments.size() + " room charge settlement(s))");
 
             return out.toByteArray();

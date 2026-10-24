@@ -1,5 +1,6 @@
 package com.sunsetbeach.service;
 
+import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.entity.MenuItemEntity;
@@ -663,15 +664,15 @@ public class OrderService {
                 AuditAction.ORDER_CLOSED,
                 AuditEntityType.ORDER,
                 saved.getId(),
-                "Order closed with " + input.getMethod().getValue() + " payment of " + saved.getTotal()
-                        + (tendered != null ? " (tendered " + tendered + ", change " + tendered.subtract(saved.getTotal()) + ")" : "")
+                "Order closed with " + input.getMethod().getValue() + " payment of " + PriceFormat.baht(saved.getTotal())
+                        + (tendered != null ? " (tendered " + PriceFormat.baht(tendered) + ", change " + PriceFormat.baht(tendered.subtract(saved.getTotal())) + ")" : "")
                         + (booking != null ? " (charged to " + booking.getGuestName() + "'s room)" : ""));
         if (booking != null) {
             auditLogService.record(
                     AuditAction.ROOM_CHARGE_POSTED,
                     AuditEntityType.BOOKING,
                     booking.getId(),
-                    "Room charge of " + saved.getTotal() + " posted to " + booking.getGuestName() + "'s folio from order " + saved.getId());
+                    "Room charge of " + PriceFormat.baht(saved.getTotal()) + " posted to " + booking.getGuestName() + "'s folio from order " + saved.getId());
         }
 
         return toDto(saved, items);
@@ -766,7 +767,7 @@ public class OrderService {
                 AuditAction.ORDER_CANCELLED,
                 AuditEntityType.ORDER,
                 saved.getId(),
-                "Order cancelled (total was " + totalBefore + ")"
+                "Order cancelled (total was " + PriceFormat.baht(totalBefore) + ")"
                         + (wasSent ? " after it was sent; voided " + String.join(", ", voidedLines) + ". Reason: " + reason : ""));
         return toDto(saved, orderItemRepository.findByOrderId(id));
     }

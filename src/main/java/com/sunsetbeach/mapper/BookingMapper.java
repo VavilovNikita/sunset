@@ -72,6 +72,19 @@ public class BookingMapper {
      * transaction lives in `BookingWriter`, already committed by the time this mapper runs), so
      * a lazy nav here would throw `LazyInitializationException` outside that closed session.
      */
+    /** Where the booking stands as a stay - see {@code StayStatus} in openapi.yaml. */
+    static com.sunsetbeach.model.StayStatus stayStatusOf(BookingEntity entity) {
+        if (entity.getStatus() == com.sunsetbeach.model.BookingStatus.CANCELLED) {
+            return com.sunsetbeach.model.StayStatus.CANCELLED;
+        }
+        return switch (entity.getOccupancyStatus()) {
+            case NO_SHOW -> com.sunsetbeach.model.StayStatus.NO_SHOW;
+            case CHECKED_OUT -> com.sunsetbeach.model.StayStatus.CHECKED_OUT;
+            case CHECKED_IN -> com.sunsetbeach.model.StayStatus.IN_HOUSE;
+            case EXPECTED -> com.sunsetbeach.model.StayStatus.UPCOMING;
+        };
+    }
+
     public Booking toDto(BookingEntity entity, RoomEntity room, RoomUnitEntity roomUnit, GuestEntity guest, List<BookingSegmentEntity> segments) {
         return toDto(entity, room, roomUnit, guest, segments, folioCalculator.balanceDue(entity));
     }
@@ -131,6 +144,7 @@ public class BookingMapper {
                         .toList(),
                 TimestampFormat.toUtc(entity.getCreatedAt()),
                 TimestampFormat.toUtc(entity.getUpdatedAt()))
+                .stayStatus(stayStatusOf(entity))
                 .earlyDepartureFee(PriceFormat.asDecimalString(entity.getEarlyDepartureFee()))
                 .balanceDue(PriceFormat.asDecimalString(balanceDue))
                 .owes(BookingFolioCalculator.debtHasFallenDue(entity, balanceDue, java.time.LocalDate.now(clock)));

@@ -18,6 +18,7 @@ import com.sunsetbeach.repository.UserRepository;
 import com.sunsetbeach.security.CurrentUser;
 import com.sunsetbeach.tuya.TuyaClient;
 import com.sunsetbeach.tuya.TuyaException;
+import com.sunsetbeach.tuya.TuyaMessages;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -93,7 +94,7 @@ public class GymDeviceService {
             }
             if (integrationDown != null) {
                 // The whole integration is down: do not spend a call per relay finding that out again.
-                result.add(toDto(device, new RelayRead(null, null, null, integrationDown.getMessage())));
+                result.add(toDto(device, new RelayRead(null, null, null, TuyaMessages.forViewer(integrationDown.getMessage()))));
                 continue;
             }
             try {
@@ -102,7 +103,7 @@ public class GymDeviceService {
                 if (e.isIntegrationDown()) {
                     integrationDown = e;
                 }
-                result.add(toDto(device, new RelayRead(null, null, null, e.getMessage())));
+                result.add(toDto(device, new RelayRead(null, null, null, TuyaMessages.forViewer(e.getMessage()))));
             }
         }
         return new GymDeviceList(result, OffsetDateTime.now(clock));
@@ -138,7 +139,7 @@ public class GymDeviceService {
             return toDto(device, read);
         } catch (TuyaException e) {
             // The command went through; only the confirming read failed. Say so rather than failing the whole action.
-            return toDto(device, new RelayRead(on, null, null, "The command was sent, but the state could not be confirmed: " + e.getMessage()));
+            return toDto(device, new RelayRead(on, null, null, "The command was sent, but the state could not be confirmed: " + TuyaMessages.forViewer(e.getMessage())));
         }
     }
 

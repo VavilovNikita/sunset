@@ -18,6 +18,19 @@ public final class PriceFormat {
         return value.setScale(2, RoundingMode.UNNECESSARY).toPlainString();
     }
 
+    /**
+     * A sum for people to read in an audit entry: {@code ฿1,000}, with satang only when there are
+     * some ({@code ฿1,000.50}). Display text only - API money fields stay plain decimal strings.
+     */
+    public static String baht(BigDecimal value) {
+        BigDecimal rounded = value.setScale(2, RoundingMode.HALF_UP);
+        String pattern = rounded.stripTrailingZeros().scale() <= 0 ? "#,##0" : "#,##0.00";
+        java.text.DecimalFormat format = new java.text.DecimalFormat(pattern, java.text.DecimalFormatSymbols.getInstance(java.util.Locale.ROOT));
+        format.setRoundingMode(RoundingMode.HALF_UP);
+        String text = format.format(rounded.abs());
+        return (rounded.signum() < 0 ? "-" : "") + "฿" + text;
+    }
+
     public static BigDecimal asRealNumber(BigDecimal value) {
         BigDecimal stripped = value.stripTrailingZeros();
         // stripTrailingZeros() can yield a negative scale (e.g. 1500 -> unscaled 15, scale -2),

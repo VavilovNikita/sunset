@@ -49,6 +49,9 @@ public class PrintJob {
   private OffsetDateTime updatedAt;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private OffsetDateTime lastAttemptAt;
+
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private JsonNullable<OffsetDateTime> dismissedAt = JsonNullable.<OffsetDateTime>undefined();
 
   private JsonNullable<String> dismissedByUserId = JsonNullable.<String>undefined();
@@ -245,6 +248,25 @@ public class PrintJob {
     this.updatedAt = updatedAt;
   }
 
+  public PrintJob lastAttemptAt(OffsetDateTime lastAttemptAt) {
+    this.lastAttemptAt = lastAttemptAt;
+    return this;
+  }
+
+  /**
+   * When the printer was last tried (automatic or manual). Absent while no attempt has been made.
+   * @return lastAttemptAt
+   */
+  @Valid 
+  @JsonProperty("lastAttemptAt")
+  public OffsetDateTime getLastAttemptAt() {
+    return lastAttemptAt;
+  }
+
+  public void setLastAttemptAt(OffsetDateTime lastAttemptAt) {
+    this.lastAttemptAt = lastAttemptAt;
+  }
+
   public PrintJob dismissedAt(OffsetDateTime dismissedAt) {
     this.dismissedAt = JsonNullable.of(dismissedAt);
     return this;
@@ -320,6 +342,7 @@ public class PrintJob {
         Objects.equals(this.lastError, printJob.lastError) &&
         Objects.equals(this.createdAt, printJob.createdAt) &&
         Objects.equals(this.updatedAt, printJob.updatedAt) &&
+        Objects.equals(this.lastAttemptAt, printJob.lastAttemptAt) &&
         equalsNullable(this.dismissedAt, printJob.dismissedAt) &&
         equalsNullable(this.dismissedByUserId, printJob.dismissedByUserId) &&
         equalsNullable(this.dismissNote, printJob.dismissNote);
@@ -331,7 +354,7 @@ public class PrintJob {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, printerId, documentType, summary, status, attempts, lastError, createdAt, updatedAt, hashCodeNullable(dismissedAt), hashCodeNullable(dismissedByUserId), hashCodeNullable(dismissNote));
+    return Objects.hash(id, printerId, documentType, summary, status, attempts, lastError, createdAt, updatedAt, lastAttemptAt, hashCodeNullable(dismissedAt), hashCodeNullable(dismissedByUserId), hashCodeNullable(dismissNote));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -354,6 +377,7 @@ public class PrintJob {
     sb.append("    lastError: ").append(toIndentedString(lastError)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
+    sb.append("    lastAttemptAt: ").append(toIndentedString(lastAttemptAt)).append("\n");
     sb.append("    dismissedAt: ").append(toIndentedString(dismissedAt)).append("\n");
     sb.append("    dismissedByUserId: ").append(toIndentedString(dismissedByUserId)).append("\n");
     sb.append("    dismissNote: ").append(toIndentedString(dismissNote)).append("\n");

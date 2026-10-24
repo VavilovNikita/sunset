@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.sunsetbeach.AbstractIntegrationTest;
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
+import com.sunsetbeach.entity.RatePlanEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.ConflictException;
@@ -80,6 +81,7 @@ class OverstayRuleTests extends AbstractIntegrationTest {
     @Autowired private BookingRepository bookingRepository;
     @Autowired private BookingSegmentRepository segmentRepository;
     @Autowired private EntityManager entityManager;
+    @Autowired private com.sunsetbeach.repository.RatePlanRepository ratePlanRepository;
 
     private RoomEntity room;
     private RoomUnitEntity unit;
@@ -200,30 +202,57 @@ class OverstayRuleTests extends AbstractIntegrationTest {
         assertThat(inHouseAfter - inHouseBefore).isEqualTo(1);
         assertThat(after.getRooms().getOccupied() - before.getRooms().getOccupied()).isEqualTo(1);
         assertThat(after.getGuests().getGuestsInHouse() - before.getGuests().getGuestsInHouse()).isEqualTo(guests);
-        // Nothing was agreed or priced for the overstay nights - no revenue appears from them.
-        assertThat(after.getRevenue().getRoomRevenue()).isEqualTo(before.getRevenue().getRoomRevenue());
+        // Nothing was agreed for tonight, so it is valued at the room type's base price (฿1000).
+        assertThat(new BigDecimal(after.getRevenue().getRoomRevenue()).subtract(new BigDecimal(before.getRevenue().getRoomRevenue())))
+                .isEqualByComparingTo("1000.00");
         // Tomorrow isn't promised to anyone, same as availability.
         assertThat(after.getTomorrow().getOccupied()).isEqualTo(before.getTomorrow().getOccupied());
     }
 
     @Test
-    void roomProduction_countsTheOverstayNights_atZeroRevenue() {
+    void roomProduction_valuesTheOverstayNights_atTheRoomTypesPrice() {
         persistStay(OccupancyStatus.CHECKED_IN, "2033-03-10", "2033-03-15");
 
-        // Agreed 10-14 (5 nights, ฿5000) plus overstay 15-20 (6 nights, nothing agreed).
+        // Agreed 10-14 (5 nights, ฿5000) plus overstay 15-20 (6 nights at the ฿1000 base price).
         OccupancyReportRow row = reportService.occupancy("2033-03-01", "2033-03-31").getRooms().stream()
                 .filter(r -> room.getId().equals(r.getRoomId().orElse(null))).findFirst().orElseThrow();
         assertThat(row.getRoomNightsSold()).isEqualTo(11);
-        assertThat(row.getRoomRevenue()).isEqualTo("5000.00");
+        assertThat(row.getRoomRevenue()).isEqualTo("11000.00");
 
         OccupancyReportRow overstayOnly = reportService.occupancy("2033-03-16", "2033-03-20").getRooms().stream()
                 .filter(r -> room.getId().equals(r.getRoomId().orElse(null))).findFirst().orElseThrow();
         assertThat(overstayOnly.getRoomNightsSold()).isEqualTo(5);
-        assertThat(overstayOnly.getRoomRevenue()).isEqualTo("0.00");
+        assertThat(overstayOnly.getRoomRevenue()).isEqualTo("5000.00");
 
         // Top production and market segment read the same population, so they still total the same.
         assertThat(reportService.topProduction("2033-03-16", "2033-03-20").getTotal().getRoomNights())
                 .isEqualTo(reportService.occupancy("2033-03-16", "2033-03-20").getTotal().getRoomNightsSold());
+    }
+
+    /** A guest 3 nights over their booking: revenue and ADR follow the price grid where a date has one, the base price elsewhere. */
+    @Test
+    void threeNightsOverTheBooking_areValuedAtGridPriceElseBase_andDoNotTouchTheGuestsMoney() {
+        BookingEntity overdue = persistStay(OccupancyStatus.CHECKED_IN, "2033-03-10", "2033-03-17");
+        RatePlanEntity peak = new RatePlanEntity();
+        peak.setRoomId(room.getId());
+        peak.setDate(LocalDate.parse("2033-03-18"));
+        peak.setPrice(new BigDecimal("2500.00"));
+        ratePlanRepository.saveAndFlush(peak);
+
+        // Overstay nights 17..20 (today is the 20th): base 1000 except the 18th at the grid's 2500.
+        OccupancyReportRow row = reportService.occupancy("2033-03-17", "2033-03-20").getRooms().stream()
+                .filter(r -> room.getId().equals(r.getRoomId().orElse(null))).findFirst().orElseThrow();
+        assertThat(row.getRoomNightsSold()).isEqualTo(4);
+        assertThat(row.getRoomRevenue()).isEqualTo("5500.00");
+        assertThat(row.getAdr().get()).isEqualTo("1375.00");
+
+        // The booking itself - and so the folio - is untouched.
+        BookingEntity reread = bookingRepository.findById(overdue.getId()).orElseThrow();
+        assertThat(reread.getTotalPrice()).isEqualByComparingTo("5000.00");
+        assertThat(reread.getCheckOut()).isEqualTo(LocalDate.parse("2033-03-17"));
+        // Channel comes from the booking, not from "Other".
+        assertThat(reportService.topProduction("2033-03-17", "2033-03-20").getProducers())
+                .anyMatch(r -> "direct".equalsIgnoreCase(r.getProducer().orElse(null)));
     }
 
     @Test

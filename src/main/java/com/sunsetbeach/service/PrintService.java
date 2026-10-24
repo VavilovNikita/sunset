@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.PrintJobEntity;
+import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.entity.PrinterEntity;
 import com.sunsetbeach.model.PrintDocumentType;
 import com.sunsetbeach.model.PrintJobStatus;
@@ -8,6 +9,7 @@ import com.sunsetbeach.model.PrinterDepartment;
 import com.sunsetbeach.repository.PrintJobRepository;
 import com.sunsetbeach.repository.PrinterRepository;
 import jakarta.annotation.PreDestroy;
+import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -45,6 +47,7 @@ public class PrintService {
     private final PrinterRepository printerRepository;
     private final PrintJobRepository printJobRepository;
     private final PrinterClient printerClient;
+    private final Clock clock;
     private final int maxAttempts;
     private final boolean deliverInBackground;
     private final TransactionTemplate deliveryTransaction;
@@ -60,12 +63,14 @@ public class PrintService {
             PrintJobRepository printJobRepository,
             PrinterClient printerClient,
             PlatformTransactionManager transactionManager,
+            Clock clock,
             @Value("${app.printing.max-attempts:5}") int maxAttempts,
             @Value("${app.printing.deliver-in-background:true}") boolean deliverInBackground) {
         this.printerRepository = printerRepository;
         this.printJobRepository = printJobRepository;
         this.printerClient = printerClient;
         this.deliveryTransaction = new TransactionTemplate(transactionManager);
+        this.clock = clock;
         this.maxAttempts = maxAttempts;
         this.deliverInBackground = deliverInBackground;
     }
@@ -147,6 +152,7 @@ public class PrintService {
     @Transactional
     public PrintJobEntity retryManually(PrintJobEntity job, PrinterEntity printer) {
         job.setAttempts(job.getAttempts() + 1);
+        job.setLastAttemptAt(TimestampFormat.nowUtc(clock));
         try {
             printerClient.send(printer.getHost(), printer.getPort(), job.getPayload());
             markSent(job);
@@ -162,6 +168,7 @@ public class PrintService {
      */
     private PrintJobEntity attemptAutomatic(PrintJobEntity job, PrinterEntity printer) {
         job.setAttempts(job.getAttempts() + 1);
+        job.setLastAttemptAt(TimestampFormat.nowUtc(clock));
         try {
             printerClient.send(printer.getHost(), printer.getPort(), job.getPayload());
             markSent(job);

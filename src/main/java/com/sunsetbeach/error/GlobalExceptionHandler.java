@@ -89,7 +89,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(com.sunsetbeach.tuya.TuyaException.class)
     public ResponseEntity<ErrorMessage> handleTuya(com.sunsetbeach.tuya.TuyaException ex) {
         HttpStatus status = ex.isIntegrationDown() ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.BAD_GATEWAY;
-        return ResponseEntity.status(status).body(new ErrorMessage(ex.getMessage()));
+        return ResponseEntity.status(status).body(new ErrorMessage(com.sunsetbeach.tuya.TuyaMessages.forViewer(ex.getMessage())));
     }
 
     /**

@@ -152,7 +152,7 @@ class GymDeviceServiceTests extends AbstractIntegrationTest {
         List<GymDevice> devices = gymDeviceService.list(true).getDevices();
 
         verify(tuya, times(1)).deviceState(anyString());
-        assertThat(devices).hasSize(3).allSatisfy(d -> assertThat(d.getStateError().get()).startsWith("Tuya integration is unavailable"));
+        assertThat(devices).hasSize(3).allSatisfy(d -> assertThat(d.getStateError().get()).isEqualTo("Gym equipment control isn't set up yet"));
     }
 
     @Test

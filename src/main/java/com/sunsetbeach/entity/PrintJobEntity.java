@@ -39,6 +39,8 @@ public class PrintJobEntity {
 
     private String lastError;
 
+    private LocalDateTime lastAttemptAt;
+
     @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
@@ -95,6 +97,14 @@ public class PrintJobEntity {
 
     public void setStatus(PrintJobStatus status) {
         this.status = status;
+    }
+
+    public LocalDateTime getLastAttemptAt() {
+        return lastAttemptAt;
+    }
+
+    public void setLastAttemptAt(LocalDateTime lastAttemptAt) {
+        this.lastAttemptAt = lastAttemptAt;
     }
 
     public int getAttempts() {

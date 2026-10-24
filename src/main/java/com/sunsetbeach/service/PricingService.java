@@ -91,7 +91,7 @@ public class PricingService {
                 AuditAction.RATE_OVERRIDE_CHANGED,
                 AuditEntityType.ROOM,
                 room.getId(),
-                "Price override set to " + input.getPrice() + " for " + room.getName() + " from " + from + " to " + to + " ("
+                "Price override set to " + PriceFormat.baht(input.getPrice()) + " for " + room.getName() + " from " + from + " to " + to + " ("
                         + dates.size() + " day(s))");
 
         return dates.size();
