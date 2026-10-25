@@ -14030,8 +14030,9 @@ components:
       enum: [GUEST_NAME, ROOM, CHECK_IN, CHECK_OUT, TOTAL_PRICE, STATUS, CREATED_AT]
       description: >
         Sort column for `GET /bookings/search`. `ROOM` sorts by the room type's name. Defaults to `CHECK_IN`.
-        With neither `sort` nor `direction` given the order is not plain check-in descending - the nearest
-        arrivals from today come first (ascending), then earlier stays, latest first.
+        With neither `sort` nor `direction` given the order is not plain check-in descending - guests in the
+        room now come first (checked in and not yet gone, an overstaying guest included, soonest departure on
+        top), then arrivals still to come by date ascending, then earlier stays, latest first.
 
     SortDirection:
       type: string

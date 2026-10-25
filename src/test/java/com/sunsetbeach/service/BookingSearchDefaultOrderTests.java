@@ -77,21 +77,26 @@ class BookingSearchDefaultOrderTests extends AbstractIntegrationTest {
         unit = roomUnitRepository.saveAndFlush(unit);
 
         for (String checkIn : List.of("2034-09-01", "2034-06-12", "2034-06-10", "2034-05-01", "2034-06-01", "2034-07-01")) {
-            persist(room, unit, tag, checkIn);
+            persist(room, unit, tag, checkIn, null, OccupancyStatus.EXPECTED);
         }
+        // In the room now: one due out on the 12th, one who should have left on the 8th and stayed on.
+        persist(room, unit, tag, "2034-06-05", "2034-06-12", OccupancyStatus.CHECKED_IN);
+        persist(room, unit, tag, "2034-06-01", "2034-06-08", OccupancyStatus.CHECKED_IN);
         entityManager.clear();
 
         BookingPage page = bookingService.search(tag, null, null, null, null, null, 0, 50);
-        assertThat(page.getItems()).extracting(b -> b.getCheckIn())
-                .containsExactly("2034-06-10", "2034-06-12", "2034-07-01", "2034-09-01", "2034-06-01", "2034-05-01");
-        assertThat(page.getTotalCount()).isEqualTo(6);
+        // In the room now (soonest departure first, the overstaying guest on top), then arrivals to come, then the past.
+        assertThat(page.getItems())
+                .extracting(b -> b.getCheckIn() + (b.getOccupancyStatus() == OccupancyStatus.CHECKED_IN ? "*" : ""))
+                .containsExactly("2034-06-01*", "2034-06-05*", "2034-06-10", "2034-06-12", "2034-07-01", "2034-09-01", "2034-06-01", "2034-05-01");
+        assertThat(page.getTotalCount()).isEqualTo(8);
 
         // An explicit sort is honoured exactly as before.
         BookingPage explicit = bookingService.search(tag, null, null, null, BookingSortField.CHECK_IN, SortDirection.DESC, 0, 50);
         assertThat(explicit.getItems().get(0).getCheckIn()).isEqualTo("2034-09-01");
     }
 
-    private void persist(RoomEntity room, RoomUnitEntity unit, String tag, String checkIn) {
+    private void persist(RoomEntity room, RoomUnitEntity unit, String tag, String checkIn, String checkOut, OccupancyStatus occupancy) {
         LocalDate in = LocalDate.parse(checkIn);
         BookingEntity booking = new BookingEntity();
         booking.setChannel(BookingChannel.DIRECT);
@@ -101,17 +106,17 @@ class BookingSearchDefaultOrderTests extends AbstractIntegrationTest {
         booking.setGuestEmail("g@example.com");
         booking.setGuestPhone("+66800000000");
         booking.setCheckIn(in);
-        booking.setCheckOut(in.plusDays(1));
+        booking.setCheckOut(checkOut != null ? LocalDate.parse(checkOut) : in.plusDays(1));
         booking.setTotalPrice(new BigDecimal("1000.00"));
         booking.setStatus(BookingStatus.CONFIRMED);
-        booking.setOccupancyStatus(OccupancyStatus.EXPECTED);
+        booking.setOccupancyStatus(occupancy);
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
         BookingSegmentEntity segment = new BookingSegmentEntity();
         segment.setBookingId(saved.getId());
         segment.setRoomId(room.getId());
         segment.setRoomUnitId(unit.getId());
         segment.setCheckIn(in);
-        segment.setCheckOut(in.plusDays(1));
+        segment.setCheckOut(checkOut != null ? LocalDate.parse(checkOut) : in.plusDays(1));
         segment.setTotalPrice(new BigDecimal("1000.00"));
         segmentRepository.saveAndFlush(segment);
     }

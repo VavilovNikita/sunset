@@ -641,8 +641,7 @@ public class BookingService {
         LocalDate today = overstayRule.today();
         Specification<BookingEntity> spec = buildSpecification(from, to, status, null, today).and(textSearch(q));
         if (sort == null && direction == null) {
-            // No sort asked for: the nearest arrivals from today first, then the past, latest first -
-            // not the furthest future dates a plain "check-in descending" puts on top.
+            // No sort asked for: guests in the room now, then the arrivals to come, then the past (see nearestArrivalsFirst).
             spec = spec.and(nearestArrivalsFirst(today));
             order = Sort.unsorted(); // a pageable sort would replace the specification's own ordering
         }
@@ -651,13 +650,22 @@ public class BookingService {
         return new BookingPage(items, pageNumber, size, (int) result.getTotalElements());
     }
 
-    /** Upcoming arrivals by date ascending (today first); every past one sorts after them, by the pageable's check-in descending. */
+    /**
+     * The list's order when none is asked for: who is in the room now first (checked in and not yet gone - an
+     * overstaying guest included - soonest departure on top), then arrivals still to come by date ascending (today
+     * first), then the past, latest first. Without the first group a guest who has lived here since last week sorted
+     * after a booking for 2036. Built as the specification's own ORDER BY, so the pageable stays unsorted.
+     */
     private static Specification<BookingEntity> nearestArrivalsFirst(LocalDate today) {
         return (root, query, cb) -> {
             if (query.getResultType() != Long.class && query.getResultType() != long.class) {
+                var inHouse = cb.equal(root.get("occupancyStatus"), OccupancyStatus.CHECKED_IN);
+                var upcoming = cb.greaterThanOrEqualTo(root.<LocalDate>get("checkIn"), today);
                 query.orderBy(
+                        cb.asc(cb.selectCase().when(inHouse, 0).when(upcoming, 1).otherwise(2)),
                         cb.asc(cb.selectCase()
-                                .when(cb.greaterThanOrEqualTo(root.<LocalDate>get("checkIn"), today), root.<LocalDate>get("checkIn"))
+                                .when(inHouse, root.<LocalDate>get("checkOut"))
+                                .when(upcoming, root.<LocalDate>get("checkIn"))
                                 .otherwise(cb.nullLiteral(LocalDate.class))),
                         cb.desc(root.get("checkIn")),
                         cb.asc(root.get("id")));
