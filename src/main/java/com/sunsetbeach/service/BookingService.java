@@ -615,7 +615,7 @@ public class BookingService {
                         b.getRoomUnit(),
                         b.getGuest(),
                         segmentsByBookingId.getOrDefault(b.getId(), List.of()),
-                        folios.get(b.getId()).balanceDue()))
+                        folios.get(b.getId())))
                 .toList();
     }
 
@@ -1173,6 +1173,7 @@ public class BookingService {
                 PriceFormat.asDecimalString(b.balanceDue()),
                 PriceFormat.asDecimalString(b.creditBalance()),
                 b.overstayNightsOwed(),
+                b.overstayNightsOwed() > 0 && b.overstayIncludesTonight(),
                 PriceFormat.asDecimalString(b.overstayOwed()),
                 b.roomChargeCount())
                 .amountToMarkPaid(PriceFormat.asDecimalString(b.asUnsettled().balanceDue()));

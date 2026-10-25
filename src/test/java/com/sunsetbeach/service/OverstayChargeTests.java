@@ -233,6 +233,30 @@ class OverstayChargeTests extends AbstractIntegrationTest {
     }
 
     @Test
+    void theBookingSaysWhereItsMoneyStands_andWhetherTonightIsAmongTheOverstayNights() {
+        BookingEntity booking = checkedInStay("2033-03-15", "2033-03-18");
+        chargeService.reconcile(booking.getId());
+
+        // 18th, 19th and tonight: the guest is in the house and tonight's night has accrued.
+        BookingFolio folio = bookingService.getFolio(booking.getId());
+        assertThat(folio.getOverstayNights()).isEqualTo(3);
+        assertThat(folio.getOverstayIncludesTonight()).isTrue();
+        assertThat(bookingService.getById(booking.getId()).getSettlement()).isEqualTo(com.sunsetbeach.model.SettlementStatus.OWES);
+        var entry = occupancyService.getTodayBoard().getInHouse().stream()
+                .filter(e -> e.getBooking().getId().equals(booking.getId())).findFirst().orElseThrow();
+        assertThat(entry.getOverstayNights()).isEqualTo(3);
+        assertThat(entry.getOverstayIncludesTonight()).isTrue();
+
+        // Once the guest has left, tonight is released: two nights, tonight not among them.
+        occupancyService.checkOut(booking.getId(), null);
+        entityManager.flush();
+        entityManager.clear();
+        BookingFolio after = bookingService.getFolio(booking.getId());
+        assertThat(after.getOverstayNights()).isEqualTo(2);
+        assertThat(after.getOverstayIncludesTonight()).isFalse();
+    }
+
+    @Test
     void aGuestWhoHasNotArrived_orHasAlreadyLeft_getsNoOverstay() {
         BookingEntity expected = stay("2033-03-10", "2033-03-12", OccupancyStatus.EXPECTED);
         BookingEntity gone = stay("2033-03-13", "2033-03-15", OccupancyStatus.CHECKED_OUT);

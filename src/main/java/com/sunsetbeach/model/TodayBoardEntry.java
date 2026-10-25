@@ -25,6 +25,10 @@ public class TodayBoardEntry {
 
   private String outstandingBalance;
 
+  private Integer overstayNights;
+
+  private Boolean overstayIncludesTonight;
+
   private Integer overdueDays;
 
   public TodayBoardEntry() {
@@ -77,6 +81,45 @@ public class TodayBoardEntry {
     this.outstandingBalance = outstandingBalance;
   }
 
+  public TodayBoardEntry overstayNights(Integer overstayNights) {
+    this.overstayNights = overstayNights;
+    return this;
+  }
+
+  /**
+   * The nights charged to this booking as overstay (`BookingFolio.overstayNights`) - the one number to show next to the guest; `overdueDays` is the age of the missed departure and is not the same count. 
+   * minimum: 0
+   * @return overstayNights
+   */
+  @Min(0) 
+  @JsonProperty("overstayNights")
+  public Integer getOverstayNights() {
+    return overstayNights;
+  }
+
+  public void setOverstayNights(Integer overstayNights) {
+    this.overstayNights = overstayNights;
+  }
+
+  public TodayBoardEntry overstayIncludesTonight(Boolean overstayIncludesTonight) {
+    this.overstayIncludesTonight = overstayIncludesTonight;
+    return this;
+  }
+
+  /**
+   * True when tonight's night is one of `overstayNights` (the guest is still in the house and tonight has accrued).
+   * @return overstayIncludesTonight
+   */
+  
+  @JsonProperty("overstayIncludesTonight")
+  public Boolean getOverstayIncludesTonight() {
+    return overstayIncludesTonight;
+  }
+
+  public void setOverstayIncludesTonight(Boolean overstayIncludesTonight) {
+    this.overstayIncludesTonight = overstayIncludesTonight;
+  }
+
   public TodayBoardEntry overdueDays(Integer overdueDays) {
     this.overdueDays = overdueDays;
     return this;
@@ -107,12 +150,14 @@ public class TodayBoardEntry {
     TodayBoardEntry todayBoardEntry = (TodayBoardEntry) o;
     return Objects.equals(this.booking, todayBoardEntry.booking) &&
         Objects.equals(this.outstandingBalance, todayBoardEntry.outstandingBalance) &&
+        Objects.equals(this.overstayNights, todayBoardEntry.overstayNights) &&
+        Objects.equals(this.overstayIncludesTonight, todayBoardEntry.overstayIncludesTonight) &&
         Objects.equals(this.overdueDays, todayBoardEntry.overdueDays);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(booking, outstandingBalance, overdueDays);
+    return Objects.hash(booking, outstandingBalance, overstayNights, overstayIncludesTonight, overdueDays);
   }
 
   @Override
@@ -121,6 +166,8 @@ public class TodayBoardEntry {
     sb.append("class TodayBoardEntry {\n");
     sb.append("    booking: ").append(toIndentedString(booking)).append("\n");
     sb.append("    outstandingBalance: ").append(toIndentedString(outstandingBalance)).append("\n");
+    sb.append("    overstayNights: ").append(toIndentedString(overstayNights)).append("\n");
+    sb.append("    overstayIncludesTonight: ").append(toIndentedString(overstayIncludesTonight)).append("\n");
     sb.append("    overdueDays: ").append(toIndentedString(overdueDays)).append("\n");
     sb.append("}");
     return sb.toString();

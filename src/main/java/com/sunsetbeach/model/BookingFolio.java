@@ -42,6 +42,8 @@ public class BookingFolio {
 
   private Integer overstayNights;
 
+  private Boolean overstayIncludesTonight;
+
   private String overstayTotal;
 
   private Integer roomChargeCount;
@@ -53,7 +55,7 @@ public class BookingFolio {
   /**
    * Constructor with only required parameters
    */
-  public BookingFolio(String roomTotal, String earlyDepartureFee, String roomChargesGross, String roomChargesTotal, String folioTotal, String paidTotal, String settledOutside, String balanceDue, String creditBalance, Integer overstayNights, String overstayTotal, Integer roomChargeCount) {
+  public BookingFolio(String roomTotal, String earlyDepartureFee, String roomChargesGross, String roomChargesTotal, String folioTotal, String paidTotal, String settledOutside, String balanceDue, String creditBalance, Integer overstayNights, Boolean overstayIncludesTonight, String overstayTotal, Integer roomChargeCount) {
     this.roomTotal = roomTotal;
     this.earlyDepartureFee = earlyDepartureFee;
     this.roomChargesGross = roomChargesGross;
@@ -64,6 +66,7 @@ public class BookingFolio {
     this.balanceDue = balanceDue;
     this.creditBalance = creditBalance;
     this.overstayNights = overstayNights;
+    this.overstayIncludesTonight = overstayIncludesTonight;
     this.overstayTotal = overstayTotal;
     this.roomChargeCount = roomChargeCount;
   }
@@ -278,6 +281,25 @@ public class BookingFolio {
     this.overstayNights = overstayNights;
   }
 
+  public BookingFolio overstayIncludesTonight(Boolean overstayIncludesTonight) {
+    this.overstayIncludesTonight = overstayIncludesTonight;
+    return this;
+  }
+
+  /**
+   * True when tonight's night is among `overstayNights` (so \"49 nights\" is \"48 past the due date + tonight\"). False once the guest has left, or before tonight's night has accrued.
+   * @return overstayIncludesTonight
+   */
+  @NotNull 
+  @JsonProperty("overstayIncludesTonight")
+  public Boolean getOverstayIncludesTonight() {
+    return overstayIncludesTonight;
+  }
+
+  public void setOverstayIncludesTonight(Boolean overstayIncludesTonight) {
+    this.overstayIncludesTonight = overstayIncludesTonight;
+  }
+
   public BookingFolio overstayTotal(String overstayTotal) {
     this.overstayTotal = overstayTotal;
     return this;
@@ -336,13 +358,14 @@ public class BookingFolio {
         Objects.equals(this.amountToMarkPaid, bookingFolio.amountToMarkPaid) &&
         Objects.equals(this.creditBalance, bookingFolio.creditBalance) &&
         Objects.equals(this.overstayNights, bookingFolio.overstayNights) &&
+        Objects.equals(this.overstayIncludesTonight, bookingFolio.overstayIncludesTonight) &&
         Objects.equals(this.overstayTotal, bookingFolio.overstayTotal) &&
         Objects.equals(this.roomChargeCount, bookingFolio.roomChargeCount);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, amountToMarkPaid, creditBalance, overstayNights, overstayTotal, roomChargeCount);
+    return Objects.hash(roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, amountToMarkPaid, creditBalance, overstayNights, overstayIncludesTonight, overstayTotal, roomChargeCount);
   }
 
   @Override
@@ -360,6 +383,7 @@ public class BookingFolio {
     sb.append("    amountToMarkPaid: ").append(toIndentedString(amountToMarkPaid)).append("\n");
     sb.append("    creditBalance: ").append(toIndentedString(creditBalance)).append("\n");
     sb.append("    overstayNights: ").append(toIndentedString(overstayNights)).append("\n");
+    sb.append("    overstayIncludesTonight: ").append(toIndentedString(overstayIncludesTonight)).append("\n");
     sb.append("    overstayTotal: ").append(toIndentedString(overstayTotal)).append("\n");
     sb.append("    roomChargeCount: ").append(toIndentedString(roomChargeCount)).append("\n");
     sb.append("}");

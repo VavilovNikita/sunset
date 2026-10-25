@@ -192,12 +192,17 @@ public class NightAuditService {
         Map<String, String> unitLabels = roomUnitRepository.findAllById(
                         bookings.stream().map(BookingEntity::getRoomUnitId).filter(Objects::nonNull).distinct().toList())
                 .stream().collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
+        Map<String, BookingFolioCalculator.FolioBreakdown> folios = folioCalculator.breakdowns(bookings);
+        LocalDate today = LocalDate.now(clock);
         return bookings.stream()
                 .map(b -> {
                     int nights = overstayDay == null ? 0 : unpaidOverstayNights(b, overstayDay);
                     NightAuditBooking dto = toBookingDto(b, roomNames.get(b.getRoomId()), unitLabels.get(b.getRoomUnitId()), nights);
+                    dto.setSettlement(folios.get(b.getId()).settlement());
+                    // The count runs through the reviewed night; it is "tonight" only when that night is today's.
+                    dto.setOverstayIncludesTonight(nights > 0 && overstayDay.equals(today));
                     if (nights > 0) {
-                        // Report estimate at the room type's price per date; never the folio's figure.
+                        // The same nights at the same price function the charge uses (it is on the folio).
                         dto.setUnpaidOverstayValue(PriceFormat.asDecimalString(
                                 overstayRule.estimatedPrice(b.getRoomId(), b.getCheckOut(), b.getCheckOut().plusDays(nights))));
                     }

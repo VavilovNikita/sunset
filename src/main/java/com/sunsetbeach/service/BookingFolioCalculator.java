@@ -131,7 +131,7 @@ public class BookingFolioCalculator {
         BigDecimal overstayAmount = overstay.stream().map(OverstayChargeEntity::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new FolioBreakdown(
                 booking.getTotalPrice(), booking.getEarlyDepartureFee(), roomChargesGross, charges.size(), paid, booking.getStatus(), booking.getOccupancyStatus(), neverArrivedAndOver(booking, java.time.LocalDate.now(clock)),
-                overstay.size(), overstayAmount);
+                overstay.size(), overstayAmount, overstay.stream().anyMatch(c -> c.getDate().equals(java.time.LocalDate.now(clock))));
     }
 
     public record FolioBreakdown(
@@ -144,13 +144,14 @@ public class BookingFolioCalculator {
             OccupancyStatus occupancy,
             boolean neverArrivedAndOver,
             int overstayNights,
-            BigDecimal overstayAmount) {
+            BigDecimal overstayAmount,
+            boolean overstayIncludesTonight) {
 
         /** A folio with no overstay - everything that is not a guest staying past check-out. */
         public FolioBreakdown(
                 BigDecimal stayPrice, BigDecimal earlyDepartureFee, BigDecimal roomChargesGross, int roomChargeCount, BigDecimal paid,
                 BookingStatus status, OccupancyStatus occupancy, boolean neverArrivedAndOver) {
-            this(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, status, occupancy, neverArrivedAndOver, 0, BigDecimal.ZERO);
+            this(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, status, occupancy, neverArrivedAndOver, 0, BigDecimal.ZERO, false);
         }
 
         /** The overstay as owed: nothing for a cancelled booking or a no-show - they never get one (the nights, if any, are voided). */
@@ -169,7 +170,18 @@ public class BookingFolioCalculator {
 
         /** The same folio with the room priced at {@code price} - the check-out preview's "nights stayed only" choice. */
         public FolioBreakdown withStayPrice(BigDecimal price) {
-            return new FolioBreakdown(price, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, status, occupancy, neverArrivedAndOver, overstayNights, overstayAmount);
+            return new FolioBreakdown(price, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, status, occupancy, neverArrivedAndOver, overstayNights, overstayAmount, overstayIncludesTonight);
+        }
+
+        /**
+         * Where the booking's money stands - {@code Booking.settlement}. Computed from the same {@link #balanceDue} and
+         * {@link #creditBalance} the folio shows; {@code PAID} says only that the room was paid.
+         */
+        public com.sunsetbeach.model.SettlementStatus settlement() {
+            if (balanceDue().signum() > 0) {
+                return com.sunsetbeach.model.SettlementStatus.OWES;
+            }
+            return creditBalance().signum() > 0 ? com.sunsetbeach.model.SettlementStatus.CREDIT : com.sunsetbeach.model.SettlementStatus.SETTLED;
         }
 
         /** The room as owed: nothing once the booking is cancelled, nothing for a no-show or a past stay nobody arrived for. */
@@ -221,7 +233,7 @@ public class BookingFolioCalculator {
          * from a {@code PAID} one it would be zero.
          */
         public FolioBreakdown asUnsettled() {
-            return new FolioBreakdown(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, BookingStatus.CONFIRMED, occupancy, neverArrivedAndOver, overstayNights, overstayAmount);
+            return new FolioBreakdown(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, BookingStatus.CONFIRMED, occupancy, neverArrivedAndOver, overstayNights, overstayAmount, overstayIncludesTonight);
         }
     }
 }

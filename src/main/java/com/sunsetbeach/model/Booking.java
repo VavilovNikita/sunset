@@ -13,6 +13,7 @@ import com.sunsetbeach.model.Guest;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.Room;
 import com.sunsetbeach.model.RoomUnit;
+import com.sunsetbeach.model.SettlementStatus;
 import com.sunsetbeach.model.StayStatus;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -82,6 +83,10 @@ public class Booking {
   private OccupancyStatus occupancyStatus;
 
   private StayStatus stayStatus;
+
+  private SettlementStatus settlement;
+
+  private String creditBalance;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private JsonNullable<OffsetDateTime> checkedInAt = JsonNullable.<OffsetDateTime>undefined();
@@ -600,6 +605,44 @@ public class Booking {
     this.stayStatus = stayStatus;
   }
 
+  public Booking settlement(SettlementStatus settlement) {
+    this.settlement = settlement;
+    return this;
+  }
+
+  /**
+   * Get settlement
+   * @return settlement
+   */
+  @Valid 
+  @JsonProperty("settlement")
+  public SettlementStatus getSettlement() {
+    return settlement;
+  }
+
+  public void setSettlement(SettlementStatus settlement) {
+    this.settlement = settlement;
+  }
+
+  public Booking creditBalance(String creditBalance) {
+    this.creditBalance = creditBalance;
+    return this;
+  }
+
+  /**
+   * Decimal(10,2) string, `BookingFolio.creditBalance` - what was collected beyond what was charged (`settlement` `CREDIT`); \"0.00\" otherwise.
+   * @return creditBalance
+   */
+  
+  @JsonProperty("creditBalance")
+  public String getCreditBalance() {
+    return creditBalance;
+  }
+
+  public void setCreditBalance(String creditBalance) {
+    this.creditBalance = creditBalance;
+  }
+
   public Booking checkedInAt(OffsetDateTime checkedInAt) {
     this.checkedInAt = JsonNullable.of(checkedInAt);
     return this;
@@ -812,6 +855,8 @@ public class Booking {
         Objects.equals(this.paymentNote, booking.paymentNote) &&
         Objects.equals(this.occupancyStatus, booking.occupancyStatus) &&
         Objects.equals(this.stayStatus, booking.stayStatus) &&
+        Objects.equals(this.settlement, booking.settlement) &&
+        Objects.equals(this.creditBalance, booking.creditBalance) &&
         Objects.equals(this.checkedInAt, booking.checkedInAt) &&
         Objects.equals(this.checkedOutAt, booking.checkedOutAt) &&
         Objects.equals(this.externalReference, booking.externalReference) &&
@@ -825,7 +870,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, occupancyStatus, stayStatus, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
   }
 
   @Override
@@ -856,6 +901,8 @@ public class Booking {
     sb.append("    paymentNote: ").append("[REDACTED]").append("\n");
     sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
     sb.append("    stayStatus: ").append(toIndentedString(stayStatus)).append("\n");
+    sb.append("    settlement: ").append(toIndentedString(settlement)).append("\n");
+    sb.append("    creditBalance: ").append(toIndentedString(creditBalance)).append("\n");
     sb.append("    checkedInAt: ").append(toIndentedString(checkedInAt)).append("\n");
     sb.append("    checkedOutAt: ").append(toIndentedString(checkedOutAt)).append("\n");
     sb.append("    externalReference: ").append(toIndentedString(externalReference)).append("\n");

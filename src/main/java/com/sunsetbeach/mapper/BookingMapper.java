@@ -86,7 +86,7 @@ public class BookingMapper {
     }
 
     public Booking toDto(BookingEntity entity, RoomEntity room, RoomUnitEntity roomUnit, GuestEntity guest, List<BookingSegmentEntity> segments) {
-        return toDto(entity, room, roomUnit, guest, segments, folioCalculator.balanceDue(entity));
+        return toDto(entity, room, roomUnit, guest, segments, folioCalculator.breakdown(entity));
     }
 
     /**
@@ -100,7 +100,8 @@ public class BookingMapper {
             RoomUnitEntity roomUnit,
             GuestEntity guest,
             List<BookingSegmentEntity> segments,
-            BigDecimal balanceDue) {
+            BookingFolioCalculator.FolioBreakdown folio) {
+        BigDecimal balanceDue = folio.balanceDue();
         List<BookingSegmentEntity> sorted = segments.stream().sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn)).toList();
 
         Map<String, RoomEntity> roomsById = roomRepository
@@ -147,6 +148,8 @@ public class BookingMapper {
                 .stayStatus(stayStatusOf(entity))
                 .earlyDepartureFee(PriceFormat.asDecimalString(entity.getEarlyDepartureFee()))
                 .balanceDue(PriceFormat.asDecimalString(balanceDue))
+                .settlement(folio.settlement())
+                .creditBalance(PriceFormat.asDecimalString(folio.creditBalance()))
                 .owes(BookingFolioCalculator.debtHasFallenDue(entity, balanceDue, java.time.LocalDate.now(clock)));
     }
 }

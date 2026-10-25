@@ -73,6 +73,7 @@ public class BookingOccupancyService {
     private final BookingWriter bookingWriter;
     private final GymReservationService gymReservations;
     private final OverstayChargeService overstayChargeService;
+    private final BookingFolioCalculator folioCalculator;
     private final TransactionTemplate checkOutTransaction;
     private final Clock clock;
 
@@ -88,10 +89,12 @@ public class BookingOccupancyService {
             BookingWriter bookingWriter,
             GymReservationService gymReservations,
             OverstayChargeService overstayChargeService,
+            BookingFolioCalculator folioCalculator,
             PlatformTransactionManager transactionManager,
             Clock clock) {
         this.gymReservations = gymReservations;
         this.overstayChargeService = overstayChargeService;
+        this.folioCalculator = folioCalculator;
         this.bookingWriter = bookingWriter;
         this.checkOutTransaction = new TransactionTemplate(transactionManager);
         this.bookingRepository = bookingRepository;
@@ -395,9 +398,12 @@ public class BookingOccupancyService {
     }
 
     private TodayBoardEntry toEntry(BookingEntity entity, LocalDate today) {
-        BigDecimal outstanding = bookingService.computeOutstandingBalance(entity.getId());
-        return new TodayBoardEntry(toDto(entity), PriceFormat.asDecimalString(outstanding))
-                .overdueDays(OverstayRule.overdueDays(entity, today));
+        BookingFolioCalculator.FolioBreakdown folio = folioCalculator.breakdown(entity);
+        return new TodayBoardEntry(toDto(entity), PriceFormat.asDecimalString(folio.balanceDue()))
+                .overdueDays(OverstayRule.overdueDays(entity, today))
+                // The one count to show next to the guest: the nights charged, tonight's among them or not.
+                .overstayNights(folio.overstayNightsOwed())
+                .overstayIncludesTonight(folio.overstayNightsOwed() > 0 && folio.overstayIncludesTonight());
     }
 
     private Booking toDto(BookingEntity entity) {

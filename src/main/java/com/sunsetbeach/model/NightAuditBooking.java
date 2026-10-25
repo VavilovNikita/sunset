@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
+import com.sunsetbeach.model.SettlementStatus;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -26,6 +27,10 @@ public class NightAuditBooking {
   private String id;
 
   private String balanceDue;
+
+  private SettlementStatus settlement;
+
+  private Boolean overstayIncludesTonight;
 
   private Integer unpaidOverstayNights;
 
@@ -102,13 +107,51 @@ public class NightAuditBooking {
     this.balanceDue = balanceDue;
   }
 
+  public NightAuditBooking settlement(SettlementStatus settlement) {
+    this.settlement = settlement;
+    return this;
+  }
+
+  /**
+   * Get settlement
+   * @return settlement
+   */
+  @Valid 
+  @JsonProperty("settlement")
+  public SettlementStatus getSettlement() {
+    return settlement;
+  }
+
+  public void setSettlement(SettlementStatus settlement) {
+    this.settlement = settlement;
+  }
+
+  public NightAuditBooking overstayIncludesTonight(Boolean overstayIncludesTonight) {
+    this.overstayIncludesTonight = overstayIncludesTonight;
+    return this;
+  }
+
+  /**
+   * True when `unpaidOverstayNights` counts tonight - the reviewed date is today and the guest is still in the house. For a past date the count runs through that date's night, which was not \"tonight\". 
+   * @return overstayIncludesTonight
+   */
+  
+  @JsonProperty("overstayIncludesTonight")
+  public Boolean getOverstayIncludesTonight() {
+    return overstayIncludesTonight;
+  }
+
+  public void setOverstayIncludesTonight(Boolean overstayIncludesTonight) {
+    this.overstayIncludesTonight = overstayIncludesTonight;
+  }
+
   public NightAuditBooking unpaidOverstayNights(Integer unpaidOverstayNights) {
     this.unpaidOverstayNights = unpaidOverstayNights;
     return this;
   }
 
   /**
-   * Nights a still-`CHECKED_IN` guest has stayed past `checkOut` with nothing agreed or charged: `OverstayRule`'s nights `[checkOut, date]`, counted inclusively, so it is one more than the days overdue shown next to it. `0` for a guest due out on `date` (the departure night is still sellable), for anyone who is not checked in, and on every `missedArrivals` and `unpaidBalances` row. A warning only - nothing is charged for these nights on the guest's folio. 
+   * Nights a still-`CHECKED_IN` guest has stayed past `checkOut`, which are charged to the booking as its overstay (`BookingFolio.overstayNights`): `OverstayRule`'s nights `[checkOut, date]`, counted inclusively, so it is one more than the days overdue shown next to it. `0` for a guest due out on `date` (the departure night is still sellable), for anyone who is not checked in, and on every `missedArrivals` and `unpaidBalances` row. The nights are on the guest's folio and in their balance; a stay finished with such a balance is listed under `unpaidBalances`. 
    * minimum: 0
    * @return unpaidOverstayNights
    */
@@ -128,7 +171,7 @@ public class NightAuditBooking {
   }
 
   /**
-   * Decimal(10,2) string: those `unpaidOverstayNights` valued at the room type's price for each date (price grid, else base price) - the same estimate the reports count them at. A report figure only, never on the folio or the balance. Absent when there are no overstay nights. 
+   * Decimal(10,2) string: those `unpaidOverstayNights` valued at the room type's price for each date (price grid, else base price) - the price they are charged at. Absent when there are no overstay nights. 
    * @return unpaidOverstayValue
    */
   
@@ -285,6 +328,8 @@ public class NightAuditBooking {
     NightAuditBooking nightAuditBooking = (NightAuditBooking) o;
     return Objects.equals(this.id, nightAuditBooking.id) &&
         Objects.equals(this.balanceDue, nightAuditBooking.balanceDue) &&
+        Objects.equals(this.settlement, nightAuditBooking.settlement) &&
+        Objects.equals(this.overstayIncludesTonight, nightAuditBooking.overstayIncludesTonight) &&
         Objects.equals(this.unpaidOverstayNights, nightAuditBooking.unpaidOverstayNights) &&
         Objects.equals(this.unpaidOverstayValue, nightAuditBooking.unpaidOverstayValue) &&
         Objects.equals(this.guestName, nightAuditBooking.guestName) &&
@@ -298,7 +343,7 @@ public class NightAuditBooking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, balanceDue, unpaidOverstayNights, unpaidOverstayValue, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus);
+    return Objects.hash(id, balanceDue, settlement, overstayIncludesTonight, unpaidOverstayNights, unpaidOverstayValue, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus);
   }
 
   @Override
@@ -307,6 +352,8 @@ public class NightAuditBooking {
     sb.append("class NightAuditBooking {\n");
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    balanceDue: ").append(toIndentedString(balanceDue)).append("\n");
+    sb.append("    settlement: ").append(toIndentedString(settlement)).append("\n");
+    sb.append("    overstayIncludesTonight: ").append(toIndentedString(overstayIncludesTonight)).append("\n");
     sb.append("    unpaidOverstayNights: ").append(toIndentedString(unpaidOverstayNights)).append("\n");
     sb.append("    unpaidOverstayValue: ").append(toIndentedString(unpaidOverstayValue)).append("\n");
     sb.append("    guestName: ").append("[REDACTED]").append("\n");

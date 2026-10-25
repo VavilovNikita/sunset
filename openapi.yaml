@@ -12603,6 +12603,17 @@ components:
         `POST /bookings` (the public form) is always `STANDARD`. Bookings made before this field
         existed read `STANDARD`.
 
+    SettlementStatus:
+      type: string
+      description: >
+        Where the booking's money stands, computed from the folio's own `balanceDue`/`creditBalance`
+        (`FolioBreakdown#settlement` - the one function), never stored: `OWES` (`balanceDue` > 0),
+        `CREDIT` (collected more than was charged, `creditBalance` > 0) or `SETTLED` (neither).
+        It exists because `BookingStatus.PAID` only says the room was paid - a `PAID` booking
+        whose guest stayed on, or ran up POS room charges, can still owe money. Read this, not
+        `status`, for "is anything left to settle".
+      enum: [SETTLED, OWES, CREDIT]
+
     StayStatus:
       type: string
       description: >
@@ -12748,6 +12759,16 @@ components:
         outstandingBalance:
           type: string
           description: Decimal(10,2) rendered as a string. Same meaning as `CheckOutResult.outstandingBalance`.
+        overstayNights:
+          type: integer
+          minimum: 0
+          description: >
+            The nights charged to this booking as overstay (`BookingFolio.overstayNights`) - the one
+            number to show next to the guest; `overdueDays` is the age of the missed departure and
+            is not the same count.
+        overstayIncludesTonight:
+          type: boolean
+          description: True when tonight's night is one of `overstayNights` (the guest is still in the house and tonight has accrued).
         overdueDays:
           type: integer
           description: >
@@ -14480,6 +14501,11 @@ components:
           $ref: "#/components/schemas/OccupancyStatus"
         stayStatus:
           $ref: "#/components/schemas/StayStatus"
+        settlement:
+          $ref: "#/components/schemas/SettlementStatus"
+        creditBalance:
+          type: string
+          description: Decimal(10,2) string, `BookingFolio.creditBalance` - what was collected beyond what was charged (`settlement` `CREDIT`); "0.00" otherwise.
         checkedInAt:
           type: string
           format: date-time
@@ -16686,7 +16712,7 @@ components:
         paid), which this system has no refund record for. A `CANCELLED` booking owes nothing
         for the room - `roomTotal` and `earlyDepartureFee` still show what it was priced at, but
         neither counts in `folioTotal`.
-      required: [roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, creditBalance, roomChargeCount, overstayNights, overstayTotal]
+      required: [roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, creditBalance, roomChargeCount, overstayNights, overstayTotal, overstayIncludesTonight]
       properties:
         roomTotal:
           type: string
@@ -16737,6 +16763,9 @@ components:
             they are still in the house). 0 for everyone else, and always 0 for a cancelled or
             no-show booking. Nights the stay was later extended over, or tonight when the guest
             checks out, are no longer charged.
+        overstayIncludesTonight:
+          type: boolean
+          description: True when tonight's night is among `overstayNights` (so "49 nights" is "48 past the due date + tonight"). False once the guest has left, or before tonight's night has accrued.
         overstayTotal:
           type: string
           description: The price of those nights - decimal(10,2) rendered as a string. Part of `folioTotal` and `balanceDue`.
@@ -18710,6 +18739,13 @@ components:
         balanceDue:
           type: string
           description: Decimal(10,2) string, `BookingFolio.balanceDue`. Present on every `unpaidBalances` row.
+        settlement:
+          $ref: "#/components/schemas/SettlementStatus"
+        overstayIncludesTonight:
+          type: boolean
+          description: >
+            True when `unpaidOverstayNights` counts tonight - the reviewed date is today and the guest is still
+            in the house. For a past date the count runs through that date's night, which was not "tonight".
         unpaidOverstayNights:
           type: integer
           minimum: 0
