@@ -14,7 +14,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * What a booking has been charged, what has been collected, and what is still owed - computed on the fly by &#x60;BookingService&#x60; (&#x60;computeFolioBreakdown&#x60;), never stored. The one place \&quot;how much does this guest owe\&quot; is answered; &#x60;outstandingBalance&#x60; everywhere else is &#x60;balanceDue&#x60; here.  Charged: &#x60;roomTotal&#x60; (the nights stayed) + &#x60;earlyDepartureFee&#x60; + &#x60;roomChargesGross&#x60; (POS orders charged to the room) &#x3D; &#x60;folioTotal&#x60;. Collected: &#x60;paidTotal&#x60; (every &#x60;FolioPayment&#x60;), applied to the POS charges first and then to the room, plus &#x60;settledOutside&#x60; - the room amount not covered by folio payments on a booking marked &#x60;PAID&#x60; by hand (prepaid on an OTA, bank transfer: collected, just not through this system). &#x60;balanceDue&#x60; &#x3D; &#x60;folioTotal&#x60; - &#x60;paidTotal&#x60; - &#x60;settledOutside&#x60;, never below zero; &#x60;creditBalance&#x60; is what was collected beyond &#x60;folioTotal&#x60; (a stay shortened after it was paid), which this system has no refund record for. A &#x60;CANCELLED&#x60; booking owes nothing for the room - &#x60;roomTotal&#x60; and &#x60;earlyDepartureFee&#x60; still show what it was priced at, but neither counts in &#x60;folioTotal&#x60;. 
+ * What a booking has been charged, what has been collected, and what is still owed - computed on the fly by &#x60;BookingService&#x60; (&#x60;computeFolioBreakdown&#x60;), never stored. The one place \&quot;how much does this guest owe\&quot; is answered; &#x60;outstandingBalance&#x60; everywhere else is &#x60;balanceDue&#x60; here.  Charged: &#x60;roomTotal&#x60; (the nights stayed) + &#x60;earlyDepartureFee&#x60; + &#x60;overstayTotal&#x60; (the nights a checked-in guest stayed past check-out, &#x60;overstayNights&#x60; of them, each at the room type&#39;s price for that date, frozen when it accrued) + &#x60;roomChargesGross&#x60; (POS orders charged to the room) &#x3D; &#x60;folioTotal&#x60;. Collected: &#x60;paidTotal&#x60; (every &#x60;FolioPayment&#x60;), applied to the POS charges first, then to the room, then to the overstay, plus &#x60;settledOutside&#x60; - the room amount not covered by folio payments on a booking marked &#x60;PAID&#x60; by hand (prepaid on an OTA, bank transfer: collected, just not through this system). &#x60;balanceDue&#x60; &#x3D; &#x60;folioTotal&#x60; - &#x60;paidTotal&#x60; - &#x60;settledOutside&#x60;, never below zero; &#x60;creditBalance&#x60; is what was collected beyond &#x60;folioTotal&#x60; (a stay shortened after it was paid), which this system has no refund record for. A &#x60;CANCELLED&#x60; booking owes nothing for the room - &#x60;roomTotal&#x60; and &#x60;earlyDepartureFee&#x60; still show what it was priced at, but neither counts in &#x60;folioTotal&#x60;. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -40,6 +40,10 @@ public class BookingFolio {
 
   private String creditBalance;
 
+  private Integer overstayNights;
+
+  private String overstayTotal;
+
   private Integer roomChargeCount;
 
   public BookingFolio() {
@@ -49,7 +53,7 @@ public class BookingFolio {
   /**
    * Constructor with only required parameters
    */
-  public BookingFolio(String roomTotal, String earlyDepartureFee, String roomChargesGross, String roomChargesTotal, String folioTotal, String paidTotal, String settledOutside, String balanceDue, String creditBalance, Integer roomChargeCount) {
+  public BookingFolio(String roomTotal, String earlyDepartureFee, String roomChargesGross, String roomChargesTotal, String folioTotal, String paidTotal, String settledOutside, String balanceDue, String creditBalance, Integer overstayNights, String overstayTotal, Integer roomChargeCount) {
     this.roomTotal = roomTotal;
     this.earlyDepartureFee = earlyDepartureFee;
     this.roomChargesGross = roomChargesGross;
@@ -59,6 +63,8 @@ public class BookingFolio {
     this.settledOutside = settledOutside;
     this.balanceDue = balanceDue;
     this.creditBalance = creditBalance;
+    this.overstayNights = overstayNights;
+    this.overstayTotal = overstayTotal;
     this.roomChargeCount = roomChargeCount;
   }
 
@@ -252,6 +258,45 @@ public class BookingFolio {
     this.creditBalance = creditBalance;
   }
 
+  public BookingFolio overstayNights(Integer overstayNights) {
+    this.overstayNights = overstayNights;
+    return this;
+  }
+
+  /**
+   * Nights charged as overstay (a `CHECKED_IN` guest past `checkOut`; tonight counts while they are still in the house). 0 for everyone else, and always 0 for a cancelled or no-show booking. Nights the stay was later extended over, or tonight when the guest checks out, are no longer charged. 
+   * minimum: 0
+   * @return overstayNights
+   */
+  @NotNull @Min(0) 
+  @JsonProperty("overstayNights")
+  public Integer getOverstayNights() {
+    return overstayNights;
+  }
+
+  public void setOverstayNights(Integer overstayNights) {
+    this.overstayNights = overstayNights;
+  }
+
+  public BookingFolio overstayTotal(String overstayTotal) {
+    this.overstayTotal = overstayTotal;
+    return this;
+  }
+
+  /**
+   * The price of those nights - decimal(10,2) rendered as a string. Part of `folioTotal` and `balanceDue`.
+   * @return overstayTotal
+   */
+  @NotNull 
+  @JsonProperty("overstayTotal")
+  public String getOverstayTotal() {
+    return overstayTotal;
+  }
+
+  public void setOverstayTotal(String overstayTotal) {
+    this.overstayTotal = overstayTotal;
+  }
+
   public BookingFolio roomChargeCount(Integer roomChargeCount) {
     this.roomChargeCount = roomChargeCount;
     return this;
@@ -290,12 +335,14 @@ public class BookingFolio {
         Objects.equals(this.balanceDue, bookingFolio.balanceDue) &&
         Objects.equals(this.amountToMarkPaid, bookingFolio.amountToMarkPaid) &&
         Objects.equals(this.creditBalance, bookingFolio.creditBalance) &&
+        Objects.equals(this.overstayNights, bookingFolio.overstayNights) &&
+        Objects.equals(this.overstayTotal, bookingFolio.overstayTotal) &&
         Objects.equals(this.roomChargeCount, bookingFolio.roomChargeCount);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, amountToMarkPaid, creditBalance, roomChargeCount);
+    return Objects.hash(roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, amountToMarkPaid, creditBalance, overstayNights, overstayTotal, roomChargeCount);
   }
 
   @Override
@@ -312,6 +359,8 @@ public class BookingFolio {
     sb.append("    balanceDue: ").append(toIndentedString(balanceDue)).append("\n");
     sb.append("    amountToMarkPaid: ").append(toIndentedString(amountToMarkPaid)).append("\n");
     sb.append("    creditBalance: ").append(toIndentedString(creditBalance)).append("\n");
+    sb.append("    overstayNights: ").append(toIndentedString(overstayNights)).append("\n");
+    sb.append("    overstayTotal: ").append(toIndentedString(overstayTotal)).append("\n");
     sb.append("    roomChargeCount: ").append(toIndentedString(roomChargeCount)).append("\n");
     sb.append("}");
     return sb.toString();

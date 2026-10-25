@@ -2,6 +2,8 @@ package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
+import com.sunsetbeach.entity.OverstayChargeEntity;
+import com.sunsetbeach.repository.OverstayChargeRepository;
 import com.sunsetbeach.entity.BookingSource;
 import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.entity.MenuItemEntity;
@@ -110,6 +112,7 @@ public class ReportService {
     private final VatSettingsService vatSettingsService;
     private final Clock clock;
     private final OverstayRule overstayRule;
+    private final OverstayChargeRepository overstayChargeRepository;
 
     public ReportService(
             BookingSegmentRepository segmentRepository,
@@ -124,7 +127,9 @@ public class ReportService {
             GuestRepository guestRepository,
             VatSettingsService vatSettingsService,
             Clock clock,
-            OverstayRule overstayRule) {
+            OverstayRule overstayRule,
+            OverstayChargeRepository overstayChargeRepository) {
+        this.overstayChargeRepository = overstayChargeRepository;
         this.overstayRule = overstayRule;
         this.segmentRepository = segmentRepository;
         this.roomRepository = roomRepository;
@@ -219,12 +224,45 @@ public class ReportService {
                     : segment.getTotalPrice().multiply(BigDecimal.valueOf(inRange)).divide(BigDecimal.valueOf(segmentNights), MC);
             slices.add(new SegmentInRange(segment, inRange, prorated));
         }
+        // Overstay nights: what was charged to the booking (OverstayCharge - the same rows the folio and the ledger
+        // hold, so Z120, Z410 and the manager report agree) ...
+        Map<String, List<OverstayChargeEntity>> chargesByBooking = overstayChargeRepository
+                .findByVoidedAtIsNullAndDateBetween(range.from(), range.to()).stream()
+                .collect(Collectors.groupingBy(OverstayChargeEntity::getBookingId));
+        Set<String> handled = new HashSet<>();
+        // ... for a guest in the house right now, plus a night that has not been charged yet (tonight, before the sweep
+        // reaches it) at the price it will be charged at - nights and revenue are visible at once, never a gap ...
         for (OverstayRule.Overstay overstay : overstayRule.current()) {
             if (!overstay.overlaps(range.from(), rangeEnd)) continue;
-            long inRange = ChronoUnit.DAYS.between(max(overstay.from(), range.from()), min(overstay.toExclusive(), rangeEnd));
             LocalDate from = max(overstay.from(), range.from());
-            BigDecimal estimate = overstayRule.estimatedPrice(overstay.roomId(), from, min(overstay.toExclusive(), rangeEnd));
-            slices.add(new SegmentInRange(overstay.lastSegment(), inRange, estimate));
+            LocalDate to = min(overstay.toExclusive(), rangeEnd);
+            long inRange = ChronoUnit.DAYS.between(from, to);
+            List<OverstayChargeEntity> charged = chargesByBooking.getOrDefault(overstay.bookingId(), List.of());
+            Set<LocalDate> chargedDates = charged.stream().map(OverstayChargeEntity::getDate).collect(Collectors.toSet());
+            BigDecimal revenue = charged.stream().map(OverstayChargeEntity::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
+            for (LocalDate d = from; d.isBefore(to); d = d.plusDays(1)) {
+                if (!chargedDates.contains(d)) {
+                    revenue = revenue.add(overstayRule.estimatedPrice(overstay.roomId(), d, d.plusDays(1)));
+                }
+            }
+            slices.add(new SegmentInRange(overstay.lastSegment(), inRange, revenue));
+            handled.add(overstay.bookingId());
+        }
+        // ... and the nights charged to a booking whose guest has since left (they stayed them).
+        List<String> leftIds = chargesByBooking.keySet().stream().filter(id -> !handled.contains(id)).toList();
+        if (!leftIds.isEmpty()) {
+            Map<String, BookingEntity> bookings = byId(bookingRepository.findAllById(leftIds), BookingEntity::getId);
+            Map<String, BookingSegmentEntity> lastSegments = segmentRepository.findByBookingIdIn(leftIds).stream()
+                    .collect(Collectors.toMap(BookingSegmentEntity::getBookingId, sg -> sg,
+                            (a, b) -> a.getCheckOut().isAfter(b.getCheckOut()) ? a : b));
+            for (String id : leftIds) {
+                BookingEntity booking = bookings.get(id);
+                BookingSegmentEntity last = lastSegments.get(id);
+                if (booking == null || last == null || booking.getStatus() == BookingStatus.CANCELLED) continue;
+                List<OverstayChargeEntity> charged = chargesByBooking.get(id);
+                BigDecimal revenue = charged.stream().map(OverstayChargeEntity::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
+                slices.add(new SegmentInRange(last, charged.size(), revenue));
+            }
         }
         return slices;
     }
@@ -829,14 +867,10 @@ public class ReportService {
         for (BookingSegmentEntity segment : segmentRepository.findByBookingIdIn(bookingIds)) {
             nightsByGuest.merge(guestByBooking.get(segment.getBookingId()), ChronoUnit.DAYS.between(segment.getCheckIn(), segment.getCheckOut()), Long::sum);
         }
-        // Nights a guest is still in the house past checkOut: counted, and valued at the room
-        // type's price like every other report. The ranking itself was cut in SQL on agreed prices.
-        Map<String, BigDecimal> overstayRevenueByGuest = new HashMap<>();
-        for (OverstayRule.Overstay overstay : overstayRule.current()) {
-            String guestId = guestByBooking.get(overstay.bookingId());
-            if (guestId == null) continue;
-            nightsByGuest.merge(guestId, ChronoUnit.DAYS.between(overstay.from(), overstay.toExclusive()), Long::sum);
-            overstayRevenueByGuest.merge(guestId, overstayRule.estimatedPrice(overstay.roomId(), overstay.from(), overstay.toExclusive()), BigDecimal::add);
+        // Overstay nights are charged to the booking (their price is already in the ranking's roomRevenue, summed in
+        // SQL with the rest); here they only add to the nights.
+        for (OverstayChargeEntity charge : overstayChargeRepository.findByBookingIdInAndVoidedAtIsNull(bookingIds)) {
+            nightsByGuest.merge(guestByBooking.get(charge.getBookingId()), 1L, Long::sum);
         }
         Map<String, BigDecimal> chargesByGuest = new HashMap<>();
         for (PaymentEntity payment : paymentRepository.findByBookingIdInAndMethod(bookingIds, PaymentMethod.ROOM_CHARGE)) {
@@ -852,7 +886,7 @@ public class ReportService {
                             guest.getEmail(),
                             Math.toIntExact(t.getBookingCount()),
                             Math.toIntExact(nightsByGuest.getOrDefault(t.getGuestId(), 0L)),
-                            money(t.getRoomRevenue().add(overstayRevenueByGuest.getOrDefault(t.getGuestId(), BigDecimal.ZERO))),
+                            money(t.getRoomRevenue()),
                             money(chargesByGuest.getOrDefault(t.getGuestId(), BigDecimal.ZERO)),
                             t.getFirstCheckIn().toString(),
                             t.getLastCheckIn().toString());

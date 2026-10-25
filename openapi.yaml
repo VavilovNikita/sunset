@@ -16674,9 +16674,11 @@ components:
         is `balanceDue` here.
 
 
-        Charged: `roomTotal` (the nights stayed) + `earlyDepartureFee` + `roomChargesGross` (POS
-        orders charged to the room) = `folioTotal`. Collected: `paidTotal` (every
-        `FolioPayment`), applied to the POS charges first and then to the room, plus
+        Charged: `roomTotal` (the nights stayed) + `earlyDepartureFee` + `overstayTotal` (the
+        nights a checked-in guest stayed past check-out, `overstayNights` of them, each at the room
+        type's price for that date, frozen when it accrued) + `roomChargesGross` (POS orders
+        charged to the room) = `folioTotal`. Collected: `paidTotal` (every `FolioPayment`), applied
+        to the POS charges first, then to the room, then to the overstay, plus
         `settledOutside` - the room amount not covered by folio payments on a booking marked
         `PAID` by hand (prepaid on an OTA, bank transfer: collected, just not through this
         system). `balanceDue` = `folioTotal` - `paidTotal` - `settledOutside`, never below zero;
@@ -16684,7 +16686,7 @@ components:
         paid), which this system has no refund record for. A `CANCELLED` booking owes nothing
         for the room - `roomTotal` and `earlyDepartureFee` still show what it was priced at, but
         neither counts in `folioTotal`.
-      required: [roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, creditBalance, roomChargeCount]
+      required: [roomTotal, earlyDepartureFee, roomChargesGross, roomChargesTotal, folioTotal, paidTotal, settledOutside, balanceDue, creditBalance, roomChargeCount, overstayNights, overstayTotal]
       properties:
         roomTotal:
           type: string
@@ -16727,6 +16729,17 @@ components:
         creditBalance:
           type: string
           description: Collected beyond what was charged - decimal(10,2) rendered as a string.
+        overstayNights:
+          type: integer
+          minimum: 0
+          description: >
+            Nights charged as overstay (a `CHECKED_IN` guest past `checkOut`; tonight counts while
+            they are still in the house). 0 for everyone else, and always 0 for a cancelled or
+            no-show booking. Nights the stay was later extended over, or tonight when the guest
+            checks out, are no longer charged.
+        overstayTotal:
+          type: string
+          description: The price of those nights - decimal(10,2) rendered as a string. Part of `folioTotal` and `balanceDue`.
         roomChargeCount:
           type: integer
           description: >
@@ -18701,19 +18714,19 @@ components:
           type: integer
           minimum: 0
           description: >
-            Nights a still-`CHECKED_IN` guest has stayed past `checkOut` with nothing agreed or
-            charged: `OverstayRule`'s nights `[checkOut, date]`, counted inclusively, so it is one
+            Nights a still-`CHECKED_IN` guest has stayed past `checkOut`, which are charged to the
+            booking as its overstay (`BookingFolio.overstayNights`): `OverstayRule`'s nights
+            `[checkOut, date]`, counted inclusively, so it is one
             more than the days overdue shown next to it. `0` for a guest due out on `date` (the
             departure night is still sellable), for anyone who is not checked in, and on every
-            `missedArrivals` and `unpaidBalances` row. A warning only - nothing is charged for
-            these nights on the guest's folio.
+            `missedArrivals` and `unpaidBalances` row. The nights are on the guest's folio and in
+            their balance; a stay finished with such a balance is listed under `unpaidBalances`.
         unpaidOverstayValue:
           type: string
           description: >
             Decimal(10,2) string: those `unpaidOverstayNights` valued at the room type's price
-            for each date (price grid, else base price) - the same estimate the reports count
-            them at. A report figure only, never on the folio or the balance. Absent when there are
-            no overstay nights.
+            for each date (price grid, else base price) - the price they are charged at. Absent when
+            there are no overstay nights.
         guestName:
           type: string
           x-sensitive: true
@@ -19371,9 +19384,11 @@ components:
 
     JournalSourceType:
       type: string
-      enum: [BOOKING, POS_ORDER, FOLIO_PAYMENT, MANUAL]
+      enum: [BOOKING, POS_ORDER, FOLIO_PAYMENT, MANUAL, OVERSTAY]
       description: >
-        What posted an entry. `BOOKING` - a booking became `PAID`, or left it (the mirror);
+        What posted an entry. `OVERSTAY` - a night a checked-in guest stayed past check-out accrued
+        (Dr Guest Ledger, Cr Room Revenue + VAT, dated that night), or was voided (the mirror);
+        `sourceId` is the overstay charge id. `BOOKING` - a booking became `PAID`, or left it (the mirror);
         `sourceId` is the booking id. `POS_ORDER` - a POS order was closed; `sourceId` is the
         order id. `FOLIO_PAYMENT` - money collected against a booking's room charges; `sourceId`
         is the folio payment id. `MANUAL` - `POST /ledger/entries` or

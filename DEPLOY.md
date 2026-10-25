@@ -383,3 +383,8 @@ Before a risky deploy, take an extra archive by hand: `sudo systemctl start uplo
 
 If a plan or photo does 404 anyway, upload it again from the admin (Property map, Spa map, the
 room's photos) - the screens say so when the image is missing.
+
+## Overstay charges (V157, V158)
+
+A guest still checked in after their check-out is charged for those nights (`OverstayChargeService`, see CLAUDE.md "Availability model"). Nothing needs doing by hand on deploy:
+the migrations only add an enum value and an empty table, and **60 seconds after the backend starts** (then every 5 minutes) the sweep charges every night a checked-in guest is already past check-out - once each (a repeat run changes nothing), each night posted to the ledger dated that night. So for guests overdue at deploy time the balance on their booking, the Today board and the night audit rises by those nights at the room type's price, and Z120's Room Revenue rises with it. To see who will be affected beforehand: `SELECT id, "guestName", "checkOut" FROM "Booking" WHERE "occupancyStatus" = 'CHECKED_IN' AND status <> 'CANCELLED' AND "checkOut" < CURRENT_DATE;` (the night audit's "Missed departures" lists the same people). Rolling the code back leaves the rows and ledger entries in place (harmless, unread); to take a night off a guest, extend the stay over it or check them out.

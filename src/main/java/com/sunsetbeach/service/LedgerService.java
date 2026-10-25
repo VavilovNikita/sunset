@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.OverstayChargeEntity;
 import com.sunsetbeach.entity.FolioPaymentEntity;
 import com.sunsetbeach.entity.JournalEntryEntity;
 import com.sunsetbeach.entity.JournalLineEntity;
@@ -161,6 +162,32 @@ public class LedgerService {
         lines.addAll(revenueCredits(Map.of(ROOM_REVENUE, gross)));
         post(today(), "Room settled (PAID): " + booking.getGuestName() + ", " + booking.getCheckIn() + " to " + booking.getCheckOut(),
                 JournalSourceType.BOOKING, booking.getId(), null, currentUserId(), lines);
+    }
+
+    /**
+     * A night a checked-in guest stayed past check-out accrued ({@link OverstayChargeService}): Dr Guest
+     * Ledger - money charged, not yet collected, exactly like a POS room charge - Cr Room Revenue + VAT Payable,
+     * <b>dated that night</b>, so a period's Z120 holds the same room revenue Z410 and the manager report count for
+     * its nights. Its own source type and the charge id as source id: leaving {@code PAID} mirrors only {@code
+     * BOOKING} entries, and a night is voided on its own ({@link #reverseOverstayCharge}).
+     */
+    @Transactional
+    public JournalEntryEntity postOverstayCharge(BookingEntity booking, String chargeId, LocalDate night, BigDecimal price) {
+        BigDecimal gross = price.setScale(2, RoundingMode.UNNECESSARY);
+        List<Line> lines = new ArrayList<>();
+        lines.add(Line.debit(GUEST_LEDGER, gross));
+        lines.addAll(revenueCredits(Map.of(ROOM_REVENUE, gross)));
+        return post(night, "Overstay night " + night + ": " + booking.getGuestName() + ", booked " + booking.getCheckIn() + " to " + booking.getCheckOut(),
+                JournalSourceType.OVERSTAY, chargeId, null, currentUserId(), lines);
+    }
+
+    /** The night stopped being an overstay night (the stay was extended over it, or the guest left before it): the exact mirror, dated today. */
+    @Transactional
+    public JournalEntryEntity reverseOverstayCharge(BookingEntity booking, OverstayChargeEntity charge) {
+        JournalEntryEntity original = entryRepository.findById(charge.getEntryId())
+                .orElseThrow(() -> new IllegalStateException("Overstay charge " + charge.getId() + " has no ledger entry"));
+        return post(today(), "Overstay night " + charge.getDate() + " no longer charged: " + booking.getGuestName(),
+                JournalSourceType.OVERSTAY, charge.getId(), original.getId(), currentUserId(), mirrorOf(original));
     }
 
     /**

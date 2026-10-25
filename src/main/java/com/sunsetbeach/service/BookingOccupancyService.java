@@ -72,6 +72,7 @@ public class BookingOccupancyService {
     private final AuditLogService auditLogService;
     private final BookingWriter bookingWriter;
     private final GymReservationService gymReservations;
+    private final OverstayChargeService overstayChargeService;
     private final TransactionTemplate checkOutTransaction;
     private final Clock clock;
 
@@ -86,9 +87,11 @@ public class BookingOccupancyService {
             AuditLogService auditLogService,
             BookingWriter bookingWriter,
             GymReservationService gymReservations,
+            OverstayChargeService overstayChargeService,
             PlatformTransactionManager transactionManager,
             Clock clock) {
         this.gymReservations = gymReservations;
+        this.overstayChargeService = overstayChargeService;
         this.bookingWriter = bookingWriter;
         this.checkOutTransaction = new TransactionTemplate(transactionManager);
         this.bookingRepository = bookingRepository;
@@ -216,6 +219,8 @@ public class BookingOccupancyService {
             String bookingId, LocalDate originalCheckOut, BigDecimal released, BigDecimal fee, String currentRoomUnitId) {
         BookingEntity booking = bookingRepository.findByIdForUpdate(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         requireCheckedIn(booking);
+        // The nights slept past check-out are charged up to last night; tonight's, accrued at the start of the day, is released.
+        overstayChargeService.settleAtCheckOut(booking);
 
         booking.setOccupancyStatus(OccupancyStatus.CHECKED_OUT);
         booking.setCheckedOutAt(nowUtc());
@@ -268,7 +273,9 @@ public class BookingOccupancyService {
         BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         BigDecimal currentRoom = booking.roomAmount();
         String currentTotal = PriceFormat.asDecimalString(currentRoom);
-        String outstanding = PriceFormat.asDecimalString(bookingService.computeOutstandingBalance(bookingId));
+        // Tonight's overstay night is released by the check-out itself, so it is not part of what the guest settles now.
+        String outstanding = PriceFormat.asDecimalString(
+                bookingService.computeOutstandingBalance(bookingId).subtract(overstayChargeService.tonightsCharge(bookingId)).max(BigDecimal.ZERO));
         EarlyDeparture plan = planEarlyDeparture(booking);
         if (plan == null) {
             return new CheckOutPreview(false, false, null, null, 0, "0.00", currentTotal, currentTotal, outstanding, outstanding);

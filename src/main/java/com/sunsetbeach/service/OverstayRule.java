@@ -6,9 +6,7 @@ import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
-import com.sunsetbeach.repository.RatePlanRepository;
 import com.sunsetbeach.repository.RoomRepository;
-import com.sunsetbeach.entity.RatePlanEntity;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -80,46 +78,44 @@ public class OverstayRule {
 
     private final BookingRepository bookingRepository;
     private final BookingSegmentRepository segmentRepository;
-    private final RatePlanRepository ratePlanRepository;
+    private final RoomNightPricing roomNightPricing;
     private final RoomRepository roomRepository;
     private final Clock clock;
 
     public OverstayRule(
             BookingRepository bookingRepository,
             BookingSegmentRepository segmentRepository,
-            RatePlanRepository ratePlanRepository,
+            RoomNightPricing roomNightPricing,
             RoomRepository roomRepository,
             Clock clock) {
         this.bookingRepository = bookingRepository;
         this.segmentRepository = segmentRepository;
-        this.ratePlanRepository = ratePlanRepository;
+        this.roomNightPricing = roomNightPricing;
         this.roomRepository = roomRepository;
         this.clock = clock;
     }
 
     /**
      * What the room type's price list says for the nights {@code [from, toExclusive)}: the price
-     * grid's manual price for a date where one is set, {@code Room.basePrice} otherwise. For
-     * <b>reports and the night audit only</b> - the same lookup {@code BookingWriter} uses to price
-     * a new night, but nothing is written: no nightly rate row, no change to {@code totalPrice}, no
-     * folio or ledger effect. A guest's balance is exactly what it was before this existed.
+     * grid's manual price for a date where one is set, {@code Room.basePrice} otherwise - the same lookup {@code BookingWriter} uses to price
+     * a new night ({@link RoomNightPricing}). Writes nothing: a night is charged by {@link
+     * OverstayChargeService}; this prices one that has not been charged yet (tonight, before the sweep).
      */
     public BigDecimal estimatedPrice(String roomId, LocalDate from, LocalDate toExclusive) {
         if (!from.isBefore(toExclusive)) {
             return BigDecimal.ZERO;
         }
-        BigDecimal base = roomRepository.findById(roomId).map(r -> r.getBasePrice()).orElse(BigDecimal.ZERO);
+        var room = roomRepository.findById(roomId).orElse(null);
+        if (room == null) {
+            return BigDecimal.ZERO;
+        }
         List<LocalDate> nights = new ArrayList<>();
         for (LocalDate d = from; d.isBefore(toExclusive); d = d.plusDays(1)) {
             nights.add(d);
         }
-        Map<LocalDate, BigDecimal> overrides = new HashMap<>();
-        for (RatePlanEntity plan : ratePlanRepository.findByRoomIdAndDateIn(roomId, nights)) {
-            overrides.put(plan.getDate(), plan.getPrice());
-        }
         BigDecimal total = BigDecimal.ZERO;
-        for (LocalDate night : nights) {
-            total = total.add(overrides.getOrDefault(night, base));
+        for (BigDecimal price : roomNightPricing.priceNights(room, nights).values()) {
+            total = total.add(price);
         }
         return total;
     }

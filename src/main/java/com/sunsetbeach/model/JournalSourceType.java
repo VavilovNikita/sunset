@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * What posted an entry. `BOOKING` - a booking became `PAID`, or left it (the mirror); `sourceId` is the booking id. `POS_ORDER` - a POS order was closed; `sourceId` is the order id. `FOLIO_PAYMENT` - money collected against a booking's room charges; `sourceId` is the folio payment id. `MANUAL` - `POST /ledger/entries` or `POST /ledger/entries/{id}/reverse`; `sourceId` is null. 
+ * What posted an entry. `OVERSTAY` - a night a checked-in guest stayed past check-out accrued (Dr Guest Ledger, Cr Room Revenue + VAT, dated that night), or was voided (the mirror); `sourceId` is the overstay charge id. `BOOKING` - a booking became `PAID`, or left it (the mirror); `sourceId` is the booking id. `POS_ORDER` - a POS order was closed; `sourceId` is the order id. `FOLIO_PAYMENT` - money collected against a booking's room charges; `sourceId` is the folio payment id. `MANUAL` - `POST /ledger/entries` or `POST /ledger/entries/{id}/reverse`; `sourceId` is null. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -28,7 +28,9 @@ public enum JournalSourceType {
   
   FOLIO_PAYMENT("FOLIO_PAYMENT"),
   
-  MANUAL("MANUAL");
+  MANUAL("MANUAL"),
+  
+  OVERSTAY("OVERSTAY");
 
   private String value;
 

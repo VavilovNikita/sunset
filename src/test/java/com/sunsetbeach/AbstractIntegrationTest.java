@@ -77,5 +77,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.notifications.delivery-interval-ms", () -> "3600000");
         registry.add("app.notifications.telegram.poll-interval-ms", () -> "3600000");
         registry.add("app.notifications.retention-cron", () -> "-");
+        // The overstay sweep would charge nights behind a test's back; tests call OverstayChargeService themselves.
+        registry.add("app.overstay.sweep-enabled", () -> "false");
     }
 }

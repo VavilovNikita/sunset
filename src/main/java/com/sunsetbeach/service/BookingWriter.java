@@ -120,7 +120,7 @@ public class BookingWriter {
     private final BookingRepository bookingRepository;
     private final BookingSegmentRepository segmentRepository;
     private final BookingSegmentNightlyRateRepository nightlyRateRepository;
-    private final RatePlanRepository ratePlanRepository;
+    private final RoomNightPricing roomNightPricing;
     private final OverstayRule overstayRule;
     private final Clock clock;
 
@@ -131,7 +131,7 @@ public class BookingWriter {
             BookingRepository bookingRepository,
             BookingSegmentRepository segmentRepository,
             BookingSegmentNightlyRateRepository nightlyRateRepository,
-            RatePlanRepository ratePlanRepository,
+            RoomNightPricing roomNightPricing,
             OverstayRule overstayRule,
             Clock clock) {
         this.clock = clock;
@@ -142,7 +142,7 @@ public class BookingWriter {
         this.bookingRepository = bookingRepository;
         this.segmentRepository = segmentRepository;
         this.nightlyRateRepository = nightlyRateRepository;
-        this.ratePlanRepository = ratePlanRepository;
+        this.roomNightPricing = roomNightPricing;
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
@@ -1301,18 +1301,7 @@ public class BookingWriter {
 
     /** Every night in {@code nights} priced at *today's* rate - RatePlan override where one exists, Room.basePrice otherwise. Never reads what a night was already priced at; see {@link #existingRatesByDate} for that. */
     private Map<LocalDate, BigDecimal> priceNightsAtCurrentRate(RoomEntity room, List<LocalDate> nights) {
-        if (nights.isEmpty()) {
-            return Map.of();
-        }
-        Map<LocalDate, BigDecimal> overrides = new HashMap<>();
-        for (RatePlanEntity plan : ratePlanRepository.findByRoomIdAndDateIn(room.getId(), nights)) {
-            overrides.put(plan.getDate(), plan.getPrice());
-        }
-        Map<LocalDate, BigDecimal> prices = new LinkedHashMap<>();
-        for (LocalDate night : nights) {
-            prices.put(night, overrides.getOrDefault(night, room.getBasePrice()));
-        }
-        return prices;
+        return roomNightPricing.priceNights(room, nights);
     }
 
     /** A segment's already-agreed nightly prices, keyed by date - what {@link #priceNightsAtCurrentRate} deliberately never looks at. */

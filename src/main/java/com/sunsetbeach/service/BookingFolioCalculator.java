@@ -6,7 +6,9 @@ import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.PaymentMethod;
+import com.sunsetbeach.entity.OverstayChargeEntity;
 import com.sunsetbeach.repository.FolioPaymentRepository;
+import com.sunsetbeach.repository.OverstayChargeRepository;
 import com.sunsetbeach.repository.PaymentRepository;
 import java.math.BigDecimal;
 import java.util.Collection;
@@ -31,16 +33,28 @@ import org.springframework.stereotype.Component;
  * transfer): that remainder is {@code settledOutside}. Once folio payments cover the room, {@code
  * BookingService#recordFolioPayment} sets {@code PAID} itself, and {@code settledOutside} is zero -
  * which is why it's derived from what folio payments cover, not from {@code PAID} alone.
+ *
+ * <p>Also charged: the <b>overstay</b> - the nights a checked-in guest stayed past {@code checkOut}, one {@link
+ * OverstayChargeEntity} each ({@link OverstayChargeService}), as a line of its own between the room and the POS
+ * charges. Folio payments reach it last (POS charges, then the room, then the overstay), so the room still turns
+ * {@code PAID} on its own terms and a {@code PAID} booking whose guest then stays on simply owes the new nights.
+ * {@code settledOutside} never covers it: "collected outside" was said about the room that was booked.
  */
 @Component
 public class BookingFolioCalculator {
 
     private final PaymentRepository paymentRepository;
     private final FolioPaymentRepository folioPaymentRepository;
+    private final OverstayChargeRepository overstayChargeRepository;
     private final java.time.Clock clock;
 
-    public BookingFolioCalculator(PaymentRepository paymentRepository, FolioPaymentRepository folioPaymentRepository, java.time.Clock clock) {
+    public BookingFolioCalculator(
+            PaymentRepository paymentRepository,
+            FolioPaymentRepository folioPaymentRepository,
+            OverstayChargeRepository overstayChargeRepository,
+            java.time.Clock clock) {
         this.clock = clock;
+        this.overstayChargeRepository = overstayChargeRepository;
         this.paymentRepository = paymentRepository;
         this.folioPaymentRepository = folioPaymentRepository;
     }
@@ -48,7 +62,7 @@ public class BookingFolioCalculator {
     public FolioBreakdown breakdown(BookingEntity booking) {
         List<PaymentEntity> charges = paymentRepository.findByBookingIdAndMethod(booking.getId(), PaymentMethod.ROOM_CHARGE);
         List<FolioPaymentEntity> payments = folioPaymentRepository.findByBookingIdOrderByCreatedAtAsc(booking.getId());
-        return build(booking, charges, payments);
+        return build(booking, charges, payments, overstayChargeRepository.findByBookingIdAndVoidedAtIsNull(booking.getId()));
     }
 
     public BigDecimal balanceDue(BookingEntity booking) {
@@ -99,20 +113,25 @@ public class BookingFolioCalculator {
                         .collect(Collectors.groupingBy(PaymentEntity::getBookingId));
         Map<String, List<FolioPaymentEntity>> paymentsByBooking = folioPaymentRepository.findByBookingIdIn(ids).stream()
                 .collect(Collectors.groupingBy(FolioPaymentEntity::getBookingId));
+        Map<String, List<OverstayChargeEntity>> overstayByBooking = overstayChargeRepository.findByBookingIdInAndVoidedAtIsNull(ids).stream()
+                .collect(Collectors.groupingBy(OverstayChargeEntity::getBookingId));
         Map<String, FolioBreakdown> result = new HashMap<>();
         for (BookingEntity booking : bookings) {
             result.put(
                     booking.getId(),
-                    build(booking, chargesByBooking.getOrDefault(booking.getId(), List.of()), paymentsByBooking.getOrDefault(booking.getId(), List.of())));
+                    build(booking, chargesByBooking.getOrDefault(booking.getId(), List.of()), paymentsByBooking.getOrDefault(booking.getId(), List.of()),
+                    overstayByBooking.getOrDefault(booking.getId(), List.of())));
         }
         return result;
     }
 
-    private FolioBreakdown build(BookingEntity booking, List<PaymentEntity> charges, List<FolioPaymentEntity> payments) {
+    private FolioBreakdown build(BookingEntity booking, List<PaymentEntity> charges, List<FolioPaymentEntity> payments, List<OverstayChargeEntity> overstay) {
         BigDecimal roomChargesGross = charges.stream().map(PaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal paid = payments.stream().map(FolioPaymentEntity::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal overstayAmount = overstay.stream().map(OverstayChargeEntity::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new FolioBreakdown(
-                booking.getTotalPrice(), booking.getEarlyDepartureFee(), roomChargesGross, charges.size(), paid, booking.getStatus(), booking.getOccupancyStatus(), neverArrivedAndOver(booking, java.time.LocalDate.now(clock)));
+                booking.getTotalPrice(), booking.getEarlyDepartureFee(), roomChargesGross, charges.size(), paid, booking.getStatus(), booking.getOccupancyStatus(), neverArrivedAndOver(booking, java.time.LocalDate.now(clock)),
+                overstay.size(), overstayAmount);
     }
 
     public record FolioBreakdown(
@@ -123,7 +142,35 @@ public class BookingFolioCalculator {
             BigDecimal paid,
             BookingStatus status,
             OccupancyStatus occupancy,
-            boolean neverArrivedAndOver) {
+            boolean neverArrivedAndOver,
+            int overstayNights,
+            BigDecimal overstayAmount) {
+
+        /** A folio with no overstay - everything that is not a guest staying past check-out. */
+        public FolioBreakdown(
+                BigDecimal stayPrice, BigDecimal earlyDepartureFee, BigDecimal roomChargesGross, int roomChargeCount, BigDecimal paid,
+                BookingStatus status, OccupancyStatus occupancy, boolean neverArrivedAndOver) {
+            this(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, status, occupancy, neverArrivedAndOver, 0, BigDecimal.ZERO);
+        }
+
+        /** The overstay as owed: nothing for a cancelled booking or a no-show - they never get one (the nights, if any, are voided). */
+        public BigDecimal overstayOwed() {
+            return status == BookingStatus.CANCELLED || occupancy == OccupancyStatus.NO_SHOW ? BigDecimal.ZERO : overstayAmount;
+        }
+
+        public int overstayNightsOwed() {
+            return status == BookingStatus.CANCELLED || occupancy == OccupancyStatus.NO_SHOW ? 0 : overstayNights;
+        }
+
+        /** Folio payments that reached the overstay, after the POS charges and the room were covered. */
+        public BigDecimal paidToOverstay() {
+            return paid.subtract(paidToCharges()).subtract(paidToRoom()).max(BigDecimal.ZERO).min(overstayOwed());
+        }
+
+        /** The same folio with the room priced at {@code price} - the check-out preview's "nights stayed only" choice. */
+        public FolioBreakdown withStayPrice(BigDecimal price) {
+            return new FolioBreakdown(price, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, status, occupancy, neverArrivedAndOver, overstayNights, overstayAmount);
+        }
 
         /** The room as owed: nothing once the booking is cancelled, nothing for a no-show or a past stay nobody arrived for. */
         public BigDecimal roomOwed() {
@@ -133,7 +180,7 @@ public class BookingFolioCalculator {
         }
 
         public BigDecimal folioTotal() {
-            return roomOwed().add(roomChargesGross);
+            return roomOwed().add(overstayOwed()).add(roomChargesGross);
         }
 
         public BigDecimal paidToCharges() {
@@ -174,7 +221,7 @@ public class BookingFolioCalculator {
          * from a {@code PAID} one it would be zero.
          */
         public FolioBreakdown asUnsettled() {
-            return new FolioBreakdown(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, BookingStatus.CONFIRMED, occupancy, neverArrivedAndOver);
+            return new FolioBreakdown(stayPrice, earlyDepartureFee, roomChargesGross, roomChargeCount, paid, BookingStatus.CONFIRMED, occupancy, neverArrivedAndOver, overstayNights, overstayAmount);
         }
     }
 }

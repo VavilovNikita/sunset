@@ -568,7 +568,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"folioTotal\" : \"folioTotal\", \"paidTotal\" : \"paidTotal\", \"settledOutside\" : \"settledOutside\", \"balanceDue\" : \"balanceDue\", \"roomChargeCount\" : 0, \"earlyDepartureFee\" : \"earlyDepartureFee\", \"roomTotal\" : \"roomTotal\", \"roomChargesGross\" : \"roomChargesGross\", \"amountToMarkPaid\" : \"amountToMarkPaid\", \"roomChargesTotal\" : \"roomChargesTotal\", \"creditBalance\" : \"creditBalance\" }";
+                    String exampleString = "{ \"folioTotal\" : \"folioTotal\", \"settledOutside\" : \"settledOutside\", \"balanceDue\" : \"balanceDue\", \"overstayTotal\" : \"overstayTotal\", \"roomTotal\" : \"roomTotal\", \"roomChargesGross\" : \"roomChargesGross\", \"amountToMarkPaid\" : \"amountToMarkPaid\", \"creditBalance\" : \"creditBalance\", \"paidTotal\" : \"paidTotal\", \"roomChargeCount\" : 6, \"earlyDepartureFee\" : \"earlyDepartureFee\", \"overstayNights\" : 0, \"roomChargesTotal\" : \"roomChargesTotal\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

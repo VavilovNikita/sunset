@@ -109,6 +109,7 @@ public class BookingService {
     private final AuditLogService auditLogService;
     private final GuestLinkService guestLinkService;
     private final LedgerService ledgerService;
+    private final OverstayChargeService overstayChargeService;
     private final OverstayRule overstayRule;
     private final ShiftRepository shiftRepository;
     private final BookingFolioCalculator folioCalculator;
@@ -132,6 +133,7 @@ public class BookingService {
             GuestLinkService guestLinkService,
             LedgerService ledgerService,
             OverstayRule overstayRule,
+            OverstayChargeService overstayChargeService,
             ShiftRepository shiftRepository,
             BookingFolioCalculator folioCalculator,
             SpaBookingCancellationService spaBookingCancellation,
@@ -143,6 +145,7 @@ public class BookingService {
         this.spaBookingCancellation = spaBookingCancellation;
         this.shiftRepository = shiftRepository;
         this.overstayRule = overstayRule;
+        this.overstayChargeService = overstayChargeService;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.guestRepository = guestRepository;
@@ -898,6 +901,10 @@ public class BookingService {
             throw e;
         }
 
+        // A stay extended over nights already charged as overstay turns them into ordinary nights of the booking (priced
+        // by the extension): the overstay charge for those dates is voided here, so nothing is counted twice.
+        overstayChargeService.reconcile(bookingId);
+
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         RoomUnitEntity newUnit = findRoomUnit(saved.getRoomUnitId());
 
@@ -1150,8 +1157,10 @@ public class BookingService {
     }
 
     /** {@link #computeFolioBreakdown}, rendered for {@code GET /bookings/{id}/folio}. */
-    @Transactional(readOnly = true)
+    @Transactional
     public BookingFolio getFolio(String bookingId) {
+        // Tonight's night accrues when the day begins; a page opened before the sweep got to it still shows it.
+        overstayChargeService.reconcile(bookingId);
         FolioBreakdown b = computeFolioBreakdown(bookingId);
         return new BookingFolio(
                 PriceFormat.asDecimalString(b.stayPrice()),
@@ -1163,6 +1172,8 @@ public class BookingService {
                 PriceFormat.asDecimalString(b.settledOutside()),
                 PriceFormat.asDecimalString(b.balanceDue()),
                 PriceFormat.asDecimalString(b.creditBalance()),
+                b.overstayNightsOwed(),
+                PriceFormat.asDecimalString(b.overstayOwed()),
                 b.roomChargeCount())
                 .amountToMarkPaid(PriceFormat.asDecimalString(b.asUnsettled().balanceDue()));
     }
@@ -1185,8 +1196,7 @@ public class BookingService {
     @Transactional(readOnly = true)
     public BigDecimal computeOutstandingBalanceWithStayPrice(String bookingId, BigDecimal stayPrice) {
         FolioBreakdown b = computeFolioBreakdown(bookingId);
-        return new FolioBreakdown(stayPrice, b.earlyDepartureFee(), b.roomChargesGross(), b.roomChargeCount(), b.paid(), b.status(), b.occupancy(), b.neverArrivedAndOver())
-                .balanceDue();
+        return b.withStayPrice(stayPrice).balanceDue();
     }
 
     /**
@@ -1223,6 +1233,7 @@ public class BookingService {
     @Transactional
     public FolioPayment recordFolioPayment(String bookingId, FolioPaymentInput input) {
         BookingEntity booking = bookingRepository.findByIdForUpdate(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        overstayChargeService.reconcile(bookingId); // the overpay check below must see every night owed
         BigDecimal amount = parseFolioAmount(input);
         BigDecimal outstanding = computeFolioBreakdown(bookingId).balanceDue();
         if (amount.compareTo(outstanding) > 0) {

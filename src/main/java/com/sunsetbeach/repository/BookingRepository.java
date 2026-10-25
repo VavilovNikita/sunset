@@ -114,12 +114,12 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
      * report's {@code limit}.
      */
     @Query("""
-        SELECT b.guestId AS guestId, COUNT(b) AS bookingCount, SUM(b.totalPrice + b.earlyDepartureFee) AS roomRevenue,
+        SELECT b.guestId AS guestId, COUNT(b) AS bookingCount, SUM(b.totalPrice + b.earlyDepartureFee + COALESCE((SELECT SUM(c.price) FROM OverstayChargeEntity c WHERE c.bookingId = b.id AND c.voidedAt IS NULL), 0)) AS roomRevenue,
                MIN(b.checkIn) AS firstCheckIn, MAX(b.checkIn) AS lastCheckIn
         FROM BookingEntity b
         WHERE b.guestId IS NOT NULL AND b.status <> :excludedStatus
         GROUP BY b.guestId
-        ORDER BY SUM(b.totalPrice + b.earlyDepartureFee) DESC, b.guestId ASC
+        ORDER BY SUM(b.totalPrice + b.earlyDepartureFee + COALESCE((SELECT SUM(c.price) FROM OverstayChargeEntity c WHERE c.bookingId = b.id AND c.voidedAt IS NULL), 0)) DESC, b.guestId ASC
         """)
     List<GuestBookingTotals> sumByGuest(@Param("excludedStatus") BookingStatus excludedStatus, Pageable page);
 
