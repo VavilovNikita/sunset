@@ -305,10 +305,15 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
     private TerminalPollResult readFullAttendanceLog(Socket socket, Session session, int recordCount) throws IOException {
         byte[] payload = buildPrepareBufferPayload(CMD_ATTLOG_RRQ, 0, 0);
         Response prepareResponse = sendCommand(socket, CMD_PREPARE_BUFFER, payload, session);
-        if (prepareResponse.command() != CMD_DATA && prepareResponse.command() != CMD_PREPARE_DATA) {
-            throw new AttendanceDeviceException("Terminal refused to read the attendance log (response code " + prepareResponse.command() + ")");
+        byte[] rawData;
+        if (prepareResponse.command() == CMD_DATA || prepareResponse.command() == CMD_PREPARE_DATA) {
+            rawData = fetchBlob(socket, session, prepareResponse);
+        } else {
+            // Some firmware answers CMD_PREPARE_BUFFER with a bare CMD_ACK_OK and never produces data
+            // (seen on the K60 on 2026-11-09 while CMD_ATTLOG_RRQ itself still worked) - read directly.
+            log.info("Terminal answered CMD_PREPARE_BUFFER with response code {} - reading the attendance log directly", prepareResponse.command());
+            rawData = readLogDirect(socket, session);
         }
-        byte[] rawData = fetchBlob(socket, session, prepareResponse);
         if (rawData.length < 4) {
             return new TerminalPollResult(List.of(), null, null);
         }
@@ -345,6 +350,41 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
         }
         byte[] records = Arrays.copyOfRange(rawData, 4, rawData.length);
         return new TerminalPollResult(parseAttendanceRecords(records, knownRecordSize), knownRecordSize, false);
+    }
+
+    /**
+     * CMD_ATTLOG_RRQ sent on its own, no buffer envelope: the device answers CMD_PREPARE_DATA with
+     * the total size, then pushes the data as one or more CMD_DATA packets, then CMD_ACK_OK. A
+     * small log may come back as a single CMD_DATA response instead. Returns the same
+     * {@code [totalSize(4)][records...]} blob {@link #fetchBlob} does.
+     */
+    private byte[] readLogDirect(Socket socket, Session session) throws IOException {
+        Response first = sendCommand(socket, CMD_ATTLOG_RRQ, new byte[0], session);
+        if (first.command() == CMD_DATA) {
+            return first.data();
+        }
+        if (first.command() == CMD_ACK_OK) {
+            return new byte[0];
+        }
+        if (first.command() != CMD_PREPARE_DATA || first.data().length < 4) {
+            throw new AttendanceDeviceException("Terminal refused to read the attendance log (response code " + first.command() + ")");
+        }
+        int totalSize = ByteBuffer.wrap(first.data()).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        java.io.ByteArrayOutputStream collected = new java.io.ByteArrayOutputStream(totalSize);
+        while (collected.size() < totalSize) {
+            Response chunk = readResponse(socket, session);
+            if (chunk.command() != CMD_DATA) {
+                throw new AttendanceDeviceException(
+                        "Terminal stopped mid-way through a direct log read (response code " + chunk.command() + ", " + collected.size() + " of "
+                                + totalSize + " bytes)");
+            }
+            collected.write(chunk.data(), 0, chunk.data().length);
+        }
+        Response done = readResponse(socket, session);
+        if (done.command() != CMD_ACK_OK) {
+            log.warn("Direct log read ended with response code {} instead of CMD_ACK_OK", done.command());
+        }
+        return collected.toByteArray();
     }
 
     private byte[] fetchBlob(Socket socket, Session session, Response prepareResponse) throws IOException {
@@ -534,7 +574,11 @@ public class ZkTerminalClientImpl implements ZkTerminalClient {
         OutputStream out = socket.getOutputStream();
         out.write(wrapped);
         out.flush();
+        return readResponse(socket, session);
+    }
 
+    /** Reads one framed packet off the socket - split out of {@link #sendCommand} because a direct log read has the device push several packets after one command. */
+    private Response readResponse(Socket socket, Session session) throws IOException {
         InputStream in = socket.getInputStream();
         byte[] tcpTop = readFully(in, 8);
         ByteBuffer topBuf = ByteBuffer.wrap(tcpTop).order(ByteOrder.LITTLE_ENDIAN);

@@ -395,6 +395,36 @@ class ZkTerminalClientImplTests {
      * a poll failure, and reads the full log instead within the same call.
      */
     @Test
+    void poll_deviceAcksPrepareBufferWithoutData_readsTheLogDirectly() throws Exception {
+        LocalDateTime t1 = LocalDateTime.of(2027, 8, 19, 9, 0, 0);
+        LocalDateTime t2 = LocalDateTime.of(2027, 8, 19, 13, 0, 0);
+        byte[] records = concat(fortyByteRecord("7", t1, 0), fortyByteRecord("7", t2, 1));
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(records, 2, false).withBufferedReadAckingOnly()) {
+            server.start();
+            TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), null, null);
+
+            assertThat(result.punches()).hasSize(2);
+            assertThat(result.punches().get(0).deviceTimestamp()).isEqualTo(t1);
+            assertThat(result.punches().get(1).deviceTimestamp()).isEqualTo(t2);
+            assertThat(result.recordSize()).isEqualTo(40);
+            assertThat(server.receivedCommands()).contains(1503, 13);
+        }
+    }
+
+    @Test
+    void poll_windowedRead_deviceAcksPrepareBufferWithoutData_fallsBackToDirectRead() throws Exception {
+        LocalDateTime t = LocalDateTime.of(2027, 8, 1, 9, 0, 0);
+        try (FakeZkTerminalServer server = new FakeZkTerminalServer(fortyByteRecord("9", t, 0), 1, false).withBufferedReadAckingOnly()) {
+            server.start();
+            TerminalPollResult result = new ZkTerminalClientImpl(CLOCK).poll(deviceAt(server.port()), LocalDateTime.of(2027, 8, 20, 8, 0, 0), 40);
+
+            assertThat(result.punches()).hasSize(1);
+            assertThat(result.punches().get(0).enrollmentNumber()).isEqualTo(9);
+            assertThat(result.windowedReadUnsupported()).isTrue();
+        }
+    }
+
+    @Test
     void poll_windowedRead_deviceRejectsRangedCommand_fallsBackToFullRead() throws Exception {
         LocalDateTime fullLogPunch = LocalDateTime.of(2027, 8, 1, 9, 0, 0);
         byte[] fullLogRecords = sixteenByteRecord(9, fullLogPunch, 0);

@@ -51,6 +51,7 @@ class FakeZkTerminalServer implements AutoCloseable {
     private static final int MACHINE_PREPARE_DATA_1 = 20560;
     private static final int MACHINE_PREPARE_DATA_2 = 32130;
 
+    private static final int CMD_ATTLOG_RRQ = 13;
     private static final int CMD_GET_FREE_SIZES = 50;
     private static final int CMD_SET_TIME = 202;
     private static final int CMD_CONNECT = 1000;
@@ -83,6 +84,7 @@ class FakeZkTerminalServer implements AutoCloseable {
     private boolean acceptAuthHandshake = true;
     private byte[] lastAuthData;
     private boolean rejectSetTime;
+    private boolean bufferedReadAcksOnly;
 
     /**
      * @param attendanceRecords the raw record bytes (post the 4-byte total-size header) to serve.
@@ -120,6 +122,15 @@ class FakeZkTerminalServer implements AutoCloseable {
     /** Makes CMD_SET_TIME answer CMD_ACK_ERROR - a terminal refusing to have its clock set - while every other command behaves normally. */
     FakeZkTerminalServer withSetTimeRejected() {
         this.rejectSetTime = true;
+        return this;
+    }
+
+    /**
+     * Makes CMD_PREPARE_BUFFER answer a bare CMD_ACK_OK with no data (what the real K60 started doing on
+     * 2026-11-09) while a plain CMD_ATTLOG_RRQ still works: CMD_PREPARE_DATA with the size, one CMD_DATA, then CMD_ACK_OK.
+     */
+    FakeZkTerminalServer withBufferedReadAckingOnly() {
+        this.bufferedReadAcksOnly = true;
         return this;
     }
 
@@ -177,6 +188,7 @@ class FakeZkTerminalServer implements AutoCloseable {
                     }
                     case CMD_GET_FREE_SIZES -> writeResponse(out, CMD_ACK_OK, sessionId, request.replyId(), freeSizesPayload());
                     case CMD_PREPARE_BUFFER -> handlePrepareBuffer(out, sessionId, request.replyId(), request.data());
+                    case CMD_ATTLOG_RRQ -> handleDirectRead(out, sessionId, request.replyId());
                     case CMD_READ_BUFFER -> handleReadBuffer(out, sessionId, request.replyId(), request.data());
                     case CMD_FREE_DATA -> writeResponse(out, CMD_ACK_OK, sessionId, request.replyId(), new byte[0]);
                     case CMD_SET_TIME -> {
@@ -222,6 +234,10 @@ class FakeZkTerminalServer implements AutoCloseable {
         int param1 = req.getInt();
         int param2 = req.getInt();
 
+        if (bufferedReadAcksOnly) {
+            writeResponse(out, CMD_ACK_OK, sessionId, replyId, new byte[0]);
+            return;
+        }
         if (fct == CMD_ATTLOG_TIME_RRQ) {
             lastRangeStartEncoded = param1;
             lastRangeEndEncoded = param2;
@@ -233,6 +249,20 @@ class FakeZkTerminalServer implements AutoCloseable {
             return;
         }
         writeBufferedRecords(out, sessionId, replyId, attendanceRecords);
+    }
+
+    private void handleDirectRead(OutputStream out, int sessionId, int replyId) throws IOException {
+        ByteBuffer body = ByteBuffer.allocate(4 + attendanceRecords.length).order(ByteOrder.LITTLE_ENDIAN);
+        body.putInt(attendanceRecords.length);
+        body.put(attendanceRecords);
+        ByteBuffer size = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(body.capacity());
+        writeResponse(out, CMD_PREPARE_DATA, sessionId, replyId, size.array());
+        // Split in two to prove the client reassembles a multi-packet push.
+        byte[] all = body.array();
+        int half = all.length / 2;
+        writeResponse(out, CMD_DATA, sessionId, replyId, java.util.Arrays.copyOfRange(all, 0, half));
+        writeResponse(out, CMD_DATA, sessionId, replyId, java.util.Arrays.copyOfRange(all, half, all.length));
+        writeResponse(out, CMD_ACK_OK, sessionId, replyId, new byte[0]);
     }
 
     private void writeBufferedRecords(OutputStream out, int sessionId, int replyId, byte[] records) throws IOException {
