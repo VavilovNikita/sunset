@@ -9,6 +9,9 @@ public interface BookingSegmentNightlyRateRepository extends JpaRepository<Booki
 
     List<BookingSegmentNightlyRateEntity> findBySegmentIdOrderByDateAsc(String segmentId);
 
+    /** The frozen nightly prices of many segments at once - the booking tracker prices every sold night from them. */
+    List<BookingSegmentNightlyRateEntity> findBySegmentIdIn(java.util.Collection<String> segmentIds);
+
     /** Drops specific nights' rows - a schedule change shrinking a segment, or a reprice's before-state cleanup. */
     void deleteBySegmentIdAndDateIn(String segmentId, List<LocalDate> dates);
 }

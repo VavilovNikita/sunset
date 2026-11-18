@@ -5,6 +5,11 @@
  */
 package com.sunsetbeach.api;
 
+import com.sunsetbeach.model.BookingTrackerMonthTargets;
+import com.sunsetbeach.model.BookingTrackerMonthTargetsInput;
+import com.sunsetbeach.model.BookingTrackerReport;
+import com.sunsetbeach.model.BookingTrackerSnapshot;
+import com.sunsetbeach.model.BookingTrackerSnapshotUpdateInput;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.ForecastReport;
 import com.sunsetbeach.model.GuestLtvReport;
@@ -41,6 +46,53 @@ public interface ReportsApi {
     }
 
     /**
+     * GET /reports/booking-tracker/export : The booking tracker as an Excel workbook
+     * Requires role &#x60;MANAGER&#x60; or above. Same parameters, rules and figures as &#x60;GET /reports/booking-tracker&#x60; (one computation, no second copy of the arithmetic), laid out like the hotel&#39;s own workbook: sheets Results, Channel summary, Booking trends, Weekly review and Bookings (one row per counted booking with nights in the range, and its split by stay month). Values, not formulas; money as THB numbers with two decimals, shares as percent, dates as dates; the five charts (revenue and room nights by channel, booking windows, weekly room nights and weekly revenue) are native Excel charts. Text typed by people goes through the spreadsheet-safe filter like every export. The file is named &#x60;booking-tracker_&lt;fromMonth&gt;_&lt;toMonth&gt;_&lt;today&gt;.xlsx&#x60;. 
+     *
+     * @param fromMonth  (optional)
+     * @param toMonth  (optional)
+     * @param stayMonth  (optional)
+     * @return The .xlsx workbook. (status code 200)
+     *         or Same as &#x60;GET /reports/booking-tracker&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/booking-tracker/export",
+        produces = { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/json" }
+    )
+    
+    default ResponseEntity<org.springframework.core.io.Resource> exportBookingTracker(
+        @Pattern(regexp = "^\\d{4}-(0[1-9]|1[0-2])$")  @Valid @RequestParam(value = "fromMonth", required = false) String fromMonth,
+        @Pattern(regexp = "^\\d{4}-(0[1-9]|1[0-2])$")  @Valid @RequestParam(value = "toMonth", required = false) String toMonth,
+        @Pattern(regexp = "^\\d{4}-(0[1-9]|1[0-2])$")  @Valid @RequestParam(value = "stayMonth", required = false) String stayMonth
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * GET /reports/revenue-export : Export money collected in a date range, as an Excel workbook
      * Requires role &#x60;MANAGER&#x60; or above, same floor as &#x60;GET /payments/summary&#x60; and &#x60;GET /bookings/export&#x60;. Gross amounts actually received, by day and by method, for a bookkeeper to reconcile against cash and bank deposits. No tax breakdown: nothing in this system records tax.  **Days are Asia/Bangkok calendar days.** &#x60;from&#x60;/&#x60;to&#x60; are inclusive hotel-local dates, and each payment is placed on the Bangkok date of its &#x60;createdAt&#x60;. This differs from &#x60;GET /payments/summary&#x60;, which compares &#x60;createdAt&#x60; against the dates without converting it, so its days run 07:00 to 07:00 Bangkok time. For the same &#x60;from&#x60;/&#x60;to&#x60;, the two can disagree by whatever was paid between 00:00 and 07:00 Bangkok time at either end of the range.  **Room money is in the totals only when it was taken at the desk.** A room paid through the folio (&#x60;POST /bookings/{id}/folio-payments&#x60; takes the room as well as POS charges) is a &#x60;FolioPayment&#x60; like any other. A booking marked &#x60;PAID&#x60; by hand - an OTA prepayment, a bank transfer - has no date, method or amount of its own and is in no total. The workbook therefore totals exactly two channels, and says so on its Summary sheet: - **POS payments received**: &#x60;Payment&#x60; rows with method &#x60;CASH&#x60;, &#x60;CARD&#x60; or &#x60;OTHER&#x60;.   &#x60;ROOM_CHARGE&#x60; payments are shown in their own column but never added to any total.   Closing an order to a room collects no money, it moves the amount onto the booking&#39;s   folio (see &#x60;GET /payments/summary&#x60;).  - **Room charges settled** (the column keeps its old name): &#x60;FolioPayment&#x60; rows, i.e. money   collected at the desk against a booking - room-charged POS orders and, since folio   payments can cover it, the room itself. This is where a room-charged order&#39;s money is   counted, once, when it is actually collected.   Four sheets. \&quot;Summary\&quot;: one row per day in the range (days with nothing collected included, as zeros), then a totals row, then notes explaining the above. \&quot;POS payments\&quot;: every &#x60;Payment&#x60; in the range, &#x60;ROOM_CHARGE&#x60; included and marked as not counted, with its order, table and the booking it was charged to. \&quot;Room charge settlements\&quot;: every &#x60;FolioPayment&#x60; in the range, with its booking and the booking&#39;s &#x60;guestName&#x60; (the name stored on the booking, not a live guest-card lookup). \&quot;Paid bookings (info)\&quot;: bookings whose status is &#x60;PAID&#x60; now and whose check-out falls in the range, with &#x60;totalPrice&#x60;. That sheet is for reference only. It is what the booking says today, not a record of when or how it was paid, and none of it is added to any total.  Amounts are numeric cells with two decimals, so they can be summed in Excel. 
      *
@@ -63,6 +115,58 @@ public interface ReportsApi {
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/booking-tracker : The booking tracker - results, channels, booking trends and the weekly review, for a range of stay months
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as the rest of &#x60;/reports/_*&#x60;. This is the hotel&#39;s hand-filled \&quot;SBR Booking Tracker\&quot; workbook computed from real data; &#x60;GET /reports/booking-tracker/export&#x60; is the same figures as an Excel file. **All the arithmetic is the server&#39;s** - a client displays what it gets.  **Period.** &#x60;fromMonth&#x60;/&#x60;toMonth&#x60; are inclusive stay months (&#x60;YYYY-MM&#x60;), at most 12 months. Both omitted: the current season, November to April - the one that contains today, or the coming one while today is May to October. Giving one of the two without the other is a 400. &#x60;stayMonth&#x60; narrows the channel and trends sections to one month of the range (omitted &#x3D; all stays in the range). \&quot;Today\&quot; (&#x60;positionDate&#x60;) and every month and week boundary are hotel (Asia/Bangkok) days.  **A counted booking** is &#x60;CONFIRMED&#x60; or &#x60;PAID&#x60; (the workbook&#39;s \&quot;Confirmed\&quot;). &#x60;NEW&#x60; (the workbook&#39;s \&quot;Enquiry\&quot;), &#x60;CANCELLED&#x60; and a no-show are not counted. This is narrower than &#x60;GET /reports/occupancy&#x60;, which counts every non-cancelled booking: for the same nights the tracker&#39;s &#x60;bookedRoomNights&#x60; equals occupancy&#39;s &#x60;roomNightsSold&#x60; minus the nights of &#x60;NEW&#x60; and no-show bookings. The nights themselves are the same population as every other room report (&#x60;ReportService&#x60;): segment nights, plus the nights of a guest staying past &#x60;checkOut&#x60; (&#x60;OverstayCharge&#x60;). Complimentary and house-use stays are counted by their channel like any other booking - the workbook has no such split.  **Stay month and money.** A stay that crosses months is split by its nights, each night at its frozen nightly price (&#x60;BookingSegmentNightlyRate&#x60;; an overstay night at the price charged to the booking). **Gross** (&#x60;grossRevenue&#x60;) is that agreed price with VAT and the service charge inside it. Per booking and month, each step rounded to two decimals: package before VAT and service charge &#x3D; gross / (1 + service charge) / (1 + VAT); service charge &#x3D; package x service charge rate; VAT &#x3D; gross - package - service charge; breakfast &#x3D; nights in the month x &#x60;breakfastGuests&#x60; x &#x60;breakfastRate&#x60; (nothing where either is empty); net room revenue &#x3D; package - breakfast. Months and channels sum those rounded figures. The rates are &#x60;GET /settings/vat&#x60; and &#x60;GET /settings/service-charge&#x60;; the service charge is deducted **for this analysis only** - nothing is charged to a guest. &#x60;Booking.earlyDepartureFee&#x60; has no night and is left out, exactly as in the revenue statistic (Z410).  **Per month.** &#x60;physicalRooms&#x60; - units active today (as the manager report: today&#39;s inventory, not a historical count); &#x60;blockedRoomNights&#x60; - nights a unit is out of service by a &#x60;RoomUnitBlock&#x60; (a unit under overlapping blocks counts once per night); &#x60;availableRoomNights&#x60; &#x3D; &#x60;physicalRooms&#x60; x nights in the month - &#x60;blockedRoomNights&#x60;; occupancy &#x3D; booked / available. Baseline and target are entered by a manager (&#x60;PUT /reports/booking-tracker/months/{month}&#x60;); &#x60;stillNeededRoomNights&#x60; &#x3D; max(0, target - booked) and &#x60;pickupVsBaseline&#x60; &#x3D; booked - baseline room nights, each null while its input is not entered. The &#x60;total&#x60; row sums the months; its inputs sum the months that have them.  **Booking date and window.** The day the booking was made, a hotel day: SiteMinder&#39;s own \&quot;booked on\&quot; time (&#x60;Booking.bookedAt&#x60;) for a SiteMinder booking that has it, else the booking&#39;s &#x60;createdAt&#x60;. The window is the booking&#39;s &#x60;checkIn&#x60; minus that day, in days (never below 0). Buckets are 0-3, 4-7, 8-14, 15-30, 31-60, 61-90 and 91+ days; the average is weighted by room nights; both count only the nights inside the filter. &#x60;weeks&#x60; is booking pace: the last 12 weeks (Monday start, the last one holds &#x60;positionDate&#x60;), room nights and net revenue of bookings *made* that week, again only for the nights inside the filter.  **Weekly review** lists the frozen Friday snapshots (see &#x60;BookingTrackerSnapshot&#x60;) of the months in the range, newest first. 
+     *
+     * @param fromMonth First stay month (inclusive), &#x60;YYYY-MM&#x60;. (optional)
+     * @param toMonth Last stay month (inclusive), &#x60;YYYY-MM&#x60;. At most 12 months from &#x60;fromMonth&#x60;. (optional)
+     * @param stayMonth Narrow the channel and trends sections to this month. Must lie inside the range. Omitted means all stays. (optional)
+     * @return The report. (status code 200)
+     *         or A month that is not &#x60;YYYY-MM&#x60;, only one of &#x60;fromMonth&#x60;/&#x60;toMonth&#x60;, &#x60;toMonth&#x60; before &#x60;fromMonth&#x60;, a range over 12 months, or a &#x60;stayMonth&#x60; outside the range. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/booking-tracker",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<BookingTrackerReport> getBookingTrackerReport(
+        @Pattern(regexp = "^\\d{4}-(0[1-9]|1[0-2])$")  @Valid @RequestParam(value = "fromMonth", required = false) String fromMonth,
+        @Pattern(regexp = "^\\d{4}-(0[1-9]|1[0-2])$")  @Valid @RequestParam(value = "toMonth", required = false) String toMonth,
+        @Pattern(regexp = "^\\d{4}-(0[1-9]|1[0-2])$")  @Valid @RequestParam(value = "stayMonth", required = false) String stayMonth
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"total\" : { \"baselineRoomNights\" : 2, \"availableRoomNights\" : 5, \"packageRevenue\" : \"packageRevenue\", \"vat\" : \"vat\", \"netAdr\" : \"netAdr\", \"occupancyPercent\" : \"occupancyPercent\", \"grossRevenue\" : \"grossRevenue\", \"netRoomRevenue\" : \"netRoomRevenue\", \"serviceCharge\" : \"serviceCharge\", \"breakfastRevenue\" : \"breakfastRevenue\", \"month\" : \"month\", \"blockedRoomNights\" : 1, \"pickupVsBaseline\" : 3, \"physicalRooms\" : 0, \"nightsInMonth\" : 6, \"targetRoomNights\" : 7, \"bookedRoomNights\" : 5, \"stillNeededRoomNights\" : 9, \"baselineNetRevenue\" : \"baselineNetRevenue\" }, \"months\" : [ { \"baselineRoomNights\" : 2, \"availableRoomNights\" : 5, \"packageRevenue\" : \"packageRevenue\", \"vat\" : \"vat\", \"netAdr\" : \"netAdr\", \"occupancyPercent\" : \"occupancyPercent\", \"grossRevenue\" : \"grossRevenue\", \"netRoomRevenue\" : \"netRoomRevenue\", \"serviceCharge\" : \"serviceCharge\", \"breakfastRevenue\" : \"breakfastRevenue\", \"month\" : \"month\", \"blockedRoomNights\" : 1, \"pickupVsBaseline\" : 3, \"physicalRooms\" : 0, \"nightsInMonth\" : 6, \"targetRoomNights\" : 7, \"bookedRoomNights\" : 5, \"stillNeededRoomNights\" : 9, \"baselineNetRevenue\" : \"baselineNetRevenue\" }, { \"baselineRoomNights\" : 2, \"availableRoomNights\" : 5, \"packageRevenue\" : \"packageRevenue\", \"vat\" : \"vat\", \"netAdr\" : \"netAdr\", \"occupancyPercent\" : \"occupancyPercent\", \"grossRevenue\" : \"grossRevenue\", \"netRoomRevenue\" : \"netRoomRevenue\", \"serviceCharge\" : \"serviceCharge\", \"breakfastRevenue\" : \"breakfastRevenue\", \"month\" : \"month\", \"blockedRoomNights\" : 1, \"pickupVsBaseline\" : 3, \"physicalRooms\" : 0, \"nightsInMonth\" : 6, \"targetRoomNights\" : 7, \"bookedRoomNights\" : 5, \"stillNeededRoomNights\" : 9, \"baselineNetRevenue\" : \"baselineNetRevenue\" } ], \"serviceChargeRate\" : \"serviceChargeRate\", \"channels\" : { \"total\" : { \"roomNightSharePercent\" : \"roomNightSharePercent\", \"revenueSharePercent\" : \"revenueSharePercent\", \"channel\" : \"\", \"netAdr\" : \"netAdr\", \"roomNights\" : 2, \"netRoomRevenue\" : \"netRoomRevenue\" }, \"ranking\" : [ { \"channel\" : \"DIRECT\", \"rank\" : 4, \"roomNights\" : 7, \"netRoomRevenue\" : \"netRoomRevenue\" }, { \"channel\" : \"DIRECT\", \"rank\" : 4, \"roomNights\" : 7, \"netRoomRevenue\" : \"netRoomRevenue\" } ], \"rows\" : [ { \"roomNightSharePercent\" : \"roomNightSharePercent\", \"revenueSharePercent\" : \"revenueSharePercent\", \"channel\" : \"\", \"netAdr\" : \"netAdr\", \"roomNights\" : 2, \"netRoomRevenue\" : \"netRoomRevenue\" }, { \"roomNightSharePercent\" : \"roomNightSharePercent\", \"revenueSharePercent\" : \"revenueSharePercent\", \"channel\" : \"\", \"netAdr\" : \"netAdr\", \"roomNights\" : 2, \"netRoomRevenue\" : \"netRoomRevenue\" } ] }, \"positionDate\" : \"2000-01-23\", \"vatRate\" : \"vatRate\", \"toMonth\" : \"toMonth\", \"fromMonth\" : \"fromMonth\", \"stayMonth\" : \"stayMonth\", \"trends\" : { \"weeks\" : [ { \"weekStart\" : \"2000-01-23\", \"roomNights\" : 6, \"netRoomRevenue\" : \"netRoomRevenue\" }, { \"weekStart\" : \"2000-01-23\", \"roomNights\" : 6, \"netRoomRevenue\" : \"netRoomRevenue\" } ], \"averageBookingWindowDays\" : \"averageBookingWindowDays\", \"buckets\" : [ { \"roomNightSharePercent\" : \"roomNightSharePercent\", \"fromDays\" : 1, \"roomNights\" : 1, \"label\" : \"label\", \"toDays\" : 1, \"netRoomRevenue\" : \"netRoomRevenue\" }, { \"roomNightSharePercent\" : \"roomNightSharePercent\", \"fromDays\" : 1, \"roomNights\" : 1, \"label\" : \"label\", \"toDays\" : 1, \"netRoomRevenue\" : \"netRoomRevenue\" } ] }, \"weeklyReview\" : [ { \"snapshotDate\" : \"2000-01-23\", \"owner\" : \"owner\", \"reason\" : \"reason\", \"dueDate\" : \"2000-01-23\", \"stayMonth\" : \"stayMonth\", \"roomNights\" : 7, \"nextAction\" : \"nextAction\", \"netRoomRevenue\" : \"netRoomRevenue\", \"occupancyPercent\" : \"occupancyPercent\", \"late\" : true, \"pickupRoomNights\" : 1, \"id\" : \"id\", \"pickupNetRevenue\" : \"pickupNetRevenue\" }, { \"snapshotDate\" : \"2000-01-23\", \"owner\" : \"owner\", \"reason\" : \"reason\", \"dueDate\" : \"2000-01-23\", \"stayMonth\" : \"stayMonth\", \"roomNights\" : 7, \"nextAction\" : \"nextAction\", \"netRoomRevenue\" : \"netRoomRevenue\", \"occupancyPercent\" : \"occupancyPercent\", \"late\" : true, \"pickupRoomNights\" : 1, \"id\" : \"id\", \"pickupNetRevenue\" : \"pickupNetRevenue\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
@@ -557,6 +661,114 @@ public interface ReportsApi {
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PUT /reports/booking-tracker/months/{month} : Set a stay month&#39;s target and baseline
+     * Requires role &#x60;MANAGER&#x60; or above. Replaces the three entered inputs of one stay month: a field that is omitted or &#x60;null&#x60; is cleared. A save that changes nothing writes nothing, not even an audit entry; a real change is audited (&#x60;BOOKING_TRACKER_TARGET_UPDATED&#x60;) with the old and new values. A month whose three inputs are all empty has no stored row. 
+     *
+     * @param month  (required)
+     * @param bookingTrackerMonthTargetsInput  (required)
+     * @return The month&#39;s inputs as stored. (status code 200)
+     *         or A malformed month, or a negative / over-precise figure. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.PUT,
+        value = "/reports/booking-tracker/months/{month}",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<BookingTrackerMonthTargets> updateBookingTrackerMonth(
+        @Pattern(regexp = "^\\d{4}-(0[1-9]|1[0-2])$")  @PathVariable("month") String month,
+         @Valid @RequestBody BookingTrackerMonthTargetsInput bookingTrackerMonthTargetsInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"baselineRoomNights\" : 6, \"month\" : \"month\", \"targetRoomNights\" : 0, \"baselineNetRevenue\" : \"baselineNetRevenue\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PATCH /reports/booking-tracker/snapshots/{id} : Edit the notes of a weekly snapshot
+     * Requires role &#x60;MANAGER&#x60; or above. Only the four editable fields can change - the frozen figures never do, and there is no way to take or delete a snapshot by hand. A field that is omitted is left alone, &#x60;null&#x60; or blank clears it. A save that changes nothing writes nothing; a real change is audited (&#x60;BOOKING_TRACKER_SNAPSHOT_UPDATED&#x60;) naming the fields, never their text. 
+     *
+     * @param id  (required)
+     * @param bookingTrackerSnapshotUpdateInput  (required)
+     * @return The snapshot. (status code 200)
+     *         or A text over its length limit, or a malformed date. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     *         or No such snapshot. (status code 404)
+     */
+    @RequestMapping(
+        method = RequestMethod.PATCH,
+        value = "/reports/booking-tracker/snapshots/{id}",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<BookingTrackerSnapshot> updateBookingTrackerSnapshot(
+         @PathVariable("id") String id,
+         @Valid @RequestBody BookingTrackerSnapshotUpdateInput bookingTrackerSnapshotUpdateInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"snapshotDate\" : \"2000-01-23\", \"owner\" : \"owner\", \"reason\" : \"reason\", \"dueDate\" : \"2000-01-23\", \"stayMonth\" : \"stayMonth\", \"roomNights\" : 7, \"nextAction\" : \"nextAction\", \"netRoomRevenue\" : \"netRoomRevenue\", \"occupancyPercent\" : \"occupancyPercent\", \"late\" : true, \"pickupRoomNights\" : 1, \"id\" : \"id\", \"pickupNetRevenue\" : \"pickupNetRevenue\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

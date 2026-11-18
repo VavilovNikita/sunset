@@ -278,7 +278,8 @@ public class BookingWriter {
             BigDecimal agreedTotal,
             String externalReference,
             String externalChannel,
-            LocalDateTime externalModifiedAt) {
+            LocalDateTime externalModifiedAt,
+            LocalDateTime bookedAt) {
         int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
         if (!isRangeAvailable(room.getId(), unitCount, checkIn, checkOut, null)) {
             throw new ConflictException("Selected dates are no longer available");
@@ -291,6 +292,7 @@ public class BookingWriter {
         entity.setExternalReference(externalReference);
         entity.setExternalChannel(externalChannel);
         entity.setExternalModifiedAt(externalModifiedAt);
+        entity.setBookedAt(bookedAt);
         BookingEntity saved = bookingRepository.saveAndFlush(entity);
         saveSegment(saved.getId(), room.getId(), null, checkIn, checkOut, nightlyPrices);
         return saved;

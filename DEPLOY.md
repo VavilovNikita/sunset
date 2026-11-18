@@ -74,6 +74,24 @@ If the count is 0, a code-only rollback is still safe. If it's above 0, restore 
 
 Deploy sunset-beach together with it: its folio and check-out screens read the fields V132 serves.
 
+## V159-V162: booking tracker (additive - nothing destructive)
+
+V159 adds `CTRIP`, `HOTELBEDS`, `AGENT` to the `BookingChannel` enum, V160 three `AuditAction` values, V161 the tables
+`ServiceChargeSettings` (seeded at 10.00), `BookingTrackerMonth`, `BookingTrackerSnapshot` and the columns
+`Booking.breakfastGuests`, `breakfastRate`, `bookedAt`; V162 moves existing SiteMinder bookings whose own channel name is
+Ctrip / Trip.com or Hotelbeds (and that are still `OTHER`) to the new channel. No row is dropped or rewritten except those
+channel values.
+
+**A code-only rollback is not safe once V162 has run**: the previous build cannot read the channel value `CTRIP` or
+`HOTELBEDS`, so every booking list and report that touches such a booking fails. Restore the dump taken before the deploy, or
+first put the channels back (`UPDATE "Booking" SET "channel" = 'OTHER' WHERE "channel" IN ('CTRIP', 'HOTELBEDS', 'AGENT');` -
+the enum values themselves stay) and then roll back. Breakfast and `bookedAt` are plain unused columns for the old build.
+
+The weekly snapshot job (Friday 23:55 Bangkok, and an hourly catch-up) writes its first rows within a few minutes of the first
+start after this deploy - for the latest Friday, marked `late`. `app.booking-tracker.snapshot-enabled=false` switches it off.
+
+Deploy sunset-beach together with it: its Reports tab, booking page and settings read what these migrations serve.
+
 ## V138: unique room type names
 
 V138 makes a room type's name unique ignoring case and spaces at either end. The migration never

@@ -697,7 +697,9 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
         assertThat(SiteMinderImportService.mapChannel("Airbnb")).isEqualTo(BookingChannel.AIRBNB);
         assertThat(SiteMinderImportService.mapChannel("SiteMinder Booking Engine")).isEqualTo(BookingChannel.DIRECT);
         assertThat(SiteMinderImportService.mapChannel("Direct")).isEqualTo(BookingChannel.DIRECT);
-        assertThat(SiteMinderImportService.mapChannel("Trip.com")).isEqualTo(BookingChannel.OTHER);
+        assertThat(SiteMinderImportService.mapChannel("Trip.com")).isEqualTo(BookingChannel.CTRIP);
+        assertThat(SiteMinderImportService.mapChannel("Hotelbeds")).isEqualTo(BookingChannel.HOTELBEDS);
+        assertThat(SiteMinderImportService.mapChannel("Traveloka")).isEqualTo(BookingChannel.OTHER);
     }
 
     @Test
@@ -706,5 +708,51 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
                 new BigDecimal("1000.00"), List.of(LocalDate.of(2035, 1, 1), LocalDate.of(2035, 1, 2), LocalDate.of(2035, 1, 3)));
 
         assertThat(prices.values()).extracting(BigDecimal::toPlainString).containsExactly("333.33", "333.33", "333.34");
+    }
+
+    // --- Booking tracker: Ctrip / Hotelbeds channels and the stored booking date -----------------
+
+    @Test
+    void channelNames_ctripTripComAndHotelbeds_getTheirOwnChannel_everythingElseStaysAsBefore() {
+        assertThat(SiteMinderImportService.mapChannel("Ctrip")).isEqualTo(BookingChannel.CTRIP);
+        assertThat(SiteMinderImportService.mapChannel("Trip.com")).isEqualTo(BookingChannel.CTRIP);
+        assertThat(SiteMinderImportService.mapChannel("Trip.com (Ctrip)")).isEqualTo(BookingChannel.CTRIP);
+        assertThat(SiteMinderImportService.mapChannel("Hotelbeds")).isEqualTo(BookingChannel.HOTELBEDS);
+        assertThat(SiteMinderImportService.mapChannel("HOTELBEDS Group")).isEqualTo(BookingChannel.HOTELBEDS);
+        assertThat(SiteMinderImportService.mapChannel("Booking.com")).isEqualTo(BookingChannel.BOOKING_COM);
+        assertThat(SiteMinderImportService.mapChannel("Traveloka")).isEqualTo(BookingChannel.OTHER);
+        assertThat(SiteMinderImportService.mapChannel("Tripadvisor")).isEqualTo(BookingChannel.OTHER);
+    }
+
+    @Test
+    void created_storesSiteMindersBookedOnTime_andAnUpdateFillsItOnlyWhileEmpty() {
+        String roomType = mapped(room(2));
+        String reference = newReference();
+        importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, roomType));
+        assertThat(bookingFor(reference).getBookedAt()).isEqualTo(BOOKED_AT.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime());
+
+        // An old import has none: the next version fills it ...
+        BookingEntity booking = bookingFor(reference);
+        booking.setBookedAt(null);
+        bookingRepository.saveAndFlush(booking);
+        SiteMinderReservationInput modified = reservation(reference, SiteMinderReservationStatus.MODIFIED, roomType).modifiedAt(BOOKED_AT.plusDays(1));
+        importService.importReservation(modified);
+        assertThat(bookingFor(reference).getBookedAt()).isEqualTo(BOOKED_AT.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime());
+
+        // ... but a later version never moves one that is set.
+        SiteMinderReservationInput later = reservation(reference, SiteMinderReservationStatus.MODIFIED, roomType)
+                .bookedAt(BOOKED_AT.plusDays(30)).modifiedAt(BOOKED_AT.plusDays(31));
+        importService.importReservation(later);
+        assertThat(bookingFor(reference).getBookedAt()).isEqualTo(BOOKED_AT.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime());
+    }
+
+    @Test
+    void ctripReservation_isStoredAsCtrip_withTheRawNameKept() {
+        String roomType = mapped(room(2));
+        String reference = newReference();
+        importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, roomType).channel("Ctrip"));
+        BookingEntity booking = bookingFor(reference);
+        assertThat(booking.getChannel()).isEqualTo(BookingChannel.CTRIP);
+        assertThat(booking.getExternalChannel()).isEqualTo("Ctrip");
     }
 }

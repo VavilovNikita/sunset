@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * How a booking reached the hotel - a label staff record from what they already know (the guest booked by phone, walked in, said they found the hotel on Airbnb). Not an OTA integration: nothing is synced with any channel. `POST /bookings` (the public form) is always `DIRECT`, set server-side. Unrelated to the internal public-form-vs-front-desk distinction that drives auto-expiry of unconfirmed public inquiries, which is never exposed and never changes when this does. Bookings made before this field existed read `DIRECT` if they came through the public form and `OTHER` if staff entered them (their real channel was never recorded). Independent of `BookingPurpose`: a complimentary stay still has the channel it arrived by. 
+ * How a booking reached the hotel - a label staff record from what they already know (the guest booked by phone, walked in, said they found the hotel on Airbnb). Not an OTA integration: nothing is synced with any channel. `POST /bookings` (the public form) is always `DIRECT`, set server-side. Unrelated to the internal public-form-vs-front-desk distinction that drives auto-expiry of unconfirmed public inquiries, which is never exposed and never changes when this does. Bookings made before this field existed read `DIRECT` if they came through the public form and `OTHER` if staff entered them (their real channel was never recorded). Independent of `BookingPurpose`: a complimentary stay still has the channel it arrived by. `CTRIP` (Ctrip / Trip.com), `HOTELBEDS` and `AGENT` (a travel agent booking directly) are kept apart for the booking tracker. The SiteMinder import maps names starting with Ctrip/Trip.com and Hotelbeds to the first two; `AGENT` is staff-entered only. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -35,6 +35,12 @@ public enum BookingChannel {
   AGODA("AGODA"),
   
   EXPEDIA("EXPEDIA"),
+  
+  CTRIP("CTRIP"),
+  
+  HOTELBEDS("HOTELBEDS"),
+  
+  AGENT("AGENT"),
   
   OTHER("OTHER");
 

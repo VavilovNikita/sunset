@@ -153,7 +153,7 @@ public class SiteMinderImportService {
         try {
             saved = bookingWriter.insertExternal(
                     room, r.guestName(), r.checkIn(), r.checkOut(), r.channel(), r.adults(), r.children(), r.totalPrice(),
-                    r.reference(), r.rawChannel(), r.lastChangedAt());
+                    r.reference(), r.rawChannel(), r.lastChangedAt(), r.bookedAt());
         } catch (DataAccessException | TransactionSystemException e) {
             if (SqlStates.is(e, UNIQUE_VIOLATION_SQLSTATE)) {
                 throw new ConflictException("Reservation " + r.reference() + " is being imported by another request — try again.");
@@ -203,7 +203,7 @@ public class SiteMinderImportService {
                     + "A booking of a guest who has arrived is never cancelled by an import - a person needs to look at it.");
         }
         bookingService.updateStatus(booking.getId(), new BookingStatusInput(BookingStatus.CANCELLED));
-        recordLastChangedAt(booking.getId(), r.lastChangedAt());
+        recordLastChangedAt(booking.getId(), r.lastChangedAt(), r.bookedAt());
         return new SiteMinderImportResult(SiteMinderImportAction.CANCELLED, booking.getId(), List.of(), List.of(), null);
     }
 
@@ -265,7 +265,7 @@ public class SiteMinderImportService {
             changes.add("guests " + current.getAdults() + "+" + current.getChildren() + " → " + r.adults() + "+" + r.children());
         }
 
-        recordLastChangedAt(bookingId, r.lastChangedAt());
+        recordLastChangedAt(bookingId, r.lastChangedAt(), r.bookedAt());
         if (changes.isEmpty()) {
             return new SiteMinderImportResult(SiteMinderImportAction.UNCHANGED, bookingId, List.of(), warnings, null);
         }
@@ -297,10 +297,20 @@ public class SiteMinderImportService {
     }
 
     /** Only ever moves forward, and only writes when it actually moves - see {@link #cancel} for why a needless write matters. */
-    private void recordLastChangedAt(String bookingId, LocalDateTime lastChangedAt) {
+    private void recordLastChangedAt(String bookingId, LocalDateTime lastChangedAt, LocalDateTime bookedAt) {
         BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow();
+        boolean write = false;
         if (booking.getExternalModifiedAt() == null || lastChangedAt.isAfter(booking.getExternalModifiedAt())) {
             booking.setExternalModifiedAt(lastChangedAt);
+            write = true;
+        }
+        // The booking tracker's booking date: filled once, only while empty (an old import has none, and SiteMinder's
+        // "booked on" never changes afterwards, so a later poll must not move it).
+        if (booking.getBookedAt() == null && bookedAt != null) {
+            booking.setBookedAt(bookedAt);
+            write = true;
+        }
+        if (write) {
             bookingRepository.saveAndFlush(booking);
         }
     }
@@ -327,7 +337,8 @@ public class SiteMinderImportService {
             BigDecimal totalPrice,
             BookingChannel channel,
             String rawChannel,
-            LocalDateTime lastChangedAt) {
+            LocalDateTime lastChangedAt,
+            LocalDateTime bookedAt) {
     }
 
     private static Reservation parse(SiteMinderReservationInput input) {
@@ -362,7 +373,8 @@ public class SiteMinderImportService {
                 new BigDecimal(input.getTotalPrice()).setScale(2, RoundingMode.UNNECESSARY),
                 mapChannel(rawChannel),
                 rawChannel,
-                lastChanged.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime());
+                lastChanged.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime(),
+                input.getBookedAt().withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime());
     }
 
     /**
@@ -384,6 +396,12 @@ public class SiteMinderImportService {
         }
         if (n.startsWith("airbnb")) {
             return BookingChannel.AIRBNB;
+        }
+        if (n.startsWith("ctrip") || n.startsWith("tripcom")) {
+            return BookingChannel.CTRIP;
+        }
+        if (n.startsWith("hotelbeds")) {
+            return BookingChannel.HOTELBEDS;
         }
         if (n.equals("direct") || n.contains("bookingengine") || n.equals("thebookingbutton")) {
             return BookingChannel.DIRECT;

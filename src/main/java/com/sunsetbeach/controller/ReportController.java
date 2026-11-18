@@ -28,11 +28,43 @@ public class ReportController implements ReportsApi {
     private final RevenueExportService revenueExportService;
     private final ReportService reportService;
     private final LedgerService ledgerService;
+    private final com.sunsetbeach.service.BookingTrackerService bookingTrackerService;
+    private final com.sunsetbeach.service.BookingTrackerExportService bookingTrackerExportService;
 
-    public ReportController(RevenueExportService revenueExportService, ReportService reportService, LedgerService ledgerService) {
+    public ReportController(RevenueExportService revenueExportService, ReportService reportService, LedgerService ledgerService,
+            com.sunsetbeach.service.BookingTrackerService bookingTrackerService,
+            com.sunsetbeach.service.BookingTrackerExportService bookingTrackerExportService) {
+        this.bookingTrackerService = bookingTrackerService;
+        this.bookingTrackerExportService = bookingTrackerExportService;
         this.revenueExportService = revenueExportService;
         this.reportService = reportService;
         this.ledgerService = ledgerService;
+    }
+
+    @Override
+    public ResponseEntity<com.sunsetbeach.model.BookingTrackerReport> getBookingTrackerReport(String fromMonth, String toMonth, String stayMonth) {
+        return ResponseEntity.ok(bookingTrackerService.report(fromMonth, toMonth, stayMonth));
+    }
+
+    @Override
+    public ResponseEntity<Resource> exportBookingTracker(String fromMonth, String toMonth, String stayMonth) {
+        com.sunsetbeach.service.BookingTrackerExportService.Export export = bookingTrackerExportService.export(fromMonth, toMonth, stayMonth);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(export.filename()).build().toString())
+                .body(new ByteArrayResource(export.workbook()));
+    }
+
+    @Override
+    public ResponseEntity<com.sunsetbeach.model.BookingTrackerMonthTargets> updateBookingTrackerMonth(
+            String month, com.sunsetbeach.model.BookingTrackerMonthTargetsInput input) {
+        return ResponseEntity.ok(bookingTrackerService.updateMonth(month, input));
+    }
+
+    @Override
+    public ResponseEntity<com.sunsetbeach.model.BookingTrackerSnapshot> updateBookingTrackerSnapshot(
+            String id, com.sunsetbeach.model.BookingTrackerSnapshotUpdateInput input) {
+        return ResponseEntity.ok(bookingTrackerService.updateSnapshot(id, input));
     }
 
     @Override

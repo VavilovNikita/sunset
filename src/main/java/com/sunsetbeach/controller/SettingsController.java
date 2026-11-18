@@ -29,6 +29,7 @@ public class SettingsController implements SettingsApi {
 
     private final LifecycleEmailSettingsService lifecycleEmailSettingsService;
     private final VatSettingsService vatSettingsService;
+    private final com.sunsetbeach.service.ServiceChargeSettingsService serviceChargeSettingsService;
     private final PrintLayoutService printLayoutService;
     private final NotificationSettingsService notificationSettingsService;
     private final StaffBotSettingsService staffBotSettingsService;
@@ -36,6 +37,7 @@ public class SettingsController implements SettingsApi {
     public SettingsController(
             LifecycleEmailSettingsService lifecycleEmailSettingsService,
             VatSettingsService vatSettingsService,
+            com.sunsetbeach.service.ServiceChargeSettingsService serviceChargeSettingsService,
             PrintLayoutService printLayoutService,
             NotificationSettingsService notificationSettingsService,
             StaffBotSettingsService staffBotSettingsService) {
@@ -43,6 +45,7 @@ public class SettingsController implements SettingsApi {
         this.notificationSettingsService = notificationSettingsService;
         this.lifecycleEmailSettingsService = lifecycleEmailSettingsService;
         this.vatSettingsService = vatSettingsService;
+        this.serviceChargeSettingsService = serviceChargeSettingsService;
         this.printLayoutService = printLayoutService;
     }
 
@@ -84,6 +87,17 @@ public class SettingsController implements SettingsApi {
     @Override
     public ResponseEntity<VatSettings> updateVatSettings(VatSettingsUpdateInput input) {
         return ResponseEntity.ok(vatSettingsService.update(input));
+    }
+
+    @Override
+    public ResponseEntity<com.sunsetbeach.model.ServiceChargeSettings> getServiceChargeSettings() {
+        return ResponseEntity.ok(serviceChargeSettingsService.get());
+    }
+
+    @Override
+    public ResponseEntity<com.sunsetbeach.model.ServiceChargeSettings> updateServiceChargeSettings(
+            com.sunsetbeach.model.ServiceChargeSettingsUpdateInput input) {
+        return ResponseEntity.ok(serviceChargeSettingsService.update(input));
     }
 
     @Override

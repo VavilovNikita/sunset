@@ -316,7 +316,7 @@ public class SiteMinderReservationInput {
   }
 
   /**
-   * The channel name as SiteMinder displays it. Mapped to `BookingChannel`: names starting with Booking.com, Expedia, Agoda or Airbnb map to those values; \"Direct\" and SiteMinder's own booking engine (the hotel's website) map to `DIRECT`; anything else maps to `OTHER`. The raw name is kept as `Booking.externalChannel` either way. 
+   * The channel name as SiteMinder displays it. Mapped to `BookingChannel`: names starting with Booking.com, Expedia, Agoda, Airbnb, Hotelbeds or Ctrip / Trip.com map to those values; \"Direct\" and SiteMinder's own booking engine (the hotel's website) map to `DIRECT`; anything else maps to `OTHER`. The raw name is kept as `Booking.externalChannel` either way. 
    * @return channel
    */
   @NotNull @Size(min = 1, max = 100) 
@@ -335,7 +335,7 @@ public class SiteMinderReservationInput {
   }
 
   /**
-   * SiteMinder's \"Booked on\" time, with its UTC offset.
+   * SiteMinder's \"Booked on\" time, with its UTC offset. Stored as `Booking.bookedAt` on create (and on an update only while still empty) - the booking tracker's booking date. 
    * @return bookedAt
    */
   @NotNull @Valid 

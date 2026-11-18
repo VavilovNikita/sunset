@@ -79,5 +79,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.notifications.retention-cron", () -> "-");
         // The overstay sweep would charge nights behind a test's back; tests call OverstayChargeService themselves.
         registry.add("app.overstay.sweep-enabled", () -> "false");
+        // Same for the booking tracker's weekly snapshots: tests call BookingTrackerSnapshotService#runOnce on their own clock.
+        registry.add("app.booking-tracker.snapshot-enabled", () -> "false");
     }
 }

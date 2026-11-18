@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.BreakfastRate;
 import com.sunsetbeach.model.FolioPaymentInput;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -39,6 +40,10 @@ public class BookingStatusInput {
   private Integer adults;
 
   private Integer children;
+
+  private JsonNullable<@Min(0) @Max(50) Integer> breakfastGuests = JsonNullable.<Integer>undefined();
+
+  private JsonNullable<BreakfastRate> breakfastRate = JsonNullable.<BreakfastRate>undefined();
 
   private JsonNullable<@Size(max = 500) String> cancellationReason = JsonNullable.<String>undefined();
 
@@ -171,6 +176,46 @@ public class BookingStatusInput {
     this.children = children;
   }
 
+  public BookingStatusInput breakfastGuests(Integer breakfastGuests) {
+    this.breakfastGuests = JsonNullable.of(breakfastGuests);
+    return this;
+  }
+
+  /**
+   * Optional. Breakfast guests per night (the booking tracker deducts breakfast from the package). Omitted leaves it as it is, `null` clears it. More than 0 needs a `breakfastRate` (400), and no more than adults + children. CASHIER+, like the rest of this form; changes are audited. 
+   * minimum: 0
+   * maximum: 50
+   * @return breakfastGuests
+   */
+  @Min(0) @Max(50) 
+  @JsonProperty("breakfastGuests")
+  public JsonNullable<@Min(0) @Max(50) Integer> getBreakfastGuests() {
+    return breakfastGuests;
+  }
+
+  public void setBreakfastGuests(JsonNullable<Integer> breakfastGuests) {
+    this.breakfastGuests = breakfastGuests;
+  }
+
+  public BookingStatusInput breakfastRate(BreakfastRate breakfastRate) {
+    this.breakfastRate = JsonNullable.of(breakfastRate);
+    return this;
+  }
+
+  /**
+   * Optional. Omitted leaves it as it is, `null` clears it.
+   * @return breakfastRate
+   */
+  @Valid 
+  @JsonProperty("breakfastRate")
+  public JsonNullable<BreakfastRate> getBreakfastRate() {
+    return breakfastRate;
+  }
+
+  public void setBreakfastRate(JsonNullable<BreakfastRate> breakfastRate) {
+    this.breakfastRate = breakfastRate;
+  }
+
   public BookingStatusInput cancellationReason(String cancellationReason) {
     this.cancellationReason = JsonNullable.of(cancellationReason);
     return this;
@@ -224,6 +269,8 @@ public class BookingStatusInput {
         Objects.equals(this.purpose, bookingStatusInput.purpose) &&
         Objects.equals(this.adults, bookingStatusInput.adults) &&
         Objects.equals(this.children, bookingStatusInput.children) &&
+        equalsNullable(this.breakfastGuests, bookingStatusInput.breakfastGuests) &&
+        equalsNullable(this.breakfastRate, bookingStatusInput.breakfastRate) &&
         equalsNullable(this.cancellationReason, bookingStatusInput.cancellationReason) &&
         Objects.equals(this.payment, bookingStatusInput.payment);
   }
@@ -234,7 +281,7 @@ public class BookingStatusInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(status, hashCodeNullable(paymentNote), channel, purpose, adults, children, hashCodeNullable(cancellationReason), payment);
+    return Objects.hash(status, hashCodeNullable(paymentNote), channel, purpose, adults, children, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(cancellationReason), payment);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -254,6 +301,8 @@ public class BookingStatusInput {
     sb.append("    purpose: ").append(toIndentedString(purpose)).append("\n");
     sb.append("    adults: ").append(toIndentedString(adults)).append("\n");
     sb.append("    children: ").append(toIndentedString(children)).append("\n");
+    sb.append("    breakfastGuests: ").append(toIndentedString(breakfastGuests)).append("\n");
+    sb.append("    breakfastRate: ").append(toIndentedString(breakfastRate)).append("\n");
     sb.append("    cancellationReason: ").append(toIndentedString(cancellationReason)).append("\n");
     sb.append("    payment: ").append(toIndentedString(payment)).append("\n");
     sb.append("}");

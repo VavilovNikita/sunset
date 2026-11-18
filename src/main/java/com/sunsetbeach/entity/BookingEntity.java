@@ -117,6 +117,14 @@ public class BookingEntity {
     // Set on a move into CANCELLED, cleared on a move out - see V131__booking_cancellation_reason.sql.
     private String cancellationReason;
 
+    // Breakfast per night for the booking tracker (V161): both null = none. The rate is one of BreakfastRate's values.
+    private Integer breakfastGuests;
+
+    private Integer breakfastRate;
+
+    // SiteMinder's own "booked on" instant, UTC wall-clock (V161); null for every other booking and for old imports.
+    private LocalDateTime bookedAt;
+
     @UtcCreationTimestamp
     private LocalDateTime createdAt;
 
@@ -301,6 +309,30 @@ public class BookingEntity {
 
     public void setCheckedOutAt(LocalDateTime checkedOutAt) {
         this.checkedOutAt = checkedOutAt;
+    }
+
+    public Integer getBreakfastGuests() {
+        return breakfastGuests;
+    }
+
+    public void setBreakfastGuests(Integer breakfastGuests) {
+        this.breakfastGuests = breakfastGuests;
+    }
+
+    public Integer getBreakfastRate() {
+        return breakfastRate;
+    }
+
+    public void setBreakfastRate(Integer breakfastRate) {
+        this.breakfastRate = breakfastRate;
+    }
+
+    public LocalDateTime getBookedAt() {
+        return bookedAt;
+    }
+
+    public void setBookedAt(LocalDateTime bookedAt) {
+        this.bookedAt = bookedAt;
     }
 
     public String getExternalReference() {

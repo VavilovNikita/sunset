@@ -268,6 +268,15 @@ class PosRoleHierarchyTests {
     private com.sunsetbeach.service.VatSettingsService vatSettingsService;
 
     @MockitoBean
+    private com.sunsetbeach.service.ServiceChargeSettingsService serviceChargeSettingsService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.BookingTrackerService bookingTrackerService;
+
+    @MockitoBean
+    private com.sunsetbeach.service.BookingTrackerExportService bookingTrackerExportService;
+
+    @MockitoBean
     private com.sunsetbeach.service.PrintLayoutService printLayoutService;
 
     @MockitoBean
@@ -469,6 +478,75 @@ class PosRoleHierarchyTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"vatRate\":7.5}"))
                 .andExpect(status().isOk());
+    }
+
+    // --- /settings/service-charge: the same ADMIN-only tier as VAT ---
+
+    @Test
+    void serviceChargeSettings_belowAdmin_isForbidden_andAdminMayReadAndChange() throws Exception {
+        for (Role role : new Role[] {Role.MANAGER, Role.CASHIER, Role.WAITER}) {
+            mockMvc.perform(get("/settings/service-charge").header("Authorization", token(role))).andExpect(status().isForbidden());
+            mockMvc.perform(put("/settings/service-charge").header("Authorization", token(role))
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"serviceChargeRate\":10}"))
+                    .andExpect(status().isForbidden());
+        }
+        verify(serviceChargeSettingsService, never()).update(any());
+        com.sunsetbeach.model.ServiceChargeSettings settings = new com.sunsetbeach.model.ServiceChargeSettings(
+                "10.00", java.time.OffsetDateTime.parse("2031-01-01T00:00:00Z"));
+        when(serviceChargeSettingsService.get()).thenReturn(settings);
+        when(serviceChargeSettingsService.update(any())).thenReturn(settings);
+        mockMvc.perform(get("/settings/service-charge").header("Authorization", token(Role.ADMIN))).andExpect(status().isOk());
+        mockMvc.perform(put("/settings/service-charge").header("Authorization", token(Role.ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"serviceChargeRate\":12.5}"))
+                .andExpect(status().isOk());
+        for (String body : new String[] {"{}", "{\"serviceChargeRate\":-1}", "{\"serviceChargeRate\":100}"}) {
+            mockMvc.perform(put("/settings/service-charge").header("Authorization", token(Role.ADMIN))
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    // --- /reports/booking-tracker: read, export and both writes are MANAGER+ ---
+
+    @Test
+    void bookingTracker_belowManager_isForbidden_andManagerMayReadExportAndEdit() throws Exception {
+        for (Role role : new Role[] {Role.CASHIER, Role.WAITER}) {
+            String auth = token(role);
+            mockMvc.perform(get("/reports/booking-tracker").header("Authorization", auth)).andExpect(status().isForbidden());
+            mockMvc.perform(get("/reports/booking-tracker/export").header("Authorization", auth)).andExpect(status().isForbidden());
+            mockMvc.perform(put("/reports/booking-tracker/months/2031-01").header("Authorization", auth)
+                            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(patch("/reports/booking-tracker/snapshots/s1").header("Authorization", auth)
+                            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isForbidden());
+        }
+        verify(bookingTrackerService, never()).updateMonth(any(), any());
+        verify(bookingTrackerService, never()).updateSnapshot(any(), any());
+
+        String manager = token(Role.MANAGER);
+        when(bookingTrackerService.report(any(), any(), any())).thenReturn(new com.sunsetbeach.model.BookingTrackerReport());
+        when(bookingTrackerExportService.export(any(), any(), any()))
+                .thenReturn(new com.sunsetbeach.service.BookingTrackerExportService.Export("x.xlsx", new byte[] {1}));
+        mockMvc.perform(get("/reports/booking-tracker?fromMonth=2031-01&toMonth=2031-03").header("Authorization", manager)).andExpect(status().isOk());
+        mockMvc.perform(get("/reports/booking-tracker/export").header("Authorization", manager)).andExpect(status().isOk());
+        mockMvc.perform(put("/reports/booking-tracker/months/2031-01").header("Authorization", manager)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"targetRoomNights\":100}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch("/reports/booking-tracker/snapshots/s1").header("Authorization", manager)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"owner\":\"Nok\"}"))
+                .andExpect(status().isOk());
+        // Shape is checked before the service is asked.
+        mockMvc.perform(get("/reports/booking-tracker?fromMonth=2031-13").header("Authorization", manager)).andExpect(status().isBadRequest());
+        mockMvc.perform(put("/reports/booking-tracker/months/2031-13").header("Authorization", manager)
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(put("/reports/booking-tracker/months/2031-01").header("Authorization", manager)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"targetRoomNights\":-1}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/reports/booking-tracker/snapshots/s1").header("Authorization", manager)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"owner\":\"" + "x".repeat(121) + "\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

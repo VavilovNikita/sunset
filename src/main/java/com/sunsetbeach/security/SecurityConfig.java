@@ -342,8 +342,16 @@ public class SecurityConfig {
                                         "/reports/manager",
                                         "/reports/forecast",
                                         "/reports/revenue-statistic",
-                                        "/reports/trial-balance")
+                                        "/reports/trial-balance",
+                                        "/reports/booking-tracker",
+                                        "/reports/booking-tracker/export")
                                 .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        // The booking tracker's inputs (a month's target and baseline) and the notes of a weekly snapshot are
+                        // typed by a manager: the same floor as reading the tracker. The figures themselves never change.
+                        .requestMatchers(HttpMethod.PUT, "/reports/booking-tracker/months/*")
+                        .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
+                        .requestMatchers(HttpMethod.PATCH, "/reports/booking-tracker/snapshots/*")
+                        .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // Ledger: reads MANAGER+, the same floor as the trial balance and every other
                         // financial report above. Writes (a manual entry, a reversal, a new account)
                         // are ADMIN-only - hasRole(ADMIN) admits nobody else - because a manual entry

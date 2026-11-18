@@ -16,7 +16,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * The one VAT rate applied to all revenue, room and POS alike, by &#x60;GET /reports/revenue-statistic&#x60;. Stored, not hardcoded, so it can change without a deploy; seeded at 7.00 (Thailand&#39;s standard rate) as an editable default. All prices in this system are VAT-inclusive - see that report for why - so the rate is used to extract VAT from a figure, never to add it on top. Nothing else in the system reads it: no price, order total or receipt changes when it does. 
+ * The one VAT rate applied to all revenue, room and POS alike, by &#x60;GET /reports/revenue-statistic&#x60;. Stored, not hardcoded, so it can change without a deploy; seeded at 7.00 (Thailand&#39;s standard rate) as an editable default. All prices in this system are VAT-inclusive - see that report for why - so the rate is used to extract VAT from a figure, never to add it on top. Nothing else in the system reads it: no price, order total or receipt changes when it does. The one exception is the booking tracker (&#x60;GET /reports/booking-tracker&#x60;), which reads it next to &#x60;ServiceChargeSettings&#x60; to take VAT out of room prices for its analysis. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

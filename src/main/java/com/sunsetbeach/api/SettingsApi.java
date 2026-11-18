@@ -16,6 +16,8 @@ import com.sunsetbeach.model.PrintLayoutDocument;
 import com.sunsetbeach.model.PrintLayoutInput;
 import com.sunsetbeach.model.PrintLayoutPreview;
 import com.sunsetbeach.model.PrintLayouts;
+import com.sunsetbeach.model.ServiceChargeSettings;
+import com.sunsetbeach.model.ServiceChargeSettingsUpdateInput;
 import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.StaffBotSettings;
 import com.sunsetbeach.model.StaffBotSettingsUpdateInput;
@@ -189,6 +191,47 @@ public interface SettingsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"hasLogo\" : true, \"layouts\" : [ { \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }, { \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /settings/service-charge : Read the service-charge rate used by the booking tracker
+     * Requires role &#x60;ADMIN&#x60;, same as every &#x60;/settings/_*&#x60; route. The rate is a deduction for the booking tracker&#39;s analysis only - see &#x60;ServiceChargeSettings&#x60;. 
+     *
+     * @return The current rate. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/settings/service-charge",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<ServiceChargeSettings> getServiceChargeSettings(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"serviceChargeRate\" : \"serviceChargeRate\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -508,6 +551,55 @@ public interface SettingsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"showPaymentMethod\" : true, \"showLogo\" : true, \"headerText\" : \"headerText\", \"headerBold\" : true, \"footerText\" : \"footerText\", \"showItemNotes\" : true, \"documentType\" : \"RECEIPT\", \"totalBold\" : true, \"bodyFont\" : \"A\", \"showTime\" : true, \"titleSize\" : 1, \"title\" : \"title\", \"showWaiter\" : true, \"showVatLine\" : true, \"locationSize\" : 1, \"totalSize\" : 1, \"showLocation\" : true, \"paperWidth\" : \"MM58\", \"showOrderNumber\" : true, \"logoWidthPercent\" : 68, \"itemSize\" : 1, \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * PUT /settings/service-charge : Change the service-charge rate used by the booking tracker
+     * Requires role &#x60;ADMIN&#x60;. Takes effect on the next tracker request (nothing is cached or versioned: every tracker figure is computed with the rate stored when it is requested; the frozen weekly snapshots keep what they were computed with). Audited (&#x60;SERVICE_CHARGE_SETTINGS_UPDATED&#x60;) with the old and new rate; an unchanged value records nothing. Nothing is charged to anyone. 
+     *
+     * @param serviceChargeSettingsUpdateInput  (required)
+     * @return The updated rate. (status code 200)
+     *         or &#x60;serviceChargeRate&#x60; missing, below 0, above 99.99, or with more than two decimals. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;ADMIN&#x60;). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.PUT,
+        value = "/settings/service-charge",
+        produces = { "application/json" },
+        consumes = { "application/json" }
+    )
+    
+    default ResponseEntity<ServiceChargeSettings> updateServiceChargeSettings(
+         @Valid @RequestBody ServiceChargeSettingsUpdateInput serviceChargeSettingsUpdateInput
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"serviceChargeRate\" : \"serviceChargeRate\", \"updatedAt\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

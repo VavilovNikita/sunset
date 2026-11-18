@@ -9,6 +9,7 @@ import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.BreakfastRate;
 import com.sunsetbeach.model.Guest;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.Room;
@@ -19,7 +20,9 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.springframework.format.annotation.DateTimeFormat;
+import java.util.NoSuchElementException;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -93,6 +96,13 @@ public class Booking {
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private JsonNullable<OffsetDateTime> checkedOutAt = JsonNullable.<OffsetDateTime>undefined();
+
+  private JsonNullable<Integer> breakfastGuests = JsonNullable.<Integer>undefined();
+
+  private JsonNullable<BreakfastRate> breakfastRate = JsonNullable.<BreakfastRate>undefined();
+
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private JsonNullable<OffsetDateTime> bookedAt = JsonNullable.<OffsetDateTime>undefined();
 
   private JsonNullable<String> externalReference = JsonNullable.<String>undefined();
 
@@ -681,6 +691,63 @@ public class Booking {
     this.checkedOutAt = checkedOutAt;
   }
 
+  public Booking breakfastGuests(Integer breakfastGuests) {
+    this.breakfastGuests = JsonNullable.of(breakfastGuests);
+    return this;
+  }
+
+  /**
+   * Breakfast guests per night, when staff recorded it; null otherwise (no breakfast is deducted in the booking tracker).
+   * @return breakfastGuests
+   */
+  
+  @JsonProperty("breakfastGuests")
+  public JsonNullable<Integer> getBreakfastGuests() {
+    return breakfastGuests;
+  }
+
+  public void setBreakfastGuests(JsonNullable<Integer> breakfastGuests) {
+    this.breakfastGuests = breakfastGuests;
+  }
+
+  public Booking breakfastRate(BreakfastRate breakfastRate) {
+    this.breakfastRate = JsonNullable.of(breakfastRate);
+    return this;
+  }
+
+  /**
+   * Baht per guest per night; null when no breakfast is recorded.
+   * @return breakfastRate
+   */
+  @Valid 
+  @JsonProperty("breakfastRate")
+  public JsonNullable<BreakfastRate> getBreakfastRate() {
+    return breakfastRate;
+  }
+
+  public void setBreakfastRate(JsonNullable<BreakfastRate> breakfastRate) {
+    this.breakfastRate = breakfastRate;
+  }
+
+  public Booking bookedAt(OffsetDateTime bookedAt) {
+    this.bookedAt = JsonNullable.of(bookedAt);
+    return this;
+  }
+
+  /**
+   * SiteMinder's \"booked on\" time for an imported booking that has it; null otherwise (the booking tracker then uses `createdAt`).
+   * @return bookedAt
+   */
+  @Valid 
+  @JsonProperty("bookedAt")
+  public JsonNullable<OffsetDateTime> getBookedAt() {
+    return bookedAt;
+  }
+
+  public void setBookedAt(JsonNullable<OffsetDateTime> bookedAt) {
+    this.bookedAt = bookedAt;
+  }
+
   public Booking externalReference(String externalReference) {
     this.externalReference = JsonNullable.of(externalReference);
     return this;
@@ -859,6 +926,9 @@ public class Booking {
         Objects.equals(this.creditBalance, booking.creditBalance) &&
         Objects.equals(this.checkedInAt, booking.checkedInAt) &&
         Objects.equals(this.checkedOutAt, booking.checkedOutAt) &&
+        equalsNullable(this.breakfastGuests, booking.breakfastGuests) &&
+        equalsNullable(this.breakfastRate, booking.breakfastRate) &&
+        equalsNullable(this.bookedAt, booking.bookedAt) &&
         Objects.equals(this.externalReference, booking.externalReference) &&
         Objects.equals(this.externalChannel, booking.externalChannel) &&
         Objects.equals(this.cancellationReason, booking.cancellationReason) &&
@@ -868,9 +938,20 @@ public class Booking {
         Objects.equals(this.warning, booking.warning);
   }
 
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
+  }
+
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -905,6 +986,9 @@ public class Booking {
     sb.append("    creditBalance: ").append(toIndentedString(creditBalance)).append("\n");
     sb.append("    checkedInAt: ").append(toIndentedString(checkedInAt)).append("\n");
     sb.append("    checkedOutAt: ").append(toIndentedString(checkedOutAt)).append("\n");
+    sb.append("    breakfastGuests: ").append(toIndentedString(breakfastGuests)).append("\n");
+    sb.append("    breakfastRate: ").append(toIndentedString(breakfastRate)).append("\n");
+    sb.append("    bookedAt: ").append(toIndentedString(bookedAt)).append("\n");
     sb.append("    externalReference: ").append(toIndentedString(externalReference)).append("\n");
     sb.append("    externalChannel: ").append(toIndentedString(externalChannel)).append("\n");
     sb.append("    cancellationReason: ").append(toIndentedString(cancellationReason)).append("\n");

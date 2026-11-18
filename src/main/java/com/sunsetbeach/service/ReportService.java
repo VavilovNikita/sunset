@@ -189,7 +189,17 @@ public class ReportService {
     }
 
     /** One segment's share of a report range: the nights of it inside the range and their prorated price. */
-    private record SegmentInRange(BookingSegmentEntity segment, long nights, BigDecimal revenue) {}
+    record SegmentInRange(BookingSegmentEntity segment, long nights, BigDecimal revenue, LocalDate from, LocalDate toExclusive,
+                          Map<LocalDate, BigDecimal> overstayNightPrices) {
+        SegmentInRange(BookingSegmentEntity segment, long nights, BigDecimal revenue) {
+            this(segment, nights, revenue, null, null, null);
+        }
+
+        /** A segment's own nights (frozen nightly prices apply) as opposed to a guest's overstay nights, which carry their own price per night. */
+        boolean isOverstay() {
+            return overstayNightPrices != null;
+        }
+    }
 
     /**
      * The room-nights population shared by every room report here - occupancy, top production,
@@ -208,7 +218,7 @@ public class ReportService {
      * guest. Like every other overstay reader this only knows about guests still checked in: once
      * an overdue guest is checked out, a past night's figures lose their extra nights.
      */
-    private List<SegmentInRange> segmentsInRange(ReportDateRange range) {
+    List<SegmentInRange> segmentsInRange(ReportDateRange range) {
         LocalDate rangeEnd = range.to().plusDays(1); // exclusive, like a checkOut
         List<SegmentInRange> slices = new ArrayList<>();
         for (BookingSegmentEntity segment : segmentRepository.findByBooking_StatusNotAndCheckInLessThanAndCheckOutGreaterThan(
@@ -222,7 +232,7 @@ public class ReportService {
             BigDecimal prorated = inRange == segmentNights
                     ? segment.getTotalPrice()
                     : segment.getTotalPrice().multiply(BigDecimal.valueOf(inRange)).divide(BigDecimal.valueOf(segmentNights), MC);
-            slices.add(new SegmentInRange(segment, inRange, prorated));
+            slices.add(new SegmentInRange(segment, inRange, prorated, clippedStart, clippedEnd, null));
         }
         // Overstay nights: what was charged to the booking (OverstayCharge - the same rows the folio and the ledger
         // hold, so Z120, Z410 and the manager report agree) ...
@@ -240,12 +250,16 @@ public class ReportService {
             List<OverstayChargeEntity> charged = chargesByBooking.getOrDefault(overstay.bookingId(), List.of());
             Set<LocalDate> chargedDates = charged.stream().map(OverstayChargeEntity::getDate).collect(Collectors.toSet());
             BigDecimal revenue = charged.stream().map(OverstayChargeEntity::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
+            Map<LocalDate, BigDecimal> nightPrices = new java.util.TreeMap<>();
+            charged.forEach(c -> nightPrices.put(c.getDate(), c.getPrice()));
             for (LocalDate d = from; d.isBefore(to); d = d.plusDays(1)) {
                 if (!chargedDates.contains(d)) {
-                    revenue = revenue.add(overstayRule.estimatedPrice(overstay.roomId(), d, d.plusDays(1)));
+                    BigDecimal estimate = overstayRule.estimatedPrice(overstay.roomId(), d, d.plusDays(1));
+                    revenue = revenue.add(estimate);
+                    nightPrices.put(d, estimate);
                 }
             }
-            slices.add(new SegmentInRange(overstay.lastSegment(), inRange, revenue));
+            slices.add(new SegmentInRange(overstay.lastSegment(), inRange, revenue, from, to, nightPrices));
             handled.add(overstay.bookingId());
         }
         // ... and the nights charged to a booking whose guest has since left (they stayed them).
@@ -261,7 +275,9 @@ public class ReportService {
                 if (booking == null || last == null || booking.getStatus() == BookingStatus.CANCELLED) continue;
                 List<OverstayChargeEntity> charged = chargesByBooking.get(id);
                 BigDecimal revenue = charged.stream().map(OverstayChargeEntity::getPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
-                slices.add(new SegmentInRange(last, charged.size(), revenue));
+                Map<LocalDate, BigDecimal> nightPrices = new java.util.TreeMap<>();
+                charged.forEach(c -> nightPrices.put(c.getDate(), c.getPrice()));
+                slices.add(new SegmentInRange(last, charged.size(), revenue, null, null, nightPrices));
             }
         }
         return slices;
@@ -431,7 +447,12 @@ public class ReportService {
     private static String producerLabel(String producer) {
         if (producer.equals(BookingPurpose.COMPLIMENTARY.getValue())) return "Complimentary";
         if (producer.equals(BookingPurpose.HOUSE_USE.getValue())) return "House Use";
-        return switch (BookingChannel.fromValue(producer)) {
+        return channelLabel(BookingChannel.fromValue(producer));
+    }
+
+    /** The English name of a channel, shared by the producer reports and the booking tracker's workbook. */
+    static String channelLabel(BookingChannel channel) {
+        return switch (channel) {
             case DIRECT -> "Direct";
             case PHONE -> "Phone";
             case WALK_IN -> "Walk-in";
@@ -439,6 +460,9 @@ public class ReportService {
             case AIRBNB -> "Airbnb";
             case AGODA -> "Agoda";
             case EXPEDIA -> "Expedia";
+            case CTRIP -> "Ctrip";
+            case HOTELBEDS -> "Hotelbeds";
+            case AGENT -> "Agent";
             case OTHER -> "Other";
         };
     }
@@ -497,7 +521,9 @@ public class ReportService {
             case COMPLIMENTARY -> MarketSegment.COM;
             case HOUSE_USE -> MarketSegment.HFO;
             case STANDARD -> switch (booking.getChannel()) {
-                case BOOKING_COM, AIRBNB, AGODA, EXPEDIA -> MarketSegment.OTA;
+                // AGENT (a travel agent) has no segment of its own in the six-line Z360 layout: closest is OTA, an
+                // intermediary sale; Hotelbeds is a wholesaler of the same kind.
+                case BOOKING_COM, AIRBNB, AGODA, EXPEDIA, CTRIP, HOTELBEDS, AGENT -> MarketSegment.OTA;
                 case OTHER -> booking.getSource() == BookingSource.SITEMINDER ? MarketSegment.OTA : MarketSegment.OTH;
                 case WALK_IN -> MarketSegment.WLK;
                 case DIRECT, PHONE -> MarketSegment.DIR;
@@ -506,7 +532,7 @@ public class ReportService {
     }
 
     /** The slices' bookings, loaded in one query rather than through each segment's lazy {@code booking}. */
-    private Map<String, BookingEntity> bookingsOf(List<SegmentInRange> slices) {
+    Map<String, BookingEntity> bookingsOf(List<SegmentInRange> slices) {
         List<String> ids = slices.stream().map(s -> s.segment().getBookingId()).distinct().toList();
         return ids.isEmpty() ? Map.of() : byId(bookingRepository.findAllById(ids), BookingEntity::getId);
     }

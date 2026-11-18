@@ -22,6 +22,7 @@ import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
+import com.sunsetbeach.model.BreakfastRate;
 import com.sunsetbeach.model.BookingCreateInput;
 import com.sunsetbeach.model.BookingFolio;
 import com.sunsetbeach.model.BookingGuestLinkInput;
@@ -473,6 +474,19 @@ public class BookingService {
         if (input.getChildren() != null) {
             booking.setChildren(input.getChildren());
         }
+        // Breakfast (the booking tracker deducts it from the package): omitted leaves it, null clears it.
+        Integer oldBreakfastGuests = booking.getBreakfastGuests();
+        Integer oldBreakfastRate = booking.getBreakfastRate();
+        if (input.getBreakfastGuests().isPresent()) {
+            booking.setBreakfastGuests(input.getBreakfastGuests().get());
+        }
+        if (input.getBreakfastRate().isPresent()) {
+            BreakfastRate rate = input.getBreakfastRate().get();
+            booking.setBreakfastRate(rate != null ? rate.getValue() : null);
+        }
+        if (input.getBreakfastGuests().isPresent() || input.getBreakfastRate().isPresent()) {
+            requireValidBreakfast(booking, input.getBreakfastGuests().isPresent());
+        }
         // The reason belongs to the current cancellation only: written on a move into CANCELLED
         // (null when none was given - SiteMinder, the expiry sweep). There is no move out
         // (requireNotReinstated). Re-sending CANCELLED to an already-cancelled booking isn't a
@@ -516,7 +530,9 @@ public class BookingService {
         boolean channelChanged = oldChannel != saved.getChannel();
         boolean purposeChanged = oldPurpose != saved.getPurpose();
         boolean guestsChanged = oldAdults != saved.getAdults() || oldChildren != saved.getChildren();
-        if (statusChanged || channelChanged || purposeChanged || guestsChanged) {
+        boolean breakfastChanged = !Objects.equals(oldBreakfastGuests, saved.getBreakfastGuests())
+                || !Objects.equals(oldBreakfastRate, saved.getBreakfastRate());
+        if (statusChanged || channelChanged || purposeChanged || guestsChanged || breakfastChanged) {
             List<String> changes = new ArrayList<>();
             if (statusChanged) {
                 changes.add("status changed from " + oldStatus.getValue() + " to " + saved.getStatus().getValue());
@@ -529,6 +545,10 @@ public class BookingService {
             }
             if (guestsChanged) {
                 changes.add("guests changed from " + partySize(oldAdults, oldChildren) + " to " + partySize(saved.getAdults(), saved.getChildren()));
+            }
+            if (breakfastChanged) {
+                changes.add("breakfast changed from " + breakfastText(oldBreakfastGuests, oldBreakfastRate)
+                        + " to " + breakfastText(saved.getBreakfastGuests(), saved.getBreakfastRate()));
             }
             String summary = String.join("; ", changes);
             String reason = statusChanged ? cancellationReason(input, saved.getStatus()) : null;
@@ -585,6 +605,24 @@ public class BookingService {
         if (booking.getStatus() == BookingStatus.CANCELLED && requested != BookingStatus.CANCELLED) {
             throw new ConflictException("This booking is cancelled and can't be reinstated - its room may have been sold since. Create a new booking instead.");
         }
+    }
+
+    /** 0 guests is the same as none; more than 0 needs a rate, and no more than the party. */
+    private static void requireValidBreakfast(BookingEntity booking, boolean guestsSent) {
+        Integer guests = booking.getBreakfastGuests();
+        if (guests != null && guests > 0 && booking.getBreakfastRate() == null) {
+            throw ValidationException.field("breakfastRate", "A breakfast rate is required when there are breakfast guests");
+        }
+        if (guestsSent && guests != null && guests > booking.getAdults() + booking.getChildren()) {
+            throw ValidationException.field("breakfastGuests", "More breakfast guests than the party (" + (booking.getAdults() + booking.getChildren()) + ")");
+        }
+    }
+
+    private static String breakfastText(Integer guests, Integer rate) {
+        if (guests == null || guests == 0) {
+            return "none";
+        }
+        return guests + (guests == 1 ? " guest" : " guests") + " at " + PriceFormat.baht(BigDecimal.valueOf(rate == null ? 0 : rate)) + " per night";
     }
 
     private static String partySize(int adults, int children) {
