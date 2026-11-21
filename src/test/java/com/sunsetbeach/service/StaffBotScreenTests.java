@@ -83,6 +83,7 @@ class StaffBotScreenTests extends NotificationTestBase {
     @Autowired private ShiftRequestDeciderService deciderService;
     @Autowired private BookingService bookingService;
     @Autowired private BookingOccupancyService occupancyService;
+    @Autowired private com.sunsetbeach.repository.OverstayChargeRepository overstayChargeRepository;
     @Autowired private BookingRepository bookingRepository;
     @Autowired private TableRepository tableRepository;
     @Autowired private MenuItemRepository menuItemRepository;
@@ -115,7 +116,10 @@ class StaffBotScreenTests extends NotificationTestBase {
         spaAppointmentRepository.deleteAll(appointments);
         tableIds.forEach(tableRepository::deleteById);
         menuItemIds.forEach(menuItemRepository::deleteById);
-        bookingRepository.deleteAll(bookingRepository.findAll().stream().filter(b -> roomIds.contains(b.getRoomId())).toList());
+        var staleBookings = bookingRepository.findAll().stream().filter(b -> roomIds.contains(b.getRoomId())).toList();
+        // A guest checked in past their departure date is charged overstay nights at check-in now.
+        staleBookings.forEach(b -> overstayChargeRepository.deleteAll(overstayChargeRepository.findByBookingIdOrderByDateAsc(b.getId())));
+        bookingRepository.deleteAll(staleBookings);
         auditLogRepository.deleteAll(auditLogRepository.findAll().stream().filter(a -> userIds.contains(a.getActorUserId())).toList());
     }
 

@@ -269,6 +269,37 @@ class OverstayChargeTests extends AbstractIntegrationTest {
         assertThat(bookingService.getFolio(expected.getId()).getOverstayNights()).isZero();
     }
 
+    @Test
+    void checkingInAnOverdueStay_accruesTheNightsAtOnce_soTheBookingAndTheFolioAgree() {
+        BookingEntity booking = stay("2033-03-15", "2033-03-18", OccupancyStatus.EXPECTED);
+
+        var result = occupancyService.checkIn(booking.getId());
+        entityManager.flush();
+        entityManager.clear();
+
+        String folioBalance = bookingService.getFolio(booking.getId()).getBalanceDue();
+        assertThat(folioBalance).isEqualTo("7500.00");
+        assertThat(result.getBooking().getBalanceDue()).isEqualTo(folioBalance);
+        assertThat(bookingService.getById(booking.getId()).getBalanceDue()).isEqualTo(folioBalance);
+    }
+
+    @Test
+    void aCancelledBooking_refusesScheduleRelocationAndRepriceWith409() {
+        BookingEntity booking = stay("2033-03-25", "2033-03-27", OccupancyStatus.EXPECTED);
+        booking.setStatus(com.sunsetbeach.model.BookingStatus.CANCELLED);
+        bookingRepository.saveAndFlush(booking);
+        entityManager.clear();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> bookingService.updateSchedule(
+                        booking.getId(), new BookingScheduleInput("2033-03-25", "2033-03-28").roomUnitId(unit.getId())))
+                .isInstanceOf(com.sunsetbeach.error.ConflictException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> bookingService.reprice(booking.getId(), new com.sunsetbeach.model.RepriceInput()))
+                .isInstanceOf(com.sunsetbeach.error.ConflictException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> bookingService.relocate(
+                        booking.getId(), new com.sunsetbeach.model.RelocationInput().effectiveDate("2033-03-26").roomId(room.getId())))
+                .isInstanceOf(com.sunsetbeach.error.ConflictException.class);
+    }
+
     // --- helpers ---------------------------------------------------------------------------
 
     private BookingEntity checkedInStay(String checkIn, String checkOut) {

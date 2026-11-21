@@ -204,7 +204,7 @@ class BookingAuditLogTests extends AbstractIntegrationTest {
                 .filter(e -> e.getAction() == AuditAction.BOOKING_SCHEDULE_CHANGED)
                 .toList();
         assertThat(entries).hasSize(1);
-        assertThat(entries.get(0).getSummary()).contains(originalCheckIn.toString()).contains(newCheckIn.toString());
+        assertThat(entries.get(0).getSummary()).contains(com.sunsetbeach.mapper.DateText.date(originalCheckIn)).contains(com.sunsetbeach.mapper.DateText.date(newCheckIn));
     }
 
     @Test

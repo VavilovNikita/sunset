@@ -15,6 +15,7 @@ import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.SqlStates;
 import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.BookingMapper;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
@@ -1007,13 +1008,13 @@ public class BookingService {
                 .append(" in ")
                 .append(room.getName())
                 .append(": dates ")
-                .append(oldCheckIn)
+                .append(DateText.date(oldCheckIn))
                 .append(" – ")
-                .append(oldCheckOut)
+                .append(DateText.date(oldCheckOut))
                 .append(" → ")
-                .append(checkIn)
+                .append(DateText.date(checkIn))
                 .append(" – ")
-                .append(checkOut);
+                .append(DateText.date(checkOut));
         if (!Objects.equals(oldRoomUnitId, saved.getRoomUnitId())) {
             RoomUnitEntity oldUnit = findRoomUnit(oldRoomUnitId);
             summary.append("; room ")
@@ -1105,7 +1106,7 @@ public class BookingService {
                 saved.getId(),
                 "Relocated " + saved.getGuestName() + " from " + result.oldRoom().getName()
                         + (result.oldUnitLabel() != null ? " (" + result.oldUnitLabel() + ")" : "") + " to " + result.newRoom().getName()
-                        + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + ", effective " + effectiveDate
+                        + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + ", effective " + DateText.date(effectiveDate)
                         + (Boolean.TRUE.equals(result.wholeSegment()) ? " (from the first night of the stay segment)" : "") + rate
                         + (markedDirty ? "; " + result.oldUnitLabel() + " marked dirty" : ""));
         return bookingMapper.toDto(saved, newRoom, result.newUnit(), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
@@ -1308,7 +1309,7 @@ public class BookingService {
                 saved.getId(),
                 "Undid relocation for " + saved.getGuestName() + " — discarded move to " + result.oldRoom().getName()
                         + (result.oldUnitLabel() != null ? " (" + result.oldUnitLabel() + ")" : "") + ", back to " + result.newRoom().getName()
-                        + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + " from " + splitDate);
+                        + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + " from " + DateText.date(splitDate));
         return bookingMapper.toDto(saved, currentRoom, result.newUnit(), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
@@ -1380,6 +1381,9 @@ public class BookingService {
     }
 
     private static void requireStayNotEnded(BookingEntity booking) {
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new ConflictException("This booking is cancelled - its dates, room and price can't be changed.");
+        }
         if (booking.getOccupancyStatus() == OccupancyStatus.CHECKED_OUT) {
             throw new ConflictException("This guest has already checked out - the stay and its price can't be changed any more.");
         }

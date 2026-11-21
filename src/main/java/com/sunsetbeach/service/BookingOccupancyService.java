@@ -143,6 +143,9 @@ public class BookingOccupancyService {
         booking.setOccupancyStatus(OccupancyStatus.CHECKED_IN);
         booking.setCheckedInAt(nowUtc());
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
+        // A guest checked in after the departure date is overdue from the first minute: accrue those nights now, so the
+        // booking's balanceDue is the folio's from this response on, not only after the next folio read.
+        overstayChargeService.reconcile(saved.getId());
 
         auditLogService.record(
                 AuditAction.BOOKING_CHECKED_IN,
