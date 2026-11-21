@@ -40,6 +40,8 @@ import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.PaymentMethod;
 import com.sunsetbeach.model.RelocationInput;
+import com.sunsetbeach.model.RelocationQuote;
+import com.sunsetbeach.model.RelocationRateMode;
 import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RepriceInput;
 import com.sunsetbeach.model.RepriceQuote;
@@ -1044,19 +1046,29 @@ public class BookingService {
     }
 
     /**
-     * Moves a guest to a different room (possibly a different room *type*) partway through
-     * their stay - the write path behind {@code POST /bookings/{id}/relocate}. Mirrors
-     * {@link #createBooking}'s race-safety story: the actual validation/write happens in
-     * {@link BookingWriter#relocate}, which runs SERIALIZABLE.
+     * Moves a guest to a different room (possibly a different room *type*) - the write path
+     * behind {@code POST /bookings/{id}/relocate}. Mirrors {@link #createBooking}'s race-safety
+     * story: the actual validation/write happens in {@link BookingWriter#relocate}, which runs
+     * SERIALIZABLE. This overload is for callers that are not a staff request (full authority);
+     * the controller passes what the signed-in role may do.
      */
     public Booking relocate(String bookingId, RelocationInput input) {
+        return relocate(bookingId, input, true, true);
+    }
+
+    /**
+     * @param mayKeepRate  keeping the original rate across room types (free upgrade) - MANAGER+
+     * @param mayBackdate  an {@code effectiveDate} before today - MANAGER+
+     */
+    public Booking relocate(String bookingId, RelocationInput input, boolean mayKeepRate, boolean mayBackdate) {
         requireStayNotEnded(bookingId);
         LocalDate effectiveDate = LocalDate.parse(input.getEffectiveDate());
+        requireMayRelocateFrom(effectiveDate, mayBackdate);
         String newRoomUnitId = input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
 
         BookingWriter.RelocationResult result;
         try {
-            result = bookingWriter.relocate(bookingId, effectiveDate, input.getRoomId(), newRoomUnitId);
+            result = bookingWriter.relocate(bookingId, effectiveDate, input.getRoomId(), newRoomUnitId, input.getRateMode(), mayKeepRate);
         } catch (DataAccessException | TransactionSystemException e) {
             if (isSerializationFailure(e)) {
                 throw new ConflictException("Someone just booked these dates — please try again.");
@@ -1067,6 +1079,9 @@ public class BookingService {
         BookingEntity saved = result.booking();
         RoomEntity newRoom = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         boolean markedDirty = markVacatedRoomDirty(saved, result.oldUnitId(), result.newUnit(), effectiveDate);
+        String rate = result.rateMode() == null ? ""
+                : "; " + (result.rateMode() == RelocationRateMode.KEEP_RATE ? "original rate kept" : "new rate applied") + ", total "
+                        + PriceFormat.baht(result.oldTotal()) + " → " + PriceFormat.baht(result.newTotal());
         auditLogService.record(
                 AuditAction.BOOKING_RELOCATED,
                 AuditEntityType.BOOKING,
@@ -1074,8 +1089,16 @@ public class BookingService {
                 "Relocated " + saved.getGuestName() + " from " + result.oldRoom().getName()
                         + (result.oldUnitLabel() != null ? " (" + result.oldUnitLabel() + ")" : "") + " to " + result.newRoom().getName()
                         + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + ", effective " + effectiveDate
+                        + (Boolean.TRUE.equals(result.wholeSegment()) ? " (from the first night of the stay segment)" : "") + rate
                         + (markedDirty ? "; " + result.oldUnitLabel() + " marked dirty" : ""));
         return bookingMapper.toDto(saved, newRoom, result.newUnit(), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
+    }
+
+    /** A move that starts before today is a back-dated change of where the guest slept: MANAGER+. */
+    private void requireMayRelocateFrom(LocalDate effectiveDate, boolean mayBackdate) {
+        if (!mayBackdate && effectiveDate.isBefore(LocalDate.now(clock))) {
+            throw new ForbiddenException("Only a manager can move a guest from a date in the past");
+        }
     }
 
     /**
@@ -1104,15 +1127,40 @@ public class BookingService {
 
     /**
      * Non-mutating preview for {@code POST /bookings/{id}/relocate/quote} - see
-     * {@link BookingWriter#quoteRelocation}.
+     * {@link BookingWriter#quoteRelocation}. Same role rules as the apply call for a past date;
+     * {@code KEEP_RATE} is reported ({@code mayKeepRate}) rather than refused, so a cashier still
+     * sees both prices.
      */
     @Transactional(readOnly = true)
-    public BookingScheduleQuote quoteRelocation(String bookingId, RelocationInput input) {
+    public RelocationQuote quoteRelocation(String bookingId, RelocationInput input) {
+        return quoteRelocation(bookingId, input, true, true);
+    }
+
+    @Transactional(readOnly = true)
+    public RelocationQuote quoteRelocation(String bookingId, RelocationInput input, boolean mayKeepRate, boolean mayBackdate) {
         LocalDate effectiveDate = LocalDate.parse(input.getEffectiveDate());
+        requireMayRelocateFrom(effectiveDate, mayBackdate);
         String newRoomUnitId = input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
 
-        BookingWriter.ScheduleQuote quote = bookingWriter.quoteRelocation(bookingId, effectiveDate, input.getRoomId(), newRoomUnitId);
-        return new BookingScheduleQuote(PriceFormat.asDecimalString(quote.totalPrice()), quote.nights(), quote.available(), quote.reason());
+        BookingWriter.RelocationQuoteResult q =
+                bookingWriter.quoteRelocation(bookingId, effectiveDate, input.getRoomId(), newRoomUnitId, input.getRateMode(), mayKeepRate);
+        RelocationQuote dto = new RelocationQuote(
+                PriceFormat.asDecimalString(q.totalPrice()),
+                q.nights(),
+                q.available(),
+                q.reason(),
+                PriceFormat.asDecimalString(q.currentTotal()),
+                q.sameType(),
+                q.wholeSegment(),
+                q.rateMode(),
+                q.mayKeepRate(),
+                PriceFormat.asDecimalString(q.keepTotal()),
+                PriceFormat.asDecimalString(q.keepTotal().subtract(q.currentTotal())));
+        if (q.newTotal() != null) {
+            dto.newRateTotalPrice(PriceFormat.asDecimalString(q.newTotal()));
+            dto.newRatePriceDifference(PriceFormat.asDecimalString(q.newTotal().subtract(q.currentTotal())));
+        }
+        return dto;
     }
 
     /**

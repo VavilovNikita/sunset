@@ -142,12 +142,12 @@ public class BookingController implements BookingsApi {
 
     @Override
     public ResponseEntity<Booking> relocateBooking(String id, RelocationInput relocationInput) {
-        return ResponseEntity.ok(bookingService.relocate(id, relocationInput));
+        return ResponseEntity.ok(bookingService.relocate(id, relocationInput, callerMayKeepRate(), callerMayBackdate()));
     }
 
     @Override
-    public ResponseEntity<BookingScheduleQuote> quoteBookingRelocation(String id, RelocationInput relocationInput) {
-        return ResponseEntity.ok(bookingService.quoteRelocation(id, relocationInput));
+    public ResponseEntity<com.sunsetbeach.model.RelocationQuote> quoteBookingRelocation(String id, RelocationInput relocationInput) {
+        return ResponseEntity.ok(bookingService.quoteRelocation(id, relocationInput, callerMayKeepRate(), callerMayBackdate()));
     }
 
     @Override
@@ -227,6 +227,11 @@ public class BookingController implements BookingsApi {
 
     /** A price typed by staff ({@code agreedTotal}) is MANAGER+ - the one line to change to open it to CASHIER. */
     private static boolean callerMayEnterPrice() {
+        return callerIsManagerPlus();
+    }
+
+    /** Keeping the original rate when a guest moves to another room type (a free upgrade) is MANAGER+ - the one line to change to open it to CASHIER. */
+    private static boolean callerMayKeepRate() {
         return callerIsManagerPlus();
     }
 

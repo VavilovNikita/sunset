@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.sunsetbeach.model.RelocationRateMode;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.util.NoSuchElementException;
@@ -29,6 +31,8 @@ public class RelocationInput {
 
   private JsonNullable<String> roomUnitId = JsonNullable.<String>undefined();
 
+  private RelocationRateMode rateMode;
+
   public RelocationInput() {
     super();
   }
@@ -47,7 +51,7 @@ public class RelocationInput {
   }
 
   /**
-   * The first night of the new segment. Must fall strictly after the start of the segment currently covering it.
+   * The first night spent in the new room. May be the first night of the segment currently covering it (then the whole segment changes room) or any later night (then the segment is split). Before today: MANAGER or above. 
    * @return effectiveDate
    */
   @NotNull @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") 
@@ -98,6 +102,25 @@ public class RelocationInput {
     this.roomUnitId = roomUnitId;
   }
 
+  public RelocationInput rateMode(RelocationRateMode rateMode) {
+    this.rateMode = rateMode;
+    return this;
+  }
+
+  /**
+   * Get rateMode
+   * @return rateMode
+   */
+  @Valid 
+  @JsonProperty("rateMode")
+  public RelocationRateMode getRateMode() {
+    return rateMode;
+  }
+
+  public void setRateMode(RelocationRateMode rateMode) {
+    this.rateMode = rateMode;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -109,7 +132,8 @@ public class RelocationInput {
     RelocationInput relocationInput = (RelocationInput) o;
     return Objects.equals(this.effectiveDate, relocationInput.effectiveDate) &&
         Objects.equals(this.roomId, relocationInput.roomId) &&
-        equalsNullable(this.roomUnitId, relocationInput.roomUnitId);
+        equalsNullable(this.roomUnitId, relocationInput.roomUnitId) &&
+        Objects.equals(this.rateMode, relocationInput.rateMode);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -118,7 +142,7 @@ public class RelocationInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(effectiveDate, roomId, hashCodeNullable(roomUnitId));
+    return Objects.hash(effectiveDate, roomId, hashCodeNullable(roomUnitId), rateMode);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -135,6 +159,7 @@ public class RelocationInput {
     sb.append("    effectiveDate: ").append(toIndentedString(effectiveDate)).append("\n");
     sb.append("    roomId: ").append(toIndentedString(roomId)).append("\n");
     sb.append("    roomUnitId: ").append(toIndentedString(roomUnitId)).append("\n");
+    sb.append("    rateMode: ").append(toIndentedString(rateMode)).append("\n");
     sb.append("}");
     return sb.toString();
   }

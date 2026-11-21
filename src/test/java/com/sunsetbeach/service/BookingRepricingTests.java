@@ -318,7 +318,7 @@ class BookingRepricingTests extends AbstractIntegrationTest {
         bumpBasePrice(oldRoom, new BigDecimal("9000.00"));
         RoomUnitEntity newUnit = roomUnitRepository.findByRoomId(newRoom.getId()).get(0);
 
-        BookingScheduleQuote quote = bookingService.quoteRelocation(
+        com.sunsetbeach.model.RelocationQuote quote = bookingService.quoteRelocation(
                 booking.getId(), new RelocationInput(splitDate.toString(), newRoom.getId()).roomUnitId(newUnit.getId()));
 
         assertThat(quote.getAvailable()).isTrue();

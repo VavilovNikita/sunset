@@ -10,10 +10,12 @@ import com.sunsetbeach.entity.RoomUnitBlockEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
+import com.sunsetbeach.error.ForbiddenException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.RelocationRateMode;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentNightlyRateRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
@@ -32,6 +34,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -827,121 +830,271 @@ public class BookingWriter {
     }
 
     /**
-     * Splits the segment covering {@code effectiveDate} into two: the existing room/unit keeps
-     * {@code [oldCheckIn, effectiveDate)} at whatever it was already priced, and a new segment
-     * for {@code [effectiveDate, oldCheckOut)} takes {@code newRoomId}/{@code newRoomUnitId},
-     * priced fresh at today's rate (a genuinely new agreement - a guest moving to a different
-     * room, possibly a different room *type*, is exactly the case where a price change is
-     * warranted, but only for the nights after the move). The truncated segment's own rows for
-     * the nights it's giving up are deliberately left in place, not deleted, even though they now
-     * fall outside its {@code [checkIn, checkOut)} range - see {@link #undoRelocation}'s comment
-     * for why keeping them is what makes undoing this relocation later a real undo. Same three
-     * checks as {@link #assignRoomUnit} against the *new* room/unit for the new segment's date
-     * range, same SERIALIZABLE race-safety as {@link #insert}.
+     * What a relocation would do, worked out once and shared by {@link #relocate} and
+     * {@link #quoteRelocation} so the number a quote shows and the number an apply charges cannot
+     * drift apart. {@code keepPrices}/{@code newPrices} are the per-night prices of the nights that
+     * move ({@code movedNights}) under each rate mode; {@code newPrices} is null within one room
+     * type, where the price can never change.
      */
-    @Transactional(isolation = Isolation.SERIALIZABLE)
-    public RelocationResult relocate(String bookingId, LocalDate effectiveDate, String newRoomId, String newRoomUnitId) {
-        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
-        List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+    private record RelocationPlan(
+            BookingSegmentEntity target,
+            RoomEntity oldRoom,
+            RoomEntity newRoom,
+            boolean sameType,
+            boolean wholeSegment,
+            List<LocalDate> movedNights,
+            Map<LocalDate, BigDecimal> keepPrices,
+            Map<LocalDate, BigDecimal> newPrices,
+            BigDecimal retainedOnOldSegment,
+            BigDecimal othersTotal,
+            BigDecimal currentTotal) {
+
+        BigDecimal totalWith(Map<LocalDate, BigDecimal> prices) {
+            return othersTotal.add(retainedOnOldSegment).add(sumPrices(prices));
+        }
+    }
+
+    private RelocationPlan planRelocation(List<BookingSegmentEntity> segments, LocalDate effectiveDate, String newRoomId) {
         BookingSegmentEntity target = findSegmentContaining(segments, effectiveDate)
                 .orElseThrow(() -> new BadRequestException("effectiveDate must fall within this booking's stay"));
-        if (!effectiveDate.isAfter(target.getCheckIn())) {
-            throw new BadRequestException(
-                    "effectiveDate must be strictly after " + target.getCheckIn() + " - relocating on a segment's own first night just "
-                            + "means assigning that segment a different room, not a mid-stay move");
-        }
-
         RoomEntity oldRoom = roomRepository.findById(target.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         RoomEntity newRoom = roomRepository.findById(newRoomId).orElseThrow(() -> new NotFoundException("Room not found"));
-        LocalDate newSegCheckIn = effectiveDate;
-        LocalDate newSegCheckOut = target.getCheckOut();
+        boolean sameType = oldRoom.getId().equals(newRoom.getId());
+        // On the segment's first night nothing is left behind to split off: the whole segment changes room.
+        boolean whole = effectiveDate.equals(target.getCheckIn());
+        List<LocalDate> moved = DateRangeUtil.getNights(effectiveDate, target.getCheckOut());
+
+        Map<LocalDate, BigDecimal> existing = existingRatesByDate(target.getId());
+        List<LocalDate> missing = moved.stream().filter(n -> !existing.containsKey(n)).toList();
+        Map<LocalDate, BigDecimal> fallback = missing.isEmpty() ? Map.of() : priceNightsAtCurrentRate(oldRoom, missing);
+        Map<LocalDate, BigDecimal> keep = new LinkedHashMap<>();
+        for (LocalDate night : moved) {
+            keep.put(night, existing.getOrDefault(night, fallback.get(night)));
+        }
+
+        Map<LocalDate, BigDecimal> fresh = null;
+        if (!sameType) {
+            // Only nights from today forward take the new rate; a night already slept keeps its agreed price.
+            LocalDate today = LocalDate.now(clock);
+            List<LocalDate> repriceable = moved.stream().filter(n -> !n.isBefore(today)).toList();
+            Map<LocalDate, BigDecimal> current = repriceable.isEmpty() ? Map.of() : priceNightsAtCurrentRate(newRoom, repriceable);
+            fresh = new LinkedHashMap<>();
+            for (LocalDate night : moved) {
+                fresh.put(night, current.getOrDefault(night, keep.get(night)));
+            }
+        }
+
+        BigDecimal retained = whole ? BigDecimal.ZERO : target.getTotalPrice().subtract(sumPrices(keep));
+        BigDecimal others = segments.stream()
+                .filter(s -> !s.getId().equals(target.getId()))
+                .map(BookingSegmentEntity::getTotalPrice)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new RelocationPlan(target, oldRoom, newRoom, sameType, whole, moved, keep, fresh, retained, others,
+                others.add(target.getTotalPrice()));
+    }
+
+    /**
+     * The rate mode a request ends up with: within one room type always {@code KEEP_RATE} (asking
+     * for {@code NEW_RATE} there is a 400 - re-rating nights is {@code reprice}); across types the
+     * request's choice, {@code NEW_RATE} when it made none.
+     */
+    private static RelocationRateMode resolveRateMode(RelocationPlan plan, RelocationRateMode requested) {
+        if (plan.sameType()) {
+            if (requested == RelocationRateMode.NEW_RATE) {
+                throw new BadRequestException(
+                        "The new room is of the same type, so the price does not change. To re-rate the nights use reprice.");
+            }
+            return RelocationRateMode.KEEP_RATE;
+        }
+        return requested == null ? RelocationRateMode.NEW_RATE : requested;
+    }
+
+    /**
+     * Moves the guest to {@code newRoomId}/{@code newRoomUnitId} from {@code effectiveDate} to the
+     * end of the segment covering it. Two shapes, by where the date falls:
+     *
+     * <ul>
+     *   <li><b>After the segment's first night</b> - the segment is split. The existing room keeps
+     *       {@code [oldCheckIn, effectiveDate)} at whatever it was already priced, and a new segment
+     *       for {@code [effectiveDate, oldCheckOut)} takes the new room. The truncated segment's own
+     *       rows for the nights it gives up are deliberately left in place, not deleted, even
+     *       though they now fall outside its range - see {@link #undoRelocation}'s comment for why
+     *       keeping them is what makes undoing this relocation later a real undo.</li>
+     *   <li><b>On the segment's first night</b> (a guest arriving today, or a segment that begins
+     *       where an earlier move ended) - nothing is left to split off, so the whole segment
+     *       changes room/unit/type in place. There is no boundary created and so nothing for
+     *       undo to merge.</li>
+     * </ul>
+     *
+     * <p><b>Price.</b> {@link RelocationRateMode#KEEP_RATE}: every moved night keeps the exact
+     * frozen price it had (a hand-typed or SiteMinder price included), so the booking's total does
+     * not change. {@link RelocationRateMode#NEW_RATE}: nights from today forward are priced at the
+     * new type's current rate by {@code RoomNightPricing} (a night already slept keeps its price);
+     * only across room types. {@code KEEP_RATE} across types needs {@code mayKeepRate}.
+     *
+     * <p>Same three checks as {@link #assignRoomUnit} against the *new* room/unit for the moved
+     * dates, same SERIALIZABLE race-safety as {@link #insert}.
+     */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public RelocationResult relocate(
+            String bookingId,
+            LocalDate effectiveDate,
+            String newRoomId,
+            String newRoomUnitId,
+            RelocationRateMode requestedMode,
+            boolean mayKeepRate) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+        RelocationPlan plan = planRelocation(segments, effectiveDate, newRoomId);
+        BookingSegmentEntity target = plan.target();
+        RoomEntity newRoom = plan.newRoom();
+        RelocationRateMode mode = resolveRateMode(plan, requestedMode);
+        if (!plan.sameType() && mode == RelocationRateMode.KEEP_RATE && !mayKeepRate) {
+            throw new ForbiddenException("Only a manager can keep the original rate when the guest moves to another room type");
+        }
+        LocalDate oldCheckOut = target.getCheckOut();
 
         int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(newRoom.getId());
-        if (!isRangeAvailable(newRoom.getId(), unitCount, newSegCheckIn, newSegCheckOut, bookingId)) {
+        if (!isRangeAvailable(newRoom.getId(), unitCount, effectiveDate, oldCheckOut, bookingId)) {
             throw new ConflictException("Selected room type has no availability for that period");
         }
         RoomUnitEntity newUnit = null;
         if (newRoomUnitId != null) {
             newUnit = roomUnitRepository.findById(newRoomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
-            failIfUnassignable(checkUnitAssignable(newUnit, newRoom.getId(), newSegCheckIn, newSegCheckOut, bookingId));
+            failIfUnassignable(checkUnitAssignable(newUnit, newRoom.getId(), effectiveDate, oldCheckOut, bookingId));
+        }
+        String newUnitId = newUnit != null ? newUnit.getId() : null;
+        if (plan.wholeSegment() && plan.sameType() && Objects.equals(target.getRoomUnitId(), newUnitId)) {
+            throw new BadRequestException("The guest is already in that room");
         }
 
-        String oldUnitLabel = target.getRoomUnitId() != null
-                ? roomUnitRepository.findById(target.getRoomUnitId()).map(RoomUnitEntity::getLabel).orElse(null)
-                : null;
+        String oldUnitId = target.getRoomUnitId();
+        String oldUnitLabel = oldUnitId != null ? roomUnitRepository.findById(oldUnitId).map(RoomUnitEntity::getLabel).orElse(null) : null;
+        Map<LocalDate, BigDecimal> prices = mode == RelocationRateMode.NEW_RATE ? plan.newPrices() : plan.keepPrices();
 
-        List<LocalDate> movedOutNights = DateRangeUtil.getNights(effectiveDate, target.getCheckOut());
-        BigDecimal movedOutSum =
-                movedOutNights.stream().map(existingRatesByDate(target.getId())::get).reduce(BigDecimal.ZERO, BigDecimal::add);
-        target.setCheckOut(effectiveDate);
-        target.setTotalPrice(target.getTotalPrice().subtract(movedOutSum));
-        segmentRepository.saveAndFlush(target);
-        // No delete here - see the class/method javadoc. These rows are the guest's original
-        // price for these specific nights; keeping them around (inert, since they're now outside
-        // target's own checkIn/checkOut) is what undoRelocation restores from.
-
-        saveSegment(bookingId, newRoom.getId(), newUnit != null ? newUnit.getId() : null, newSegCheckIn, newSegCheckOut,
-                priceNightsAtCurrentRate(newRoom, DateRangeUtil.getNights(newSegCheckIn, newSegCheckOut)));
+        if (plan.wholeSegment()) {
+            target.setRoomId(newRoom.getId());
+            target.setRoomUnitId(newUnitId);
+            if (mode == RelocationRateMode.NEW_RATE) {
+                Map<LocalDate, BigDecimal> changed = new LinkedHashMap<>();
+                prices.forEach((night, price) -> {
+                    if (price.compareTo(plan.keepPrices().get(night)) != 0) {
+                        changed.put(night, price);
+                    }
+                });
+                // Same delete-then-flush-then-insert order as reprice, for the unique (segmentId, date).
+                nightlyRateRepository.deleteAll(nightlyRateRepository.findBySegmentIdOrderByDateAsc(target.getId()).stream()
+                        .filter(r -> changed.containsKey(r.getDate()))
+                        .toList());
+                nightlyRateRepository.flush();
+                saveNightlyRates(target.getId(), changed);
+                target.setTotalPrice(sumPrices(prices));
+            }
+            segmentRepository.saveAndFlush(target);
+        } else {
+            target.setCheckOut(effectiveDate);
+            target.setTotalPrice(plan.retainedOnOldSegment());
+            segmentRepository.saveAndFlush(target);
+            // No delete here - see the javadoc: these rows are the guest's original price for these
+            // nights, and keeping them (inert, outside target's own range) is what undo restores from.
+            saveSegment(bookingId, newRoom.getId(), newUnitId, effectiveDate, oldCheckOut, prices);
+        }
 
         List<BookingSegmentEntity> updated = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
         assertContinuity(booking, updated);
         syncBookingFromSegments(booking, updated);
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
-        return new RelocationResult(saved, oldRoom, target.getRoomUnitId(), oldUnitLabel, newRoom, newUnit);
-    }
-
-    /** {@link #relocate}'s saved booking plus the old/new room identity, for the audit summary ("from X to Y"). */
-    public record RelocationResult(
-            BookingEntity booking, RoomEntity oldRoom, String oldUnitId, String oldUnitLabel, RoomEntity newRoom, RoomUnitEntity newUnit) {
+        return new RelocationResult(saved, plan.oldRoom(), oldUnitId, oldUnitLabel, newRoom, newUnit, plan.wholeSegment(), mode,
+                plan.currentTotal(), saved.getTotalPrice());
     }
 
     /**
-     * Read-only preview for {@code POST /bookings/{id}/relocate/quote} - same checks as
-     * {@link #relocate}, reusing {@link ScheduleQuote} (nights/totalPrice describe the *new*
-     * segment being created; {@code totalPrice} is folded into the recomputed whole-booking
-     * total the same way {@link #quoteSchedule} reports one) rather than a second, near-identical
-     * response shape.
+     * {@link #relocate}'s saved booking plus the old/new room identity, for the audit summary
+     * ("from X to Y"). The last four describe a relocation only (null for an undo): whether the
+     * whole segment moved, the rate mode, and the booking's total before and after.
      */
+    public record RelocationResult(
+            BookingEntity booking,
+            RoomEntity oldRoom,
+            String oldUnitId,
+            String oldUnitLabel,
+            RoomEntity newRoom,
+            RoomUnitEntity newUnit,
+            Boolean wholeSegment,
+            RelocationRateMode rateMode,
+            BigDecimal oldTotal,
+            BigDecimal newTotal) {
+    }
+
+    /**
+     * Read-only preview for {@code POST /bookings/{id}/relocate/quote}: the same {@link
+     * RelocationPlan} {@link #relocate} writes from, so every figure is what an apply would
+     * charge. {@code newTotal} is null within one room type.
+     */
+    public record RelocationQuoteResult(
+            BigDecimal totalPrice,
+            int nights,
+            boolean available,
+            String reason,
+            BigDecimal currentTotal,
+            boolean sameType,
+            boolean wholeSegment,
+            RelocationRateMode rateMode,
+            boolean mayKeepRate,
+            BigDecimal keepTotal,
+            BigDecimal newTotal) {
+    }
+
     @Transactional(readOnly = true)
-    public ScheduleQuote quoteRelocation(String bookingId, LocalDate effectiveDate, String newRoomId, String newRoomUnitId) {
+    public RelocationQuoteResult quoteRelocation(
+            String bookingId,
+            LocalDate effectiveDate,
+            String newRoomId,
+            String newRoomUnitId,
+            RelocationRateMode requestedMode,
+            boolean mayKeepRate) {
         List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
         if (segments.isEmpty()) {
             throw new NotFoundException("Booking not found");
         }
-        Optional<BookingSegmentEntity> maybeTarget = findSegmentContaining(segments, effectiveDate);
-        if (maybeTarget.isEmpty() || !effectiveDate.isAfter(maybeTarget.get().getCheckIn())) {
-            return new ScheduleQuote(BigDecimal.ZERO, 0, false,
-                    "effectiveDate must fall strictly inside an existing segment, after its first night");
+        BigDecimal currentTotal = segments.stream().map(BookingSegmentEntity::getTotalPrice).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (findSegmentContaining(segments, effectiveDate).isEmpty()) {
+            return new RelocationQuoteResult(currentTotal, 0, false, "effectiveDate must fall within this booking's stay", currentTotal,
+                    true, false, RelocationRateMode.KEEP_RATE, mayKeepRate, currentTotal, null);
         }
-        BookingSegmentEntity target = maybeTarget.get();
-        RoomEntity newRoom = roomRepository.findById(newRoomId).orElseThrow(() -> new NotFoundException("Room not found"));
-        LocalDate newSegCheckIn = effectiveDate;
-        LocalDate newSegCheckOut = target.getCheckOut();
-        int nights = DateRangeUtil.getNights(newSegCheckIn, newSegCheckOut).size();
-
-        List<LocalDate> movedOutNights = DateRangeUtil.getNights(effectiveDate, target.getCheckOut());
-        BigDecimal movedOutSum =
-                movedOutNights.stream().map(existingRatesByDate(target.getId())::get).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal shrunkOldSegmentPrice = target.getTotalPrice().subtract(movedOutSum);
-        BigDecimal newSegmentPrice = sumPrices(priceNightsAtCurrentRate(newRoom, DateRangeUtil.getNights(newSegCheckIn, newSegCheckOut)));
-        BigDecimal othersTotal = segments.stream()
-                .filter(s -> !s.getId().equals(target.getId()))
-                .map(BookingSegmentEntity::getTotalPrice)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal wholeBookingNewTotal = othersTotal.add(shrunkOldSegmentPrice).add(newSegmentPrice);
-
-        int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(newRoom.getId());
-        if (!isRangeAvailable(newRoom.getId(), unitCount, newSegCheckIn, newSegCheckOut, bookingId)) {
-            return new ScheduleQuote(wholeBookingNewTotal, nights, false, "Selected room type has no availability for that period");
+        RelocationPlan plan = planRelocation(segments, effectiveDate, newRoomId);
+        BookingSegmentEntity target = plan.target();
+        BigDecimal keepTotal = plan.totalWith(plan.keepPrices());
+        BigDecimal newTotal = plan.newPrices() == null ? null : plan.totalWith(plan.newPrices());
+        int nights = plan.movedNights().size();
+        RelocationRateMode mode;
+        try {
+            mode = resolveRateMode(plan, requestedMode);
+        } catch (BadRequestException e) {
+            return new RelocationQuoteResult(currentTotal, nights, false, e.getMessage(), currentTotal, plan.sameType(), plan.wholeSegment(),
+                    RelocationRateMode.KEEP_RATE, true, keepTotal, newTotal);
         }
+        BigDecimal total = mode == RelocationRateMode.NEW_RATE ? newTotal : keepTotal;
+        boolean mayKeep = plan.sameType() || mayKeepRate;
+
+        int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(plan.newRoom().getId());
+        if (!isRangeAvailable(plan.newRoom().getId(), unitCount, effectiveDate, target.getCheckOut(), bookingId)) {
+            return new RelocationQuoteResult(total, nights, false, "Selected room type has no availability for that period", currentTotal,
+                    plan.sameType(), plan.wholeSegment(), mode, mayKeep, keepTotal, newTotal);
+        }
+        String unavailable = null;
         if (newRoomUnitId != null) {
             RoomUnitEntity unit = roomUnitRepository.findById(newRoomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
-            UnitConflict conflict = checkUnitAssignable(unit, newRoom.getId(), newSegCheckIn, newSegCheckOut, bookingId);
+            UnitConflict conflict = checkUnitAssignable(unit, plan.newRoom().getId(), effectiveDate, target.getCheckOut(), bookingId);
             if (conflict != null) {
-                return new ScheduleQuote(wholeBookingNewTotal, nights, false, conflict.message());
+                unavailable = conflict.message();
             }
         }
-        return new ScheduleQuote(wholeBookingNewTotal, nights, true, null);
+        if (unavailable == null && plan.wholeSegment() && plan.sameType() && Objects.equals(target.getRoomUnitId(), newRoomUnitId)) {
+            unavailable = "The guest is already in that room";
+        }
+        return new RelocationQuoteResult(total, nights, unavailable == null, unavailable, currentTotal, plan.sameType(),
+                plan.wholeSegment(), mode, mayKeep, keepTotal, newTotal);
     }
 
     /**
@@ -1031,7 +1184,8 @@ public class BookingWriter {
         syncBookingFromSegments(booking, updated);
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
         return new RelocationResult(saved, discardedRoom, null, discardedUnitLabel, room,
-                before.getRoomUnitId() != null ? roomUnitRepository.findById(before.getRoomUnitId()).orElse(null) : null);
+                before.getRoomUnitId() != null ? roomUnitRepository.findById(before.getRoomUnitId()).orElse(null) : null,
+                null, null, null, null);
     }
 
     /**

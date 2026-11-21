@@ -25,6 +25,7 @@ import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.FolioPayment;
 import com.sunsetbeach.model.FolioPaymentInput;
 import com.sunsetbeach.model.RelocationInput;
+import com.sunsetbeach.model.RelocationQuote;
 import com.sunsetbeach.model.RelocationUndoInput;
 import com.sunsetbeach.model.RepriceInput;
 import com.sunsetbeach.model.RepriceQuote;
@@ -904,14 +905,14 @@ public interface BookingsApi {
 
     /**
      * POST /bookings/{id}/relocate/quote : Preview the price/availability of a relocation without applying it
-     * Requires CASHIER or above. Non-mutating preview for &#x60;POST /bookings/{id}/relocate&#x60; - same request body, no &#x60;Serializable&#x60; transaction. &#x60;totalPrice&#x60; in the response is the whole booking&#39;s *new* total (every unaffected segment&#39;s price, plus the shrunk old segment&#39;s recomputed price, plus the new segment&#39;s price) - the same shape &#x60;POST /bookings/{id}/schedule/quote&#x60; returns, reused rather than a second near-identical response schema; &#x60;nights&#x60; describes the *new* segment being created. 
+     * Requires CASHIER or above. Non-mutating preview for &#x60;POST /bookings/{id}/relocate&#x60; - same request body, no &#x60;Serializable&#x60; transaction. Everything the screen shows comes from here (a client never subtracts prices): the booking&#39;s current total, its new total and the difference under each rate that could apply. &#x60;totalPrice&#x60;/&#x60;nights&#x60;/&#x60;available&#x60;/&#x60;reason&#x60; keep the &#x60;BookingScheduleQuote&#x60; meaning (&#x60;totalPrice&#x60; is the whole booking&#39;s new total under the effective rate mode; &#x60;nights&#x60; counts the moved nights). A CASHIER gets both rates for information, but &#x60;mayKeepRate&#x60; says whether this caller can apply &#x60;KEEP_RATE&#x60;. The same 403 rules as the apply call (a past &#x60;effectiveDate&#x60; needs MANAGER or above) apply to the preview. 
      *
      * @param id  (required)
      * @param relocationInput  (required)
-     * @return Computed whole-booking total and availability for the requested relocation. Returned even when &#x60;available: false&#x60;.  (status code 200)
+     * @return Computed totals and availability for the requested relocation. Returned even when &#x60;available: false&#x60;.  (status code 200)
      *         or Body failed validation. (status code 400)
      *         or No valid JWT. (status code 401)
-     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Not CASHIER or above, or a past &#x60;effectiveDate&#x60; requested by a CASHIER. (status code 403)
      *         or Booking or room not found. (status code 404)
      */
     @RequestMapping(
@@ -921,14 +922,14 @@ public interface BookingsApi {
         consumes = { "application/json" }
     )
     
-    default ResponseEntity<BookingScheduleQuote> quoteBookingRelocation(
+    default ResponseEntity<RelocationQuote> quoteBookingRelocation(
          @PathVariable("id") String id,
          @Valid @RequestBody RelocationInput relocationInput
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"reason\" : \"reason\", \"totalPrice\" : \"totalPrice\", \"nights\" : 0, \"available\" : true }";
+                    String exampleString = "{ \"reason\" : \"reason\", \"sameRoomType\" : true, \"totalPrice\" : \"totalPrice\", \"newRateTotalPrice\" : \"newRateTotalPrice\", \"available\" : true, \"rateMode\" : \"KEEP_RATE\", \"mayKeepRate\" : true, \"keepRateTotalPrice\" : \"keepRateTotalPrice\", \"currentTotalPrice\" : \"currentTotalPrice\", \"nights\" : 0, \"newRatePriceDifference\" : \"newRatePriceDifference\", \"wholeSegment\" : true, \"keepRatePriceDifference\" : \"keepRatePriceDifference\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -1193,14 +1194,14 @@ public interface BookingsApi {
 
     /**
      * POST /bookings/{id}/relocate : Move a guest to a different room partway through their stay
-     * Requires CASHIER or above. Splits the segment covering &#x60;effectiveDate&#x60; into two: the existing room/unit keeps &#x60;[that segment&#39;s checkIn, effectiveDate)&#x60;, and a new segment for &#x60;[effectiveDate, that segment&#39;s checkOut)&#x60; takes &#x60;roomId&#x60;/&#x60;roomUnitId&#x60; - the new room may be a different room *type* than the one being left, at that type&#39;s own price. &#x60;effectiveDate&#x60; must fall strictly after the containing segment&#39;s own checkIn (relocating on a segment&#39;s first night is \&quot;assign this segment a different room\&quot;, i.e. &#x60;PUT /bookings/{id}/room-unit&#x60; or &#x60;PATCH /bookings/{id}/schedule&#x60; when there is only one segment - not a mid-stay move). Same three checks on the *new* room/unit as &#x60;PUT /bookings/{id}/room-unit&#x60; (same type, active, free for the new segment&#39;s dates), same &#x60;Serializable&#x60; race-safety as &#x60;POST /bookings&#x60;. See &#x60;POST /bookings/{id}/relocate/quote&#x60; to preview the recalculated total before calling this, and &#x60;POST /bookings/{id}/undo-relocation&#x60; to reverse it. Recorded in the audit log with who, from which room, to which room, and effective from which date. 
+     * Requires CASHIER or above. Moves the guest to &#x60;roomId&#x60;/&#x60;roomUnitId&#x60; from &#x60;effectiveDate&#x60; (the first night spent in the new room) to the end of the segment covering that date. Two shapes, chosen by where &#x60;effectiveDate&#x60; falls in that segment: **after the segment&#39;s first night** - the segment is split: the existing room/unit keeps &#x60;[segment checkIn, effectiveDate)&#x60; (past nights stay where the guest slept) and a new segment for &#x60;[effectiveDate, segment checkOut)&#x60; takes the new room, which &#x60;undo-relocation&#x60; can merge back; **on the segment&#39;s first night** (a guest arriving today, or any move that starts with the segment&#39;s own first night) - nothing is split: the whole segment changes room, and for a booking with a single segment &#x60;Booking.roomId&#x60; changes with it. There is no boundary to undo in that case. The new room may be a different room *type*. **Price (&#x60;rateMode&#x60;).** Same room type: always &#x60;KEEP_RATE&#x60; (the nights keep their frozen prices; &#x60;NEW_RATE&#x60; is a 400, use &#x60;POST /bookings/{id}/reprice&#x60;). Different room type: &#x60;NEW_RATE&#x60; (default) prices the moved nights from today forward at the new type&#39;s current rate; &#x60;KEEP_RATE&#x60; keeps the moved nights&#39; agreed prices exactly - a complimentary upgrade or a move the hotel caused - and is **MANAGER or above** (403 for CASHIER, like &#x60;reprice&#x60; and a hand-typed price). Nights before today are never repriced. An &#x60;effectiveDate&#x60; before today (a back-dated move) is MANAGER or above (403 otherwise). Same three checks on the *new* room/unit as &#x60;PUT /bookings/{id}/room-unit&#x60; (same type for a unit, active, free for the moved dates), same &#x60;Serializable&#x60; race-safety as &#x60;POST /bookings&#x60;. A guest who is &#x60;CHECKED_IN&#x60; and has already moved (the date is today or earlier) leaves the old room marked dirty at once. See &#x60;POST /bookings/{id}/relocate/quote&#x60; to preview both totals before calling this. Recorded in the audit log with who, from which room, to which room, effective from which date, the rate mode and the old and new total. 
      *
      * @param id  (required)
      * @param relocationInput  (required)
      * @return Updated booking, now with an extra segment. (status code 200)
-     *         or Body failed validation, &#x60;effectiveDate&#x60; does not fall strictly inside an existing segment, or &#x60;roomUnitId&#x60; belongs to a different room type / is not active.  (status code 400)
+     *         or Body failed validation, &#x60;effectiveDate&#x60; is outside the stay, &#x60;roomUnitId&#x60; belongs to a different room type / is not active, the booking is already in that room, or &#x60;rateMode: NEW_RATE&#x60; was sent for a room of the same type.  (status code 400)
      *         or No valid JWT. (status code 401)
-     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Not signed in as CASHIER or above - or a CASHIER asked for &#x60;rateMode: KEEP_RATE&#x60; across room types, or for an &#x60;effectiveDate&#x60; before today (both MANAGER or above).  (status code 403)
      *         or Booking, room, or room unit not found. (status code 404)
      *         or The new room type/unit has no availability for the new segment&#39;s dates - either found up front or from a concurrent conflicting change (Postgres serialization failure, SQLSTATE &#x60;40001&#x60;).  (status code 409)
      */

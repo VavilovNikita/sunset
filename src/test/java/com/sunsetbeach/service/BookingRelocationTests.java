@@ -235,7 +235,7 @@ class BookingRelocationTests extends AbstractIntegrationTest {
         Booking blocker = createBooking(room.getId(), splitDate, checkOut);
         bookingService.assignRoomUnit(blocker.getId(), new RoomUnitAssignmentInput().roomUnitId(unitB.getId()));
 
-        BookingScheduleQuote quote = bookingService.quoteRelocation(
+        com.sunsetbeach.model.RelocationQuote quote = bookingService.quoteRelocation(
                 booking.getId(), new RelocationInput(splitDate.toString(), room.getId()).roomUnitId(unitB.getId()));
 
         assertThat(quote.getAvailable()).isFalse();
@@ -345,7 +345,7 @@ class BookingRelocationTests extends AbstractIntegrationTest {
         Booking booking = createBooking(cheapRoom.getId(), checkIn, checkOut);
         RoomUnitEntity expensiveUnit = roomUnitRepository.findByRoomId(expensiveRoom.getId()).get(0);
 
-        BookingScheduleQuote quote = bookingService.quoteRelocation(
+        com.sunsetbeach.model.RelocationQuote quote = bookingService.quoteRelocation(
                 booking.getId(), new RelocationInput(splitDate.toString(), expensiveRoom.getId()).roomUnitId(expensiveUnit.getId()));
 
         assertThat(quote.getAvailable()).isTrue();
