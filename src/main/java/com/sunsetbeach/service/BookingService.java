@@ -87,7 +87,10 @@ import com.sunsetbeach.service.BookingFolioCalculator.FolioBreakdown;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionSystemException;
+import org.springframework.transaction.support.TransactionTemplate;
+import com.sunsetbeach.model.FolioPaymentMethod;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -118,6 +121,7 @@ public class BookingService {
     private final BookingFolioCalculator folioCalculator;
     private final SpaBookingCancellationService spaBookingCancellation;
     private final GymReservationService gymReservations;
+    private final PlatformTransactionManager transactionManager;
 
     public BookingService(
             RoomRepository roomRepository,
@@ -141,8 +145,10 @@ public class BookingService {
             BookingFolioCalculator folioCalculator,
             SpaBookingCancellationService spaBookingCancellation,
             GymReservationService gymReservations,
+            PlatformTransactionManager transactionManager,
             Clock clock) {
         this.clock = clock;
+        this.transactionManager = transactionManager;
         this.gymReservations = gymReservations;
         this.folioCalculator = folioCalculator;
         this.spaBookingCancellation = spaBookingCancellation;
@@ -975,6 +981,8 @@ public class BookingService {
         LocalDate oldCheckIn = before.getCheckIn();
         LocalDate oldCheckOut = before.getCheckOut();
         String oldRoomUnitId = before.getRoomUnitId();
+        // An early departure has its own settlement (the early-departure fee); every other schedule change reprices the stay.
+        PaidSnapshot paid = earlyDeparture ? null : paidSnapshot(before);
 
         BookingEntity saved;
         try {
@@ -989,6 +997,7 @@ public class BookingService {
         // A stay extended over nights already charged as overstay turns them into ordinary nights of the booking (priced
         // by the extension): the overstay charge for those dates is voided here, so nothing is counted twice.
         overstayChargeService.reconcile(bookingId);
+        saved = reopenPaidIfPriceChanged(saved, paid, "the stay was changed");
 
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         RoomUnitEntity newUnit = findRoomUnit(saved.getRoomUnitId());
@@ -1042,7 +1051,9 @@ public class BookingService {
         String roomUnitId = requireRoomUnitIdPresent(input.getRoomUnitId());
 
         BookingWriter.ScheduleQuote quote = bookingWriter.quoteSchedule(bookingId, checkIn, checkOut, roomUnitId);
-        return new BookingScheduleQuote(PriceFormat.asDecimalString(quote.totalPrice()), quote.nights(), quote.available(), quote.reason());
+        BookingScheduleQuote dto = new BookingScheduleQuote(PriceFormat.asDecimalString(quote.totalPrice()), quote.nights(), quote.available(), quote.reason());
+        applyPaidImpact(bookingId, quote.totalPrice(), dto::reopensPaid, dto::paidWarning);
+        return dto;
     }
 
     /**
@@ -1065,6 +1076,12 @@ public class BookingService {
         LocalDate effectiveDate = LocalDate.parse(input.getEffectiveDate());
         requireMayRelocateFrom(effectiveDate, mayBackdate);
         String newRoomUnitId = input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
+        BookingEntity target = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        if (target.getOccupancyStatus() == OccupancyStatus.CHECKED_IN && !effectiveDate.isAfter(LocalDate.now(clock)) && newRoomUnitId == null) {
+            // Moving a guest who is in the house to "no room assigned" loses where they sleep (a cashier once did exactly that).
+            throw ValidationException.field("roomUnitId", "A checked-in guest needs a room");
+        }
+        PaidSnapshot paid = paidSnapshot(target);
 
         BookingWriter.RelocationResult result;
         try {
@@ -1076,7 +1093,7 @@ public class BookingService {
             throw e;
         }
 
-        BookingEntity saved = result.booking();
+        BookingEntity saved = reopenPaidIfPriceChanged(result.booking(), paid, "the guest was moved to another room");
         RoomEntity newRoom = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         boolean markedDirty = markVacatedRoomDirty(saved, result.oldUnitId(), result.newUnit(), effectiveDate);
         String rate = result.rateMode() == null ? ""
@@ -1092,6 +1109,106 @@ public class BookingService {
                         + (Boolean.TRUE.equals(result.wholeSegment()) ? " (from the first night of the stay segment)" : "") + rate
                         + (markedDirty ? "; " + result.oldUnitLabel() + " marked dirty" : ""));
         return bookingMapper.toDto(saved, newRoom, result.newUnit(), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
+    }
+
+    // --- A price change on a booking marked PAID -----------------------------------------------
+
+    /** What a {@code PAID} booking had covered before a price-changing write: see {@link #reopenPaidIfPriceChanged}. */
+    private record PaidSnapshot(BigDecimal roomOwed, BigDecimal settledOutside) {}
+
+    /**
+     * Taken before a staff write that can change the stay's price. Null unless the booking is {@code PAID} and the caller is
+     * a staff member (a SiteMinder date change has no person to record a payment under - its price is the OTA's total).
+     */
+    private PaidSnapshot paidSnapshot(String bookingId) {
+        return paidSnapshot(bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found")));
+    }
+
+    private PaidSnapshot paidSnapshot(BookingEntity booking) {
+        if (booking.getStatus() != BookingStatus.PAID || !isStaffCaller()) {
+            return null;
+        }
+        FolioBreakdown folio = folioCalculator.breakdown(booking);
+        return new PaidSnapshot(folio.roomOwed(), folio.settledOutside().max(BigDecimal.ZERO));
+    }
+
+    private static boolean isStaffCaller() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getPrincipal() instanceof StaffPrincipal;
+    }
+
+    /**
+     * Owner's decision: a change of price on a {@code PAID} booking reopens it. {@code PAID} says "the room, as it was priced,
+     * was paid" - and {@code settledOutside} (derived from {@code PAID} alone) would otherwise swallow any growth of the price
+     * as "collected outside", leaving a Settled folio the guest has not paid. So, in one transaction: what a legacy hand-set
+     * {@code PAID} had covered outside is first recorded as an {@code OTHER} folio payment (with its ledger posting), so it is
+     * not charged a second time; the booking goes back to {@code CONFIRMED}, the room settlement is mirrored in the ledger, and
+     * the folio shows the difference as owed. When the room is still covered by payments afterwards (the price fell) it is
+     * settled again at the new price and stays {@code PAID}, with the difference as credit. A payment of the difference sets
+     * {@code PAID} again by itself ({@link #recordFolioPayment}). No guest email: it is a correction of a figure, not news.
+     * Runs after the writer's own SERIALIZABLE transaction has committed the new price.
+     */
+    private BookingEntity reopenPaidIfPriceChanged(BookingEntity written, PaidSnapshot before, String why) {
+        if (before == null) {
+            return written;
+        }
+        new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+            BookingEntity booking = bookingRepository.findByIdForUpdate(written.getId()).orElseThrow(() -> new NotFoundException("Booking not found"));
+            if (booking.getStatus() != BookingStatus.PAID) {
+                return;
+            }
+            FolioBreakdown now = folioCalculator.breakdown(booking);
+            if (now.roomOwed().compareTo(before.roomOwed()) == 0) {
+                return;
+            }
+            if (before.settledOutside().signum() > 0) {
+                insertFolioPayment(booking, new FolioPaymentInput(FolioPaymentMethod.OTHER, PriceFormat.asDecimalString(before.settledOutside())),
+                        before.settledOutside());
+            }
+            booking.setStatus(BookingStatus.CONFIRMED);
+            BookingEntity reopened = bookingRepository.saveAndFlush(booking);
+            ledgerService.reverseBookingSettlement(reopened);
+            FolioBreakdown after = folioCalculator.breakdown(reopened);
+            String outcome;
+            if (after.roomCoveredByPayments()) {
+                reopened.setStatus(BookingStatus.PAID);
+                reopened = bookingRepository.saveAndFlush(reopened);
+                ledgerService.postBookingSettlement(reopened, after.paidToRoom());
+                outcome = "the room stays paid and was settled again at the new price"
+                        + (after.creditBalance().signum() > 0 ? "; the guest has a credit of " + PriceFormat.baht(after.creditBalance()) : "");
+            } else {
+                outcome = "Room paid reopened (the booking is Confirmed again); the guest owes " + PriceFormat.baht(after.balanceDue());
+            }
+            auditLogService.record(
+                    AuditAction.BOOKING_STATUS_CHANGED,
+                    AuditEntityType.BOOKING,
+                    reopened.getId(),
+                    "Price changed after payment for " + reopened.getGuestName() + " (" + why + "): room " + PriceFormat.baht(before.roomOwed())
+                            + " → " + PriceFormat.baht(now.roomOwed()) + "; " + outcome
+                            + (before.settledOutside().signum() > 0
+                                    ? "; " + PriceFormat.baht(before.settledOutside()) + " settled outside before the price change, recorded as a payment by method OTHER"
+                                    : ""));
+        });
+        return bookingRepository.findById(written.getId()).orElse(written);
+    }
+
+    /** Fills a quote's {@code reopensPaid}/{@code paidWarning} for a booking marked {@code PAID} whose total would become {@code newBookingTotal}. */
+    private void applyPaidImpact(String bookingId, BigDecimal newBookingTotal,
+            java.util.function.Consumer<Boolean> reopens, java.util.function.Consumer<String> warning) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElse(null);
+        if (booking == null || booking.getStatus() != BookingStatus.PAID || newBookingTotal.compareTo(booking.getTotalPrice()) == 0) {
+            return;
+        }
+        FolioBreakdown folio = folioCalculator.breakdown(booking);
+        BigDecimal covered = folio.paidToRoom().max(folio.roomOwed());
+        BigDecimal delta = newBookingTotal.add(booking.getEarlyDepartureFee()).subtract(covered);
+        if (delta.signum() > 0) {
+            reopens.accept(true);
+            warning.accept("Room paid will be reopened: the guest will owe " + PriceFormat.baht(delta) + ".");
+        } else if (delta.signum() < 0) {
+            reopens.accept(false);
+            warning.accept("The room stays paid; the price is lower, so the guest will have a credit of " + PriceFormat.baht(delta.negate()) + ".");
+        }
     }
 
     /** A move that starts before today is a back-dated change of where the guest slept: MANAGER+. */
@@ -1160,6 +1277,7 @@ public class BookingService {
             dto.newRateTotalPrice(PriceFormat.asDecimalString(q.newTotal()));
             dto.newRatePriceDifference(PriceFormat.asDecimalString(q.newTotal().subtract(q.currentTotal())));
         }
+        applyPaidImpact(bookingId, q.totalPrice(), dto::reopensPaid, dto::paidWarning);
         return dto;
     }
 
@@ -1202,6 +1320,7 @@ public class BookingService {
      */
     public Booking reprice(String bookingId, RepriceInput input) {
         requireStayNotEnded(bookingId);
+        PaidSnapshot paid = paidSnapshot(bookingId);
         BookingWriter.RepriceResult result;
         try {
             result = bookingWriter.reprice(bookingId, input.getSegmentId());
@@ -1212,7 +1331,7 @@ public class BookingService {
             throw e;
         }
 
-        BookingEntity saved = result.booking();
+        BookingEntity saved = reopenPaidIfPriceChanged(result.booking(), paid, "the nights were repriced");
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         RoomUnitEntity unit = findRoomUnit(saved.getRoomUnitId());
         auditLogService.record(
@@ -1232,10 +1351,13 @@ public class BookingService {
     @Transactional(readOnly = true)
     public RepriceQuote quoteReprice(String bookingId, RepriceInput input) {
         BookingWriter.RepriceResult result = bookingWriter.quoteReprice(bookingId, input.getSegmentId());
-        return new RepriceQuote(
+        RepriceQuote dto = new RepriceQuote(
                 PriceFormat.asDecimalString(result.oldSegmentTotal()),
                 PriceFormat.asDecimalString(result.newSegmentTotal()),
                 result.nightsRepriced());
+        BigDecimal newBookingTotal = result.booking().getTotalPrice().subtract(result.oldSegmentTotal()).add(result.newSegmentTotal());
+        applyPaidImpact(bookingId, newBookingTotal, dto::reopensPaid, dto::paidWarning);
+        return dto;
     }
 
     /**

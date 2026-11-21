@@ -287,6 +287,9 @@ class BookingNotesAndFutureBookingsContractTests extends AbstractIntegrationTest
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         assertThat(csv).contains("Notes").contains("Confirmed");
+        // The channel is worded as on screen ("Phone"), not the stored PHONE; same BOM + sep=, opening as GET /bookings/export.
+        assertThat(csv).contains(",Phone,").doesNotContain(",PHONE,");
+        assertThat(csv).startsWith(String.valueOf((char) 0xFEFF) + "sep=,");
         assertThat(csv).contains("'=HYPERLINK").doesNotContain(",=HYPERLINK");
         assertThat(auditLogRepository.findAll()).anyMatch(e -> e.getAction() == AuditAction.BOOKINGS_EXPORTED && e.getSummary().contains("future booking"));
     }

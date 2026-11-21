@@ -929,7 +929,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"reason\" : \"reason\", \"sameRoomType\" : true, \"totalPrice\" : \"totalPrice\", \"newRateTotalPrice\" : \"newRateTotalPrice\", \"available\" : true, \"rateMode\" : \"KEEP_RATE\", \"mayKeepRate\" : true, \"keepRateTotalPrice\" : \"keepRateTotalPrice\", \"currentTotalPrice\" : \"currentTotalPrice\", \"nights\" : 0, \"newRatePriceDifference\" : \"newRatePriceDifference\", \"wholeSegment\" : true, \"keepRatePriceDifference\" : \"keepRatePriceDifference\" }";
+                    String exampleString = "{ \"reason\" : \"reason\", \"sameRoomType\" : true, \"totalPrice\" : \"totalPrice\", \"newRateTotalPrice\" : \"newRateTotalPrice\", \"reopensPaid\" : true, \"available\" : true, \"rateMode\" : \"KEEP_RATE\", \"mayKeepRate\" : true, \"keepRateTotalPrice\" : \"keepRateTotalPrice\", \"currentTotalPrice\" : \"currentTotalPrice\", \"nights\" : 0, \"paidWarning\" : \"paidWarning\", \"newRatePriceDifference\" : \"newRatePriceDifference\", \"wholeSegment\" : true, \"keepRatePriceDifference\" : \"keepRatePriceDifference\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -986,7 +986,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"newTotalPrice\" : \"newTotalPrice\", \"nightsRepriced\" : 0, \"oldTotalPrice\" : \"oldTotalPrice\" }";
+                    String exampleString = "{ \"newTotalPrice\" : \"newTotalPrice\", \"nightsRepriced\" : 0, \"oldTotalPrice\" : \"oldTotalPrice\", \"reopensPaid\" : true, \"paidWarning\" : \"paidWarning\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -1043,7 +1043,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"reason\" : \"reason\", \"totalPrice\" : \"totalPrice\", \"nights\" : 0, \"available\" : true }";
+                    String exampleString = "{ \"reason\" : \"reason\", \"totalPrice\" : \"totalPrice\", \"nights\" : 0, \"reopensPaid\" : true, \"paidWarning\" : \"paidWarning\", \"available\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -1098,7 +1098,7 @@ public interface BookingsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"reason\" : \"reason\", \"totalPrice\" : \"totalPrice\", \"nights\" : 0, \"available\" : true }";
+                    String exampleString = "{ \"reason\" : \"reason\", \"totalPrice\" : \"totalPrice\", \"nights\" : 0, \"reopensPaid\" : true, \"paidWarning\" : \"paidWarning\", \"available\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

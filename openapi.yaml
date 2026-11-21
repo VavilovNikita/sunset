@@ -14581,6 +14581,10 @@ components:
         roomUnitId:
           type: string
           nullable: true
+          description: >
+            The physical room. Required (400 on this field, "A checked-in guest needs a room") for a
+            `CHECKED_IN` guest moved from today or earlier - a guest in the house must have a room.
+            `null` stays legal for a move that starts later.
         rateMode:
           $ref: "#/components/schemas/RelocationRateMode"
 
@@ -14630,6 +14634,17 @@ components:
           type: string
           nullable: true
           description: Set when `available` is `false` - the same wording `PATCH /bookings/{id}/schedule` would reject with.
+        reopensPaid:
+          type: boolean
+          description: >
+            True when this change would reopen a booking whose room is marked `PAID` (its price
+            grows past what was paid, so it goes back to `CONFIRMED` and the guest owes the
+            difference). Absent for a booking that is not `PAID` or whose price does not change.
+        paidWarning:
+          type: string
+          description: >
+            Server-worded sentence for the confirm dialog, present together with `reopensPaid`
+            or when a `PAID` booking's price drops ("the room stays paid, credit ...").
 
     RelocationQuote:
       type: object
@@ -14682,6 +14697,17 @@ components:
           type: string
           nullable: true
           description: "`newRateTotalPrice` minus `currentTotalPrice`, signed. Absent within one room type."
+        reopensPaid:
+          type: boolean
+          description: >
+            True when this change would reopen a booking whose room is marked `PAID` (its price
+            grows past what was paid, so it goes back to `CONFIRMED` and the guest owes the
+            difference). Absent for a booking that is not `PAID` or whose price does not change.
+        paidWarning:
+          type: string
+          description: >
+            Server-worded sentence for the confirm dialog, present together with `reopensPaid`
+            or when a `PAID` booking's price drops ("the room stays paid, credit ...").
 
     RepriceInput:
       type: object
@@ -14723,6 +14749,17 @@ components:
         nightsRepriced:
           type: integer
           description: How many nights (today onward) this would touch.
+        reopensPaid:
+          type: boolean
+          description: >
+            True when this change would reopen a booking whose room is marked `PAID` (its price
+            grows past what was paid, so it goes back to `CONFIRMED` and the guest owes the
+            difference). Absent for a booking that is not `PAID` or whose price does not change.
+        paidWarning:
+          type: string
+          description: >
+            Server-worded sentence for the confirm dialog, present together with `reopensPaid`
+            or when a `PAID` booking's price drops ("the room stays paid, credit ...").
 
     RoomTypeDailyAvailability:
       type: object

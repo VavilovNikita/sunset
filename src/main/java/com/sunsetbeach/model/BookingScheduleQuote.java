@@ -28,6 +28,10 @@ public class BookingScheduleQuote {
 
   private JsonNullable<String> reason = JsonNullable.<String>undefined();
 
+  private Boolean reopensPaid;
+
+  private String paidWarning;
+
   public BookingScheduleQuote() {
     super();
   }
@@ -118,6 +122,44 @@ public class BookingScheduleQuote {
     this.reason = reason;
   }
 
+  public BookingScheduleQuote reopensPaid(Boolean reopensPaid) {
+    this.reopensPaid = reopensPaid;
+    return this;
+  }
+
+  /**
+   * True when this change would reopen a booking whose room is marked `PAID` (its price grows past what was paid, so it goes back to `CONFIRMED` and the guest owes the difference). Absent for a booking that is not `PAID` or whose price does not change. 
+   * @return reopensPaid
+   */
+  
+  @JsonProperty("reopensPaid")
+  public Boolean getReopensPaid() {
+    return reopensPaid;
+  }
+
+  public void setReopensPaid(Boolean reopensPaid) {
+    this.reopensPaid = reopensPaid;
+  }
+
+  public BookingScheduleQuote paidWarning(String paidWarning) {
+    this.paidWarning = paidWarning;
+    return this;
+  }
+
+  /**
+   * Server-worded sentence for the confirm dialog, present together with `reopensPaid` or when a `PAID` booking's price drops (\"the room stays paid, credit ...\"). 
+   * @return paidWarning
+   */
+  
+  @JsonProperty("paidWarning")
+  public String getPaidWarning() {
+    return paidWarning;
+  }
+
+  public void setPaidWarning(String paidWarning) {
+    this.paidWarning = paidWarning;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -130,12 +172,14 @@ public class BookingScheduleQuote {
     return Objects.equals(this.totalPrice, bookingScheduleQuote.totalPrice) &&
         Objects.equals(this.nights, bookingScheduleQuote.nights) &&
         Objects.equals(this.available, bookingScheduleQuote.available) &&
-        Objects.equals(this.reason, bookingScheduleQuote.reason);
+        Objects.equals(this.reason, bookingScheduleQuote.reason) &&
+        Objects.equals(this.reopensPaid, bookingScheduleQuote.reopensPaid) &&
+        Objects.equals(this.paidWarning, bookingScheduleQuote.paidWarning);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(totalPrice, nights, available, reason);
+    return Objects.hash(totalPrice, nights, available, reason, reopensPaid, paidWarning);
   }
 
   @Override
@@ -146,6 +190,8 @@ public class BookingScheduleQuote {
     sb.append("    nights: ").append(toIndentedString(nights)).append("\n");
     sb.append("    available: ").append(toIndentedString(available)).append("\n");
     sb.append("    reason: ").append(toIndentedString(reason)).append("\n");
+    sb.append("    reopensPaid: ").append(toIndentedString(reopensPaid)).append("\n");
+    sb.append("    paidWarning: ").append(toIndentedString(paidWarning)).append("\n");
     sb.append("}");
     return sb.toString();
   }

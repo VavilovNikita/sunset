@@ -150,7 +150,7 @@ public class FutureBookingsService {
                     String.valueOf(r.getNights()),
                     String.valueOf(r.getAdults()),
                     String.valueOf(r.getChildren()),
-                    r.getChannel().getValue(),
+                    channelLabel(r.getChannel()),
                     label(r.getStatus()),
                     r.getTotalPrice(),
                     r.getBalanceDue(),
@@ -165,6 +165,23 @@ public class FutureBookingsService {
     }
 
     public record Export(String filename, String csv) {}
+
+    /** What staff read for a channel - the admin screens' labels (sunset-beach {@code lib/bookingChannel.ts}), not the stored {@code PHONE}. */
+    static String channelLabel(com.sunsetbeach.model.BookingChannel channel) {
+        return switch (channel) {
+            case DIRECT -> "Direct (website)";
+            case PHONE -> "Phone";
+            case WALK_IN -> "Walk-in";
+            case BOOKING_COM -> "Booking.com";
+            case AIRBNB -> "Airbnb";
+            case AGODA -> "Agoda";
+            case EXPEDIA -> "Expedia";
+            case CTRIP -> "Ctrip / Trip.com";
+            case HOTELBEDS -> "Hotelbeds";
+            case AGENT -> "Travel agent";
+            case OTHER -> "Other";
+        };
+    }
 
     /** What staff read for a status; the stored values stay {@code NEW}/{@code CONFIRMED}/{@code PAID}. */
     static String label(BookingStatus status) {

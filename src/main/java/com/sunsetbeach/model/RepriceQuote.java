@@ -26,6 +26,10 @@ public class RepriceQuote {
 
   private Integer nightsRepriced;
 
+  private Boolean reopensPaid;
+
+  private String paidWarning;
+
   public RepriceQuote() {
     super();
   }
@@ -96,6 +100,44 @@ public class RepriceQuote {
     this.nightsRepriced = nightsRepriced;
   }
 
+  public RepriceQuote reopensPaid(Boolean reopensPaid) {
+    this.reopensPaid = reopensPaid;
+    return this;
+  }
+
+  /**
+   * True when this change would reopen a booking whose room is marked `PAID` (its price grows past what was paid, so it goes back to `CONFIRMED` and the guest owes the difference). Absent for a booking that is not `PAID` or whose price does not change. 
+   * @return reopensPaid
+   */
+  
+  @JsonProperty("reopensPaid")
+  public Boolean getReopensPaid() {
+    return reopensPaid;
+  }
+
+  public void setReopensPaid(Boolean reopensPaid) {
+    this.reopensPaid = reopensPaid;
+  }
+
+  public RepriceQuote paidWarning(String paidWarning) {
+    this.paidWarning = paidWarning;
+    return this;
+  }
+
+  /**
+   * Server-worded sentence for the confirm dialog, present together with `reopensPaid` or when a `PAID` booking's price drops (\"the room stays paid, credit ...\"). 
+   * @return paidWarning
+   */
+  
+  @JsonProperty("paidWarning")
+  public String getPaidWarning() {
+    return paidWarning;
+  }
+
+  public void setPaidWarning(String paidWarning) {
+    this.paidWarning = paidWarning;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -107,12 +149,14 @@ public class RepriceQuote {
     RepriceQuote repriceQuote = (RepriceQuote) o;
     return Objects.equals(this.oldTotalPrice, repriceQuote.oldTotalPrice) &&
         Objects.equals(this.newTotalPrice, repriceQuote.newTotalPrice) &&
-        Objects.equals(this.nightsRepriced, repriceQuote.nightsRepriced);
+        Objects.equals(this.nightsRepriced, repriceQuote.nightsRepriced) &&
+        Objects.equals(this.reopensPaid, repriceQuote.reopensPaid) &&
+        Objects.equals(this.paidWarning, repriceQuote.paidWarning);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(oldTotalPrice, newTotalPrice, nightsRepriced);
+    return Objects.hash(oldTotalPrice, newTotalPrice, nightsRepriced, reopensPaid, paidWarning);
   }
 
   @Override
@@ -122,6 +166,8 @@ public class RepriceQuote {
     sb.append("    oldTotalPrice: ").append(toIndentedString(oldTotalPrice)).append("\n");
     sb.append("    newTotalPrice: ").append(toIndentedString(newTotalPrice)).append("\n");
     sb.append("    nightsRepriced: ").append(toIndentedString(nightsRepriced)).append("\n");
+    sb.append("    reopensPaid: ").append(toIndentedString(reopensPaid)).append("\n");
+    sb.append("    paidWarning: ").append(toIndentedString(paidWarning)).append("\n");
     sb.append("}");
     return sb.toString();
   }

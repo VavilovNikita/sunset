@@ -89,7 +89,7 @@ public class RelocationInput {
   }
 
   /**
-   * Get roomUnitId
+   * The physical room. Required (400 on this field, \"A checked-in guest needs a room\") for a `CHECKED_IN` guest moved from today or earlier - a guest in the house must have a room. `null` stays legal for a move that starts later. 
    * @return roomUnitId
    */
   
