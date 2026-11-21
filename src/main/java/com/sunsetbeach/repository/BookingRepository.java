@@ -22,6 +22,16 @@ public interface BookingRepository extends JpaRepository<BookingEntity, String>,
 
     List<BookingEntity> findByRoomId(String roomId);
 
+    /** {@code GET /reports/future-bookings}: arrivals in {@code [from, to]} with one of the statuses, not a no-show. */
+    @Query("""
+        SELECT b FROM BookingEntity b
+        WHERE b.checkIn >= :from AND b.checkIn <= :to AND b.status IN :statuses AND b.occupancyStatus <> :noShow
+        ORDER BY b.checkIn ASC, LOWER(b.guestName) ASC, b.id ASC
+        """)
+    List<BookingEntity> findArrivals(
+            @Param("from") LocalDate from, @Param("to") LocalDate to, @Param("statuses") Collection<BookingStatus> statuses,
+            @Param("noShow") OccupancyStatus noShow);
+
     /** GET /reports/revenue-export's informational "Paid bookings" sheet - {@code checkOut} inclusive on both ends. */
     List<BookingEntity> findByStatusAndCheckOutBetween(BookingStatus status, LocalDate from, LocalDate to);
 

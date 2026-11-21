@@ -45,6 +45,8 @@ public class BookingStatusInput {
 
   private JsonNullable<BreakfastRate> breakfastRate = JsonNullable.<BreakfastRate>undefined();
 
+  private JsonNullable<@Size(max = 1000) String> notes = JsonNullable.<String>undefined();
+
   private JsonNullable<@Size(max = 500) String> cancellationReason = JsonNullable.<String>undefined();
 
   private FolioPaymentInput payment;
@@ -216,6 +218,25 @@ public class BookingStatusInput {
     this.breakfastRate = breakfastRate;
   }
 
+  public BookingStatusInput notes(String notes) {
+    this.notes = JsonNullable.of(notes);
+    return this;
+  }
+
+  /**
+   * Optional. The booking's staff notes (`Booking.notes`). Omitted leaves them as they are, `null` or a blank string clears them, anything else replaces them (trimmed, at most 1000 characters - 400 on this field otherwise). CASHIER+, like the rest of this form. The audit entry says that notes were set, changed or removed, never what they say. 
+   * @return notes
+   */
+  @Size(max = 1000) 
+  @JsonProperty("notes")
+  public JsonNullable<@Size(max = 1000) String> getNotes() {
+    return notes;
+  }
+
+  public void setNotes(JsonNullable<String> notes) {
+    this.notes = notes;
+  }
+
   public BookingStatusInput cancellationReason(String cancellationReason) {
     this.cancellationReason = JsonNullable.of(cancellationReason);
     return this;
@@ -271,6 +292,7 @@ public class BookingStatusInput {
         Objects.equals(this.children, bookingStatusInput.children) &&
         equalsNullable(this.breakfastGuests, bookingStatusInput.breakfastGuests) &&
         equalsNullable(this.breakfastRate, bookingStatusInput.breakfastRate) &&
+        equalsNullable(this.notes, bookingStatusInput.notes) &&
         equalsNullable(this.cancellationReason, bookingStatusInput.cancellationReason) &&
         Objects.equals(this.payment, bookingStatusInput.payment);
   }
@@ -281,7 +303,7 @@ public class BookingStatusInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(status, hashCodeNullable(paymentNote), channel, purpose, adults, children, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(cancellationReason), payment);
+    return Objects.hash(status, hashCodeNullable(paymentNote), channel, purpose, adults, children, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(notes), hashCodeNullable(cancellationReason), payment);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -303,6 +325,7 @@ public class BookingStatusInput {
     sb.append("    children: ").append(toIndentedString(children)).append("\n");
     sb.append("    breakfastGuests: ").append(toIndentedString(breakfastGuests)).append("\n");
     sb.append("    breakfastRate: ").append(toIndentedString(breakfastRate)).append("\n");
+    sb.append("    notes: ").append("[REDACTED]").append("\n");
     sb.append("    cancellationReason: ").append(toIndentedString(cancellationReason)).append("\n");
     sb.append("    payment: ").append(toIndentedString(payment)).append("\n");
     sb.append("}");

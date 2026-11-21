@@ -277,6 +277,9 @@ class PosRoleHierarchyTests {
     private com.sunsetbeach.service.BookingTrackerExportService bookingTrackerExportService;
 
     @MockitoBean
+    private com.sunsetbeach.service.FutureBookingsService futureBookingsService;
+
+    @MockitoBean
     private com.sunsetbeach.service.PrintLayoutService printLayoutService;
 
     @MockitoBean
@@ -514,6 +517,8 @@ class PosRoleHierarchyTests {
             String auth = token(role);
             mockMvc.perform(get("/reports/booking-tracker").header("Authorization", auth)).andExpect(status().isForbidden());
             mockMvc.perform(get("/reports/booking-tracker/export").header("Authorization", auth)).andExpect(status().isForbidden());
+            mockMvc.perform(get("/reports/future-bookings").header("Authorization", auth)).andExpect(status().isForbidden());
+            mockMvc.perform(get("/reports/future-bookings/export").header("Authorization", auth)).andExpect(status().isForbidden());
             mockMvc.perform(put("/reports/booking-tracker/months/2031-01").header("Authorization", auth)
                             .contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden());

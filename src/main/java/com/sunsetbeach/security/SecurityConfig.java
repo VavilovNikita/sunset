@@ -344,7 +344,9 @@ public class SecurityConfig {
                                         "/reports/revenue-statistic",
                                         "/reports/trial-balance",
                                         "/reports/booking-tracker",
-                                        "/reports/booking-tracker/export")
+                                        "/reports/booking-tracker/export",
+                                        "/reports/future-bookings",
+                                        "/reports/future-bookings/export")
                                 .hasRole(com.sunsetbeach.model.Role.MANAGER.getValue())
                         // The booking tracker's inputs (a month's target and baseline) and the notes of a weekly snapshot are
                         // typed by a manager: the same floor as reading the tracker. The figures themselves never change.

@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Gets or Sets BookingStatus
+ * The values are stable; what staff read is a label. `NEW` is shown as **Tentative** (a provisional booking - the hotel's workbook calls it an enquiry), `CONFIRMED` as **Confirmed**, `PAID` as **Room paid** and `CANCELLED` as **Cancelled**. There is no separate \"tentative\" status. Guest-facing screens keep their own wording. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

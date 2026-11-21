@@ -310,6 +310,29 @@ class SiteMinderImportServiceTests extends AbstractIntegrationTest {
                 .containsExactlyInAnyOrder(AuditAction.BOOKING_SCHEDULE_CHANGED, AuditAction.BOOKING_REPRICED, AuditAction.BOOKING_STATUS_CHANGED);
     }
 
+    /** Staff notes belong to the front desk: a re-poll that changes dates, party size or status never overwrites or clears them. */
+    @Test
+    void staffNotes_surviveAModificationAndACancellation() {
+        String roomType = mapped(room(2));
+        String reference = newReference();
+        String bookingId = importService.importReservation(reservation(reference, SiteMinderReservationStatus.BOOKED, roomType)).getBookingId().orElse(null);
+        BookingEntity booking = bookingFor(reference);
+        booking.setNotes("Airport pickup 14:00, shellfish allergy");
+        bookingRepository.saveAndFlush(booking);
+
+        importService.importReservation(reservation(reference, SiteMinderReservationStatus.MODIFIED, roomType)
+                .checkOut("2035-03-14")
+                .totalPrice("12000.00")
+                .adults(3)
+                .modifiedAt(BOOKED_AT.plusDays(2)));
+        assertThat(bookingFor(reference).getNotes()).isEqualTo("Airport pickup 14:00, shellfish allergy");
+
+        importService.importReservation(reservation(reference, SiteMinderReservationStatus.CANCELLED, roomType).modifiedAt(BOOKED_AT.plusDays(3)));
+        assertThat(bookingFor(reference).getStatus()).isEqualTo(BookingStatus.CANCELLED);
+        assertThat(bookingFor(reference).getNotes()).isEqualTo("Airport pickup 14:00, shellfish allergy");
+        assertThat(bookingId).isNotNull();
+    }
+
     @Test
     void dateChange_respreadsTheAgreedTotal_evenWhenOurRateWouldHaveMatchedIt() {
         String roomType = mapped(room(2));

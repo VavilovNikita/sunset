@@ -5,6 +5,7 @@
  */
 package com.sunsetbeach.api;
 
+import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BookingTrackerMonthTargets;
 import com.sunsetbeach.model.BookingTrackerMonthTargetsInput;
 import com.sunsetbeach.model.BookingTrackerReport;
@@ -12,6 +13,7 @@ import com.sunsetbeach.model.BookingTrackerSnapshot;
 import com.sunsetbeach.model.BookingTrackerSnapshotUpdateInput;
 import com.sunsetbeach.model.ErrorMessage;
 import com.sunsetbeach.model.ForecastReport;
+import com.sunsetbeach.model.FutureBookingsReport;
 import com.sunsetbeach.model.GuestLtvReport;
 import com.sunsetbeach.model.InHouseReport;
 import com.sunsetbeach.model.ManagerReport;
@@ -19,6 +21,7 @@ import com.sunsetbeach.model.MarketSegmentReport;
 import com.sunsetbeach.model.OccupancyReport;
 import com.sunsetbeach.model.PosSalesMixReport;
 import com.sunsetbeach.model.RevenueStatisticReport;
+import com.sunsetbeach.model.SetRoomPricing400Response;
 import com.sunsetbeach.model.TopProductionReport;
 import com.sunsetbeach.model.TrialBalanceReport;
 import com.sunsetbeach.model.ValidationError;
@@ -67,6 +70,53 @@ public interface ReportsApi {
         @Pattern(regexp = "^\\d{4}-(0[1-9]|1[0-2])$")  @Valid @RequestParam(value = "fromMonth", required = false) String fromMonth,
         @Pattern(regexp = "^\\d{4}-(0[1-9]|1[0-2])$")  @Valid @RequestParam(value = "toMonth", required = false) String toMonth,
         @Pattern(regexp = "^\\d{4}-(0[1-9]|1[0-2])$")  @Valid @RequestParam(value = "stayMonth", required = false) String stayMonth
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/future-bookings/export : The future-bookings report as CSV
+     * Requires role &#x60;MANAGER&#x60; or above. Same parameters, rules and rows as &#x60;GET /reports/future-bookings&#x60;; one row per booking, notes in their own column, status as the label staff read (Tentative / Confirmed / Room paid). Built with &#x60;CsvBuilder&#x60; (BOM, &#x60;sep&#x3D;,&#x60;, spreadsheet-safe cells) like the other CSV exports. The file is named &#x60;future-bookings_&lt;from&gt;_&lt;to&gt;.csv&#x60;. Audited as a bookings export, with the number of rows. 
+     *
+     * @param from  (optional)
+     * @param to  (optional)
+     * @param status  (optional)
+     * @return CSV file. (status code 200)
+     *         or As &#x60;GET /reports/future-bookings&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/future-bookings/export",
+        produces = { "text/csv", "application/json" }
+    )
+    
+    default ResponseEntity<String> exportFutureBookings(
+        @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = false) String from,
+        @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = false) String to,
+         @Valid @RequestParam(value = "status", required = false) List<BookingStatus> status
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
@@ -214,6 +264,58 @@ public interface ReportsApi {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
                     String exampleString = "{ \"days\" : [ { \"date\" : \"date\", \"rooms\" : [ { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 }, { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 } ], \"total\" : { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 } }, { \"date\" : \"date\", \"rooms\" : [ { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 }, { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 } ], \"total\" : { \"arrivals\" : 0, \"outOfOrder\" : 5, \"departures\" : 6, \"occupancyPercent\" : \"occupancyPercent\", \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : 5, \"vacant\" : 2, \"totalRooms\" : 1 } } ], \"from\" : \"from\", \"to\" : \"to\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : { \"formErrors\" : [ ], \"fieldErrors\" : { \"guestEmail\" : [ \"Invalid email\" ] } } }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
+     * GET /reports/future-bookings : Bookings arriving in a date range, by status (Tentative / Confirmed / Room paid)
+     * Requires role &#x60;MANAGER&#x60; or above, same floor as the rest of &#x60;/reports/_*&#x60;.  **Rows** are bookings whose &#x60;checkIn&#x60; is in &#x60;[from, to]&#x60; (inclusive hotel days, Asia/Bangkok), that are not &#x60;CANCELLED&#x60; and not marked no-show, sorted by &#x60;checkIn&#x60;, then guest name, then id. &#x60;status&#x60; (repeatable) narrows to &#x60;NEW&#x60; (Tentative), &#x60;CONFIRMED&#x60; and/or &#x60;PAID&#x60; (Room paid); omitted means all three - everything except cancelled bookings. &#x60;CANCELLED&#x60; is not accepted (400). &#x60;from&#x60; defaults to today and &#x60;to&#x60; to 90 days after &#x60;from&#x60;; the range may be at most 366 days.  &#x60;balanceDue&#x60; is &#x60;BookingFolioCalculator&#x60;&#39;s figure, the one every booking carries. &#x60;roomName&#x60; and &#x60;roomUnitLabel&#x60; are those of the booking&#39;s first night. &#x60;nights&#x60; is the agreed stay (&#x60;checkOut&#x60; - &#x60;checkIn&#x60;).  **Summary** counts bookings and nights per status, and adds the sum of &#x60;totalPrice&#x60; (the room price of the stay; &#x60;earlyDepartureFee&#x60; and POS charges are not in it), all computed here: a client adds nothing up. 
+     *
+     * @param from  (optional)
+     * @param to  (optional)
+     * @param status  (optional)
+     * @return The report. (status code 200)
+     *         or A bad date, &#x60;from&#x60; after &#x60;to&#x60;, a range over 366 days, or &#x60;status&#x3D;CANCELLED&#x60;. (status code 400)
+     *         or No valid JWT. (status code 401)
+     *         or Token is valid but lacks the required role (&#x60;MANAGER&#x60; or above). (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/reports/future-bookings",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<FutureBookingsReport> getFutureBookingsReport(
+        @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "from", required = false) String from,
+        @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$")  @Valid @RequestParam(value = "to", required = false) String to,
+         @Valid @RequestParam(value = "status", required = false) List<BookingStatus> status
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"summary\" : [ { \"totalPrice\" : \"totalPrice\", \"nights\" : 5, \"bookings\" : 5 }, { \"totalPrice\" : \"totalPrice\", \"nights\" : 5, \"bookings\" : 5 } ], \"statuses\" : [ \"NEW\", \"NEW\" ], \"from\" : \"from\", \"to\" : \"to\", \"rows\" : [ { \"notes\" : \"notes\", \"totalPrice\" : \"totalPrice\", \"balanceDue\" : \"balanceDue\", \"adults\" : 6, \"channel\" : \"DIRECT\", \"bookingId\" : \"bookingId\", \"roomName\" : \"roomName\", \"guestName\" : \"guestName\", \"roomUnitLabel\" : \"roomUnitLabel\", \"checkIn\" : \"checkIn\", \"children\" : 1, \"nights\" : 0, \"checkOut\" : \"checkOut\" }, { \"notes\" : \"notes\", \"totalPrice\" : \"totalPrice\", \"balanceDue\" : \"balanceDue\", \"adults\" : 6, \"channel\" : \"DIRECT\", \"bookingId\" : \"bookingId\", \"roomName\" : \"roomName\", \"guestName\" : \"guestName\", \"roomUnitLabel\" : \"roomUnitLabel\", \"checkIn\" : \"checkIn\", \"children\" : 1, \"nights\" : 0, \"checkOut\" : \"checkOut\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

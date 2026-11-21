@@ -122,6 +122,9 @@ public class BookingEntity {
 
     private Integer breakfastRate;
 
+    // Staff notes for the stay (V163), up to 1000 characters, null = none. Never shown to the guest.
+    private String notes;
+
     // SiteMinder's own "booked on" instant, UTC wall-clock (V161); null for every other booking and for old imports.
     private LocalDateTime bookedAt;
 
@@ -309,6 +312,14 @@ public class BookingEntity {
 
     public void setCheckedOutAt(LocalDateTime checkedOutAt) {
         this.checkedOutAt = checkedOutAt;
+    }
+
+    public String getNotes() {
+        return notes;
+    }
+
+    public void setNotes(String notes) {
+        this.notes = notes;
     }
 
     public Integer getBreakfastGuests() {

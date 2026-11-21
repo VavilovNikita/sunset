@@ -30,10 +30,13 @@ public class ReportController implements ReportsApi {
     private final LedgerService ledgerService;
     private final com.sunsetbeach.service.BookingTrackerService bookingTrackerService;
     private final com.sunsetbeach.service.BookingTrackerExportService bookingTrackerExportService;
+    private final com.sunsetbeach.service.FutureBookingsService futureBookingsService;
 
     public ReportController(RevenueExportService revenueExportService, ReportService reportService, LedgerService ledgerService,
             com.sunsetbeach.service.BookingTrackerService bookingTrackerService,
-            com.sunsetbeach.service.BookingTrackerExportService bookingTrackerExportService) {
+            com.sunsetbeach.service.BookingTrackerExportService bookingTrackerExportService,
+            com.sunsetbeach.service.FutureBookingsService futureBookingsService) {
+        this.futureBookingsService = futureBookingsService;
         this.bookingTrackerService = bookingTrackerService;
         this.bookingTrackerExportService = bookingTrackerExportService;
         this.revenueExportService = revenueExportService;
@@ -115,6 +118,21 @@ public class ReportController implements ReportsApi {
     @Override
     public ResponseEntity<ManagerReport> getManagerReport(String date) {
         return ResponseEntity.ok(reportService.manager(date));
+    }
+
+    @Override
+    public ResponseEntity<com.sunsetbeach.model.FutureBookingsReport> getFutureBookingsReport(
+            String from, String to, java.util.List<com.sunsetbeach.model.BookingStatus> status) {
+        return ResponseEntity.ok(futureBookingsService.report(from, to, status));
+    }
+
+    @Override
+    public ResponseEntity<String> exportFutureBookings(String from, String to, java.util.List<com.sunsetbeach.model.BookingStatus> status) {
+        com.sunsetbeach.service.FutureBookingsService.Export export = futureBookingsService.exportCsv(from, to, status);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(export.filename()).build().toString())
+                .body(export.csv());
     }
 
     @Override

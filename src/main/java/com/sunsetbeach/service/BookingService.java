@@ -286,6 +286,12 @@ public class BookingService {
             throw new ForbiddenException("Only a manager can create a booking that starts in the past");
         }
         requireReasonableLength(checkIn, checkOut);
+        // Tentative (NEW) or Confirmed; anything else is not a way a booking starts. Omitted = NEW, as before.
+        BookingStatus startStatus = input.getStatus() != null ? input.getStatus() : BookingStatus.NEW;
+        if (startStatus != BookingStatus.NEW && startStatus != BookingStatus.CONFIRMED) {
+            throw ValidationException.field("status", "A new booking can only be Tentative (NEW) or Confirmed (CONFIRMED)");
+        }
+        String notes = input.getNotes() != null && input.getNotes().isPresent() ? normalizeNotes(input.getNotes().get()) : null;
 
         RoomEntity room = roomRepository.findById(input.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         String roomUnitId = input.getRoomUnitId().isPresent() ? input.getRoomUnitId().get() : null;
@@ -314,7 +320,9 @@ public class BookingService {
                     input.getAdults(),
                     childrenOrZero(input.getChildren()),
                     roomUnitId,
-                    agreedTotal);
+                    agreedTotal,
+                    startStatus,
+                    notes);
         } catch (DataAccessException | TransactionSystemException e) {
             if (isSerializationFailure(e)) {
                 throw new ConflictException("Someone just booked these dates — please try again.");
@@ -330,6 +338,8 @@ public class BookingService {
                 saved.getId(),
                 "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + checkIn + " to " + checkOut + ")"
                         + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : "")
+                        + "; status " + startStatus.getValue()
+                        + (notes != null ? "; notes added" : "")
                         + (agreedTotal != null
                                 ? "; price set manually: " + PriceFormat.asDecimalString(agreedTotal) + " (rate plan: "
                                         + PriceFormat.asDecimalString(calculatedTotal) + ")"
@@ -340,6 +350,23 @@ public class BookingService {
             dto.warning(partySize + " guests in a room that sleeps " + room.getCapacity() + " - check an extra bed is arranged");
         }
         return dto;
+    }
+
+    static final int MAX_NOTES_LENGTH = 1000;
+
+    /** Staff notes: trimmed, blank = none (null), more than {@link #MAX_NOTES_LENGTH} characters is a 400 on {@code notes}. */
+    static String normalizeNotes(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.strip();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.length() > MAX_NOTES_LENGTH) {
+            throw ValidationException.field("notes", "Notes can be at most " + MAX_NOTES_LENGTH + " characters");
+        }
+        return trimmed;
     }
 
     /**
@@ -487,6 +514,12 @@ public class BookingService {
         if (input.getBreakfastGuests().isPresent() || input.getBreakfastRate().isPresent()) {
             requireValidBreakfast(booking, input.getBreakfastGuests().isPresent());
         }
+        // Notes about the stay: omitted leaves them, null or blank clears them. The audit entry says they
+        // changed, never what they say (allergies are health data).
+        String oldNotes = booking.getNotes();
+        if (input.getNotes() != null && input.getNotes().isPresent()) {
+            booking.setNotes(normalizeNotes(input.getNotes().get()));
+        }
         // The reason belongs to the current cancellation only: written on a move into CANCELLED
         // (null when none was given - SiteMinder, the expiry sweep). There is no move out
         // (requireNotReinstated). Re-sending CANCELLED to an already-cancelled booking isn't a
@@ -532,7 +565,8 @@ public class BookingService {
         boolean guestsChanged = oldAdults != saved.getAdults() || oldChildren != saved.getChildren();
         boolean breakfastChanged = !Objects.equals(oldBreakfastGuests, saved.getBreakfastGuests())
                 || !Objects.equals(oldBreakfastRate, saved.getBreakfastRate());
-        if (statusChanged || channelChanged || purposeChanged || guestsChanged || breakfastChanged) {
+        boolean notesChanged = !Objects.equals(oldNotes, saved.getNotes());
+        if (statusChanged || channelChanged || purposeChanged || guestsChanged || breakfastChanged || notesChanged) {
             List<String> changes = new ArrayList<>();
             if (statusChanged) {
                 changes.add("status changed from " + oldStatus.getValue() + " to " + saved.getStatus().getValue());
@@ -549,6 +583,9 @@ public class BookingService {
             if (breakfastChanged) {
                 changes.add("breakfast changed from " + breakfastText(oldBreakfastGuests, oldBreakfastRate)
                         + " to " + breakfastText(saved.getBreakfastGuests(), saved.getBreakfastRate()));
+            }
+            if (notesChanged) {
+                changes.add(saved.getNotes() == null ? "notes removed" : oldNotes == null ? "notes added" : "notes changed");
             }
             String summary = String.join("; ", changes);
             String reason = statusChanged ? cancellationReason(input, saved.getStatus()) : null;

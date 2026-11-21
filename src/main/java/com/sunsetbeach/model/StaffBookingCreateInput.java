@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
+import com.sunsetbeach.model.BookingStatus;
 import java.util.Arrays;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.util.NoSuchElementException;
@@ -51,6 +52,10 @@ public class StaffBookingCreateInput {
   private JsonNullable<String> guestId = JsonNullable.<String>undefined();
 
   private JsonNullable<@Pattern(regexp = "^\\d{1,8}(\\.\\d{1,2})?$") String> agreedTotal = JsonNullable.<String>undefined();
+
+  private BookingStatus status;
+
+  private JsonNullable<@Size(max = 1000) String> notes = JsonNullable.<String>undefined();
 
   public StaffBookingCreateInput() {
     super();
@@ -317,6 +322,44 @@ public class StaffBookingCreateInput {
     this.agreedTotal = agreedTotal;
   }
 
+  public StaffBookingCreateInput status(BookingStatus status) {
+    this.status = status;
+    return this;
+  }
+
+  /**
+   * Get status
+   * @return status
+   */
+  @Valid 
+  @JsonProperty("status")
+  public BookingStatus getStatus() {
+    return status;
+  }
+
+  public void setStatus(BookingStatus status) {
+    this.status = status;
+  }
+
+  public StaffBookingCreateInput notes(String notes) {
+    this.notes = JsonNullable.of(notes);
+    return this;
+  }
+
+  /**
+   * Optional staff notes for this stay (airport pickup, allergies, special requests). Trimmed; blank means none. More than 1000 characters (after trimming) is a 400 on this field. Not shown to the guest anywhere. 
+   * @return notes
+   */
+  @Size(max = 1000) 
+  @JsonProperty("notes")
+  public JsonNullable<@Size(max = 1000) String> getNotes() {
+    return notes;
+  }
+
+  public void setNotes(JsonNullable<String> notes) {
+    this.notes = notes;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -338,7 +381,9 @@ public class StaffBookingCreateInput {
         Objects.equals(this.adults, staffBookingCreateInput.adults) &&
         Objects.equals(this.children, staffBookingCreateInput.children) &&
         equalsNullable(this.guestId, staffBookingCreateInput.guestId) &&
-        equalsNullable(this.agreedTotal, staffBookingCreateInput.agreedTotal);
+        equalsNullable(this.agreedTotal, staffBookingCreateInput.agreedTotal) &&
+        Objects.equals(this.status, staffBookingCreateInput.status) &&
+        equalsNullable(this.notes, staffBookingCreateInput.notes);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -347,7 +392,7 @@ public class StaffBookingCreateInput {
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomId, guestName, hashCodeNullable(guestEmail), hashCodeNullable(guestPhone), checkIn, checkOut, hashCodeNullable(roomUnitId), channel, purpose, adults, children, hashCodeNullable(guestId), hashCodeNullable(agreedTotal));
+    return Objects.hash(roomId, guestName, hashCodeNullable(guestEmail), hashCodeNullable(guestPhone), checkIn, checkOut, hashCodeNullable(roomUnitId), channel, purpose, adults, children, hashCodeNullable(guestId), hashCodeNullable(agreedTotal), status, hashCodeNullable(notes));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -374,6 +419,8 @@ public class StaffBookingCreateInput {
     sb.append("    children: ").append(toIndentedString(children)).append("\n");
     sb.append("    guestId: ").append(toIndentedString(guestId)).append("\n");
     sb.append("    agreedTotal: ").append(toIndentedString(agreedTotal)).append("\n");
+    sb.append("    status: ").append(toIndentedString(status)).append("\n");
+    sb.append("    notes: ").append("[REDACTED]").append("\n");
     sb.append("}");
     return sb.toString();
   }

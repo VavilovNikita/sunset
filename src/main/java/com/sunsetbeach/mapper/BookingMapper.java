@@ -146,6 +146,7 @@ public class BookingMapper {
                 TimestampFormat.toUtc(entity.getCreatedAt()),
                 TimestampFormat.toUtc(entity.getUpdatedAt()))
                 .stayStatus(stayStatusOf(entity))
+                .notes(entity.getNotes())
                 .breakfastGuests(entity.getBreakfastGuests())
                 .breakfastRate(entity.getBreakfastRate() != null ? com.sunsetbeach.model.BreakfastRate.fromValue(entity.getBreakfastRate()) : null)
                 .bookedAt(entity.getBookedAt() != null ? TimestampFormat.toUtc(entity.getBookedAt()) : null)

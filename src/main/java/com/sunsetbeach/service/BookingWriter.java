@@ -205,6 +205,31 @@ public class BookingWriter {
             int children,
             String roomUnitId,
             BigDecimal agreedTotal) {
+        return insertStaff(room, guestName, guestEmail, guestPhone, checkIn, checkOut, channel, purpose, adults, children, roomUnitId, agreedTotal,
+                BookingStatus.NEW, null);
+    }
+
+    /**
+     * {@code status} is the booking's starting status (the caller has already restricted it to {@code NEW}
+     * = Tentative or {@code CONFIRMED}) and {@code notes} the trimmed staff notes or null - both written in
+     * this same transaction as the booking.
+     */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public BookingEntity insertStaff(
+            RoomEntity room,
+            String guestName,
+            String guestEmail,
+            String guestPhone,
+            LocalDate checkIn,
+            LocalDate checkOut,
+            BookingChannel channel,
+            BookingPurpose purpose,
+            int adults,
+            int children,
+            String roomUnitId,
+            BigDecimal agreedTotal,
+            BookingStatus status,
+            String notes) {
         int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
         if (!isRangeAvailable(room.getId(), unitCount, checkIn, checkOut, null)) {
             throw new ConflictException("Selected dates are no longer available");
@@ -218,6 +243,8 @@ public class BookingWriter {
                 newBookingEntity(
                         room, guestName, guestEmail, guestPhone, checkIn, checkOut, BookingSource.STAFF, channel, purpose, adults, children,
                         sumPrices(nightlyPrices));
+        entity.setStatus(status);
+        entity.setNotes(notes);
 
         String assignedUnitId = null;
         if (roomUnitId != null) {

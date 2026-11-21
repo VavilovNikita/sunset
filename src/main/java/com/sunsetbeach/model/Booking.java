@@ -83,6 +83,8 @@ public class Booking {
 
   private JsonNullable<String> paymentNote = JsonNullable.<String>undefined();
 
+  private JsonNullable<String> notes = JsonNullable.<String>undefined();
+
   private OccupancyStatus occupancyStatus;
 
   private StayStatus stayStatus;
@@ -577,6 +579,25 @@ public class Booking {
     this.paymentNote = paymentNote;
   }
 
+  public Booking notes(String notes) {
+    this.notes = JsonNullable.of(notes);
+    return this;
+  }
+
+  /**
+   * Staff notes for this stay (airport pickup, allergies, special requests), up to 1000 characters; null when there are none. About the stay, unlike `paymentNote` (about the payment) and `Guest.notes` (about the person). Staff-only: never in a guest-facing response. The SiteMinder import neither sets nor clears it. 
+   * @return notes
+   */
+  
+  @JsonProperty("notes")
+  public JsonNullable<String> getNotes() {
+    return notes;
+  }
+
+  public void setNotes(JsonNullable<String> notes) {
+    this.notes = notes;
+  }
+
   public Booking occupancyStatus(OccupancyStatus occupancyStatus) {
     this.occupancyStatus = occupancyStatus;
     return this;
@@ -920,6 +941,7 @@ public class Booking {
         Objects.equals(this.adults, booking.adults) &&
         Objects.equals(this.children, booking.children) &&
         Objects.equals(this.paymentNote, booking.paymentNote) &&
+        equalsNullable(this.notes, booking.notes) &&
         Objects.equals(this.occupancyStatus, booking.occupancyStatus) &&
         Objects.equals(this.stayStatus, booking.stayStatus) &&
         Objects.equals(this.settlement, booking.settlement) &&
@@ -944,7 +966,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -980,6 +1002,7 @@ public class Booking {
     sb.append("    adults: ").append(toIndentedString(adults)).append("\n");
     sb.append("    children: ").append(toIndentedString(children)).append("\n");
     sb.append("    paymentNote: ").append("[REDACTED]").append("\n");
+    sb.append("    notes: ").append("[REDACTED]").append("\n");
     sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
     sb.append("    stayStatus: ").append(toIndentedString(stayStatus)).append("\n");
     sb.append("    settlement: ").append(toIndentedString(settlement)).append("\n");
