@@ -24,3 +24,5 @@ jobs:
             git pull --no-rebase
             docker compose build backend
             docker compose up -d backend
+            docker image prune -f || true
+            docker builder prune -f --filter until=72h || true
