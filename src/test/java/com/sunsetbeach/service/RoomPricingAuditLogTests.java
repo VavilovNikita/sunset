@@ -120,6 +120,7 @@ class RoomPricingAuditLogTests extends AbstractIntegrationTest {
                 .toList();
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).getEntityType()).isEqualTo(AuditEntityType.ROOM);
-        assertThat(entries.get(0).getSummary()).contains("฿1,500").contains(from.toString()).contains(to.toString());
+        assertThat(entries.get(0).getSummary()).contains("฿1,500").contains(com.sunsetbeach.mapper.DateText.date(from))
+                .contains(com.sunsetbeach.mapper.DateText.date(to));
     }
 }

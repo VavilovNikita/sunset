@@ -3364,8 +3364,10 @@ paths:
         (`booking.roomUnitId` - this is the moment a key is handed over) and while
         `occupancyStatus` is `EXPECTED` or `NO_SHOW` (a guest who no-showed can still turn up
         late and check in normally). A `CANCELLED` booking cannot be checked in, and neither can
-        one before its `checkIn` date (the hotel's today) - both 409. Checking into a `DIRTY` room
-        is allowed, not blocked - see `CheckInResult.warning`. Recorded in the audit log.
+        one before its `checkIn` date (the hotel's today) - both 409. A room that still has another
+        guest checked into it - overstaying, or due out today and not checked out yet - is a 409
+        naming that guest (see `TodayBoardEntry.roomOccupant`). Checking into a `DIRTY` room is
+        allowed, not blocked - see `CheckInResult.warning`. Recorded in the audit log.
       responses:
         "200":
           description: Checked in, with a warning set if the room wasn't clean.
@@ -3392,7 +3394,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
         "409":
-          description: Already checked in or already checked out, the booking is `CANCELLED`, or its check-in date has not arrived yet.
+          description: >
+            Already checked in or already checked out, the booking is `CANCELLED`, its check-in
+            date has not arrived yet, or another guest is still checked into the room.
           content:
             application/json:
               schema:
@@ -13231,6 +13235,28 @@ components:
             The one rule for this lives in `OverstayRule` - an overdue guest is still in the house
             and still occupies their room tonight, on every screen. Same figure the night audit's
             missed departures show.
+        roomOccupant:
+          $ref: "#/components/schemas/TodayBoardRoomOccupant"
+
+    TodayBoardRoomOccupant:
+      type: object
+      description: >
+        Set only on an `arrivingToday` entry whose room still has another guest checked into it:
+        `POST /bookings/{id}/check-in` answers 409 until that guest is checked out or the arrival
+        is moved to another room. Absent or null otherwise.
+      required: [bookingId, guestName, overdueDays]
+      properties:
+        bookingId:
+          type: string
+          description: The booking of the guest in the room.
+        guestName:
+          type: string
+        overdueDays:
+          type: integer
+          minimum: 0
+          description: >
+            How many days past their `checkOut` that guest is (see `OverstayRule`); `0` when they
+            are simply not checked out yet (due out today).
 
     TodayBoard:
       type: object

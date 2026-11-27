@@ -9,6 +9,7 @@ import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.SqlStates;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingChannel;
@@ -170,7 +171,7 @@ public class SiteMinderImportService {
                 AuditEntityType.BOOKING,
                 saved.getId(),
                 "SiteMinder reservation " + r.reference() + " imported for " + saved.getGuestName() + " in " + room.getName() + " ("
-                        + r.checkIn() + " to " + r.checkOut() + "), " + r.rawChannel() + ", " + PriceFormat.baht(r.totalPrice())
+                        + DateText.date(r.checkIn()) + " to " + DateText.date(r.checkOut()) + "), " + r.rawChannel() + ", " + PriceFormat.baht(r.totalPrice())
                         + (r.infants() > 0 ? "; " + r.infants() + (r.infants() == 1 ? " infant" : " infants") + " (not stored)" : ""));
         return new SiteMinderImportResult(SiteMinderImportAction.CREATED, saved.getId(), List.of(), List.of(), null);
     }
@@ -229,7 +230,7 @@ public class SiteMinderImportService {
         boolean datesChange = !r.checkIn().equals(booking.getCheckIn()) || !r.checkOut().equals(booking.getCheckOut());
         if (datesChange) {
             changeDates(booking, segments, r, warnings);
-            changes.add("dates " + booking.getCheckIn() + " – " + booking.getCheckOut() + " → " + r.checkIn() + " – " + r.checkOut());
+            changes.add("dates " + DateText.date(booking.getCheckIn()) + " – " + DateText.date(booking.getCheckOut()) + " → " + DateText.date(r.checkIn()) + " – " + DateText.date(r.checkOut()));
         }
 
         // A date change prices any added night at this system's rate (that's updateSchedule's

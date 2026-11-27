@@ -9,6 +9,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.mapper.BookingMapper;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -23,6 +24,7 @@ import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.TodayBoard;
 import com.sunsetbeach.model.TodayBoardEntry;
+import com.sunsetbeach.model.TodayBoardRoomOccupant;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.GuestRepository;
@@ -35,6 +37,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,6 +76,7 @@ public class BookingOccupancyService {
     private final BookingWriter bookingWriter;
     private final GymReservationService gymReservations;
     private final OverstayChargeService overstayChargeService;
+    private final OverstayRule overstayRule;
     private final BookingFolioCalculator folioCalculator;
     private final TransactionTemplate checkOutTransaction;
     private final Clock clock;
@@ -89,11 +93,13 @@ public class BookingOccupancyService {
             BookingWriter bookingWriter,
             GymReservationService gymReservations,
             OverstayChargeService overstayChargeService,
+            OverstayRule overstayRule,
             BookingFolioCalculator folioCalculator,
             PlatformTransactionManager transactionManager,
             Clock clock) {
         this.gymReservations = gymReservations;
         this.overstayChargeService = overstayChargeService;
+        this.overstayRule = overstayRule;
         this.folioCalculator = folioCalculator;
         this.bookingWriter = bookingWriter;
         this.checkOutTransaction = new TransactionTemplate(transactionManager);
@@ -124,7 +130,7 @@ public class BookingOccupancyService {
         }
         LocalDate today = LocalDate.now(clock);
         if (today.isBefore(booking.getCheckIn())) {
-            throw new ConflictException("This booking can't be checked in before its check-in date (" + booking.getCheckIn() + ").");
+            throw new ConflictException("This booking can't be checked in before its check-in date (" + DateText.date(booking.getCheckIn()) + ").");
         }
         if (booking.getRoomUnitId() == null) {
             throw new BadRequestException("Assign a room before checking in.");
@@ -136,8 +142,16 @@ public class BookingOccupancyService {
             throw new ConflictException("This booking has already checked out.");
         }
 
+        // The room the guest walks into today - after a move planned for a later night, not the booking's (last) room.
+        String arrivalUnitId = currentRoomUnitId(bookingId, booking.getRoomUnitId());
+        // Locked, so two arrivals assigned to one room can't both find it empty.
         RoomUnitEntity unit =
-                roomUnitRepository.findById(booking.getRoomUnitId()).orElseThrow(() -> new NotFoundException("Room unit not found"));
+                roomUnitRepository.findByIdForUpdate(arrivalUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
+        // A block, not a warning like a dirty room: who is checked into a room is the system's own record, and two
+        // guests in one room break check-out, housekeeping, the maps and charges to the room.
+        overstayRule.otherGuestIn(unit.getId(), bookingId).ifPresent(other -> {
+            throw new ConflictException(occupiedMessage(unit.getLabel(), other));
+        });
         boolean wasDirty = unit.getHousekeepingStatus() == HousekeepingStatus.DIRTY;
 
         booking.setOccupancyStatus(OccupancyStatus.CHECKED_IN);
@@ -155,6 +169,13 @@ public class BookingOccupancyService {
 
         String warning = wasDirty ? "Room " + unit.getLabel() + " has not been marked clean since the last checkout." : null;
         return new CheckInResult(toDto(saved), warning);
+    }
+
+    private static String occupiedMessage(String unitLabel, OverstayRule.InHouseGuest other) {
+        String state = other.overdue() ? "past check-out" : other.dueOutToday() ? "due out today" : null;
+        return "Room " + unitLabel + " is still occupied by " + other.booking().getGuestName() + " (checked in"
+                + (state == null ? "" : ", " + state)
+                + "). Check them out or move this arrival to another room first.";
     }
 
     /**
@@ -204,21 +225,11 @@ public class BookingOccupancyService {
         return checkOutTransaction.execute(status -> completeCheckOut(bookingId, originalCheckOut, releasedAmount, fee, currentRoomUnitId));
     }
 
-    /**
-     * The unit of the segment that holds today; for an overdue guest (today past the last segment) the
-     * last one, before the first night the first. {@code fallback} when the booking has no segments.
-     */
+    /** The unit of {@link OverstayRule#currentSegment}; {@code fallback} when there is none or it has no room assigned. */
     private String currentRoomUnitId(String bookingId, String fallback) {
-        LocalDate today = LocalDate.now(clock);
-        List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
-        if (segments.isEmpty()) {
-            return fallback;
-        }
-        BookingSegmentEntity chosen = segments.stream()
-                .filter(s -> !today.isBefore(s.getCheckIn()) && today.isBefore(s.getCheckOut()))
-                .findFirst()
-                .orElse(today.isBefore(segments.get(0).getCheckIn()) ? segments.get(0) : segments.get(segments.size() - 1));
-        return chosen.getRoomUnitId() != null ? chosen.getRoomUnitId() : fallback;
+        BookingSegmentEntity current =
+                OverstayRule.currentSegment(segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId), LocalDate.now(clock));
+        return current != null && current.getRoomUnitId() != null ? current.getRoomUnitId() : fallback;
     }
 
     private CheckOutResult completeCheckOut(
@@ -250,7 +261,7 @@ public class BookingOccupancyService {
 
         String shortened = "";
         if (!saved.getCheckOut().equals(originalCheckOut)) {
-            shortened = "; stay shortened from " + originalCheckOut + " to " + saved.getCheckOut()
+            shortened = "; stay shortened from " + DateText.date(originalCheckOut) + " to " + DateText.date(saved.getCheckOut())
                     + (fee.signum() > 0
                             ? ", unused nights (" + PriceFormat.baht(fee) + ") charged as early departure"
                             : ", unused nights (" + PriceFormat.baht(released) + ") not charged");
@@ -368,10 +379,11 @@ public class BookingOccupancyService {
     @Transactional(readOnly = true)
     public TodayBoard getTodayBoard() {
         LocalDate today = LocalDate.now(clock);
+        Map<String, List<OverstayRule.InHouseGuest>> inHouseByUnit = overstayRule.inHouseByRoomUnit();
         List<TodayBoardEntry> arriving = bookingRepository
                 .findByOccupancyStatusAndStatusNotAndCheckInIs(OccupancyStatus.EXPECTED, BookingStatus.CANCELLED, today)
                 .stream()
-                .map(b -> toEntry(b, today))
+                .map(b -> toEntry(b, today).roomOccupant(roomOccupant(inHouseByUnit, b)))
                 .toList();
         // On or before today, not only on it: a guest who should have left on an earlier day is
         // still due out (OverstayRule), and this list is where the desk's check-out button lives.
@@ -386,6 +398,17 @@ public class BookingOccupancyService {
                 .map(b -> toEntry(b, today))
                 .toList();
         return new TodayBoard(arriving, departing, inHouse);
+    }
+
+    /** The guest still in the room an arrival would check into, or null - {@link #checkIn}'s own question. */
+    private TodayBoardRoomOccupant roomOccupant(Map<String, List<OverstayRule.InHouseGuest>> inHouseByUnit, BookingEntity arrival) {
+        String unitId = currentRoomUnitId(arrival.getId(), arrival.getRoomUnitId());
+        if (unitId == null) {
+            return null;
+        }
+        return OverstayRule.otherGuestIn(inHouseByUnit, unitId, arrival.getId())
+                .map(g -> new TodayBoardRoomOccupant(g.booking().getId(), g.booking().getGuestName(), g.overdueDays()))
+                .orElse(null);
     }
 
     /**

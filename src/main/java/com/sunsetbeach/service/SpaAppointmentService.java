@@ -15,6 +15,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.SqlStates;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.TableMapper;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
@@ -295,7 +296,7 @@ public class SpaAppointmentService {
                 AuditAction.SPA_APPOINTMENT_CREATED,
                 AuditEntityType.SPA_APPOINTMENT,
                 saved.getId(),
-                "Booked " + treatment.getName() + " for " + booking.getGuestName() + " on " + date + " " + startTime.format(TIME_FORMAT) + " ("
+                "Booked " + treatment.getName() + " for " + booking.getGuestName() + " on " + DateText.date(date) + " " + startTime.format(TIME_FORMAT) + " ("
                         + table.getLabel() + ", " + therapist.getName() + ")");
 
         // No out-of-stay warning any more: requireServable refuses a date outside the stay outright.
@@ -455,7 +456,7 @@ public class SpaAppointmentService {
                 AuditAction.SPA_APPOINTMENT_RESCHEDULED,
                 AuditEntityType.SPA_APPOINTMENT,
                 saved.getId(),
-                "Rescheduled to " + date + " " + startTime.format(TIME_FORMAT) + " (" + table.getLabel() + ", " + therapist.getName() + ")");
+                "Rescheduled to " + DateText.date(date) + " " + startTime.format(TIME_FORMAT) + " (" + table.getLabel() + ", " + therapist.getName() + ")");
 
         return toDto(saved);
     }
@@ -636,8 +637,8 @@ public class SpaAppointmentService {
             case NO_SHOW -> throw new ConflictException(booking.getGuestName() + " was marked as a no-show, so no treatment can be booked for this booking.");
             case CHECKED_IN, EXPECTED -> {
                 if (date.isBefore(booking.getCheckIn()) || date.isAfter(booking.getCheckOut())) {
-                    throw new BadRequestException(booking.getGuestName() + "'s stay is " + booking.getCheckIn() + " to " + booking.getCheckOut()
-                            + ", which doesn't include " + date + " - pick a date within the stay.");
+                    throw new BadRequestException(booking.getGuestName() + "'s stay is " + DateText.date(booking.getCheckIn()) + " to " + DateText.date(booking.getCheckOut())
+                            + ", which doesn't include " + DateText.date(date) + " - pick a date within the stay.");
                 }
             }
         }
@@ -652,7 +653,7 @@ public class SpaAppointmentService {
         java.time.LocalDateTime now = java.time.LocalDateTime.now(clock);
         LocalDate today = now.toLocalDate();
         if (date.isBefore(today)) {
-            throw new BadRequestException("The date " + date + " has already passed - pick today or a later day.");
+            throw new BadRequestException("The date " + DateText.date(date) + " has already passed - pick today or a later day.");
         }
         if (date.isAfter(today)) {
             return;

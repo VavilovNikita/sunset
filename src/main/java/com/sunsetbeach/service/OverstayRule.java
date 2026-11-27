@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
@@ -166,6 +167,77 @@ public class OverstayRule {
                 })
                 .filter(Objects::nonNull)
                 .toList();
+    }
+
+    /**
+     * A guest who is physically in a room right now. {@code overdueDays} is {@code 0} for one still
+     * within their stay (the departure day included).
+     */
+    public record InHouseGuest(BookingEntity booking, int overdueDays, boolean dueOutToday) {
+
+        public boolean overdue() {
+            return overdueDays > 0;
+        }
+    }
+
+    /**
+     * Who is physically in a room right now, keyed by room unit: every {@code CHECKED_IN},
+     * not-cancelled booking under the unit of its {@link #currentSegment current segment} - an
+     * overstaying guest included, and a guest due out today who has not been checked out yet.
+     * Not the same question as availability ({@link #overlapping}): a departure-day guest leaves
+     * the night free to sell, but is still in the room until someone checks them out.
+     */
+    public Map<String, List<InHouseGuest>> inHouseByRoomUnit() {
+        List<BookingEntity> inHouse =
+                bookingRepository.findByOccupancyStatusAndStatusNot(OccupancyStatus.CHECKED_IN, BookingStatus.CANCELLED);
+        if (inHouse.isEmpty()) {
+            return Map.of();
+        }
+        LocalDate today = today();
+        Map<String, List<BookingSegmentEntity>> segmentsByBooking = segmentRepository
+                .findByBookingIdIn(inHouse.stream().map(BookingEntity::getId).toList()).stream()
+                .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+        Map<String, List<InHouseGuest>> byUnit = new HashMap<>();
+        for (BookingEntity booking : inHouse) {
+            BookingSegmentEntity current = currentSegment(segmentsByBooking.getOrDefault(booking.getId(), List.of()), today);
+            String unitId = current != null && current.getRoomUnitId() != null ? current.getRoomUnitId() : booking.getRoomUnitId();
+            if (unitId != null) {
+                byUnit.computeIfAbsent(unitId, k -> new ArrayList<>())
+                        .add(new InHouseGuest(booking, overdueDays(booking, today), booking.getCheckOut().equals(today)));
+            }
+        }
+        return byUnit;
+    }
+
+    /**
+     * The other guest in {@code roomUnitId} right now, if any - the longest overdue first, since
+     * that is the one nobody is expecting to find there.
+     */
+    public Optional<InHouseGuest> otherGuestIn(String roomUnitId, String bookingId) {
+        return otherGuestIn(inHouseByRoomUnit(), roomUnitId, bookingId);
+    }
+
+    /** {@link #otherGuestIn(String, String)} over a map already read - for a list that asks about many rooms. */
+    public static Optional<InHouseGuest> otherGuestIn(Map<String, List<InHouseGuest>> byUnit, String roomUnitId, String bookingId) {
+        return byUnit.getOrDefault(roomUnitId, List.of()).stream()
+                .filter(g -> !g.booking().getId().equals(bookingId))
+                .max(Comparator.comparingInt(InHouseGuest::overdueDays).thenComparing(g -> g.booking().getId()));
+    }
+
+    /**
+     * The segment a stay is in on {@code today}: the one holding that night; before the first night
+     * the first; from the departure day on, the last (the room an overstaying guest is in). Null
+     * only when there are no segments.
+     */
+    public static BookingSegmentEntity currentSegment(List<BookingSegmentEntity> segments, LocalDate today) {
+        List<BookingSegmentEntity> sorted = segments.stream().sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn)).toList();
+        if (sorted.isEmpty()) {
+            return null;
+        }
+        return sorted.stream()
+                .filter(s -> !today.isBefore(s.getCheckIn()) && today.isBefore(s.getCheckOut()))
+                .findFirst()
+                .orElse(today.isBefore(sorted.get(0).getCheckIn()) ? sorted.get(0) : sorted.get(sorted.size() - 1));
     }
 
     /** {@link #current()} narrowed to one room type and a {@code [checkIn, checkOut)} window. */

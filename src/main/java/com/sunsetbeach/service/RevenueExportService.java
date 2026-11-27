@@ -5,6 +5,7 @@ import com.sunsetbeach.entity.FolioPaymentEntity;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.PaymentEntity;
 import com.sunsetbeach.entity.TableEntity;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
@@ -136,7 +137,7 @@ public class RevenueExportService {
 
             auditLogService.record(
                     AuditAction.REVENUE_EXPORTED, AuditEntityType.PAYMENT, null,
-                    "Exported revenue for " + fromDate + " to " + toDate + ": " + PriceFormat.baht(grandTotal) + " collected ("
+                    "Exported revenue for " + DateText.date(fromDate) + " to " + DateText.date(toDate) + ": " + PriceFormat.baht(grandTotal) + " collected ("
                             + payments.size() + " POS payment(s), " + folioPayments.size() + " room charge settlement(s))");
 
             return out.toByteArray();

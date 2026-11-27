@@ -8,6 +8,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -191,7 +192,7 @@ public class MaintenanceTaskService {
                 AuditAction.MAINTENANCE_TASK_BLOCKED,
                 AuditEntityType.MAINTENANCE_TASK,
                 taskId,
-                "Block linked to this task (" + blockResult.getBlock().getFromDate() + " to " + blockResult.getBlock().getToDate() + ")");
+                "Block linked to this task (" + DateText.iso(blockResult.getBlock().getFromDate()) + " to " + DateText.iso(blockResult.getBlock().getToDate()) + ")");
 
         return new MaintenanceTaskBlockResult(toDtos(List.of(saved)).get(0), blockResult);
     }
@@ -275,7 +276,7 @@ public class MaintenanceTaskService {
                     AuditAction.MAINTENANCE_TASK_BLOCK_LIFTED,
                     AuditEntityType.MAINTENANCE_TASK,
                     task.getId(),
-                    "Block left as it was - it already ended " + block.getToDate() + ", closing a task never extends one");
+                    "Block left as it was - it already ended " + DateText.date(block.getToDate()) + ", closing a task never extends one");
         } else {
             block.setToDate(newToDate);
             roomUnitBlockRepository.save(block);
@@ -283,7 +284,7 @@ public class MaintenanceTaskService {
                     AuditAction.MAINTENANCE_TASK_BLOCK_LIFTED,
                     AuditEntityType.MAINTENANCE_TASK,
                     task.getId(),
-                    "Block shortened to end " + newToDate + " so the room can be sold again");
+                    "Block shortened to end " + DateText.date(newToDate) + " so the room can be sold again");
         }
     }
 

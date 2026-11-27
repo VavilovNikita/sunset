@@ -215,7 +215,7 @@ class UserRoomUnitAuditLogTests extends AbstractIntegrationTest {
                 .filter(e -> e.getAction() == AuditAction.ROOM_UNIT_BLOCK_CREATED)
                 .toList();
         assertThat(createEntries).hasSize(1);
-        assertThat(createEntries.get(0).getSummary()).contains("Maintenance").contains(from.toString());
+        assertThat(createEntries.get(0).getSummary()).contains("Maintenance").contains(com.sunsetbeach.mapper.DateText.date(from));
 
         roomUnitService.deleteBlock(unit.getId(), block.getId());
 

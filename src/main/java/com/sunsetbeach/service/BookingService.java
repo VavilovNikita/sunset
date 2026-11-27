@@ -345,7 +345,7 @@ public class BookingService {
                 AuditAction.BOOKING_CREATED,
                 AuditEntityType.BOOKING,
                 saved.getId(),
-                "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + checkIn + " to " + checkOut + ")"
+                "Staff booking created for " + saved.getGuestName() + " in " + room.getName() + " (" + DateText.date(checkIn) + " to " + DateText.date(checkOut) + ")"
                         + (assignedUnit != null ? "; room " + assignedUnit.getLabel() : "")
                         + "; status " + startStatus.getValue()
                         + (notes != null ? "; notes added" : "")
@@ -905,7 +905,7 @@ public class BookingService {
                 saved.getId(),
                 "Room " + (oldUnit != null ? oldUnit.getLabel() : "unassigned") + " → "
                         + (newUnit != null ? newUnit.getLabel() : "unassigned") + " for one segment of " + saved.getGuestName() + "'s stay ("
-                        + segmentRoom.getName() + ", " + result.segment().getCheckIn() + " to " + result.segment().getCheckOut() + ")");
+                        + segmentRoom.getName() + ", " + DateText.date(result.segment().getCheckIn()) + " to " + DateText.date(result.segment().getCheckOut()) + ")");
         return bookingMapper.toDto(saved, bookingRoom, findRoomUnit(saved.getRoomUnitId()), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 

@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.AttendancePunchEntity;
 import com.sunsetbeach.entity.RosterEntryEntity;
 import com.sunsetbeach.entity.ShiftCodeEntity;
 import com.sunsetbeach.entity.UserEntity;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.RosterEmployee;
@@ -273,7 +274,7 @@ public class RosterExportService {
 
             auditLogService.record(
                     AuditAction.ROSTER_GRID_EXPORTED, AuditEntityType.ROSTER_ENTRY, null,
-                    "Exported the " + ym + " roster grid as Excel");
+                    "Exported the " + DateText.month(ym) + " roster grid as Excel");
 
             return out.toByteArray();
         } catch (IOException e) {
@@ -360,7 +361,7 @@ public class RosterExportService {
 
             auditLogService.record(
                     AuditAction.ROSTER_ACTUALS_EXPORTED, AuditEntityType.ROSTER_ENTRY, null,
-                    "Exported " + ym + " roster actuals for " + orderedEmployeeIds.size() + " employee(s)");
+                    "Exported " + DateText.month(ym) + " roster actuals for " + orderedEmployeeIds.size() + " employee(s)");
 
             return out.toByteArray();
         } catch (IOException e) {

@@ -237,7 +237,7 @@ class NightAuditServiceTests extends AbstractIntegrationTest {
         // Last: a unique violation aborts the surrounding (test) transaction.
         assertThatThrownBy(() -> nightAuditService.close(new NightAuditCloseInput("2033-03-10")))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("2033-03-10");
+                .hasMessageContaining("10 Mar 2033");
     }
 
     @Test
@@ -248,7 +248,7 @@ class NightAuditServiceTests extends AbstractIntegrationTest {
                 .filter(e -> e.getAction() == AuditAction.NIGHT_AUDIT_CLOSED && ACTOR_EMAIL.equals(e.getActorEmail()))
                 .toList();
         assertThat(rows).hasSize(1);
-        assertThat(rows.get(0).getSummary()).startsWith("Closed night audit for 2033-03-10");
+        assertThat(rows.get(0).getSummary()).startsWith("Closed night audit for 10 Mar 2033");
     }
 
     // --- Fixtures -----------------------------------------------------------------------------

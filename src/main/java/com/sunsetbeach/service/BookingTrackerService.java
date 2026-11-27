@@ -10,6 +10,7 @@ import com.sunsetbeach.entity.RoomUnitBlockEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -623,7 +624,7 @@ public class BookingTrackerService {
                     AuditAction.BOOKING_TRACKER_SNAPSHOT_UPDATED,
                     AuditEntityType.SETTINGS,
                     entity.getId(),
-                    "Booking tracker snapshot " + entity.getSnapshotDate() + " for " + entity.getStayMonth() + ": " + String.join(", ", changed) + " changed");
+                    "Booking tracker snapshot " + DateText.date(entity.getSnapshotDate()) + " for " + DateText.isoMonth(entity.getStayMonth()) + ": " + String.join(", ", changed) + " changed");
         }
         BookingTrackerSnapshotEntity previous = snapshotRepository.findByStayMonthIn(List.of(entity.getStayMonth())).stream()
                 .filter(s -> s.getSnapshotDate().isBefore(entity.getSnapshotDate()))

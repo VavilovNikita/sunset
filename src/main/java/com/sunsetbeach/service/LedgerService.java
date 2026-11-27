@@ -12,6 +12,7 @@ import com.sunsetbeach.entity.OrderItemEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
@@ -160,7 +161,7 @@ public class LedgerService {
             lines.add(Line.debit(GUEST_LEDGER, fromGuestLedger));
         }
         lines.addAll(revenueCredits(Map.of(ROOM_REVENUE, gross)));
-        post(today(), "Room settled (PAID): " + booking.getGuestName() + ", " + booking.getCheckIn() + " to " + booking.getCheckOut(),
+        post(today(), "Room settled (PAID): " + booking.getGuestName() + ", " + DateText.date(booking.getCheckIn()) + " to " + DateText.date(booking.getCheckOut()),
                 JournalSourceType.BOOKING, booking.getId(), null, currentUserId(), lines);
     }
 
@@ -177,7 +178,7 @@ public class LedgerService {
         List<Line> lines = new ArrayList<>();
         lines.add(Line.debit(GUEST_LEDGER, gross));
         lines.addAll(revenueCredits(Map.of(ROOM_REVENUE, gross)));
-        return post(night, "Overstay night " + night + ": " + booking.getGuestName() + ", booked " + booking.getCheckIn() + " to " + booking.getCheckOut(),
+        return post(night, "Overstay night " + DateText.date(night) + ": " + booking.getGuestName() + ", booked " + DateText.date(booking.getCheckIn()) + " to " + DateText.date(booking.getCheckOut()),
                 JournalSourceType.OVERSTAY, chargeId, null, currentUserId(), lines);
     }
 
@@ -186,7 +187,7 @@ public class LedgerService {
     public JournalEntryEntity reverseOverstayCharge(BookingEntity booking, OverstayChargeEntity charge) {
         JournalEntryEntity original = entryRepository.findById(charge.getEntryId())
                 .orElseThrow(() -> new IllegalStateException("Overstay charge " + charge.getId() + " has no ledger entry"));
-        return post(today(), "Overstay night " + charge.getDate() + " no longer charged: " + booking.getGuestName(),
+        return post(today(), "Overstay night " + DateText.date(charge.getDate()) + " no longer charged: " + booking.getGuestName(),
                 JournalSourceType.OVERSTAY, charge.getId(), original.getId(), currentUserId(), mirrorOf(original));
     }
 
@@ -380,7 +381,7 @@ public class LedgerService {
                 AuditAction.LEDGER_ENTRY_POSTED,
                 AuditEntityType.LEDGER_ENTRY,
                 entry.getId(),
-                "Manual journal entry of " + PriceFormat.baht(debits) + " dated " + entryDate + ": " + description);
+                "Manual journal entry of " + PriceFormat.baht(debits) + " dated " + DateText.date(entryDate) + ": " + description);
         return toDtos(List.of(entry)).get(0);
     }
 

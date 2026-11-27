@@ -5,6 +5,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -91,7 +92,7 @@ public class PricingService {
                 AuditAction.RATE_OVERRIDE_CHANGED,
                 AuditEntityType.ROOM,
                 room.getId(),
-                "Price override set to " + PriceFormat.baht(input.getPrice()) + " for " + room.getName() + " from " + from + " to " + to + " ("
+                "Price override set to " + PriceFormat.baht(input.getPrice()) + " for " + room.getName() + " from " + DateText.date(from) + " to " + DateText.date(to) + " ("
                         + dates.size() + " day(s))");
 
         return dates.size();

@@ -10,6 +10,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.RoomUnitMapper;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -339,7 +340,7 @@ public class RoomUnitService {
                 AuditAction.ROOM_UNIT_BLOCK_CREATED,
                 AuditEntityType.ROOM_UNIT,
                 roomUnitId,
-                "Room " + unit.getLabel() + " blocked " + fromDate + " to " + toDate + " (" + entity.getReason() + ")"
+                "Room " + unit.getLabel() + " blocked " + DateText.date(fromDate) + " to " + DateText.date(toDate) + " (" + entity.getReason() + ")"
                         + (affectedBookings.isEmpty() ? "" : " - overlaps " + affectedBookings.size() + " booking(s) assigned to this room")
                         + (affectedUnassignedBookings.isEmpty()
                                 ? ""
@@ -420,7 +421,7 @@ public class RoomUnitService {
                 AuditAction.ROOM_UNIT_BLOCK_DELETED,
                 AuditEntityType.ROOM_UNIT,
                 roomUnitId,
-                "Block on room " + unit.getLabel() + " (" + block.getFromDate() + " to " + block.getToDate() + ") removed");
+                "Block on room " + unit.getLabel() + " (" + DateText.date(block.getFromDate()) + " to " + DateText.date(block.getToDate()) + ") removed");
     }
 
     private RoomUnitEntity findEntity(String id) {

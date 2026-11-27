@@ -7,6 +7,7 @@ import com.sunsetbeach.entity.ShiftCodeEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AttendanceDayCorrectionInput;
 import com.sunsetbeach.model.AttendanceDaySummary;
@@ -187,7 +188,7 @@ public class AttendanceService {
                 AuditAction.ATTENDANCE_DAY_CORRECTED,
                 AuditEntityType.ATTENDANCE_PUNCH,
                 correctionId,
-                "Corrected " + employee.getName() + "'s punches on " + day + ": " + describeTimes(current.stream().map(AttendancePunchEntity::getPunchAt).toList())
+                "Corrected " + employee.getName() + "'s punches on " + DateText.date(day) + ": " + describeTimes(current.stream().map(AttendancePunchEntity::getPunchAt).toList())
                         + " -> " + describeTimes(newTimes) + " (" + current.size() + " voided, " + saved.size() + " recorded). Reason: " + reason);
 
         return toDtos(saved, employee);
@@ -241,7 +242,7 @@ public class AttendanceService {
                 AuditEntityType.ATTENDANCE_PUNCH,
                 saved.getId(),
                 (closesAnIncompleteDay ? "Corrected " : "Recorded ") + employee.getName() + "'s " + saved.getDirection().getValue() + " punch at "
-                        + punchAt.format(TIME_FORMAT) + " on " + day);
+                        + punchAt.format(TIME_FORMAT) + " on " + DateText.date(day));
 
         return toDto(saved, employee, actor.getEmail());
     }

@@ -265,7 +265,7 @@ class RosterImportServiceTests extends AbstractIntegrationTest {
         List<AuditLogEntity> auditEntries =
                 auditLogRepository.findAll().stream().filter(a -> a.getAction() == AuditAction.ROSTER_MONTH_IMPORTED && a.getActorUserId().equals(admin.getId())).toList();
         assertThat(auditEntries).hasSize(1);
-        assertThat(auditEntries.get(0).getSummary()).contains("2026-01").contains("3");
+        assertThat(auditEntries.get(0).getSummary()).contains("Jan 2026").contains("3");
 
         // Re-committing the same staged file (a retry after a lost response, or just running it
         // again by mistake) must not duplicate anything - every cell now collides instead.

@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.OrderEntity;
 import com.sunsetbeach.entity.SpaAppointmentEntity;
 import com.sunsetbeach.entity.SpaAppointmentOrderEntity;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.OrderStatus;
@@ -88,7 +89,7 @@ public class SpaBookingCancellationService {
             LocalDateTime end = LocalDateTime.of(appointment.getDate(), appointment.getStartTime()).plusMinutes(appointment.getDurationMinutes());
             if (outside && end.isAfter(now)
                     && cancelBooked(appointment, "Spa appointment " + appointment.getId() + " marked cancelled - " + booking.getGuestName() + "'s stay is now "
-                            + booking.getCheckIn() + " to " + booking.getCheckOut())) {
+                            + DateText.date(booking.getCheckIn()) + " to " + DateText.date(booking.getCheckOut()))) {
                 cancelled++;
             }
         }
@@ -140,7 +141,7 @@ public class SpaBookingCancellationService {
                 continue;
             }
             linkedOrders(appointment).stream().filter(o -> o.getStatus() == OrderStatus.PAID).findFirst().ifPresent(order ->
-                    notes.add("The spa appointment on " + appointment.getDate() + " at " + appointment.getStartTime().toString().substring(0, 5)
+                    notes.add("The spa appointment on " + DateText.date(appointment.getDate()) + " at " + appointment.getStartTime().toString().substring(0, 5)
                             + " is already paid (order #" + order.getNumber() + ") and was left as it is - refund it and cancel the appointment by hand if it should not go ahead."));
         }
         return notes.isEmpty() ? null : String.join(" ", notes);

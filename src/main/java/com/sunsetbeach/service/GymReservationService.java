@@ -19,6 +19,7 @@ import com.sunsetbeach.error.ForbiddenException;
 import com.sunsetbeach.error.NotFoundException;
 import com.sunsetbeach.error.SqlStates;
 import com.sunsetbeach.error.UnauthorizedException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -426,8 +427,8 @@ public class GymReservationService {
 
     private static void requireWithinStay(BookingEntity booking, LocalDate date) {
         if (date.isBefore(booking.getCheckIn()) || date.isAfter(booking.getCheckOut())) {
-            throw new BadRequestException("The stay is " + booking.getCheckIn() + " to " + booking.getCheckOut()
-                    + ", which does not include " + date + " — pick a date within the stay");
+            throw new BadRequestException("The stay is " + DateText.date(booking.getCheckIn()) + " to " + DateText.date(booking.getCheckOut())
+                    + ", which does not include " + DateText.date(date) + " — pick a date within the stay");
         }
     }
 
@@ -439,8 +440,8 @@ public class GymReservationService {
         if (used + duration > MAX_DAILY_MINUTES) {
             int left = Math.max(0, MAX_DAILY_MINUTES - used);
             throw new ConflictException(left == 0
-                    ? "The " + MAX_DAILY_MINUTES + " minutes of gym time for " + date + " are already booked for this stay"
-                    : "Only " + left + " minutes of gym time are left for " + date + " on this stay");
+                    ? "The " + MAX_DAILY_MINUTES + " minutes of gym time for " + DateText.date(date) + " are already booked for this stay"
+                    : "Only " + left + " minutes of gym time are left for " + DateText.date(date) + " on this stay");
         }
     }
 
@@ -523,7 +524,7 @@ public class GymReservationService {
     }
 
     private static String describe(GymReservationEntity r) {
-        return r.getDate() + " " + r.getStartTime().format(HHMM) + "–" + r.end().toLocalTime().format(HHMM);
+        return DateText.date(r.getDate()) + " " + r.getStartTime().format(HHMM) + "–" + r.end().toLocalTime().format(HHMM);
     }
 
     private static int minutesOfDay(LocalTime t) {

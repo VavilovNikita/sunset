@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.BookingTrackerBucket;
 import com.sunsetbeach.model.BookingTrackerChannelRank;
 import com.sunsetbeach.model.BookingTrackerChannelRow;
@@ -94,7 +95,7 @@ public class BookingTrackerExportService {
         List<BookingTrackerMonth> months = report.getMonths();
         int r = 0;
         r = title(sheet, s, r, "Booking tracker " + report.getFromMonth() + " to " + report.getToMonth());
-        r = note(sheet, s, r, "As at " + report.getPositionDate() + ". Counted bookings are CONFIRMED and PAID (no enquiries, cancellations or no-shows). "
+        r = note(sheet, s, r, "As at " + DateText.date(report.getPositionDate()) + ". Counted bookings are CONFIRMED and PAID (no enquiries, cancellations or no-shows). "
                 + "Gross includes VAT " + report.getVatRate() + "% and service charge " + report.getServiceChargeRate() + "% (deducted for this analysis only; nothing is charged).");
         r = note(sheet, s, r, "An early-departure fee has no night and is left out, as in the revenue statistic (Z410).");
         r++;

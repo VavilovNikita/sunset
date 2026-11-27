@@ -3,6 +3,7 @@ package com.sunsetbeach.service;
 import com.sunsetbeach.entity.EmployeePayRateEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -71,7 +72,7 @@ public class EmployeePayRateService {
                 AuditAction.EMPLOYEE_PAY_RATE_CHANGED,
                 AuditEntityType.EMPLOYEE_PAY_RATE,
                 saved.getId(),
-                "Daily rate for " + employee.getName() + " set to " + saved.getDailyRate() + ", effective " + saved.getEffectiveFrom());
+                "Daily rate for " + employee.getName() + " set to " + saved.getDailyRate() + ", effective " + DateText.date(saved.getEffectiveFrom()));
 
         return toDto(saved, employee, actor.getEmail());
     }

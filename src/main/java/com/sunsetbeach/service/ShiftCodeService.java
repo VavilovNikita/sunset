@@ -8,6 +8,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.FillColor;
@@ -125,7 +126,7 @@ public class ShiftCodeService {
         LocalDate effectiveFrom = LocalDate.parse(input.getEffectiveFrom());
         if (shiftCodeRepository.findByStaffAreaAndCode(input.getStaffArea(), input.getCode()).stream()
                 .anyMatch(v -> v.getEffectiveFrom().equals(effectiveFrom))) {
-            throw new ConflictException("\"" + input.getCode() + "\" already has a version starting " + effectiveFrom
+            throw new ConflictException("\"" + input.getCode() + "\" already has a version starting " + DateText.date(effectiveFrom)
                     + " - edit that code instead (a new version, or the same start date to replace it), or pick a different date");
         }
 
@@ -159,7 +160,7 @@ public class ShiftCodeService {
                 AuditEntityType.SHIFT_CODE,
                 saved.getId(),
                 "Defined " + areaDescription + " code \"" + saved.getCode() + "\" as " + saved.getKind().getValue()
-                        + ", effective " + saved.getEffectiveFrom());
+                        + ", effective " + DateText.date(saved.getEffectiveFrom()));
 
         return toDtoForApi(saved, creatorEmail);
     }
@@ -214,10 +215,10 @@ public class ShiftCodeService {
                 .min(Comparator.naturalOrder())
                 .orElse(current.getEffectiveFrom());
         if (effectiveFrom.isBefore(firstStart)) {
-            throw new BadRequestException("\"" + current.getCode() + "\" was first defined effective " + firstStart + " - a new version can't start before that");
+            throw new BadRequestException("\"" + current.getCode() + "\" was first defined effective " + DateText.date(firstStart) + " - a new version can't start before that");
         }
         if (effectiveFrom.isBefore(current.getEffectiveFrom())) {
-            throw new ConflictException("\"" + current.getCode() + "\" already has a version starting " + current.getEffectiveFrom()
+            throw new ConflictException("\"" + current.getCode() + "\" already has a version starting " + DateText.date(current.getEffectiveFrom())
                     + " - a new version can start on that date (replacing it) or later, not before it");
         }
         String before = describeTerms(current);
@@ -233,7 +234,7 @@ public class ShiftCodeService {
             target.setCreatedByUserId(actorUserId);
         } else {
             if (rosterEntryRepository.existsByShiftCodeIdAndDateBefore(current.getId(), effectiveFrom)) {
-                throw new ConflictException("\"" + current.getCode() + "\" version from " + effectiveFrom
+                throw new ConflictException("\"" + current.getCode() + "\" version from " + DateText.date(effectiveFrom)
                         + " is already used on earlier days - replacing it would change them too");
             }
             target = current;
@@ -269,9 +270,9 @@ public class ShiftCodeService {
                 AuditAction.SHIFT_CODE_VERSIONED,
                 AuditEntityType.SHIFT_CODE,
                 saved.getId(),
-                "Changed code \"" + saved.getCode() + "\" from " + effectiveFrom + (effectiveFrom.isBefore(today) ? " (a past date - days from then on were recalculated)" : "")
+                "Changed code \"" + saved.getCode() + "\" from " + DateText.date(effectiveFrom) + (effectiveFrom.isBefore(today) ? " (a past date - days from then on were recalculated)" : "")
                         + ": " + before + " -> " + describeTerms(saved)
-                        + "; moved " + movedEntries + " roster entries (" + effectiveFrom + " on) and " + movedPatterns + " employee patterns to it");
+                        + "; moved " + movedEntries + " roster entries (" + DateText.date(effectiveFrom) + " on) and " + movedPatterns + " employee patterns to it");
 
         String creatorEmail = userRepository.findById(saved.getCreatedByUserId()).map(UserEntity::getEmail).orElse(null);
         return toDtoForApi(saved, creatorEmail);

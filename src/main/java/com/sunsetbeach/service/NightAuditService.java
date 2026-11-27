@@ -8,6 +8,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.SqlStates;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
@@ -120,7 +121,7 @@ public class NightAuditService {
             saved = nightAuditRepository.saveAndFlush(entity);
         } catch (DataIntegrityViolationException e) {
             if (SqlStates.is(e, UNIQUE_VIOLATION_SQLSTATE)) {
-                throw new ConflictException(day + " is already closed.");
+                throw new ConflictException(DateText.date(day) + " is already closed.");
             }
             throw e;
         }
@@ -131,7 +132,7 @@ public class NightAuditService {
                 AuditAction.NIGHT_AUDIT_CLOSED,
                 AuditEntityType.NIGHT_AUDIT,
                 saved.getId(),
-                "Closed night audit for " + day + " (" + missedArrivals(day).size() + " missed arrival(s), "
+                "Closed night audit for " + DateText.date(day) + " (" + missedArrivals(day).size() + " missed arrival(s), "
                         + missedDepartures(day).size() + " missed departure(s), " + unpaidBalances(day).size() + " unpaid balance(s) open)");
         return toClosureDto(saved);
     }

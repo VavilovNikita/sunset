@@ -6,6 +6,7 @@ import com.sunsetbeach.entity.ShiftCodeEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.RosterCopyInput;
@@ -196,7 +197,7 @@ public class RosterService {
 
         auditLogService.record(
                 AuditAction.ROSTER_MONTH_GENERATED, AuditEntityType.ROSTER_ENTRY, null,
-                "Generated " + ym + " roster from patterns: " + created + " entr" + (created == 1 ? "y" : "ies") + " created");
+                "Generated " + DateText.month(ym) + " roster from patterns: " + created + " entr" + (created == 1 ? "y" : "ies") + " created");
 
         return getMonth(year, month);
     }
@@ -222,7 +223,7 @@ public class RosterService {
 
         auditLogService.record(
                 AuditAction.ROSTER_ENTRY_CREATED, AuditEntityType.ROSTER_ENTRY, saved.getId(),
-                "Scheduled " + employee.getName() + " for " + shiftCode.getCode() + " on " + date);
+                "Scheduled " + employee.getName() + " for " + shiftCode.getCode() + " on " + DateText.date(date));
 
         return toDto(saved, employee, shiftCode, null);
     }
@@ -264,7 +265,7 @@ public class RosterService {
         ShiftCodeEntity shiftCode = shiftCodeRepository.findById(saved.getShiftCodeId()).orElseThrow(() -> new NotFoundException("Shift code not found"));
         auditLogService.record(
                 AuditAction.ROSTER_ENTRY_MOVED, AuditEntityType.ROSTER_ENTRY, saved.getId(),
-                "Moved " + employee.getName() + "'s " + shiftCode.getCode() + " shift from " + originalDate + " to " + targetDate);
+                "Moved " + employee.getName() + "'s " + shiftCode.getCode() + " shift from " + DateText.date(originalDate) + " to " + DateText.date(targetDate));
 
         return toDto(saved, employee, shiftCode, null);
     }
@@ -301,7 +302,7 @@ public class RosterService {
         ShiftCodeEntity shiftCode = shiftCodeRepository.findById(saved.getShiftCodeId()).orElseThrow(() -> new NotFoundException("Shift code not found"));
         auditLogService.record(
                 AuditAction.ROSTER_ENTRY_REASSIGNED, AuditEntityType.ROSTER_ENTRY, saved.getId(),
-                "Gave " + originalEmployee.getName() + "'s " + shiftCode.getCode() + " shift on " + saved.getDate() + " to "
+                "Gave " + originalEmployee.getName() + "'s " + shiftCode.getCode() + " shift on " + DateText.date(saved.getDate()) + " to "
                         + targetEmployee.getName());
 
         return toDto(saved, targetEmployee, shiftCode, null);
@@ -367,10 +368,10 @@ public class RosterService {
         UserEntity otherEmployee = userRepository.findById(other.getEmployeeUserId()).orElseThrow(() -> new NotFoundException("Employee not found"));
         auditLogService.record(
                 AuditAction.ROSTER_ENTRIES_SWAPPED, AuditEntityType.ROSTER_ENTRY, entity.getId(),
-                "Swapped days with " + otherEmployee.getName() + ": now " + entity.getDate());
+                "Swapped days with " + otherEmployee.getName() + ": now " + DateText.date(entity.getDate()));
         auditLogService.record(
                 AuditAction.ROSTER_ENTRIES_SWAPPED, AuditEntityType.ROSTER_ENTRY, other.getId(),
-                "Swapped days with " + entityEmployee.getName() + ": now " + other.getDate());
+                "Swapped days with " + entityEmployee.getName() + ": now " + DateText.date(other.getDate()));
 
         ShiftCodeEntity shiftCode = shiftCodeRepository.findById(entity.getShiftCodeId()).orElseThrow(() -> new NotFoundException("Shift code not found"));
         return toDto(entity, entityEmployee, shiftCode, null);
@@ -386,7 +387,7 @@ public class RosterService {
         ShiftCodeEntity shiftCode = shiftCodeRepository.findById(saved.getShiftCodeId()).orElseThrow(() -> new NotFoundException("Shift code not found"));
         auditLogService.record(
                 AuditAction.ROSTER_ENTRY_LOCKED_CHANGED, AuditEntityType.ROSTER_ENTRY, saved.getId(),
-                (locked ? "Locked" : "Unlocked") + " " + employee.getName() + "'s " + shiftCode.getCode() + " shift on " + saved.getDate());
+                (locked ? "Locked" : "Unlocked") + " " + employee.getName() + "'s " + shiftCode.getCode() + " shift on " + DateText.date(saved.getDate()));
 
         return toDto(saved, employee, shiftCode, null);
     }
@@ -479,7 +480,7 @@ public class RosterService {
 
         auditLogService.record(
                 AuditAction.ROSTER_MONTH_COPIED, AuditEntityType.ROSTER_ENTRY, null,
-                "Copied " + sourceFrom + " to " + usedSourceTo + " into the " + target + " roster: " + created + " entr" + (created == 1 ? "y" : "ies")
+                "Copied " + DateText.date(sourceFrom) + " to " + DateText.date(usedSourceTo) + " into the " + DateText.month(target) + " roster: " + created + " entr" + (created == 1 ? "y" : "ies")
                         + " created, " + skippedExisting + " existing left alone, " + skippedNoCurrentCode + " without a current code skipped");
 
         return new RosterCopyResult(

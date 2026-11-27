@@ -5,6 +5,7 @@ import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.BadRequestException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -160,7 +161,7 @@ public class FutureBookingsService {
                 AuditAction.BOOKINGS_EXPORTED,
                 AuditEntityType.BOOKING,
                 null,
-                "Exported " + report.getRows().size() + " future booking(s) arriving " + report.getFrom() + " to " + report.getTo());
+                "Exported " + report.getRows().size() + " future booking(s) arriving " + DateText.iso(report.getFrom()) + " to " + DateText.iso(report.getTo()));
         return new Export("future-bookings_" + report.getFrom() + "_" + report.getTo() + ".csv", csv.toString());
     }
 

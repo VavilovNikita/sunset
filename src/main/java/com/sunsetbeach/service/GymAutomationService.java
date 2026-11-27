@@ -5,6 +5,7 @@ import com.sunsetbeach.entity.GymDeviceEntity;
 import com.sunsetbeach.entity.GymHallSettingsEntity;
 import com.sunsetbeach.entity.GymReservationActionEntity;
 import com.sunsetbeach.entity.GymReservationEntity;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
@@ -434,7 +435,7 @@ public class GymAutomationService {
 
     private void auditPhase(GymReservationEntity r, String phase, List<GymReservationActionEntity> rows) {
         String guest = bookings.findById(r.getBookingId()).map(BookingEntity::getGuestName).orElse("a guest");
-        String session = guest + "'s gym session " + r.getDate() + " " + r.getStartTime().format(GymHallSettingsService.HHMM)
+        String session = guest + "'s gym session " + DateText.date(r.getDate()) + " " + r.getStartTime().format(GymHallSettingsService.HHMM)
                 + "–" + r.end().toLocalTime().format(GymHallSettingsService.HHMM);
         boolean on = GymReservationActionEntity.ON.equals(phase);
         List<String> ok = new ArrayList<>();

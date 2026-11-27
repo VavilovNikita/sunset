@@ -1,13 +1,21 @@
 package com.sunsetbeach.repository;
 
 import com.sunsetbeach.entity.RoomUnitEntity;
+import jakarta.persistence.LockModeType;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 public interface RoomUnitRepository extends JpaRepository<RoomUnitEntity, String> {
 
     List<RoomUnitEntity> findByRoomId(String roomId);
+
+    /** Row lock on one physical room: check-in takes it so two arrivals can't both find the room empty. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from RoomUnitEntity u where u.id = :id")
+    Optional<RoomUnitEntity> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") String id);
 
     List<RoomUnitEntity> findByRoomIdAndIsActiveTrue(String roomId);
 

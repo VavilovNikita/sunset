@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.ForbiddenException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.Role;
@@ -171,8 +172,8 @@ public class ShiftRequestDeciderService {
             throw new BadRequestException("The last day can't be before the first");
         }
         if (!Objects.equals(from, hr.getHrVacationFrom()) || !Objects.equals(to, hr.getHrVacationTo())) {
-            String before = hr.getHrVacationFrom() == null ? "none" : hr.getHrVacationFrom() + ".." + hr.getHrVacationTo();
-            String after = from == null ? "none" : from + ".." + to;
+            String before = hr.getHrVacationFrom() == null ? "none" : DateText.date(hr.getHrVacationFrom()) + " to " + DateText.date(hr.getHrVacationTo());
+            String after = from == null ? "none" : DateText.date(from) + " to " + DateText.date(to);
             hr.setHrVacationFrom(from);
             hr.setHrVacationTo(to);
             userRepository.saveAndFlush(hr);

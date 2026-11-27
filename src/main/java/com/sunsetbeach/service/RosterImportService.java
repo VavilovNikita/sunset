@@ -7,6 +7,7 @@ import com.sunsetbeach.entity.ShiftCodeEntity;
 import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.AuditAction;
 import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.FillColor;
@@ -255,7 +256,7 @@ public class RosterImportService {
         YearMonth ym = YearMonth.of(staged.year(), staged.month());
         auditLogService.record(
                 AuditAction.ROSTER_MONTH_IMPORTED, AuditEntityType.ROSTER_ENTRY, null,
-                "Imported " + ym + " schedule: " + created + " entr" + (created == 1 ? "y" : "ies") + " created, " + skipped
+                "Imported " + DateText.month(ym) + " schedule: " + created + " entr" + (created == 1 ? "y" : "ies") + " created, " + skipped
                         + " skipped (already scheduled)"
                         + (departmentsFilled > 0 ? ", department set for " + departmentsFilled + " employee(s) who had none" : ""));
 

@@ -170,7 +170,7 @@ class OverstayRuleTests extends AbstractIntegrationTest {
         assertThatThrownBy(() -> insertStaff("2033-03-19", "2033-03-21", unit.getId()))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Overstay Guest")
-                .hasMessageContaining("2033-03-15");
+                .hasMessageContaining("15 Mar 2033");
     }
 
     @Test

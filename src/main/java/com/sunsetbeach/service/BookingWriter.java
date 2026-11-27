@@ -12,6 +12,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.ForbiddenException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
@@ -609,8 +610,7 @@ public class BookingWriter {
         LocalDate segCheckOut = target.segmentCheckOut();
         RoomEntity room = roomRepository.findById(segment.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
 
-        int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
-        if (!isRangeAvailable(room.getId(), unitCount, segCheckIn, segCheckOut, bookingId)) {
+        if (!typeHasRoomForNewNights(segment, segCheckIn, segCheckOut, bookingId)) {
             throw new ConflictException("Selected dates are no longer available");
         }
 
@@ -700,8 +700,7 @@ public class BookingWriter {
         BigDecimal totalPrice = othersTotal.add(reprice.newSegmentTotal());
         int nights = DateRangeUtil.getNights(newCheckIn, newCheckOut).size();
 
-        int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
-        if (!isRangeAvailable(room.getId(), unitCount, segCheckIn, segCheckOut, bookingId)) {
+        if (!typeHasRoomForNewNights(segment, segCheckIn, segCheckOut, bookingId)) {
             return new ScheduleQuote(totalPrice, nights, false, "Selected dates are no longer available");
         }
 
@@ -750,7 +749,7 @@ public class BookingWriter {
 
         if (checkInChanged && !checkOutChanged) {
             if (!newCheckIn.isBefore(first.getCheckOut())) {
-                return ScheduleTarget.badRequest("New check-in must stay before " + first.getCheckOut()
+                return ScheduleTarget.badRequest("New check-in must stay before " + DateText.date(first.getCheckOut())
                         + " - crossing into the next segment isn't a schedule change, it's a relocation.");
             }
             return ScheduleTarget.of(first, newCheckIn, first.getCheckOut());
@@ -766,7 +765,7 @@ public class BookingWriter {
                 return new ScheduleTarget(newLast, newLast.getCheckIn(), newCheckOut, null, false, dropped);
             }
             if (!newCheckOut.isAfter(last.getCheckIn())) {
-                return ScheduleTarget.badRequest("New check-out must stay after " + last.getCheckIn()
+                return ScheduleTarget.badRequest("New check-out must stay after " + DateText.date(last.getCheckIn())
                         + " - crossing into the previous segment isn't a schedule change, it's an undo-relocation.");
             }
             return ScheduleTarget.of(last, last.getCheckIn(), newCheckOut);
@@ -797,6 +796,23 @@ public class BookingWriter {
         boolean isRejected() {
             return segment == null;
         }
+    }
+
+    /**
+     * Whether the type can take the nights a schedule change adds to {@code segment}. A night the
+     * segment already holds is not asked about: keeping it changes no count, so a room change or a
+     * shortening inside an oversold type must not be refused for it.
+     */
+    private boolean typeHasRoomForNewNights(BookingSegmentEntity segment, LocalDate newCheckIn, LocalDate newCheckOut, String bookingId) {
+        int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(segment.getRoomId());
+        // The new nights before the ones already held, and the new nights after them (both may be empty).
+        LocalDate beforeEnd = newCheckOut.isBefore(segment.getCheckIn()) ? newCheckOut : segment.getCheckIn();
+        LocalDate afterStart = newCheckIn.isAfter(segment.getCheckOut()) ? newCheckIn : segment.getCheckOut();
+        boolean before = !newCheckIn.isBefore(beforeEnd)
+                || isRangeAvailable(segment.getRoomId(), unitCount, newCheckIn, beforeEnd, bookingId);
+        return before
+                && (!afterStart.isBefore(newCheckOut)
+                        || isRangeAvailable(segment.getRoomId(), unitCount, afterStart, newCheckOut, bookingId));
     }
 
     /**
@@ -894,6 +910,20 @@ public class BookingWriter {
     }
 
     /**
+     * Whether the destination type can take the moved nights. Always true within one type: the guest
+     * already holds one of its rooms for those nights, so the move changes no count - an oversold
+     * type (overstaying guests) used to refuse a move onto its own free room. The room itself is
+     * still checked ({@link #checkUnitAssignable}).
+     */
+    private boolean typeHasRoomFor(RelocationPlan plan, LocalDate effectiveDate, String bookingId) {
+        if (plan.sameType()) {
+            return true;
+        }
+        int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(plan.newRoom().getId());
+        return isRangeAvailable(plan.newRoom().getId(), unitCount, effectiveDate, plan.target().getCheckOut(), bookingId);
+    }
+
+    /**
      * The rate mode a request ends up with: within one room type always {@code KEEP_RATE} (asking
      * for {@code NEW_RATE} there is a 400 - re-rating nights is {@code reprice}); across types the
      * request's choice, {@code NEW_RATE} when it made none.
@@ -954,8 +984,7 @@ public class BookingWriter {
         }
         LocalDate oldCheckOut = target.getCheckOut();
 
-        int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(newRoom.getId());
-        if (!isRangeAvailable(newRoom.getId(), unitCount, effectiveDate, oldCheckOut, bookingId)) {
+        if (!typeHasRoomFor(plan, effectiveDate, bookingId)) {
             throw new ConflictException("Selected room type has no availability for that period");
         }
         RoomUnitEntity newUnit = null;
@@ -1077,8 +1106,7 @@ public class BookingWriter {
         BigDecimal total = mode == RelocationRateMode.NEW_RATE ? newTotal : keepTotal;
         boolean mayKeep = plan.sameType() || mayKeepRate;
 
-        int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(plan.newRoom().getId());
-        if (!isRangeAvailable(plan.newRoom().getId(), unitCount, effectiveDate, target.getCheckOut(), bookingId)) {
+        if (!typeHasRoomFor(plan, effectiveDate, bookingId)) {
             return new RelocationQuoteResult(total, nights, false, "Selected room type has no availability for that period", currentTotal,
                     plan.sameType(), plan.wholeSegment(), mode, mayKeep, keepTotal, newTotal);
         }
@@ -1138,9 +1166,9 @@ public class BookingWriter {
         BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
         BookingSegmentEntity before = segments.stream().filter(s -> s.getCheckOut().equals(splitDate)).findFirst()
-                .orElseThrow(() -> new BadRequestException("No relocation boundary at " + splitDate));
+                .orElseThrow(() -> new BadRequestException("No relocation boundary at " + DateText.date(splitDate)));
         BookingSegmentEntity after = segments.stream().filter(s -> s.getCheckIn().equals(splitDate)).findFirst()
-                .orElseThrow(() -> new BadRequestException("No relocation boundary at " + splitDate));
+                .orElseThrow(() -> new BadRequestException("No relocation boundary at " + DateText.date(splitDate)));
 
         RoomEntity room = roomRepository.findById(before.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         RoomEntity discardedRoom = roomRepository.findById(after.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
@@ -1149,8 +1177,9 @@ public class BookingWriter {
                 : null;
         LocalDate mergedCheckOut = after.getCheckOut();
 
+        // Undoing a move within one type changes no count (see typeHasRoomFor).
         int unitCount = (int) roomUnitRepository.countByRoomIdAndIsActiveTrue(room.getId());
-        if (!isRangeAvailable(room.getId(), unitCount, splitDate, mergedCheckOut, bookingId)) {
+        if (!room.getId().equals(discardedRoom.getId()) && !isRangeAvailable(room.getId(), unitCount, splitDate, mergedCheckOut, bookingId)) {
             throw new ConflictException("Cannot undo — the earlier room type has no availability for the merged period");
         }
         if (before.getRoomUnitId() != null) {
@@ -1362,8 +1391,8 @@ public class BookingWriter {
                 roomUnitBlockRepository.findByRoomUnitIdAndFromDateLessThanAndToDateGreaterThanEqual(unit.getId(), checkOut, checkIn);
         if (!blocks.isEmpty()) {
             RoomUnitBlockEntity block = blocks.get(0);
-            return new UnitConflict("Room " + unit.getLabel() + " is blocked (" + block.getReason() + ") from " + block.getFromDate()
-                    + " to " + block.getToDate(), false);
+            return new UnitConflict("Room " + unit.getLabel() + " is blocked (" + block.getReason() + ") from " + DateText.date(block.getFromDate())
+                    + " to " + DateText.date(block.getToDate()), false);
         }
         return null;
     }
@@ -1409,7 +1438,7 @@ public class BookingWriter {
                 .filter(counts)
                 .findFirst()
                 .map(o -> new UnitConflict("Room " + unit.getLabel() + " is still occupied by " + o.booking().getGuestName()
-                        + ", who was due to check out on " + o.booking().getCheckOut() + " and hasn't been checked out", false))
+                        + ", who was due to check out on " + DateText.date(o.booking().getCheckOut()) + " and hasn't been checked out", false))
                 .orElse(null);
     }
 
