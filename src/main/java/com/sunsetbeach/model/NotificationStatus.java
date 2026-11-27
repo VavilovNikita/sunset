@@ -77,6 +77,11 @@ public class NotificationStatus {
 
   private Boolean telegramProxyConfigured;
 
+  private Boolean manualFeedConfigured;
+
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private JsonNullable<OffsetDateTime> manualFeedReadAt = JsonNullable.<OffsetDateTime>undefined();
+
   public NotificationStatus() {
     super();
   }
@@ -84,11 +89,12 @@ public class NotificationStatus {
   /**
    * Constructor with only required parameters
    */
-  public NotificationStatus(Boolean telegramConfigured, Integer consecutiveFailures, TelegramRouteEnum telegramRoute, Boolean telegramProxyConfigured) {
+  public NotificationStatus(Boolean telegramConfigured, Integer consecutiveFailures, TelegramRouteEnum telegramRoute, Boolean telegramProxyConfigured, Boolean manualFeedConfigured) {
     this.telegramConfigured = telegramConfigured;
     this.consecutiveFailures = consecutiveFailures;
     this.telegramRoute = telegramRoute;
     this.telegramProxyConfigured = telegramProxyConfigured;
+    this.manualFeedConfigured = manualFeedConfigured;
   }
 
   public NotificationStatus telegramConfigured(Boolean telegramConfigured) {
@@ -225,6 +231,44 @@ public class NotificationStatus {
     this.telegramProxyConfigured = telegramProxyConfigured;
   }
 
+  public NotificationStatus manualFeedConfigured(Boolean manualFeedConfigured) {
+    this.manualFeedConfigured = manualFeedConfigured;
+    return this;
+  }
+
+  /**
+   * Whether the server is told where the staff manual's list of notes is (`MANUAL_UPDATES_FILE`). False = nothing is read and no `MANUAL_UPDATED` message is ever raised. The path is never returned. 
+   * @return manualFeedConfigured
+   */
+  @NotNull 
+  @JsonProperty("manualFeedConfigured")
+  public Boolean getManualFeedConfigured() {
+    return manualFeedConfigured;
+  }
+
+  public void setManualFeedConfigured(Boolean manualFeedConfigured) {
+    this.manualFeedConfigured = manualFeedConfigured;
+  }
+
+  public NotificationStatus manualFeedReadAt(OffsetDateTime manualFeedReadAt) {
+    this.manualFeedReadAt = JsonNullable.of(manualFeedReadAt);
+    return this;
+  }
+
+  /**
+   * When that list was last read successfully. Absent while it never was since the server started (in memory only): not configured, the first read is still to come, or the file is missing or unreadable. 
+   * @return manualFeedReadAt
+   */
+  @Valid 
+  @JsonProperty("manualFeedReadAt")
+  public JsonNullable<OffsetDateTime> getManualFeedReadAt() {
+    return manualFeedReadAt;
+  }
+
+  public void setManualFeedReadAt(JsonNullable<OffsetDateTime> manualFeedReadAt) {
+    this.manualFeedReadAt = manualFeedReadAt;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -240,7 +284,9 @@ public class NotificationStatus {
         equalsNullable(this.failingSince, notificationStatus.failingSince) &&
         Objects.equals(this.consecutiveFailures, notificationStatus.consecutiveFailures) &&
         Objects.equals(this.telegramRoute, notificationStatus.telegramRoute) &&
-        Objects.equals(this.telegramProxyConfigured, notificationStatus.telegramProxyConfigured);
+        Objects.equals(this.telegramProxyConfigured, notificationStatus.telegramProxyConfigured) &&
+        Objects.equals(this.manualFeedConfigured, notificationStatus.manualFeedConfigured) &&
+        equalsNullable(this.manualFeedReadAt, notificationStatus.manualFeedReadAt);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -249,7 +295,7 @@ public class NotificationStatus {
 
   @Override
   public int hashCode() {
-    return Objects.hash(telegramConfigured, hashCodeNullable(botUsername), hashCodeNullable(lastSuccessAt), hashCodeNullable(failingSince), consecutiveFailures, telegramRoute, telegramProxyConfigured);
+    return Objects.hash(telegramConfigured, hashCodeNullable(botUsername), hashCodeNullable(lastSuccessAt), hashCodeNullable(failingSince), consecutiveFailures, telegramRoute, telegramProxyConfigured, manualFeedConfigured, hashCodeNullable(manualFeedReadAt));
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -270,6 +316,8 @@ public class NotificationStatus {
     sb.append("    consecutiveFailures: ").append(toIndentedString(consecutiveFailures)).append("\n");
     sb.append("    telegramRoute: ").append(toIndentedString(telegramRoute)).append("\n");
     sb.append("    telegramProxyConfigured: ").append(toIndentedString(telegramProxyConfigured)).append("\n");
+    sb.append("    manualFeedConfigured: ").append(toIndentedString(manualFeedConfigured)).append("\n");
+    sb.append("    manualFeedReadAt: ").append(toIndentedString(manualFeedReadAt)).append("\n");
     sb.append("}");
     return sb.toString();
   }

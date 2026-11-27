@@ -81,5 +81,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.overstay.sweep-enabled", () -> "false");
         // Same for the booking tracker's weekly snapshots: tests call BookingTrackerSnapshotService#runOnce on their own clock.
         registry.add("app.booking-tracker.snapshot-enabled", () -> "false");
+        // And the manual's "What's new" sweep: tests call ManualUpdateService#runOnce on their own clock.
+        registry.add("app.manual.sweep-enabled", () -> "false");
     }
 }

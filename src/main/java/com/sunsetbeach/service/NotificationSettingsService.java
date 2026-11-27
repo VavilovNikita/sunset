@@ -98,6 +98,9 @@ public class NotificationSettingsService {
         change(changes, "quiet end", entity.getQuietEnd(), quietEnd);
         change(changes, "morning time", entity.getMorningTime(), morningTime);
         change(changes, "default language", entity.getDefaultLanguage(), input.getDefaultLanguage().getValue());
+        // The one field a save may leave out (a page older than the field still saves).
+        boolean manualUpdates = input.getManualUpdatesEnabled() != null ? input.getManualUpdatesEnabled() : entity.isManualUpdatesEnabled();
+        change(changes, "staff manual update alerts", entity.isManualUpdatesEnabled(), manualUpdates);
         if (!Arrays.equals(entity.getLateRecipientUserIds(), lateRecipients)) {
             changes.add("late recipients " + entity.getLateRecipientUserIds().length + " -> " + lateRecipients.length);
         }
@@ -121,6 +124,7 @@ public class NotificationSettingsService {
         entity.setDefaultLanguage(input.getDefaultLanguage().getValue());
         entity.setLateRecipientUserIds(lateRecipients);
         entity.setDirectorUserIds(directors);
+        entity.setManualUpdatesEnabled(manualUpdates);
         NotificationSettingsEntity saved = repository.saveAndFlush(entity);
 
         // An unchanged PUT writes nothing. The summary names what changed, never a person's details.
@@ -177,6 +181,7 @@ public class NotificationSettingsService {
                 NotificationLanguage.fromValue(e.getDefaultLanguage()),
                 List.of(e.getLateRecipientUserIds()),
                 List.of(e.getDirectorUserIds()),
+                e.isManualUpdatesEnabled(),
                 TimestampFormat.toUtc(e.getUpdatedAt()));
     }
 }

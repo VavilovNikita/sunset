@@ -16,7 +16,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * `LATE` - an employee has not clocked in `lateGraceMinutes` after the planned start of a shift interval (to them and to the late-recipients). `ABSENT` - still not there `absenceMinutes` after it (to the director recipients). `BLOCK_CREATED`, `BLOCK_LAST_DAY` (the morning of the block's last day) and `BLOCK_EXPIRED_OPEN` (every morning while the block's maintenance task is not DONE) go to whoever is on shift with the block's responsible function, otherwise to the director recipients. `TERMINAL_OFFLINE` / `TERMINAL_ONLINE` - an attendance terminal went silent / came back (to the director recipients). `SHIFT_REQUEST_NEW` - a shift request waits for a decision (to the deciders, with Approve / Reject buttons in Telegram); `SHIFT_REQUEST_DECIDED` / `SHIFT_REQUEST_EXPIRED` - the outcome (to the employee); `SHIFT_REQUEST_REMINDER` - a request has waited too long (to the deciders); `SHIFT_EVE_REMINDER` - tomorrow's shift, the evening before, to those who asked for it; `ROSTER_CHANGED` - a manager changed an employee's shift on a day (one message per employee and day); `MORNING_SUMMARY` - the hotel's morning summary (arrivals, departures, in house, occupancy, rooms, staff, waiting requests) to the director recipients, once a day; `THERAPIST_MORNING` - \"N procedures today, the first at 10:00\", to a therapist who switched it on, once a day. 
+ * `LATE` - an employee has not clocked in `lateGraceMinutes` after the planned start of a shift interval (to them and to the late-recipients). `ABSENT` - still not there `absenceMinutes` after it (to the director recipients). `BLOCK_CREATED`, `BLOCK_LAST_DAY` (the morning of the block's last day) and `BLOCK_EXPIRED_OPEN` (every morning while the block's maintenance task is not DONE) go to whoever is on shift with the block's responsible function, otherwise to the director recipients. `TERMINAL_OFFLINE` / `TERMINAL_ONLINE` - an attendance terminal went silent / came back (to the director recipients). `SHIFT_REQUEST_NEW` - a shift request waits for a decision (to the deciders, with Approve / Reject buttons in Telegram); `SHIFT_REQUEST_DECIDED` / `SHIFT_REQUEST_EXPIRED` - the outcome (to the employee); `SHIFT_REQUEST_REMINDER` - a request has waited too long (to the deciders); `SHIFT_EVE_REMINDER` - tomorrow's shift, the evening before, to those who asked for it; `ROSTER_CHANGED` - a manager changed an employee's shift on a day (one message per employee and day); `MORNING_SUMMARY` - the hotel's morning summary (arrivals, departures, in house, occupancy, rooms, staff, waiting requests) to the director recipients, once a day; `THERAPIST_MORNING` - \"N procedures today, the first at 10:00\", to a therapist who switched it on, once a day; `MANUAL_UPDATED` - the staff manual's \"What's new\" has a new note: its title, summary and link, to the director recipients, one message a hotel day at most. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -50,7 +50,9 @@ public enum NotificationType {
   
   MORNING_SUMMARY("MORNING_SUMMARY"),
   
-  THERAPIST_MORNING("THERAPIST_MORNING");
+  THERAPIST_MORNING("THERAPIST_MORNING"),
+  
+  MANUAL_UPDATED("MANUAL_UPDATED");
 
   private String value;
 

@@ -52,6 +52,8 @@ public class NotificationSettingsEntity {
     @JdbcTypeCode(SqlTypes.ARRAY)
     private String[] directorUserIds = new String[0];
 
+    private boolean manualUpdatesEnabled = true;
+
     @UtcUpdateTimestamp
     private LocalDateTime updatedAt;
 
@@ -61,6 +63,14 @@ public class NotificationSettingsEntity {
 
     public void setId(Integer id) {
         this.id = id;
+    }
+
+    public boolean isManualUpdatesEnabled() {
+        return manualUpdatesEnabled;
+    }
+
+    public void setManualUpdatesEnabled(boolean manualUpdatesEnabled) {
+        this.manualUpdatesEnabled = manualUpdatesEnabled;
     }
 
     public boolean isLateEnabled() {

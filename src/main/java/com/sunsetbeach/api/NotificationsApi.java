@@ -147,7 +147,7 @@ public interface NotificationsApi {
 
     /**
      * GET /notifications/status : Whether notifications can be delivered at all
-     * Requires MANAGER or above. Answers from the server&#39;s own configuration and its cached &#x60;getMe&#x60; answer - **no call to Telegram** per request - so the pages can say \&quot;Telegram is not configured\&quot; the moment they open. &#x60;telegramConfigured&#x60; is false while the server has no &#x60;TELEGRAM_BOT_TOKEN&#x60;. &#x60;botUsername&#x60; is null until the server has asked Telegram for it once (it does so by itself within seconds of starting, and again while it is unknown). 
+     * Requires MANAGER or above. Answers from the server&#39;s own configuration and its cached &#x60;getMe&#x60; answer - **no call to Telegram** per request - so the pages can say \&quot;Telegram is not configured\&quot; the moment they open. &#x60;telegramConfigured&#x60; is false while the server has no &#x60;TELEGRAM_BOT_TOKEN&#x60;. &#x60;botUsername&#x60; is null until the server has asked Telegram for it once (it does so by itself within seconds of starting, and again while it is unknown). &#x60;manualFeedConfigured&#x60; / &#x60;manualFeedReadAt&#x60; say whether the server reads the staff manual&#39;s list of \&quot;What&#39;s new\&quot; notes, and when it last did. 
      *
      * @return The status. (status code 200)
      *         or No valid JWT. (status code 401)
@@ -165,7 +165,7 @@ public interface NotificationsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"telegramConfigured\" : true, \"lastSuccessAt\" : \"2000-01-23T04:56:07.000+00:00\", \"telegramRoute\" : \"DIRECT\", \"telegramProxyConfigured\" : true, \"botUsername\" : \"botUsername\", \"consecutiveFailures\" : 0, \"failingSince\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"telegramConfigured\" : true, \"manualFeedConfigured\" : true, \"manualFeedReadAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastSuccessAt\" : \"2000-01-23T04:56:07.000+00:00\", \"telegramRoute\" : \"DIRECT\", \"telegramProxyConfigured\" : true, \"botUsername\" : \"botUsername\", \"consecutiveFailures\" : 0, \"failingSince\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

@@ -12121,6 +12121,8 @@ paths:
         not configured" the moment they open. `telegramConfigured` is false while the server has no
         `TELEGRAM_BOT_TOKEN`. `botUsername` is null until the server has asked Telegram for it once
         (it does so by itself within seconds of starting, and again while it is unknown).
+        `manualFeedConfigured` / `manualFeedReadAt` say whether the server reads the staff manual's list of
+        "What's new" notes, and when it last did.
       responses:
         "200":
           description: The status.
@@ -21591,7 +21593,7 @@ components:
 
     NotificationType:
       type: string
-      enum: [LATE, ABSENT, BLOCK_CREATED, BLOCK_LAST_DAY, BLOCK_EXPIRED_OPEN, TERMINAL_OFFLINE, TERMINAL_ONLINE, SHIFT_REQUEST_NEW, SHIFT_REQUEST_DECIDED, SHIFT_REQUEST_EXPIRED, SHIFT_REQUEST_REMINDER, SHIFT_EVE_REMINDER, ROSTER_CHANGED, MORNING_SUMMARY, THERAPIST_MORNING]
+      enum: [LATE, ABSENT, BLOCK_CREATED, BLOCK_LAST_DAY, BLOCK_EXPIRED_OPEN, TERMINAL_OFFLINE, TERMINAL_ONLINE, SHIFT_REQUEST_NEW, SHIFT_REQUEST_DECIDED, SHIFT_REQUEST_EXPIRED, SHIFT_REQUEST_REMINDER, SHIFT_EVE_REMINDER, ROSTER_CHANGED, MORNING_SUMMARY, THERAPIST_MORNING, MANUAL_UPDATED]
       description: >
         `LATE` - an employee has not clocked in `lateGraceMinutes` after the planned start of a
         shift interval (to them and to the late-recipients). `ABSENT` - still not there
@@ -21607,7 +21609,9 @@ components:
         `ROSTER_CHANGED` - a manager changed an employee's shift on a day (one message per employee and day);
         `MORNING_SUMMARY` - the hotel's morning summary (arrivals, departures, in house, occupancy, rooms, staff,
         waiting requests) to the director recipients, once a day; `THERAPIST_MORNING` - "N procedures today, the
-        first at 10:00", to a therapist who switched it on, once a day.
+        first at 10:00", to a therapist who switched it on, once a day; `MANUAL_UPDATED` - the staff manual's
+        "What's new" has a new note: its title, summary and link, to the director recipients, one message a hotel day
+        at most.
 
     NotificationDeliveryStatus:
       type: string
@@ -22148,7 +22152,7 @@ components:
 
     NotificationStatus:
       type: object
-      required: [telegramConfigured, consecutiveFailures, telegramRoute, telegramProxyConfigured]
+      required: [telegramConfigured, consecutiveFailures, telegramRoute, telegramProxyConfigured, manualFeedConfigured]
       properties:
         telegramConfigured:
           type: boolean
@@ -22183,6 +22187,18 @@ components:
         telegramProxyConfigured:
           type: boolean
           description: Whether `TELEGRAM_PROXY` is set. The proxy's address is never returned.
+        manualFeedConfigured:
+          type: boolean
+          description: |
+            Whether the server is told where the staff manual's list of notes is (`MANUAL_UPDATES_FILE`). False = nothing
+            is read and no `MANUAL_UPDATED` message is ever raised. The path is never returned.
+        manualFeedReadAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When that list was last read successfully. Absent while it never was since the server started (in memory only):
+            not configured, the first read is still to come, or the file is missing or unreadable.
 
     NotificationSettings:
       type: object
@@ -22204,6 +22220,7 @@ components:
         - defaultLanguage
         - lateRecipientUserIds
         - directorUserIds
+        - manualUpdatesEnabled
         - updatedAt
       properties:
         lateEnabled:
@@ -22266,13 +22283,18 @@ components:
           items:
             type: string
           description: Who is told about absences, terminal outages and blocks nobody on shift can take.
+        manualUpdatesEnabled:
+          type: boolean
+          description: >
+            Tell the director recipients when the staff manual's "What's new" has a new note (default on), one message a
+            hotel day at most. Notes the server sees while it is off are never sent later.
         updatedAt:
           type: string
           format: date-time
 
     NotificationSettingsUpdateInput:
       type: object
-      description: Body of `PUT /settings/notifications` - every field of `NotificationSettings` except `minLateGraceMinutes` and `updatedAt`.
+      description: Body of `PUT /settings/notifications` - every field of `NotificationSettings` except `minLateGraceMinutes` and `updatedAt`; all required but `manualUpdatesEnabled`.
       required:
         - lateEnabled
         - lateGraceMinutes
@@ -22338,6 +22360,9 @@ components:
           maxItems: 200
           items:
             type: string
+        manualUpdatesEnabled:
+          type: boolean
+          description: As in `NotificationSettings`. The one optional field - left out, the setting stays as it is.
 
     NotificationStaffMember:
       type: object

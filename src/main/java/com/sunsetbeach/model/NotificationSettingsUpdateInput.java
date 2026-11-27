@@ -19,7 +19,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Body of &#x60;PUT /settings/notifications&#x60; - every field of &#x60;NotificationSettings&#x60; except &#x60;minLateGraceMinutes&#x60; and &#x60;updatedAt&#x60;.
+ * Body of &#x60;PUT /settings/notifications&#x60; - every field of &#x60;NotificationSettings&#x60; except &#x60;minLateGraceMinutes&#x60; and &#x60;updatedAt&#x60;; all required but &#x60;manualUpdatesEnabled&#x60;.
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -58,6 +58,8 @@ public class NotificationSettingsUpdateInput {
 
   @Valid
   private List<String> directorUserIds = new ArrayList<>();
+
+  private Boolean manualUpdatesEnabled;
 
   public NotificationSettingsUpdateInput() {
     super();
@@ -411,6 +413,25 @@ public class NotificationSettingsUpdateInput {
     this.directorUserIds = directorUserIds;
   }
 
+  public NotificationSettingsUpdateInput manualUpdatesEnabled(Boolean manualUpdatesEnabled) {
+    this.manualUpdatesEnabled = manualUpdatesEnabled;
+    return this;
+  }
+
+  /**
+   * As in `NotificationSettings`. The one optional field - left out, the setting stays as it is.
+   * @return manualUpdatesEnabled
+   */
+  
+  @JsonProperty("manualUpdatesEnabled")
+  public Boolean getManualUpdatesEnabled() {
+    return manualUpdatesEnabled;
+  }
+
+  public void setManualUpdatesEnabled(Boolean manualUpdatesEnabled) {
+    this.manualUpdatesEnabled = manualUpdatesEnabled;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -435,12 +456,13 @@ public class NotificationSettingsUpdateInput {
         Objects.equals(this.morningTime, notificationSettingsUpdateInput.morningTime) &&
         Objects.equals(this.defaultLanguage, notificationSettingsUpdateInput.defaultLanguage) &&
         Objects.equals(this.lateRecipientUserIds, notificationSettingsUpdateInput.lateRecipientUserIds) &&
-        Objects.equals(this.directorUserIds, notificationSettingsUpdateInput.directorUserIds);
+        Objects.equals(this.directorUserIds, notificationSettingsUpdateInput.directorUserIds) &&
+        Objects.equals(this.manualUpdatesEnabled, notificationSettingsUpdateInput.manualUpdatesEnabled);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(lateEnabled, lateGraceMinutes, absenceEnabled, absenceMinutes, blockCreatedEnabled, blockLastDayEnabled, blockExpiredEnabled, terminalAlertsEnabled, terminalSilenceMinutes, quietHoursEnabled, quietStart, quietEnd, morningTime, defaultLanguage, lateRecipientUserIds, directorUserIds);
+    return Objects.hash(lateEnabled, lateGraceMinutes, absenceEnabled, absenceMinutes, blockCreatedEnabled, blockLastDayEnabled, blockExpiredEnabled, terminalAlertsEnabled, terminalSilenceMinutes, quietHoursEnabled, quietStart, quietEnd, morningTime, defaultLanguage, lateRecipientUserIds, directorUserIds, manualUpdatesEnabled);
   }
 
   @Override
@@ -463,6 +485,7 @@ public class NotificationSettingsUpdateInput {
     sb.append("    defaultLanguage: ").append(toIndentedString(defaultLanguage)).append("\n");
     sb.append("    lateRecipientUserIds: ").append(toIndentedString(lateRecipientUserIds)).append("\n");
     sb.append("    directorUserIds: ").append(toIndentedString(directorUserIds)).append("\n");
+    sb.append("    manualUpdatesEnabled: ").append(toIndentedString(manualUpdatesEnabled)).append("\n");
     sb.append("}");
     return sb.toString();
   }

@@ -63,6 +63,8 @@ public class NotificationSettings {
   @Valid
   private List<String> directorUserIds = new ArrayList<>();
 
+  private Boolean manualUpdatesEnabled;
+
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime updatedAt;
 
@@ -73,7 +75,7 @@ public class NotificationSettings {
   /**
    * Constructor with only required parameters
    */
-  public NotificationSettings(Boolean lateEnabled, Integer lateGraceMinutes, Integer minLateGraceMinutes, Boolean absenceEnabled, Integer absenceMinutes, Boolean blockCreatedEnabled, Boolean blockLastDayEnabled, Boolean blockExpiredEnabled, Boolean terminalAlertsEnabled, Integer terminalSilenceMinutes, Boolean quietHoursEnabled, String quietStart, String quietEnd, String morningTime, NotificationLanguage defaultLanguage, List<String> lateRecipientUserIds, List<String> directorUserIds, OffsetDateTime updatedAt) {
+  public NotificationSettings(Boolean lateEnabled, Integer lateGraceMinutes, Integer minLateGraceMinutes, Boolean absenceEnabled, Integer absenceMinutes, Boolean blockCreatedEnabled, Boolean blockLastDayEnabled, Boolean blockExpiredEnabled, Boolean terminalAlertsEnabled, Integer terminalSilenceMinutes, Boolean quietHoursEnabled, String quietStart, String quietEnd, String morningTime, NotificationLanguage defaultLanguage, List<String> lateRecipientUserIds, List<String> directorUserIds, Boolean manualUpdatesEnabled, OffsetDateTime updatedAt) {
     this.lateEnabled = lateEnabled;
     this.lateGraceMinutes = lateGraceMinutes;
     this.minLateGraceMinutes = minLateGraceMinutes;
@@ -91,6 +93,7 @@ public class NotificationSettings {
     this.defaultLanguage = defaultLanguage;
     this.lateRecipientUserIds = lateRecipientUserIds;
     this.directorUserIds = directorUserIds;
+    this.manualUpdatesEnabled = manualUpdatesEnabled;
     this.updatedAt = updatedAt;
   }
 
@@ -439,6 +442,25 @@ public class NotificationSettings {
     this.directorUserIds = directorUserIds;
   }
 
+  public NotificationSettings manualUpdatesEnabled(Boolean manualUpdatesEnabled) {
+    this.manualUpdatesEnabled = manualUpdatesEnabled;
+    return this;
+  }
+
+  /**
+   * Tell the director recipients when the staff manual's \"What's new\" has a new note (default on), one message a hotel day at most. Notes the server sees while it is off are never sent later. 
+   * @return manualUpdatesEnabled
+   */
+  @NotNull 
+  @JsonProperty("manualUpdatesEnabled")
+  public Boolean getManualUpdatesEnabled() {
+    return manualUpdatesEnabled;
+  }
+
+  public void setManualUpdatesEnabled(Boolean manualUpdatesEnabled) {
+    this.manualUpdatesEnabled = manualUpdatesEnabled;
+  }
+
   public NotificationSettings updatedAt(OffsetDateTime updatedAt) {
     this.updatedAt = updatedAt;
     return this;
@@ -484,12 +506,13 @@ public class NotificationSettings {
         Objects.equals(this.defaultLanguage, notificationSettings.defaultLanguage) &&
         Objects.equals(this.lateRecipientUserIds, notificationSettings.lateRecipientUserIds) &&
         Objects.equals(this.directorUserIds, notificationSettings.directorUserIds) &&
+        Objects.equals(this.manualUpdatesEnabled, notificationSettings.manualUpdatesEnabled) &&
         Objects.equals(this.updatedAt, notificationSettings.updatedAt);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(lateEnabled, lateGraceMinutes, minLateGraceMinutes, absenceEnabled, absenceMinutes, blockCreatedEnabled, blockLastDayEnabled, blockExpiredEnabled, terminalAlertsEnabled, terminalSilenceMinutes, quietHoursEnabled, quietStart, quietEnd, morningTime, defaultLanguage, lateRecipientUserIds, directorUserIds, updatedAt);
+    return Objects.hash(lateEnabled, lateGraceMinutes, minLateGraceMinutes, absenceEnabled, absenceMinutes, blockCreatedEnabled, blockLastDayEnabled, blockExpiredEnabled, terminalAlertsEnabled, terminalSilenceMinutes, quietHoursEnabled, quietStart, quietEnd, morningTime, defaultLanguage, lateRecipientUserIds, directorUserIds, manualUpdatesEnabled, updatedAt);
   }
 
   @Override
@@ -513,6 +536,7 @@ public class NotificationSettings {
     sb.append("    defaultLanguage: ").append(toIndentedString(defaultLanguage)).append("\n");
     sb.append("    lateRecipientUserIds: ").append(toIndentedString(lateRecipientUserIds)).append("\n");
     sb.append("    directorUserIds: ").append(toIndentedString(directorUserIds)).append("\n");
+    sb.append("    manualUpdatesEnabled: ").append(toIndentedString(manualUpdatesEnabled)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("}");
     return sb.toString();

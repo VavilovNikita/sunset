@@ -289,6 +289,9 @@ class PosRoleHierarchyTests {
     private com.sunsetbeach.service.StaffBotSettingsService staffBotSettingsService;
 
     @MockitoBean
+    private com.sunsetbeach.service.ManualUpdateService manualUpdateService;
+
+    @MockitoBean
     private com.sunsetbeach.service.ShiftChangeRequestService shiftChangeRequestService;
 
     @MockitoBean

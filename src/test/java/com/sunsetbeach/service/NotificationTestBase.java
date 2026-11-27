@@ -64,6 +64,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 @Import(NotificationTestBase.NotificationTestConfig.class)
 abstract class NotificationTestBase extends AbstractIntegrationTest {
 
+    /** Where this context reads the staff manual's list of notes; absent unless a test writes it. */
+    static final java.nio.file.Path MANUAL_FEED = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "sunset-test-updates-" + UUID.randomUUID() + ".json");
+
+    @org.springframework.test.context.DynamicPropertySource
+    static void manualFeed(org.springframework.test.context.DynamicPropertyRegistry registry) {
+        registry.add("app.manual.updates-file", MANUAL_FEED::toString);
+    }
+
     static final String DAY = "2033-05-17";
     static final LocalDate TODAY = LocalDate.parse(DAY);
 
@@ -221,6 +229,7 @@ abstract class NotificationTestBase extends AbstractIntegrationTest {
         s.setDefaultLanguage("EN");
         s.setLateRecipientUserIds(new String[0]);
         s.setDirectorUserIds(new String[0]);
+        s.setManualUpdatesEnabled(true);
         settingsRepository.saveAndFlush(s);
     }
 

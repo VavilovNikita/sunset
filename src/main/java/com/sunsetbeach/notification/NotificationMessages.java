@@ -24,6 +24,8 @@ public final class NotificationMessages {
         BLOCK_EXPIRED_OPEN,
         TERMINAL_OFFLINE,
         TERMINAL_ONLINE,
+        /** The staff manual's "What's new" has a new note; {@code notes} is its title, summary and link. */
+        MANUAL_UPDATED,
         /** The bot's own replies (not notifications). */
         BOT_LINKED,
         BOT_LINK_INVALID,
@@ -114,6 +116,10 @@ public final class NotificationMessages {
                 "Attendance terminal \"{device}\" is back online. Late and absence alerts are active again.\n{link}",
                 "เครื่องสแกนนิ้ว \"{device}\" กลับมาออนไลน์แล้ว การแจ้งเตือนการมาสายและการขาดงานกลับมาทำงานตามปกติ\n{link}",
                 "Терминал посещаемости «{device}» снова на связи. Уведомления об опозданиях и отсутствии снова работают.\n{link}");
+        add(Key.MANUAL_UPDATED,
+                "Staff manual updated: {notes}",
+                "คู่มือพนักงานมีการอัปเดต: {notes}",
+                "Обновлено руководство для персонала: {notes}");
         add(Key.BOT_LINKED,
                 "Linked: {name}",
                 "เชื่อมต่อแล้ว: {name}",

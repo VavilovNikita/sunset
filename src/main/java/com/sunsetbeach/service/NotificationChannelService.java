@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import com.sunsetbeach.notification.ManualUpdateFeed;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -74,6 +75,7 @@ public class NotificationChannelService {
     private final SecureRandom random = new SecureRandom();
     private final TelegramHealth health;
     private final ApplicationEventPublisher events;
+    private final ManualUpdateFeed manualFeed;
 
     public NotificationChannelService(
             UserRepository userRepository,
@@ -86,7 +88,9 @@ public class NotificationChannelService {
             Clock clock,
             PlatformTransactionManager transactionManager,
             TelegramHealth health,
-            ApplicationEventPublisher events) {
+            ApplicationEventPublisher events,
+            ManualUpdateFeed manualFeed) {
+        this.manualFeed = manualFeed;
         this.health = health;
         this.events = events;
         this.userRepository = userRepository;
@@ -107,7 +111,10 @@ public class NotificationChannelService {
     public NotificationStatus status() {
         TelegramHealth.Snapshot health = this.health.snapshot();
         NotificationStatus status = new NotificationStatus(telegram.isConfigured(), telegram.isConfigured() ? health.consecutiveFailures() : 0,
-                NotificationStatus.TelegramRouteEnum.valueOf(telegram.route().name()), telegram.proxyConfigured());
+                NotificationStatus.TelegramRouteEnum.valueOf(telegram.route().name()), telegram.proxyConfigured(), manualFeed.isConfigured());
+        if (manualFeed.lastReadAt() != null) {
+            status.manualFeedReadAt(manualFeed.lastReadAt().atZone(clock.getZone()).toOffsetDateTime());
+        }
         if (telegram.isConfigured()) {
             botStateRepository.findById(1).map(TelegramBotStateEntity::getBotUsername).ifPresent(status::botUsername);
             // Absent (not null) while unknown, like botUsername.

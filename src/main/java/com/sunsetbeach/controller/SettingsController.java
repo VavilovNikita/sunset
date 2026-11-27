@@ -17,6 +17,7 @@ import com.sunsetbeach.model.PrintLayouts;
 import com.sunsetbeach.model.VatSettings;
 import com.sunsetbeach.model.VatSettingsUpdateInput;
 import com.sunsetbeach.service.LifecycleEmailSettingsService;
+import com.sunsetbeach.service.ManualUpdateService;
 import com.sunsetbeach.service.NotificationSettingsService;
 import com.sunsetbeach.service.PrintLayoutService;
 import com.sunsetbeach.service.VatSettingsService;
@@ -33,6 +34,7 @@ public class SettingsController implements SettingsApi {
     private final PrintLayoutService printLayoutService;
     private final NotificationSettingsService notificationSettingsService;
     private final StaffBotSettingsService staffBotSettingsService;
+    private final ManualUpdateService manualUpdateService;
 
     public SettingsController(
             LifecycleEmailSettingsService lifecycleEmailSettingsService,
@@ -40,7 +42,9 @@ public class SettingsController implements SettingsApi {
             com.sunsetbeach.service.ServiceChargeSettingsService serviceChargeSettingsService,
             PrintLayoutService printLayoutService,
             NotificationSettingsService notificationSettingsService,
-            StaffBotSettingsService staffBotSettingsService) {
+            StaffBotSettingsService staffBotSettingsService,
+            ManualUpdateService manualUpdateService) {
+        this.manualUpdateService = manualUpdateService;
         this.staffBotSettingsService = staffBotSettingsService;
         this.notificationSettingsService = notificationSettingsService;
         this.lifecycleEmailSettingsService = lifecycleEmailSettingsService;
@@ -66,7 +70,13 @@ public class SettingsController implements SettingsApi {
 
     @Override
     public ResponseEntity<NotificationSettings> updateNotificationSettings(NotificationSettingsUpdateInput input) {
-        return ResponseEntity.ok(notificationSettingsService.update(input));
+        boolean manualUpdatesWereOn = notificationSettingsService.getEntity().isManualUpdatesEnabled();
+        NotificationSettings saved = notificationSettingsService.update(input);
+        // Switched back on: what was published meanwhile is not sent later (the sweep may not have seen it yet).
+        if (!manualUpdatesWereOn && Boolean.TRUE.equals(saved.getManualUpdatesEnabled())) {
+            manualUpdateService.skipPublished();
+        }
+        return ResponseEntity.ok(saved);
     }
 
     @Override

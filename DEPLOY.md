@@ -298,6 +298,45 @@ Migrations V148 (tables, columns, the settings row) and V149 (audit values) only
 build is safe - the new tables are simply unused. To switch the whole feature off without a rollback, unset
 `TELEGRAM_BOT_TOKEN`.
 
+## Telling the directors about the staff manual's "What's new"
+
+The backend reads the list of notes the manual publishes (`updates.json`, written by sunset-manual's `updates.py`) and
+sends the director recipients one Telegram message a day at most about a new one. Nothing calls into the backend: it
+reads a file on the same VPS, mounted into its container **read only**. Telegram has to be set up as above.
+
+1. **Publish the manual once** from a version that writes the feed (`cd ~/sunset-manual && git pull && ./deploy/publish.sh`),
+   then `ls -l /var/www/sunset-manual/updates.json` shows it (readable by everyone: the container runs as its own user).
+2. **Mount the folder** in the backend's `docker-compose.override.yml` on the VPS (untracked; add to the existing
+   `backend` service, Compose adds it to the volumes of `docker-compose.yml`):
+
+   ```yaml
+   services:
+     backend:
+       volumes:
+         - /var/www/sunset-manual:/manual:ro
+   ```
+
+   Mount the folder, not the file: publishing replaces the file, and a mounted single file would keep showing the old one.
+3. **Tell the backend where it is**, in its `.env`: `MANUAL_UPDATES_FILE=/manual/updates.json`, then
+   `docker compose up -d backend` (a plain restart does not re-read `.env`). Unset or empty = **off**: nothing is read or
+   sent.
+4. **Check it**, a minute after the start: `GET /notifications/status` says `manualFeedConfigured:true` and has a
+   `manualFeedReadAt`. `false` = the variable did not reach the container (the settings page then says "The server does
+   not read the manual's update list yet"). `true` with **no** `manualFeedReadAt` = the file could not be read (mount or
+   path): the log has one WARN `The staff manual's update list ... cannot be read`, and the page does not warn.
+5. **In the admin** (ADMIN): Settings -> Notification settings -> Recipients & delivery: the directors are chosen there,
+   and "Staff manual updates" is on by default.
+
+Optional: `MANUAL_BASE_URL` [`https://sunsetsamui.com/manual`] (the links in the message),
+`MANUAL_POLL_INTERVAL_MS` [600000].
+
+What is sent: only notes dated yesterday (hotel day) or later when the server first sees them, so connecting it does not
+send the history - **but a note dated today or yesterday that is already published is sent on the first read**. One
+message per note, at most one a day; quiet hours hold it until morning.
+
+Migration V164 (a column, a table, a wider `CHECK` on `Notification.type`) only adds things. After a rollback an old
+build cannot show the new type on the log page: `DELETE FROM "Notification" WHERE type = 'MANUAL_UPDATED';`.
+
 ## Staff bot and shift requests (Telegram)
 
 The same bot, once it is set up as above, is each linked employee's own window onto their schedule (My shifts, My day, My month, My requests, Settings) and the place where the HR director decides requests to move a shift or take a day off. Nothing to configure on the server beyond the token.
