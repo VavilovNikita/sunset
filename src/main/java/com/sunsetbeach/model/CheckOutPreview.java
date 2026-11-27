@@ -41,6 +41,10 @@ public class CheckOutPreview {
 
   private String outstandingBalance;
 
+  private String balanceDueNow;
+
+  private Boolean tonightNotCharged;
+
   private String shortenedOutstandingBalance;
 
   public CheckOutPreview() {
@@ -50,7 +54,7 @@ public class CheckOutPreview {
   /**
    * Constructor with only required parameters
    */
-  public CheckOutPreview(Boolean early, Boolean shortenable, String reason, LocalDate shortenedCheckOut, Integer nightsReleased, String unusedNightsAmount, String currentRoomTotal, String shortenedRoomTotal, String outstandingBalance, String shortenedOutstandingBalance) {
+  public CheckOutPreview(Boolean early, Boolean shortenable, String reason, LocalDate shortenedCheckOut, Integer nightsReleased, String unusedNightsAmount, String currentRoomTotal, String shortenedRoomTotal, String outstandingBalance, String balanceDueNow, Boolean tonightNotCharged, String shortenedOutstandingBalance) {
     this.early = early;
     this.shortenable = shortenable;
     this.reason = JsonNullable.of(reason);
@@ -60,6 +64,8 @@ public class CheckOutPreview {
     this.currentRoomTotal = currentRoomTotal;
     this.shortenedRoomTotal = shortenedRoomTotal;
     this.outstandingBalance = outstandingBalance;
+    this.balanceDueNow = balanceDueNow;
+    this.tonightNotCharged = tonightNotCharged;
     this.shortenedOutstandingBalance = shortenedOutstandingBalance;
   }
 
@@ -221,7 +227,7 @@ public class CheckOutPreview {
   }
 
   /**
-   * Decimal(10,2) as a string - `BookingFolio.balanceDue` now, before any change.
+   * Decimal(10,2) as a string - what the guest would owe right after checking out now without shortening the stay: `balanceDueNow` less tonight's overstay night, which a check-out does not charge. Equals `CheckOutResult.outstandingBalance` of a check-out without `shortenStay`. 
    * @return outstandingBalance
    */
   @NotNull 
@@ -232,6 +238,44 @@ public class CheckOutPreview {
 
   public void setOutstandingBalance(String outstandingBalance) {
     this.outstandingBalance = outstandingBalance;
+  }
+
+  public CheckOutPreview balanceDueNow(String balanceDueNow) {
+    this.balanceDueNow = balanceDueNow;
+    return this;
+  }
+
+  /**
+   * Decimal(10,2) as a string - `BookingFolio.balanceDue` (`Booking.balanceDue`) at this moment, tonight's overstay night included when it has been charged. The figure the Today board shows as owed. 
+   * @return balanceDueNow
+   */
+  @NotNull 
+  @JsonProperty("balanceDueNow")
+  public String getBalanceDueNow() {
+    return balanceDueNow;
+  }
+
+  public void setBalanceDueNow(String balanceDueNow) {
+    this.balanceDueNow = balanceDueNow;
+  }
+
+  public CheckOutPreview tonightNotCharged(Boolean tonightNotCharged) {
+    this.tonightNotCharged = tonightNotCharged;
+    return this;
+  }
+
+  /**
+   * True when tonight's overstay night is in `balanceDueNow` and checking out today releases it - the reason the two figures differ, and the only case a screen has to show both. 
+   * @return tonightNotCharged
+   */
+  @NotNull 
+  @JsonProperty("tonightNotCharged")
+  public Boolean getTonightNotCharged() {
+    return tonightNotCharged;
+  }
+
+  public void setTonightNotCharged(Boolean tonightNotCharged) {
+    this.tonightNotCharged = tonightNotCharged;
   }
 
   public CheckOutPreview shortenedOutstandingBalance(String shortenedOutstandingBalance) {
@@ -271,12 +315,14 @@ public class CheckOutPreview {
         Objects.equals(this.currentRoomTotal, checkOutPreview.currentRoomTotal) &&
         Objects.equals(this.shortenedRoomTotal, checkOutPreview.shortenedRoomTotal) &&
         Objects.equals(this.outstandingBalance, checkOutPreview.outstandingBalance) &&
+        Objects.equals(this.balanceDueNow, checkOutPreview.balanceDueNow) &&
+        Objects.equals(this.tonightNotCharged, checkOutPreview.tonightNotCharged) &&
         Objects.equals(this.shortenedOutstandingBalance, checkOutPreview.shortenedOutstandingBalance);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(early, shortenable, reason, shortenedCheckOut, nightsReleased, unusedNightsAmount, currentRoomTotal, shortenedRoomTotal, outstandingBalance, shortenedOutstandingBalance);
+    return Objects.hash(early, shortenable, reason, shortenedCheckOut, nightsReleased, unusedNightsAmount, currentRoomTotal, shortenedRoomTotal, outstandingBalance, balanceDueNow, tonightNotCharged, shortenedOutstandingBalance);
   }
 
   @Override
@@ -292,6 +338,8 @@ public class CheckOutPreview {
     sb.append("    currentRoomTotal: ").append(toIndentedString(currentRoomTotal)).append("\n");
     sb.append("    shortenedRoomTotal: ").append(toIndentedString(shortenedRoomTotal)).append("\n");
     sb.append("    outstandingBalance: ").append(toIndentedString(outstandingBalance)).append("\n");
+    sb.append("    balanceDueNow: ").append(toIndentedString(balanceDueNow)).append("\n");
+    sb.append("    tonightNotCharged: ").append(toIndentedString(tonightNotCharged)).append("\n");
     sb.append("    shortenedOutstandingBalance: ").append(toIndentedString(shortenedOutstandingBalance)).append("\n");
     sb.append("}");
     return sb.toString();

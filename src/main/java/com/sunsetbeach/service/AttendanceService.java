@@ -589,6 +589,7 @@ public class AttendanceService {
         if (e.isVoided()) {
             dto.voidedAt(TimestampFormat.toUtc(e.getVoidedAt()));
             dto.voidReason(e.getVoidReason());
+            dto.voidedByCorrectionId(e.getVoidedByCorrectionId());
             if (voidedByEmail != null) dto.voidedByEmail(voidedByEmail);
         }
         return dto;

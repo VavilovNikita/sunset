@@ -13151,7 +13151,7 @@ components:
         `reason`) when the stay can't be shortened through a schedule change - most often a
         relocated stay whose last room starts after today; release those nights with the
         relocation tools first.
-      required: [early, shortenable, reason, shortenedCheckOut, nightsReleased, unusedNightsAmount, currentRoomTotal, shortenedRoomTotal, outstandingBalance, shortenedOutstandingBalance]
+      required: [early, shortenable, reason, shortenedCheckOut, nightsReleased, unusedNightsAmount, currentRoomTotal, shortenedRoomTotal, outstandingBalance, shortenedOutstandingBalance, balanceDueNow, tonightNotCharged]
       properties:
         early:
           type: boolean
@@ -13182,7 +13182,20 @@ components:
             unused nights. Equals `currentRoomTotal` unless `shortenable`.
         outstandingBalance:
           type: string
-          description: Decimal(10,2) as a string - `BookingFolio.balanceDue` now, before any change.
+          description: >
+            Decimal(10,2) as a string - what the guest would owe right after checking out now without shortening the
+            stay: `balanceDueNow` less tonight's overstay night, which a check-out does not charge. Equals
+            `CheckOutResult.outstandingBalance` of a check-out without `shortenStay`.
+        balanceDueNow:
+          type: string
+          description: >
+            Decimal(10,2) as a string - `BookingFolio.balanceDue` (`Booking.balanceDue`) at this moment, tonight's
+            overstay night included when it has been charged. The figure the Today board shows as owed.
+        tonightNotCharged:
+          type: boolean
+          description: >
+            True when tonight's overstay night is in `balanceDueNow` and checking out today releases it - the reason
+            the two figures differ, and the only case a screen has to show both.
         shortenedOutstandingBalance:
           type: string
           description: >
@@ -13243,9 +13256,10 @@ components:
     TodayBoardRoomOccupant:
       type: object
       description: >
-        Set only on an `arrivingToday` entry whose room still has another guest checked into it:
-        `POST /bookings/{id}/check-in` answers 409 until that guest is checked out or the arrival
-        is moved to another room. Absent or null otherwise.
+        Another guest still checked into the room an arrival would check into: `POST /bookings/{id}/check-in`
+        answers 409 until that guest is checked out or the arrival is moved to another room. Set on a
+        `TodayBoard.arrivingToday` entry and on `GET /bookings/{id}` (`Booking.roomOccupant`); absent or
+        null otherwise.
       required: [bookingId, guestName, overdueDays]
       properties:
         bookingId:
@@ -14266,8 +14280,10 @@ components:
       description: >
         The booking a room unit is showing on the map right now - either a guest checked in this
         moment, or, only when the unit isn't currently occupied, a guest expected to check in
-        today. Never both - a unit shows at most one of these.
-      required: [bookingId, guestName, checkOut, occupancyStatus, outstandingBalance]
+        today. Never both - a unit shows at most one of these. "The unit" is the one the stay is in
+        today, not the booking's last one: a guest with a move planned for a later night is shown
+        where they are.
+      required: [bookingId, guestName, checkOut, occupancyStatus, outstandingBalance, owes]
       properties:
         bookingId:
           type: string
@@ -14278,6 +14294,9 @@ components:
           pattern: '^\d{4}-\d{2}-\d{2}$'
         occupancyStatus:
           $ref: "#/components/schemas/OccupancyStatus"
+        owes:
+          type: boolean
+          description: As `Booking.owes` - the balance has fallen due. False for an arrival who is merely unpaid.
         outstandingBalance:
           type: string
           description: >
@@ -14367,6 +14386,21 @@ components:
           description: >
             Computed at read time, not a stored alert - reuses this existing per-unit carrier
             rather than a new notification mechanism (see that schema's own `blockExpired`).
+        waitingArrival:
+          allOf:
+            - $ref: "#/components/schemas/PropertyMapWaitingArrival"
+          description: >
+            A guest arriving into this room today who cannot be checked in because `currentBooking` (another
+            guest) is still checked into it. Absent otherwise.
+
+    PropertyMapWaitingArrival:
+      type: object
+      required: [bookingId, guestName]
+      properties:
+        bookingId:
+          type: string
+        guestName:
+          type: string
 
     PropertyMap:
       type: object
@@ -15166,6 +15200,19 @@ components:
           description: The booking's stay broken into room legs, ordered by `checkIn` ascending. See `BookingSegment`'s description.
           items:
             $ref: "#/components/schemas/BookingSegment"
+        currentSegmentId:
+          type: string
+          description: >
+            The `segments` entry the stay is in today (hotel date): the one holding tonight; before the first night the
+            first; from the departure day on the last. For a guest in the house its room is where they are now -
+            `roomUnit` is the *last* segment's room, which a move planned for a later night has not reached yet.
+        roomOccupant:
+          allOf:
+            - $ref: "#/components/schemas/TodayBoardRoomOccupant"
+          description: >
+            Only on `GET /bookings/{id}`, for a booking that can be checked in today (not cancelled, not checked in
+            yet, a room assigned, `checkIn` not in the future) whose room still has another guest checked into it.
+            Absent otherwise, and absent from every list.
         createdAt:
           type: string
           format: date-time
@@ -19512,6 +19559,11 @@ components:
           type: string
         voidReason:
           type: string
+        voidedByCorrectionId:
+          type: string
+          description: >
+            The correction that voided this punch - the same value as `correctionId` on the punches that correction
+            recorded. A correction of a day with no punches voids nothing: it is known by `correctionId` alone.
 
     AttendanceDayCorrectionInput:
       type: object
@@ -22152,7 +22204,7 @@ components:
 
     NotificationStatus:
       type: object
-      required: [telegramConfigured, consecutiveFailures, telegramRoute, telegramProxyConfigured, manualFeedConfigured]
+      required: [telegramConfigured, consecutiveFailures, telegramRoute, telegramProxyConfigured, manualFeedConfigured, manualFeedUnreadable]
       properties:
         telegramConfigured:
           type: boolean
@@ -22199,6 +22251,17 @@ components:
           description: |
             When that list was last read successfully. Absent while it never was since the server started (in memory only):
             not configured, the first read is still to come, or the file is missing or unreadable.
+        manualFeedFailingSince:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the current series of failed reads of that list began. Absent while it is read.
+        manualFeedUnreadable:
+          type: boolean
+          description: |
+            True when the list is configured but cannot be relied on: the last read failed, or none has succeeded for
+            longer than two sweep intervals (counted from the server's start while none ever has). False when not
+            configured. The path is never returned.
 
     NotificationSettings:
       type: object

@@ -150,8 +150,11 @@ public class BookingOccupancyService {
         // A block, not a warning like a dirty room: who is checked into a room is the system's own record, and two
         // guests in one room break check-out, housekeeping, the maps and charges to the room.
         overstayRule.otherGuestIn(unit.getId(), bookingId).ifPresent(other -> {
-            throw new ConflictException(occupiedMessage(unit.getLabel(), other));
+            throw new ConflictException(
+                    OverstayRule.occupiedMessage(unit.getLabel(), other, "Check them out or move this arrival to another room first."));
         });
+        // So a move of another guest into this room that is running right now fails and retries (BookingWriter).
+        roomUnitRepository.markUsed(unit.getId());
         boolean wasDirty = unit.getHousekeepingStatus() == HousekeepingStatus.DIRTY;
 
         booking.setOccupancyStatus(OccupancyStatus.CHECKED_IN);
@@ -169,13 +172,6 @@ public class BookingOccupancyService {
 
         String warning = wasDirty ? "Room " + unit.getLabel() + " has not been marked clean since the last checkout." : null;
         return new CheckInResult(toDto(saved), warning);
-    }
-
-    private static String occupiedMessage(String unitLabel, OverstayRule.InHouseGuest other) {
-        String state = other.overdue() ? "past check-out" : other.dueOutToday() ? "due out today" : null;
-        return "Room " + unitLabel + " is still occupied by " + other.booking().getGuestName() + " (checked in"
-                + (state == null ? "" : ", " + state)
-                + "). Check them out or move this arrival to another room first.";
     }
 
     /**
@@ -225,11 +221,9 @@ public class BookingOccupancyService {
         return checkOutTransaction.execute(status -> completeCheckOut(bookingId, originalCheckOut, releasedAmount, fee, currentRoomUnitId));
     }
 
-    /** The unit of {@link OverstayRule#currentSegment}; {@code fallback} when there is none or it has no room assigned. */
+    /** {@link OverstayRule#unitOn} for a booking's stored segments, today. */
     private String currentRoomUnitId(String bookingId, String fallback) {
-        BookingSegmentEntity current =
-                OverstayRule.currentSegment(segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId), LocalDate.now(clock));
-        return current != null && current.getRoomUnitId() != null ? current.getRoomUnitId() : fallback;
+        return OverstayRule.unitOn(segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId), fallback, LocalDate.now(clock));
     }
 
     private CheckOutResult completeCheckOut(
@@ -291,17 +285,21 @@ public class BookingOccupancyService {
         BigDecimal currentRoom = booking.roomAmount();
         String currentTotal = PriceFormat.asDecimalString(currentRoom);
         // Tonight's overstay night is released by the check-out itself, so it is not part of what the guest settles now.
-        String outstanding = PriceFormat.asDecimalString(
-                bookingService.computeOutstandingBalance(bookingId).subtract(overstayChargeService.tonightsCharge(bookingId)).max(BigDecimal.ZERO));
+        // Both figures are answered, so the screen can say why it is not the one on the Today board.
+        BigDecimal dueNow = bookingService.computeOutstandingBalance(bookingId);
+        BigDecimal dueAfter = dueNow.subtract(overstayChargeService.tonightsCharge(bookingId)).max(BigDecimal.ZERO);
+        String outstanding = PriceFormat.asDecimalString(dueAfter);
+        String owedNow = PriceFormat.asDecimalString(dueNow);
+        boolean tonightNotCharged = dueNow.compareTo(dueAfter) > 0;
         EarlyDeparture plan = planEarlyDeparture(booking);
         if (plan == null) {
-            return new CheckOutPreview(false, false, null, null, 0, "0.00", currentTotal, currentTotal, outstanding, outstanding);
+            return new CheckOutPreview(false, false, null, null, 0, "0.00", currentTotal, currentTotal, outstanding, owedNow, tonightNotCharged, outstanding);
         }
         int nightsReleased = (int) ChronoUnit.DAYS.between(plan.shortenedCheckOut(), booking.getCheckOut());
         if (!plan.quote().available()) {
             return new CheckOutPreview(
                     true, false, plan.quote().reason(), plan.shortenedCheckOut(), nightsReleased, "0.00", currentTotal, currentTotal, outstanding,
-                    outstanding);
+                    owedNow, tonightNotCharged, outstanding);
         }
         BigDecimal unused = booking.getTotalPrice().subtract(plan.quote().totalPrice());
         BigDecimal shortenedOutstanding = bookingService.computeOutstandingBalanceWithStayPrice(bookingId, plan.quote().totalPrice());
@@ -315,6 +313,8 @@ public class BookingOccupancyService {
                 currentTotal,
                 PriceFormat.asDecimalString(currentRoom.subtract(unused)),
                 outstanding,
+                owedNow,
+                tonightNotCharged,
                 PriceFormat.asDecimalString(shortenedOutstanding));
     }
 

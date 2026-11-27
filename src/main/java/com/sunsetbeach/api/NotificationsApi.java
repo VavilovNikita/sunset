@@ -165,7 +165,7 @@ public interface NotificationsApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"telegramConfigured\" : true, \"manualFeedConfigured\" : true, \"manualFeedReadAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastSuccessAt\" : \"2000-01-23T04:56:07.000+00:00\", \"telegramRoute\" : \"DIRECT\", \"telegramProxyConfigured\" : true, \"botUsername\" : \"botUsername\", \"consecutiveFailures\" : 0, \"failingSince\" : \"2000-01-23T04:56:07.000+00:00\" }";
+                    String exampleString = "{ \"telegramConfigured\" : true, \"manualFeedConfigured\" : true, \"manualFeedReadAt\" : \"2000-01-23T04:56:07.000+00:00\", \"lastSuccessAt\" : \"2000-01-23T04:56:07.000+00:00\", \"manualFeedUnreadable\" : true, \"manualFeedFailingSince\" : \"2000-01-23T04:56:07.000+00:00\", \"telegramRoute\" : \"DIRECT\", \"telegramProxyConfigured\" : true, \"botUsername\" : \"botUsername\", \"consecutiveFailures\" : 0, \"failingSince\" : \"2000-01-23T04:56:07.000+00:00\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

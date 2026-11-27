@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
@@ -199,8 +200,7 @@ public class OverstayRule {
                 .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
         Map<String, List<InHouseGuest>> byUnit = new HashMap<>();
         for (BookingEntity booking : inHouse) {
-            BookingSegmentEntity current = currentSegment(segmentsByBooking.getOrDefault(booking.getId(), List.of()), today);
-            String unitId = current != null && current.getRoomUnitId() != null ? current.getRoomUnitId() : booking.getRoomUnitId();
+            String unitId = unitOn(segmentsByBooking.getOrDefault(booking.getId(), List.of()), booking.getRoomUnitId(), today);
             if (unitId != null) {
                 byUnit.computeIfAbsent(unitId, k -> new ArrayList<>())
                         .add(new InHouseGuest(booking, overdueDays(booking, today), booking.getCheckOut().equals(today)));
@@ -219,9 +219,31 @@ public class OverstayRule {
 
     /** {@link #otherGuestIn(String, String)} over a map already read - for a list that asks about many rooms. */
     public static Optional<InHouseGuest> otherGuestIn(Map<String, List<InHouseGuest>> byUnit, String roomUnitId, String bookingId) {
+        return guestInExcept(byUnit, roomUnitId, Set.of(bookingId));
+    }
+
+    /** As {@link #otherGuestIn(Map, String, String)}, leaving out several bookings (the two sides of a swap). */
+    public static Optional<InHouseGuest> guestInExcept(Map<String, List<InHouseGuest>> byUnit, String roomUnitId, Set<String> bookingIds) {
         return byUnit.getOrDefault(roomUnitId, List.of()).stream()
-                .filter(g -> !g.booking().getId().equals(bookingId))
+                .filter(g -> !bookingIds.contains(g.booking().getId()))
                 .max(Comparator.comparingInt(InHouseGuest::overdueDays).thenComparing(g -> g.booking().getId()));
+    }
+
+    /** The one sentence for a room another guest is still checked into; {@code whatToDo} is the caller's way out. */
+    public static String occupiedMessage(String unitLabel, InHouseGuest other, String whatToDo) {
+        String state = other.overdue() ? "past check-out" : other.dueOutToday() ? "due out today" : null;
+        return "Room " + unitLabel + " is still occupied by " + other.booking().getGuestName() + " (checked in"
+                + (state == null ? "" : ", " + state) + "). " + whatToDo;
+    }
+
+    /**
+     * The physical room a stay is in on {@code today}: that of its {@link #currentSegment current segment}, or
+     * {@code fallback} (the booking's own, i.e. last, room) when that segment has none. Not the booking's room: a move
+     * planned for a later night changes that one at once and the guest's whereabouts only on the night.
+     */
+    public static String unitOn(List<BookingSegmentEntity> segments, String fallback, LocalDate today) {
+        BookingSegmentEntity current = currentSegment(segments, today);
+        return current != null && current.getRoomUnitId() != null ? current.getRoomUnitId() : fallback;
     }
 
     /**

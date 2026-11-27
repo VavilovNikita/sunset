@@ -16,7 +16,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * The booking a room unit is showing on the map right now - either a guest checked in this moment, or, only when the unit isn&#39;t currently occupied, a guest expected to check in today. Never both - a unit shows at most one of these. 
+ * The booking a room unit is showing on the map right now - either a guest checked in this moment, or, only when the unit isn&#39;t currently occupied, a guest expected to check in today. Never both - a unit shows at most one of these. \&quot;The unit\&quot; is the one the stay is in today, not the booking&#39;s last one: a guest with a move planned for a later night is shown where they are. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
@@ -30,6 +30,8 @@ public class PropertyMapCurrentBooking {
 
   private OccupancyStatus occupancyStatus;
 
+  private Boolean owes;
+
   private String outstandingBalance;
 
   private Integer overdueDays;
@@ -41,11 +43,12 @@ public class PropertyMapCurrentBooking {
   /**
    * Constructor with only required parameters
    */
-  public PropertyMapCurrentBooking(String bookingId, String guestName, String checkOut, OccupancyStatus occupancyStatus, String outstandingBalance) {
+  public PropertyMapCurrentBooking(String bookingId, String guestName, String checkOut, OccupancyStatus occupancyStatus, Boolean owes, String outstandingBalance) {
     this.bookingId = bookingId;
     this.guestName = guestName;
     this.checkOut = checkOut;
     this.occupancyStatus = occupancyStatus;
+    this.owes = owes;
     this.outstandingBalance = outstandingBalance;
   }
 
@@ -125,6 +128,25 @@ public class PropertyMapCurrentBooking {
     this.occupancyStatus = occupancyStatus;
   }
 
+  public PropertyMapCurrentBooking owes(Boolean owes) {
+    this.owes = owes;
+    return this;
+  }
+
+  /**
+   * As `Booking.owes` - the balance has fallen due. False for an arrival who is merely unpaid.
+   * @return owes
+   */
+  @NotNull 
+  @JsonProperty("owes")
+  public Boolean getOwes() {
+    return owes;
+  }
+
+  public void setOwes(Boolean owes) {
+    this.owes = owes;
+  }
+
   public PropertyMapCurrentBooking outstandingBalance(String outstandingBalance) {
     this.outstandingBalance = outstandingBalance;
     return this;
@@ -176,13 +198,14 @@ public class PropertyMapCurrentBooking {
         Objects.equals(this.guestName, propertyMapCurrentBooking.guestName) &&
         Objects.equals(this.checkOut, propertyMapCurrentBooking.checkOut) &&
         Objects.equals(this.occupancyStatus, propertyMapCurrentBooking.occupancyStatus) &&
+        Objects.equals(this.owes, propertyMapCurrentBooking.owes) &&
         Objects.equals(this.outstandingBalance, propertyMapCurrentBooking.outstandingBalance) &&
         Objects.equals(this.overdueDays, propertyMapCurrentBooking.overdueDays);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(bookingId, guestName, checkOut, occupancyStatus, outstandingBalance, overdueDays);
+    return Objects.hash(bookingId, guestName, checkOut, occupancyStatus, owes, outstandingBalance, overdueDays);
   }
 
   @Override
@@ -193,6 +216,7 @@ public class PropertyMapCurrentBooking {
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    occupancyStatus: ").append(toIndentedString(occupancyStatus)).append("\n");
+    sb.append("    owes: ").append(toIndentedString(owes)).append("\n");
     sb.append("    outstandingBalance: ").append(toIndentedString(outstandingBalance)).append("\n");
     sb.append("    overdueDays: ").append(toIndentedString(overdueDays)).append("\n");
     sb.append("}");

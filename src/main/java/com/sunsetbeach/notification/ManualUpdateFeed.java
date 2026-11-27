@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -48,13 +49,23 @@ public class ManualUpdateFeed {
     private final Clock clock;
     private final JsonMapper json;
 
-    private Instant lastReadAt;
-    private boolean failing;
+    /** Without a successful read for this long the list counts as unreadable: two sweep intervals. */
+    private final Duration staleAfter;
+    private final Instant startedAt;
 
-    public ManualUpdateFeed(@Value("${app.manual.updates-file:}") String file, Clock clock, JsonMapper json) {
+    private Instant lastReadAt;
+    private Instant failingSince;
+
+    public ManualUpdateFeed(
+            @Value("${app.manual.updates-file:}") String file,
+            Clock clock,
+            JsonMapper json,
+            @Value("${app.manual.poll-interval-ms:600000}") long pollIntervalMs) {
         this.file = file == null ? "" : file.trim();
         this.clock = clock;
         this.json = json;
+        this.staleAfter = Duration.ofMillis(pollIntervalMs).multipliedBy(2);
+        this.startedAt = clock.instant();
     }
 
     public boolean isConfigured() {
@@ -66,6 +77,23 @@ public class ManualUpdateFeed {
         return lastReadAt;
     }
 
+    /** When the current series of failed reads began; null while the file is read. */
+    public synchronized Instant failingSince() {
+        return failingSince;
+    }
+
+    /**
+     * Configured but not to be relied on: the last read failed, or none has succeeded for two sweep intervals (counted
+     * from the start while none ever has - a sweep that never runs shows here too).
+     */
+    public synchronized boolean unreadable() {
+        if (!isConfigured()) {
+            return false;
+        }
+        Instant since = lastReadAt != null ? lastReadAt : startedAt;
+        return failingSince != null || Duration.between(since, clock.instant()).compareTo(staleAfter) > 0;
+    }
+
     /** @return the notes as published now; empty when the feature is off or the file cannot be read. Never throws. */
     public synchronized Optional<List<Note>> read() {
         if (!isConfigured()) {
@@ -73,17 +101,17 @@ public class ManualUpdateFeed {
         }
         try {
             List<Note> notes = parse(bytes());
-            if (failing) {
+            if (failingSince != null) {
                 log.info("The staff manual's update list is read again");
-                failing = false;
+                failingSince = null;
             }
             lastReadAt = clock.instant();
             return Optional.of(notes);
         } catch (IOException | RuntimeException e) {
-            if (!failing) {
+            if (failingSince == null) {
                 log.warn("The staff manual's update list {} cannot be read ({}: {}). It is tried again every pass and logged again when it works",
                         file, e.getClass().getSimpleName(), e.getMessage());
-                failing = true;
+                failingSince = clock.instant();
             }
             return Optional.empty();
         }

@@ -82,6 +82,11 @@ public class NotificationStatus {
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private JsonNullable<OffsetDateTime> manualFeedReadAt = JsonNullable.<OffsetDateTime>undefined();
 
+  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+  private JsonNullable<OffsetDateTime> manualFeedFailingSince = JsonNullable.<OffsetDateTime>undefined();
+
+  private Boolean manualFeedUnreadable;
+
   public NotificationStatus() {
     super();
   }
@@ -89,12 +94,13 @@ public class NotificationStatus {
   /**
    * Constructor with only required parameters
    */
-  public NotificationStatus(Boolean telegramConfigured, Integer consecutiveFailures, TelegramRouteEnum telegramRoute, Boolean telegramProxyConfigured, Boolean manualFeedConfigured) {
+  public NotificationStatus(Boolean telegramConfigured, Integer consecutiveFailures, TelegramRouteEnum telegramRoute, Boolean telegramProxyConfigured, Boolean manualFeedConfigured, Boolean manualFeedUnreadable) {
     this.telegramConfigured = telegramConfigured;
     this.consecutiveFailures = consecutiveFailures;
     this.telegramRoute = telegramRoute;
     this.telegramProxyConfigured = telegramProxyConfigured;
     this.manualFeedConfigured = manualFeedConfigured;
+    this.manualFeedUnreadable = manualFeedUnreadable;
   }
 
   public NotificationStatus telegramConfigured(Boolean telegramConfigured) {
@@ -269,6 +275,44 @@ public class NotificationStatus {
     this.manualFeedReadAt = manualFeedReadAt;
   }
 
+  public NotificationStatus manualFeedFailingSince(OffsetDateTime manualFeedFailingSince) {
+    this.manualFeedFailingSince = JsonNullable.of(manualFeedFailingSince);
+    return this;
+  }
+
+  /**
+   * When the current series of failed reads of that list began. Absent while it is read.
+   * @return manualFeedFailingSince
+   */
+  @Valid 
+  @JsonProperty("manualFeedFailingSince")
+  public JsonNullable<OffsetDateTime> getManualFeedFailingSince() {
+    return manualFeedFailingSince;
+  }
+
+  public void setManualFeedFailingSince(JsonNullable<OffsetDateTime> manualFeedFailingSince) {
+    this.manualFeedFailingSince = manualFeedFailingSince;
+  }
+
+  public NotificationStatus manualFeedUnreadable(Boolean manualFeedUnreadable) {
+    this.manualFeedUnreadable = manualFeedUnreadable;
+    return this;
+  }
+
+  /**
+   * True when the list is configured but cannot be relied on: the last read failed, or none has succeeded for longer than two sweep intervals (counted from the server's start while none ever has). False when not configured. The path is never returned. 
+   * @return manualFeedUnreadable
+   */
+  @NotNull 
+  @JsonProperty("manualFeedUnreadable")
+  public Boolean getManualFeedUnreadable() {
+    return manualFeedUnreadable;
+  }
+
+  public void setManualFeedUnreadable(Boolean manualFeedUnreadable) {
+    this.manualFeedUnreadable = manualFeedUnreadable;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -286,7 +330,9 @@ public class NotificationStatus {
         Objects.equals(this.telegramRoute, notificationStatus.telegramRoute) &&
         Objects.equals(this.telegramProxyConfigured, notificationStatus.telegramProxyConfigured) &&
         Objects.equals(this.manualFeedConfigured, notificationStatus.manualFeedConfigured) &&
-        equalsNullable(this.manualFeedReadAt, notificationStatus.manualFeedReadAt);
+        equalsNullable(this.manualFeedReadAt, notificationStatus.manualFeedReadAt) &&
+        equalsNullable(this.manualFeedFailingSince, notificationStatus.manualFeedFailingSince) &&
+        Objects.equals(this.manualFeedUnreadable, notificationStatus.manualFeedUnreadable);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -295,7 +341,7 @@ public class NotificationStatus {
 
   @Override
   public int hashCode() {
-    return Objects.hash(telegramConfigured, hashCodeNullable(botUsername), hashCodeNullable(lastSuccessAt), hashCodeNullable(failingSince), consecutiveFailures, telegramRoute, telegramProxyConfigured, manualFeedConfigured, hashCodeNullable(manualFeedReadAt));
+    return Objects.hash(telegramConfigured, hashCodeNullable(botUsername), hashCodeNullable(lastSuccessAt), hashCodeNullable(failingSince), consecutiveFailures, telegramRoute, telegramProxyConfigured, manualFeedConfigured, hashCodeNullable(manualFeedReadAt), hashCodeNullable(manualFeedFailingSince), manualFeedUnreadable);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -318,6 +364,8 @@ public class NotificationStatus {
     sb.append("    telegramProxyConfigured: ").append(toIndentedString(telegramProxyConfigured)).append("\n");
     sb.append("    manualFeedConfigured: ").append(toIndentedString(manualFeedConfigured)).append("\n");
     sb.append("    manualFeedReadAt: ").append(toIndentedString(manualFeedReadAt)).append("\n");
+    sb.append("    manualFeedFailingSince: ").append(toIndentedString(manualFeedFailingSince)).append("\n");
+    sb.append("    manualFeedUnreadable: ").append(toIndentedString(manualFeedUnreadable)).append("\n");
     sb.append("}");
     return sb.toString();
   }

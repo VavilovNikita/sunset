@@ -14,7 +14,7 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Set only on an &#x60;arrivingToday&#x60; entry whose room still has another guest checked into it: &#x60;POST /bookings/{id}/check-in&#x60; answers 409 until that guest is checked out or the arrival is moved to another room. Absent or null otherwise. 
+ * Another guest still checked into the room an arrival would check into: &#x60;POST /bookings/{id}/check-in&#x60; answers 409 until that guest is checked out or the arrival is moved to another room. Set on a &#x60;TodayBoard.arrivingToday&#x60; entry and on &#x60;GET /bookings/{id}&#x60; (&#x60;Booking.roomOccupant&#x60;); absent or null otherwise. 
  */
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")

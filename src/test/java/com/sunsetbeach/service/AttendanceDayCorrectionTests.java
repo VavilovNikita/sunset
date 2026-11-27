@@ -137,6 +137,28 @@ class AttendanceDayCorrectionTests extends AbstractIntegrationTest {
     }
 
     @Test
+    void theHistory_tiesWhatACorrectionVoidedToWhatItRecorded_evenOnADayThatWasEmpty() {
+        UserEntity manager = createUser(Role.MANAGER);
+        UserEntity employee = createUser(Role.WAITER);
+
+        // An empty day: nothing to void, the correction is known by its own punches alone.
+        List<AttendancePunch> first = attendanceService.correctDay(correction(employee, "forgot the card", "09:00", "17:00"), manager.getId());
+        List<AttendancePunch> history = attendanceService.list(employee.getId(), DAY, DAY, true);
+        assertThat(history).hasSize(2).allSatisfy(p -> {
+            assertThat(p.getCorrectionId()).isEqualTo(first.get(0).getCorrectionId());
+            assertThat(p.getNote().get()).isEqualTo("forgot the card");
+            assertThat(p.getVoidedByCorrectionId()).isNull();
+        });
+
+        List<AttendancePunch> second = attendanceService.correctDay(correction(employee, "left later", "09:00", "18:00"), manager.getId());
+
+        assertThat(attendanceService.list(employee.getId(), DAY, DAY, true))
+                .filteredOn(p -> p.getVoidedAt() != null)
+                .hasSize(2)
+                .allSatisfy(p -> assertThat(p.getVoidedByCorrectionId()).isEqualTo(second.get(0).getCorrectionId()));
+    }
+
+    @Test
     void clearingTheDay_voidsEverythingAndRecordsNothing() {
         UserEntity manager = createUser(Role.MANAGER);
         UserEntity employee = createUser(Role.WAITER);

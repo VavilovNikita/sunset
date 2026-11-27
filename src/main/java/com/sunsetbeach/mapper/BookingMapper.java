@@ -9,6 +9,7 @@ import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.service.BookingFolioCalculator;
+import com.sunsetbeach.service.OverstayRule;
 import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
@@ -103,6 +104,7 @@ public class BookingMapper {
             BookingFolioCalculator.FolioBreakdown folio) {
         BigDecimal balanceDue = folio.balanceDue();
         List<BookingSegmentEntity> sorted = segments.stream().sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn)).toList();
+        BookingSegmentEntity current = OverstayRule.currentSegment(sorted, java.time.LocalDate.now(clock));
 
         Map<String, RoomEntity> roomsById = roomRepository
                 .findAllById(sorted.stream().map(BookingSegmentEntity::getRoomId).distinct().toList())
@@ -146,6 +148,7 @@ public class BookingMapper {
                 TimestampFormat.toUtc(entity.getCreatedAt()),
                 TimestampFormat.toUtc(entity.getUpdatedAt()))
                 .stayStatus(stayStatusOf(entity))
+                .currentSegmentId(current != null ? current.getId() : null)
                 .notes(entity.getNotes())
                 .breakfastGuests(entity.getBreakfastGuests())
                 .breakfastRate(entity.getBreakfastRate() != null ? com.sunsetbeach.model.BreakfastRate.fromValue(entity.getBreakfastRate()) : null)

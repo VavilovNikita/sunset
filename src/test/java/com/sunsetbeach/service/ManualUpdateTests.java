@@ -310,11 +310,57 @@ class ManualUpdateTests extends NotificationTestBase {
 
     @Test
     void withoutAFileConfigured_theFeedIsOff() {
-        ManualUpdateFeed off = new ManualUpdateFeed("  ", clock, JsonMapper.builder().build());
+        ManualUpdateFeed off = new ManualUpdateFeed("  ", clock, JsonMapper.builder().build(), 600_000);
 
         assertThat(off.isConfigured()).isFalse();
+        assertThat(off.unreadable()).isFalse();
         assertThat(off.read()).isEmpty();
         assertThat(off.lastReadAt()).isNull();
+    }
+
+    // ---- what the settings page is told -----------------------------------------------------------------
+
+    @Test
+    void theStatusSaysWhenTheConfiguredListCannotBeReliedOn() {
+        ManualUpdateFeed feed = new ManualUpdateFeed(MANUAL_FEED.toString(), clock, JsonMapper.builder().build(), 600_000);
+        assertThat(feed.unreadable()).as("just started").isFalse();
+        clock.set(DAY + "T10:21");
+        assertThat(feed.unreadable()).as("no read at all for two intervals").isTrue();
+
+        publish(note(DAY, DAY, "Back", "A."));
+        feed.read();
+        assertThat(feed.unreadable()).isFalse();
+        assertThat(feed.failingSince()).isNull();
+
+        write("broken");
+        feed.read();
+        assertThat(feed.unreadable()).as("the last read failed").isTrue();
+        var since = feed.failingSince();
+        clock.set(DAY + "T10:31");
+        feed.read();
+        assertThat(feed.failingSince()).isEqualTo(since);
+
+        publish(note(DAY, DAY, "Back", "A."));
+        feed.read();
+        assertThat(feed.unreadable()).isFalse();
+        clock.set(DAY + "T10:52");
+        assertThat(feed.unreadable()).as("the sweep stopped reading").isTrue();
+    }
+
+    @Test
+    void theStatusEndpointCarriesTheFailureTime_andNeverThePath() throws Exception {
+        write("broken");
+        manualUpdates.runOnce();
+
+        var status = channelService.status();
+
+        assertThat(status.getManualFeedUnreadable()).isTrue();
+        assertThat(status.getManualFeedFailingSince().isPresent()).isTrue();
+        assertThat(JsonMapper.builder().build().writeValueAsString(status.getManualFeedFailingSince().get())).doesNotContain("sunset-test-updates");
+        publish(note(DAY, DAY, "Back", "A."));
+        manualUpdates.runOnce();
+        assertThat(channelService.status().getManualFeedUnreadable()).isFalse();
+        assertThat(channelService.status().getManualFeedFailingSince().isPresent()).isFalse();
     }
 
     // ---- fixtures -------------------------------------------------------------------------------------

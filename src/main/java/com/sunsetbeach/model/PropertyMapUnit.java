@@ -9,6 +9,7 @@ import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.PropertyMapActiveBlock;
 import com.sunsetbeach.model.PropertyMapCurrentBooking;
 import com.sunsetbeach.model.PropertyMapMaintenanceTask;
+import com.sunsetbeach.model.PropertyMapWaitingArrival;
 import java.math.BigDecimal;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -47,6 +48,8 @@ public class PropertyMapUnit {
   private PropertyMapActiveBlock activeBlock;
 
   private PropertyMapMaintenanceTask openMaintenanceTask;
+
+  private PropertyMapWaitingArrival waitingArrival;
 
   public PropertyMapUnit() {
     super();
@@ -282,6 +285,25 @@ public class PropertyMapUnit {
     this.openMaintenanceTask = openMaintenanceTask;
   }
 
+  public PropertyMapUnit waitingArrival(PropertyMapWaitingArrival waitingArrival) {
+    this.waitingArrival = waitingArrival;
+    return this;
+  }
+
+  /**
+   * A guest arriving into this room today who cannot be checked in because `currentBooking` (another guest) is still checked into it. Absent otherwise. 
+   * @return waitingArrival
+   */
+  @Valid 
+  @JsonProperty("waitingArrival")
+  public PropertyMapWaitingArrival getWaitingArrival() {
+    return waitingArrival;
+  }
+
+  public void setWaitingArrival(PropertyMapWaitingArrival waitingArrival) {
+    this.waitingArrival = waitingArrival;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -301,12 +323,13 @@ public class PropertyMapUnit {
         Objects.equals(this.positionY, propertyMapUnit.positionY) &&
         Objects.equals(this.currentBooking, propertyMapUnit.currentBooking) &&
         Objects.equals(this.activeBlock, propertyMapUnit.activeBlock) &&
-        Objects.equals(this.openMaintenanceTask, propertyMapUnit.openMaintenanceTask);
+        Objects.equals(this.openMaintenanceTask, propertyMapUnit.openMaintenanceTask) &&
+        Objects.equals(this.waitingArrival, propertyMapUnit.waitingArrival);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomUnitId, roomId, roomName, unitLabel, isActive, housekeepingStatus, positionX, positionY, currentBooking, activeBlock, openMaintenanceTask);
+    return Objects.hash(roomUnitId, roomId, roomName, unitLabel, isActive, housekeepingStatus, positionX, positionY, currentBooking, activeBlock, openMaintenanceTask, waitingArrival);
   }
 
   @Override
@@ -324,6 +347,7 @@ public class PropertyMapUnit {
     sb.append("    currentBooking: ").append(toIndentedString(currentBooking)).append("\n");
     sb.append("    activeBlock: ").append(toIndentedString(activeBlock)).append("\n");
     sb.append("    openMaintenanceTask: ").append(toIndentedString(openMaintenanceTask)).append("\n");
+    sb.append("    waitingArrival: ").append(toIndentedString(waitingArrival)).append("\n");
     sb.append("}");
     return sb.toString();
   }

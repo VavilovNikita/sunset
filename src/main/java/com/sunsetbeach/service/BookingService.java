@@ -784,11 +784,28 @@ public class BookingService {
                 cb.like(root.get("id"), needle + "%"));
     }
 
+    /** The guest still in the room this booking would be checked into today, as check-in itself asks it; else null. */
+    private com.sunsetbeach.model.TodayBoardRoomOccupant roomOccupant(BookingEntity booking, List<BookingSegmentEntity> segments) {
+        LocalDate today = overstayRule.today();
+        boolean awaitingCheckIn = booking.getStatus() != BookingStatus.CANCELLED
+                && (booking.getOccupancyStatus() == OccupancyStatus.EXPECTED || booking.getOccupancyStatus() == OccupancyStatus.NO_SHOW)
+                && !today.isBefore(booking.getCheckIn());
+        if (!awaitingCheckIn || booking.getRoomUnitId() == null) {
+            return null;
+        }
+        return overstayRule.otherGuestIn(OverstayRule.unitOn(segments, booking.getRoomUnitId(), today), booking.getId())
+                .map(g -> new com.sunsetbeach.model.TodayBoardRoomOccupant(g.booking().getId(), g.booking().getGuestName(), g.overdueDays()))
+                .orElse(null);
+    }
+
     @Transactional(readOnly = true)
     public Booking getById(String id) {
         BookingEntity booking = bookingRepository.findById(id).orElseThrow(() -> new NotFoundException("Booking not found"));
         RoomEntity room = roomRepository.findById(booking.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
-        Booking dto = bookingMapper.toDto(booking, room, findRoomUnit(booking.getRoomUnitId()), findGuest(booking.getGuestId()), loadSegments(id));
+        List<BookingSegmentEntity> segments = loadSegments(id);
+        Booking dto = bookingMapper.toDto(booking, room, findRoomUnit(booking.getRoomUnitId()), findGuest(booking.getGuestId()), segments);
+        // Only here, not in lists: it answers "can this guest be checked in now", asked on a booking's own screen.
+        dto.setRoomOccupant(roomOccupant(booking, segments));
         // Not stored: read fresh each time, so the warning stays until staff have dealt with the
         // paid spa appointment and goes away by itself afterwards.
         if (booking.getStatus() == BookingStatus.CANCELLED) {

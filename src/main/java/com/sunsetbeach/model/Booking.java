@@ -16,6 +16,7 @@ import com.sunsetbeach.model.Room;
 import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.SettlementStatus;
 import com.sunsetbeach.model.StayStatus;
+import com.sunsetbeach.model.TodayBoardRoomOccupant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -114,6 +115,10 @@ public class Booking {
 
   @Valid
   private List<@Valid BookingSegment> segments = new ArrayList<>();
+
+  private String currentSegmentId;
+
+  private TodayBoardRoomOccupant roomOccupant;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
   private OffsetDateTime createdAt;
@@ -853,6 +858,44 @@ public class Booking {
     this.segments = segments;
   }
 
+  public Booking currentSegmentId(String currentSegmentId) {
+    this.currentSegmentId = currentSegmentId;
+    return this;
+  }
+
+  /**
+   * The `segments` entry the stay is in today (hotel date): the one holding tonight; before the first night the first; from the departure day on the last. For a guest in the house its room is where they are now - `roomUnit` is the *last* segment's room, which a move planned for a later night has not reached yet. 
+   * @return currentSegmentId
+   */
+  
+  @JsonProperty("currentSegmentId")
+  public String getCurrentSegmentId() {
+    return currentSegmentId;
+  }
+
+  public void setCurrentSegmentId(String currentSegmentId) {
+    this.currentSegmentId = currentSegmentId;
+  }
+
+  public Booking roomOccupant(TodayBoardRoomOccupant roomOccupant) {
+    this.roomOccupant = roomOccupant;
+    return this;
+  }
+
+  /**
+   * Only on `GET /bookings/{id}`, for a booking that can be checked in today (not cancelled, not checked in yet, a room assigned, `checkIn` not in the future) whose room still has another guest checked into it. Absent otherwise, and absent from every list. 
+   * @return roomOccupant
+   */
+  @Valid 
+  @JsonProperty("roomOccupant")
+  public TodayBoardRoomOccupant getRoomOccupant() {
+    return roomOccupant;
+  }
+
+  public void setRoomOccupant(TodayBoardRoomOccupant roomOccupant) {
+    this.roomOccupant = roomOccupant;
+  }
+
   public Booking createdAt(OffsetDateTime createdAt) {
     this.createdAt = createdAt;
     return this;
@@ -955,6 +998,8 @@ public class Booking {
         Objects.equals(this.externalChannel, booking.externalChannel) &&
         Objects.equals(this.cancellationReason, booking.cancellationReason) &&
         Objects.equals(this.segments, booking.segments) &&
+        Objects.equals(this.currentSegmentId, booking.currentSegmentId) &&
+        Objects.equals(this.roomOccupant, booking.roomOccupant) &&
         Objects.equals(this.createdAt, booking.createdAt) &&
         Objects.equals(this.updatedAt, booking.updatedAt) &&
         Objects.equals(this.warning, booking.warning);
@@ -966,7 +1011,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, currentSegmentId, roomOccupant, createdAt, updatedAt, warning);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -1016,6 +1061,8 @@ public class Booking {
     sb.append("    externalChannel: ").append(toIndentedString(externalChannel)).append("\n");
     sb.append("    cancellationReason: ").append(toIndentedString(cancellationReason)).append("\n");
     sb.append("    segments: ").append(toIndentedString(segments)).append("\n");
+    sb.append("    currentSegmentId: ").append(toIndentedString(currentSegmentId)).append("\n");
+    sb.append("    roomOccupant: ").append(toIndentedString(roomOccupant)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("    warning: ").append(toIndentedString(warning)).append("\n");

@@ -111,9 +111,13 @@ public class NotificationChannelService {
     public NotificationStatus status() {
         TelegramHealth.Snapshot health = this.health.snapshot();
         NotificationStatus status = new NotificationStatus(telegram.isConfigured(), telegram.isConfigured() ? health.consecutiveFailures() : 0,
-                NotificationStatus.TelegramRouteEnum.valueOf(telegram.route().name()), telegram.proxyConfigured(), manualFeed.isConfigured());
+                NotificationStatus.TelegramRouteEnum.valueOf(telegram.route().name()), telegram.proxyConfigured(), manualFeed.isConfigured(),
+                manualFeed.unreadable());
         if (manualFeed.lastReadAt() != null) {
             status.manualFeedReadAt(manualFeed.lastReadAt().atZone(clock.getZone()).toOffsetDateTime());
+        }
+        if (manualFeed.failingSince() != null) {
+            status.manualFeedFailingSince(manualFeed.failingSince().atZone(clock.getZone()).toOffsetDateTime());
         }
         if (telegram.isConfigured()) {
             botStateRepository.findById(1).map(TelegramBotStateEntity::getBotUsername).ifPresent(status::botUsername);

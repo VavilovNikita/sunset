@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.MaintenanceTaskEntity;
 import com.sunsetbeach.entity.PropertyMapEntity;
 import com.sunsetbeach.entity.RoomEntity;
@@ -19,7 +20,9 @@ import com.sunsetbeach.model.PropertyMapActiveBlock;
 import com.sunsetbeach.model.PropertyMapCurrentBooking;
 import com.sunsetbeach.model.PropertyMapMaintenanceTask;
 import com.sunsetbeach.model.PropertyMapUnit;
+import com.sunsetbeach.model.PropertyMapWaitingArrival;
 import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.MaintenanceTaskRepository;
 import com.sunsetbeach.repository.PropertyMapRepository;
 import com.sunsetbeach.repository.RoomRepository;
@@ -34,10 +37,12 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -73,6 +78,8 @@ public class PropertyMapService {
     private final AuditLogService auditLogService;
     private final Path uploadsRoot;
     private final Clock clock;
+    private final OverstayRule overstayRule;
+    private final BookingSegmentRepository segmentRepository;
 
     public PropertyMapService(
             RoomUnitRepository roomUnitRepository,
@@ -85,7 +92,11 @@ public class PropertyMapService {
             ImageUploadValidator imageUploadValidator,
             AuditLogService auditLogService,
             Clock clock,
+            OverstayRule overstayRule,
+            BookingSegmentRepository segmentRepository,
             @Value("${app.uploads.root}") String uploadsRoot) {
+        this.overstayRule = overstayRule;
+        this.segmentRepository = segmentRepository;
         this.clock = clock;
         this.roomUnitRepository = roomUnitRepository;
         this.roomRepository = roomRepository;
@@ -107,19 +118,25 @@ public class PropertyMapService {
         List<String> unitIds = units.stream().map(RoomUnitEntity::getId).toList();
         LocalDate today = LocalDate.now(clock);
 
-        // Currently in-house (a real guest, right now) - same query BookingOccupancyService#getTodayBoard
-        // uses for its own inHouse list, just regrouped by roomUnitId instead of returned as a flat list.
-        Map<String, BookingEntity> checkedInByUnit = bookingRepository
-                .findByOccupancyStatusAndStatusNot(OccupancyStatus.CHECKED_IN, BookingStatus.CANCELLED).stream()
-                .filter(b -> b.getRoomUnitId() != null)
-                .collect(Collectors.toMap(BookingEntity::getRoomUnitId, b -> b, (a, b) -> a));
+        // Currently in-house, each under the room they are in today (not the booking's last room: a move planned for a
+        // later night has not happened). Check-in's own question, so the map and the 409 can't disagree.
+        Map<String, List<OverstayRule.InHouseGuest>> inHouse = overstayRule.inHouseByRoomUnit();
 
-        // Expected to check in today, not checked in yet - only shown for a unit that isn't
-        // already occupied (see toUnitDto): a unit can't show two "current" bookings at once.
-        Map<String, BookingEntity> arrivingTodayByUnit = bookingRepository
-                .findByOccupancyStatusAndStatusNotAndCheckInIs(OccupancyStatus.EXPECTED, BookingStatus.CANCELLED, today).stream()
-                .filter(b -> b.getRoomUnitId() != null)
-                .collect(Collectors.toMap(BookingEntity::getRoomUnitId, b -> b, (a, b) -> a));
+        // Expected to check in today, not checked in yet, under the room they would walk into today. In a unit that is
+        // already occupied they are not the "current" booking but the one waiting for it (see toUnitDto).
+        List<BookingEntity> arrivals =
+                bookingRepository.findByOccupancyStatusAndStatusNotAndCheckInIs(OccupancyStatus.EXPECTED, BookingStatus.CANCELLED, today);
+        Map<String, List<BookingSegmentEntity>> arrivalSegments = arrivals.isEmpty()
+                ? Map.of()
+                : segmentRepository.findByBookingIdIn(arrivals.stream().map(BookingEntity::getId).toList()).stream()
+                        .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+        Map<String, BookingEntity> arrivingTodayByUnit = new HashMap<>();
+        arrivals.stream().sorted(Comparator.comparing(BookingEntity::getGuestName).thenComparing(BookingEntity::getId)).forEach(b -> {
+            String unitId = OverstayRule.unitOn(arrivalSegments.getOrDefault(b.getId(), List.of()), b.getRoomUnitId(), today);
+            if (unitId != null) {
+                arrivingTodayByUnit.putIfAbsent(unitId, b);
+            }
+        });
 
         // Same repository method + single-day-range trick AvailabilityService#computeInventory
         // already uses to find blocks covering one date - no new query needed.
@@ -132,7 +149,7 @@ public class PropertyMapService {
         Map<String, PropertyMapMaintenanceTask> openTaskByUnit = computeOpenTaskByUnit(today);
 
         List<PropertyMapUnit> unitDtos =
-                units.stream().map(unit -> toUnitDto(unit, roomNames, checkedInByUnit, arrivingTodayByUnit, blockByUnit, openTaskByUnit, today)).toList();
+                units.stream().map(unit -> toUnitDto(unit, roomNames, inHouse, arrivingTodayByUnit, blockByUnit, openTaskByUnit, today)).toList();
 
         PropertyMapEntity map = propertyMapRepository.findById(SINGLETON_ID).orElse(null);
         String imagePath = map != null ? map.getImagePath() : null;
@@ -144,21 +161,23 @@ public class PropertyMapService {
     private PropertyMapUnit toUnitDto(
             RoomUnitEntity unit,
             Map<String, String> roomNames,
-            Map<String, BookingEntity> checkedInByUnit,
+            Map<String, List<OverstayRule.InHouseGuest>> inHouse,
             Map<String, BookingEntity> arrivingTodayByUnit,
             Map<String, RoomUnitBlockEntity> blockByUnit,
             Map<String, PropertyMapMaintenanceTask> openTaskByUnit,
             LocalDate today) {
-        BookingEntity checkedIn = checkedInByUnit.get(unit.getId());
-        PropertyMapCurrentBooking currentBooking = checkedIn != null
-                ? toCurrentBookingDto(checkedIn, today)
-                : toCurrentBookingDtoOrNull(arrivingTodayByUnit.get(unit.getId()), today);
+        // The longest overdue first, should old data hold two guests in one room.
+        BookingEntity checkedIn =
+                OverstayRule.guestInExcept(inHouse, unit.getId(), Set.of()).map(OverstayRule.InHouseGuest::booking).orElse(null);
+        BookingEntity arrival = arrivingTodayByUnit.get(unit.getId());
+        PropertyMapCurrentBooking currentBooking =
+                checkedIn != null ? toCurrentBookingDto(checkedIn, today) : toCurrentBookingDtoOrNull(arrival, today);
 
         RoomUnitBlockEntity block = blockByUnit.get(unit.getId());
         PropertyMapActiveBlock activeBlock =
                 block == null ? null : new PropertyMapActiveBlock(block.getReason(), block.getFromDate().toString(), block.getToDate().toString());
 
-        return new PropertyMapUnit(
+        PropertyMapUnit dto = new PropertyMapUnit(
                 unit.getId(),
                 unit.getRoomId(),
                 roomNames.getOrDefault(unit.getRoomId(), ""),
@@ -170,6 +189,10 @@ public class PropertyMapService {
                 currentBooking,
                 activeBlock,
                 openTaskByUnit.get(unit.getId()));
+        if (checkedIn != null && arrival != null) {
+            dto.waitingArrival(new PropertyMapWaitingArrival(arrival.getId(), arrival.getGuestName()));
+        }
+        return dto;
     }
 
     /**
@@ -228,6 +251,7 @@ public class PropertyMapService {
                 booking.getGuestName(),
                 booking.getCheckOut().toString(),
                 booking.getOccupancyStatus(),
+                BookingFolioCalculator.debtHasFallenDue(booking, outstanding, today),
                 PriceFormat.asDecimalString(outstanding))
                 .overdueDays(OverstayRule.overdueDays(booking, today));
     }

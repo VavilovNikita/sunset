@@ -16,6 +16,7 @@ import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.RelocationRateMode;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentNightlyRateRepository;
@@ -426,6 +427,7 @@ public class BookingWriter {
         BookingSegmentEntity segment = requireSoleSegment(bookingId);
         RoomUnitEntity unit = roomUnitRepository.findById(roomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
 
+        failIfUnassignable(lockedOccupantConflict(booking, List.of(segment), segment, unit, segment.getRoomId(), Set.of()));
         failIfUnassignable(checkUnitAssignable(unit, segment.getRoomId(), segment.getCheckIn(), segment.getCheckOut(), bookingId));
 
         segment.setRoomUnitId(unit.getId());
@@ -462,6 +464,8 @@ public class BookingWriter {
         BookingSegmentEntity segment = requireSegmentOnBooking(bookingId, segmentId);
         RoomUnitEntity unit = roomUnitRepository.findById(roomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
 
+        failIfUnassignable(lockedOccupantConflict(
+                booking, segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId), segment, unit, segment.getRoomId(), Set.of()));
         failIfUnassignable(checkUnitAssignable(unit, segment.getRoomId(), segment.getCheckIn(), segment.getCheckOut(), bookingId));
 
         segment.setRoomUnitId(unit.getId());
@@ -540,6 +544,18 @@ public class BookingWriter {
         RoomUnitEntity othersNewUnit =
                 roomUnitRepository.findById(segment.getRoomUnitId()).orElseThrow(() -> new NotFoundException("Room unit not found"));
 
+        // A guest who is in the house moves now; a booking whose current room is one of the two swapped leaves it now.
+        List<BookingSegmentEntity> ownSegments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+        List<BookingSegmentEntity> theirSegments = segmentRepository.findByBookingIdOrderByCheckInAsc(otherBooking.getId());
+        Set<String> vacating = new HashSet<>();
+        if (isCurrentSegment(ownSegments, segment)) {
+            vacating.add(booking.getId());
+        }
+        if (isCurrentSegment(theirSegments, other)) {
+            vacating.add(otherBooking.getId());
+        }
+        failIfUnassignable(lockedOccupantConflict(booking, ownSegments, segment, segmentsNewUnit, room.getId(), vacating));
+        failIfUnassignable(lockedOccupantConflict(otherBooking, theirSegments, other, othersNewUnit, room.getId(), vacating));
         failIfUnassignable(
                 checkUnitAssignableExcludingSegments(segmentsNewUnit, room.getId(), segment.getCheckIn(), segment.getCheckOut(), excluded));
         failIfUnassignable(
@@ -616,6 +632,7 @@ public class BookingWriter {
 
         if (roomUnitId != null) {
             RoomUnitEntity unit = roomUnitRepository.findById(roomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
+            failIfUnassignable(lockedOccupantConflict(booking, segments, segment, unit, room.getId(), Set.of()));
             failIfUnassignable(checkUnitAssignable(unit, room.getId(), segCheckIn, segCheckOut, bookingId));
             segment.setRoomUnitId(unit.getId());
         } else {
@@ -706,7 +723,11 @@ public class BookingWriter {
 
         if (roomUnitId != null) {
             RoomUnitEntity unit = roomUnitRepository.findById(roomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
-            UnitConflict conflict = checkUnitAssignable(unit, room.getId(), segCheckIn, segCheckOut, bookingId);
+            BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+            UnitConflict conflict = occupantConflict(booking, segments, segment, unit, room.getId(), Set.of());
+            if (conflict == null) {
+                conflict = checkUnitAssignable(unit, room.getId(), segCheckIn, segCheckOut, bookingId);
+            }
             if (conflict != null) {
                 return new ScheduleQuote(totalPrice, nights, false, conflict.message());
             }
@@ -990,6 +1011,10 @@ public class BookingWriter {
         RoomUnitEntity newUnit = null;
         if (newRoomUnitId != null) {
             newUnit = roomUnitRepository.findById(newRoomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
+            // A move planned for a later night moves nobody yet: whoever is in that room today will have left.
+            if (!effectiveDate.isAfter(LocalDate.now(clock))) {
+                failIfUnassignable(lockedOccupantConflict(booking, segments, target, newUnit, newRoom.getId(), Set.of()));
+            }
             failIfUnassignable(checkUnitAssignable(newUnit, newRoom.getId(), effectiveDate, oldCheckOut, bookingId));
         }
         String newUnitId = newUnit != null ? newUnit.getId() : null;
@@ -1113,7 +1138,13 @@ public class BookingWriter {
         String unavailable = null;
         if (newRoomUnitId != null) {
             RoomUnitEntity unit = roomUnitRepository.findById(newRoomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
-            UnitConflict conflict = checkUnitAssignable(unit, plan.newRoom().getId(), effectiveDate, target.getCheckOut(), bookingId);
+            BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+            UnitConflict conflict = effectiveDate.isAfter(LocalDate.now(clock))
+                    ? null
+                    : occupantConflict(booking, segments, target, unit, plan.newRoom().getId(), Set.of());
+            if (conflict == null) {
+                conflict = checkUnitAssignable(unit, plan.newRoom().getId(), effectiveDate, target.getCheckOut(), bookingId);
+            }
             if (conflict != null) {
                 unavailable = conflict.message();
             }
@@ -1184,6 +1215,8 @@ public class BookingWriter {
         }
         if (before.getRoomUnitId() != null) {
             RoomUnitEntity unit = roomUnitRepository.findById(before.getRoomUnitId()).orElseThrow(() -> new NotFoundException("Room unit not found"));
+            // Undoing the move a guest in the house is living in puts them back into the earlier room now.
+            failIfUnassignable(lockedOccupantConflict(booking, segments, after, unit, room.getId(), Set.of()));
             failIfUnassignable(checkUnitAssignable(unit, room.getId(), splitDate, mergedCheckOut, bookingId));
         }
 
@@ -1361,6 +1394,64 @@ public class BookingWriter {
     }
 
     private record UnitConflict(String message, boolean badRequest) {
+    }
+
+    private boolean isCurrentSegment(List<BookingSegmentEntity> segments, BookingSegmentEntity segment) {
+        BookingSegmentEntity current = OverstayRule.currentSegment(segments, LocalDate.now(clock));
+        return current != null && current.getId().equals(segment.getId());
+    }
+
+    /**
+     * A guest in the house cannot be moved into a room another guest is checked into - check-in's own block, asked by
+     * every write that can change where they are now (assignment, relocation and its undo, a schedule change, a swap),
+     * and by their quotes. The availability checks beside it do not see it: someone due out today holds no night from
+     * today on, and an overdue guest being re-roomed is checked only against nights already past.
+     *
+     * <p>Null when this changes nothing about who is where: the booking is not {@code CHECKED_IN}, {@code moved} is not
+     * the segment the stay is in today, {@code target} is the room they are already in, or nobody else is there. A unit
+     * of another type or an inactive one is left to {@link #checkUnitBasics}. {@code vacating} are the bookings leaving
+     * their room in the same write (the two sides of a swap).
+     */
+    private UnitConflict occupantConflict(
+            BookingEntity booking,
+            List<BookingSegmentEntity> segments,
+            BookingSegmentEntity moved,
+            RoomUnitEntity target,
+            String targetRoomId,
+            Set<String> vacating) {
+        if (!movesNow(booking, segments, moved, target, targetRoomId)) {
+            return null;
+        }
+        Set<String> except = new HashSet<>(vacating);
+        except.add(booking.getId());
+        return OverstayRule.guestInExcept(overstayRule.inHouseByRoomUnit(), target.getId(), except)
+                .map(other -> new UnitConflict(
+                        OverstayRule.occupiedMessage(target.getLabel(), other, "Check them out first, or choose another room."), false))
+                .orElse(null);
+    }
+
+    /** {@link #occupantConflict} for a write: the room's row is locked first, as check-in locks it, so the two can't both pass. */
+    private UnitConflict lockedOccupantConflict(
+            BookingEntity booking,
+            List<BookingSegmentEntity> segments,
+            BookingSegmentEntity moved,
+            RoomUnitEntity target,
+            String targetRoomId,
+            Set<String> vacating) {
+        if (!movesNow(booking, segments, moved, target, targetRoomId)) {
+            return null;
+        }
+        roomUnitRepository.findByIdForUpdate(target.getId());
+        return occupantConflict(booking, segments, moved, target, targetRoomId, vacating);
+    }
+
+    private boolean movesNow(
+            BookingEntity booking, List<BookingSegmentEntity> segments, BookingSegmentEntity moved, RoomUnitEntity target, String targetRoomId) {
+        return booking.getOccupancyStatus() == OccupancyStatus.CHECKED_IN
+                && isCurrentSegment(segments, moved)
+                && target.getRoomId().equals(targetRoomId)
+                && target.isActive()
+                && !target.getId().equals(OverstayRule.unitOn(segments, booking.getRoomUnitId(), LocalDate.now(clock)));
     }
 
     private static void failIfUnassignable(UnitConflict conflict) {

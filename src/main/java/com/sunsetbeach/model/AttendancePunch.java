@@ -59,6 +59,8 @@ public class AttendancePunch {
 
   private String voidReason;
 
+  private String voidedByCorrectionId;
+
   public AttendancePunch() {
     super();
   }
@@ -342,6 +344,25 @@ public class AttendancePunch {
     this.voidReason = voidReason;
   }
 
+  public AttendancePunch voidedByCorrectionId(String voidedByCorrectionId) {
+    this.voidedByCorrectionId = voidedByCorrectionId;
+    return this;
+  }
+
+  /**
+   * The correction that voided this punch - the same value as `correctionId` on the punches that correction recorded. A correction of a day with no punches voids nothing: it is known by `correctionId` alone. 
+   * @return voidedByCorrectionId
+   */
+  
+  @JsonProperty("voidedByCorrectionId")
+  public String getVoidedByCorrectionId() {
+    return voidedByCorrectionId;
+  }
+
+  public void setVoidedByCorrectionId(String voidedByCorrectionId) {
+    this.voidedByCorrectionId = voidedByCorrectionId;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -364,7 +385,8 @@ public class AttendancePunch {
         Objects.equals(this.correctionId, attendancePunch.correctionId) &&
         Objects.equals(this.voidedAt, attendancePunch.voidedAt) &&
         Objects.equals(this.voidedByEmail, attendancePunch.voidedByEmail) &&
-        Objects.equals(this.voidReason, attendancePunch.voidReason);
+        Objects.equals(this.voidReason, attendancePunch.voidReason) &&
+        Objects.equals(this.voidedByCorrectionId, attendancePunch.voidedByCorrectionId);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -373,7 +395,7 @@ public class AttendancePunch {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, employeeUserId, employeeName, employeeEmail, punchAt, direction, source, hashCodeNullable(recordedByEmail), hashCodeNullable(note), createdAt, correctionId, voidedAt, voidedByEmail, voidReason);
+    return Objects.hash(id, employeeUserId, employeeName, employeeEmail, punchAt, direction, source, hashCodeNullable(recordedByEmail), hashCodeNullable(note), createdAt, correctionId, voidedAt, voidedByEmail, voidReason, voidedByCorrectionId);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -401,6 +423,7 @@ public class AttendancePunch {
     sb.append("    voidedAt: ").append(toIndentedString(voidedAt)).append("\n");
     sb.append("    voidedByEmail: ").append(toIndentedString(voidedByEmail)).append("\n");
     sb.append("    voidReason: ").append(toIndentedString(voidReason)).append("\n");
+    sb.append("    voidedByCorrectionId: ").append(toIndentedString(voidedByCorrectionId)).append("\n");
     sb.append("}");
     return sb.toString();
   }

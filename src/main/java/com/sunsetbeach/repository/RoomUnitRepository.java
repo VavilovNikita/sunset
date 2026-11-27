@@ -17,6 +17,15 @@ public interface RoomUnitRepository extends JpaRepository<RoomUnitEntity, String
     @Query("select u from RoomUnitEntity u where u.id = :id")
     Optional<RoomUnitEntity> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") String id);
 
+    /**
+     * Rewrites the row unchanged, from a check-in holding its lock. A {@code SERIALIZABLE} move into this room whose
+     * snapshot is older than that check-in then fails with a serialization error ("try again") when it locks the row,
+     * instead of reading the room as still empty.
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query(value = "UPDATE \"RoomUnit\" SET \"label\" = \"label\" WHERE id = :id", nativeQuery = true)
+    void markUsed(@org.springframework.data.repository.query.Param("id") String id);
+
     List<RoomUnitEntity> findByRoomIdAndIsActiveTrue(String roomId);
 
     /** Whether another room (not {@code excludeId}; null on create) has this label under V143's rule: ignoring case and spaces. */
