@@ -13288,23 +13288,33 @@ components:
     RoomStillHeld:
       type: object
       description: >
-        Present on the guest a planned room move has put into a room that another checked-in guest, whose new room is
-        not picked, is still in (see `PendingRoomMove`). The move takes effect by date, so nothing refuses it; this is
-        the warning. The way out is to pick the other guest's room (their `PendingRoomMove`), or to move this one. Set on
-        a `TodayBoard` entry, on `GET /bookings/{id}` and on the property map's current booking (a tile with both guests
-        shows this one); absent otherwise.
-      required: [bookingId, guestName, reason]
+        Present on the guest a planned room move has put into a room that a guest who came before is still checked into
+        although they should have left it (see `RoomStillHeldState`). The move takes effect by date, so nothing refuses
+        it; this is the warning. The way out is to deal with that guest (check them out, extend their stay or pick their
+        new room), or to move this one; it goes with either. Set on a `TodayBoard` entry, on `GET /bookings/{id}` and on
+        the property map's current booking (a tile with both guests shows this one); absent otherwise.
+      required: [bookingId, guestName, state, reason]
       properties:
         bookingId:
           type: string
-          description: The booking of the guest still in the room - the one whose room has to be picked.
+          description: The booking of the guest still in the room.
         guestName:
           type: string
           x-sensitive: true
+        state:
+          $ref: "#/components/schemas/RoomStillHeldState"
         reason:
           type: string
           x-sensitive: true
-          description: The line to show, e.g. "Room 101 is still held by Ann (waiting for a new room)".
+          description: The line to show, e.g. "Room 101 is still held by Ann (past check-out)".
+
+    RoomStillHeldState:
+      type: string
+      description: >
+        Why the earlier guest is still in the room, the first that applies: `PAST_CHECK_OUT` (checked in after
+        `checkOut`), `AWAITING_ROOM` (their own move took effect with no new room picked, see `PendingRoomMove`),
+        `DUE_OUT_TODAY` (leaving today, not checked out yet).
+      enum: [PAST_CHECK_OUT, AWAITING_ROOM, DUE_OUT_TODAY]
 
     PendingRoomMove:
       type: object
@@ -13626,11 +13636,11 @@ components:
           description: A guest expected today has this room and has not checked in - whether or not someone is still in it.
         departingToday:
           type: boolean
-          description: The guest in the room is due out today.
+          description: A guest in the room is due out today (of two in it, either one).
         overdueDays:
           type: integer
           minimum: 0
-          description: Days the guest in the room is past check-out, `0` otherwise.
+          description: Days a guest in the room is past check-out (of two in it, the longest), `0` otherwise.
         outOfOrder:
           type: boolean
           description: The room is blocked (`RoomUnitBlock`) today.

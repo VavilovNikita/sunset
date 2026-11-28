@@ -15,7 +15,9 @@ import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
 import com.sunsetbeach.model.CalendarBooking;
 import com.sunsetbeach.model.RoomStillHeld;
+import com.sunsetbeach.model.RoomStillHeldState;
 import com.sunsetbeach.model.RoomUnitAvailability;
+import com.sunsetbeach.model.HousekeepingRoom;
 import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.InHouseRow;
 import com.sunsetbeach.model.PendingRoomMove;
@@ -42,7 +44,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * A checked-in guest whose move takes effect with no new room picked stays in the room they slept in: on the map, as
- * an occupant, for housekeeping. "Today" is pinned to 2034-03-10, the day of the move.
+ * an occupant, for housekeeping. And the warning on a guest whose planned move puts them into a room an earlier guest
+ * has not left (waiting, past check-out or due out). "Today" is pinned to 2034-03-10.
  */
 @SpringBootTest
 @Import(FixedHotelClockConfig.class)
@@ -55,6 +58,7 @@ class PendingRoomMoveTests extends AbstractIntegrationTest {
     @Autowired private BookingOccupancyService occupancyService;
     @Autowired private PropertyMapService propertyMapService;
     @Autowired private VacatedRoomHousekeepingService vacatedRooms;
+    @Autowired private HousekeepingBoardService housekeepingBoard;
     @Autowired private BookingRepository bookingRepository;
     @Autowired private com.sunsetbeach.repository.BookingSegmentRepository segmentRepository;
     @Autowired private ReportService reportService;
@@ -67,6 +71,16 @@ class PendingRoomMoveTests extends AbstractIntegrationTest {
     @Autowired private RoomUnitRepository roomUnitRepository;
 
     private record Room(RoomEntity type, RoomUnitEntity unit) {}
+
+    /** A second physical room of a type. */
+    private RoomUnitEntity unitOf(RoomEntity type) {
+        RoomUnitEntity u = new RoomUnitEntity();
+        u.setRoomId(type.getId());
+        u.setLabel("PM-" + UUID.randomUUID().toString().substring(0, 8));
+        u.setActive(true);
+        u.setHousekeepingStatus(HousekeepingStatus.CLEAN);
+        return roomUnitRepository.saveAndFlush(u);
+    }
 
     private Room room() {
         RoomEntity r = new RoomEntity();
@@ -107,6 +121,10 @@ class PendingRoomMoveTests extends AbstractIntegrationTest {
 
     private PropertyMapUnit tile(Room room) {
         return propertyMapService.get().getUnits().stream().filter(u -> u.getRoomUnitId().equals(room.unit().getId())).findFirst().orElseThrow();
+    }
+
+    private HousekeepingRoom board(Room room) {
+        return housekeepingBoard.rooms().stream().filter(r -> r.getRoomUnitId().equals(room.unit().getId())).findFirst().orElseThrow();
     }
 
     private HousekeepingStatus housekeeping(Room room) {
@@ -380,6 +398,7 @@ class PendingRoomMoveTests extends AbstractIntegrationTest {
         RoomStillHeld onToday = inHouse(d.incoming()).getRoomStillHeld();
         assertThat(onToday.getReason()).isEqualTo(line);
         assertThat(onToday.getBookingId()).isEqualTo(d.waiting().getId());
+        assertThat(onToday.getState()).isEqualTo(RoomStillHeldState.AWAITING_ROOM);
         assertThat(inHouse(d.waiting()).getRoomStillHeld()).isNull();
         assertThat(inHouse(d.waiting()).getPendingRoomMove()).isNotNull();
         assertThat(bookingService.getById(d.incoming().getId()).getRoomStillHeld().getReason()).isEqualTo(line);
@@ -440,6 +459,155 @@ class PendingRoomMoveTests extends AbstractIntegrationTest {
         passing = bookingService.relocate(
                 passing.getId(), new RelocationInput(TODAY.toString(), other.type().getId()).roomUnitId(other.unit().getId()));
         arrived(waiting);
+        arrived(passing);
+
+        vacatedRooms.runForToday();
+
+        assertThat(housekeeping(shared)).isEqualTo(HousekeepingStatus.CLEAN);
+    }
+
+    /**
+     * {@code earlier} stays in {@code shared} until {@code earlierOut} and is not checked out; {@code incoming} was
+     * planned into it from {@code movesIn} until {@code incomingOut}.
+     */
+    private record Overlap(Room shared, Room vacated, Booking earlier, Booking incoming) {}
+
+    private Overlap notLeft(LocalDate earlierOut, LocalDate movesIn, LocalDate incomingOut) {
+        Room shared = room();
+        Room vacated = room();
+        Booking earlier = booking(shared, true, "Stays On", TODAY.minusDays(5), earlierOut);
+        Booking incoming = booking(vacated, true, "Moves In", TODAY.minusDays(5), incomingOut);
+        incoming = bookingService.relocate(
+                incoming.getId(), new RelocationInput(movesIn.toString(), shared.type().getId()).roomUnitId(shared.unit().getId()));
+        arrived(earlier);
+        arrived(incoming);
+        return new Overlap(shared, vacated, earlier, incoming);
+    }
+
+    /** The same line, on every screen that carries it, on the incoming guest only. */
+    private void assertHeld(Overlap o, RoomStillHeldState state, String why) {
+        String line = "Room " + o.shared().unit().getLabel() + " is still held by Stays On (" + why + ")";
+        RoomStillHeld onToday = inHouse(o.incoming()).getRoomStillHeld();
+        assertThat(onToday.getReason()).isEqualTo(line);
+        assertThat(onToday.getState()).isEqualTo(state);
+        assertThat(onToday.getBookingId()).isEqualTo(o.earlier().getId());
+        assertThat(bookingService.getById(o.incoming().getId()).getRoomStillHeld().getReason()).isEqualTo(line);
+        assertThat(tile(o.shared()).getCurrentBooking().getBookingId()).isEqualTo(o.incoming().getId());
+        assertThat(tile(o.shared()).getCurrentBooking().getRoomStillHeld().getReason()).isEqualTo(line);
+        assertThat(inHouse(o.earlier()).getRoomStillHeld()).isNull();
+        assertThat(bookingService.getById(o.earlier().getId()).getRoomStillHeld()).isNull();
+    }
+
+    private void assertNotHeld(Overlap o) {
+        assertThat(inHouse(o.incoming()).getRoomStillHeld()).isNull();
+        assertThat(bookingService.getById(o.incoming().getId()).getRoomStillHeld()).isNull();
+        assertThat(tile(o.shared()).getCurrentBooking().getRoomStillHeld()).isNull();
+    }
+
+    @Test
+    void anEarlierGuestPastCheckOut_isNamedToTheGuestMovedIn() {
+        assertHeld(notLeft(TODAY.minusDays(1), TODAY, TODAY.plusDays(3)), RoomStillHeldState.PAST_CHECK_OUT, "past check-out");
+    }
+
+    @Test
+    void anEarlierGuestDueOutToday_isNamedToTheGuestMovedIn() {
+        assertHeld(notLeft(TODAY, TODAY, TODAY.plusDays(3)), RoomStillHeldState.DUE_OUT_TODAY, "due out today");
+    }
+
+    /** The tile stands for the guest moved in; housekeeping still has to hear that somebody is leaving this room. */
+    @Test
+    void housekeepingSeesTheEarlierGuestsDeparture_notOnlyTheGuestMovedIn() {
+        Overlap overdue = notLeft(TODAY.minusDays(1), TODAY, TODAY.plusDays(3));
+        Overlap dueOut = notLeft(TODAY, TODAY, TODAY.plusDays(3));
+
+        assertThat(board(overdue.shared()).getOverdueDays()).isEqualTo(1);
+        assertThat(board(overdue.shared()).getDepartingToday()).isFalse();
+        assertThat(board(dueOut.shared()).getDepartingToday()).isTrue();
+        assertThat(board(dueOut.shared()).getOverdueDays()).isZero();
+    }
+
+    @Test
+    void theLineStays_whenTheGuestMovedInIsDueOutOrRunsOverThemselves() {
+        assertHeld(notLeft(TODAY.minusDays(1), TODAY.minusDays(1), TODAY), RoomStillHeldState.PAST_CHECK_OUT, "past check-out");
+        // Both over: the longer-gone date does not make them the incoming one - they were in the room first.
+        assertHeld(notLeft(TODAY.minusDays(3), TODAY.minusDays(3), TODAY.minusDays(1)), RoomStillHeldState.PAST_CHECK_OUT, "past check-out");
+    }
+
+    @Test
+    void aWaitingGuestWhoIsAlsoPastCheckOut_isCalledPastCheckOut() {
+        Room shared = room();
+        Booking earlier = booking(shared, true, "Stays On", TODAY.minusDays(5), TODAY.minusDays(1));
+        earlier = bookingService.relocate(earlier.getId(), new RelocationInput(TODAY.minusDays(2).toString(), room().type().getId()));
+        Booking incoming = booking(room(), true, "Moves In", TODAY.minusDays(5), TODAY.plusDays(3));
+        incoming = bookingService.relocate(
+                incoming.getId(), new RelocationInput(TODAY.toString(), shared.type().getId()).roomUnitId(shared.unit().getId()));
+        arrived(earlier);
+        arrived(incoming);
+
+        assertThat(inHouse(incoming).getRoomStillHeld().getState()).isEqualTo(RoomStillHeldState.PAST_CHECK_OUT);
+    }
+
+    @Test
+    void checkingTheEarlierGuestOut_clearsTheLine_andMarksTheRoomDirty() {
+        for (LocalDate earlierOut : List.of(TODAY.minusDays(1), TODAY)) {
+            Overlap o = notLeft(earlierOut, TODAY, TODAY.plusDays(3));
+
+            occupancyService.checkOut(o.earlier().getId(), null);
+
+            assertNotHeld(o);
+            assertThat(housekeeping(o.shared())).isEqualTo(HousekeepingStatus.DIRTY);
+        }
+    }
+
+    @Test
+    void extendingTheEarlierGuest_needsAnotherRoom_andThatClearsTheLine() {
+        Overlap o = notLeft(TODAY.minusDays(1), TODAY, TODAY.plusDays(3));
+        RoomUnitEntity spare = unitOf(o.shared().type());
+        BookingScheduleInput longer = new BookingScheduleInput(TODAY.minusDays(5).toString(), TODAY.plusDays(2).toString());
+
+        assertThatThrownBy(() -> bookingService.updateSchedule(o.earlier().getId(), longer.roomUnitId(o.shared().unit().getId())))
+                .isInstanceOf(ConflictException.class);
+        bookingService.updateSchedule(o.earlier().getId(), longer.roomUnitId(spare.getId()));
+
+        assertNotHeld(o);
+    }
+
+    @Test
+    void movingTheGuestMovedInElsewhere_leavesTheEarlierGuestsRoomClean() {
+        for (LocalDate earlierOut : List.of(TODAY.minusDays(1), TODAY)) {
+            Overlap o = notLeft(earlierOut, TODAY, TODAY.plusDays(3));
+            Room other = room();
+
+            bookingService.relocate(o.incoming().getId(),
+                    new RelocationInput(TODAY.toString(), other.type().getId()).roomUnitId(other.unit().getId()));
+
+            assertThat(inHouse(o.incoming()).getRoomStillHeld()).isNull();
+            assertThat(housekeeping(o.shared())).isEqualTo(HousekeepingStatus.CLEAN);
+        }
+    }
+
+    @Test
+    void theSweepMarksTheRoomTheGuestMovedFrom_notTheOneTheEarlierGuestIsStillIn() {
+        Overlap o = notLeft(TODAY, TODAY, TODAY.plusDays(3));
+
+        vacatedRooms.runForToday();
+
+        assertThat(housekeeping(o.shared())).isEqualTo(HousekeepingStatus.CLEAN);
+        assertThat(housekeeping(o.vacated())).isEqualTo(HousekeepingStatus.DIRTY);
+    }
+
+    @Test
+    void theSweepLeavesTheRoomClean_whenTheGuestMovedInMovesOnWhileTheEarlierOneIsStillThere() {
+        Room shared = room();
+        Room onward = room();
+        Booking earlier = booking(shared, true, "Stays On", TODAY.minusDays(5), TODAY.minusDays(2));
+        // In the shared room for the last two nights, planned on into another one today.
+        Booking passing = booking(room(), true, "Passing", TODAY.minusDays(5), TODAY.plusDays(3));
+        passing = bookingService.relocate(
+                passing.getId(), new RelocationInput(TODAY.minusDays(2).toString(), shared.type().getId()).roomUnitId(shared.unit().getId()));
+        passing = bookingService.relocate(
+                passing.getId(), new RelocationInput(TODAY.toString(), onward.type().getId()).roomUnitId(onward.unit().getId()));
+        arrived(earlier);
         arrived(passing);
 
         vacatedRooms.runForToday();

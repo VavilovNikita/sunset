@@ -4,6 +4,7 @@ import com.sunsetbeach.entity.BookingEntity;
 import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
+import com.sunsetbeach.model.RoomStillHeldState;
 import com.sunsetbeach.repository.BookingRepository;
 import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.RoomRepository;
@@ -179,11 +180,24 @@ public class OverstayRule {
      * A guest who is physically in a room right now. {@code overdueDays} is {@code 0} for one still
      * within their stay (the departure day included). {@code awaitingRoom}: their move has taken effect with
      * no new room picked, so the room they are listed under is the one they have not left yet.
+     * {@code inRoomSince}: the first night of the part of the stay that puts them in this room - of two guests in one,
+     * the later date is the one who was moved in on top of the other.
      */
-    public record InHouseGuest(BookingEntity booking, int overdueDays, boolean dueOutToday, boolean awaitingRoom) {
+    public record InHouseGuest(BookingEntity booking, int overdueDays, boolean dueOutToday, boolean awaitingRoom, LocalDate inRoomSince) {
 
         public boolean overdue() {
             return overdueDays > 0;
+        }
+
+        /**
+         * Why they are still there although the room should be free of them by today, in the order every sentence about
+         * them uses; null for a guest simply staying.
+         */
+        public RoomStillHeldState holding() {
+            return overdue() ? RoomStillHeldState.PAST_CHECK_OUT
+                    : awaitingRoom ? RoomStillHeldState.AWAITING_ROOM
+                    : dueOutToday ? RoomStillHeldState.DUE_OUT_TODAY
+                    : null;
         }
     }
 
@@ -215,8 +229,10 @@ public class OverstayRule {
         return byUnit;
     }
 
-    private static InHouseGuest inHouseGuest(BookingEntity booking, List<BookingSegmentEntity> segments, LocalDate today) {
-        return new InHouseGuest(booking, overdueDays(booking, today), booking.getCheckOut().equals(today), awaitsRoom(booking, segments, today));
+    private InHouseGuest inHouseGuest(BookingEntity booking, List<BookingSegmentEntity> segments, LocalDate today) {
+        BookingSegmentEntity holder = roomSegmentOn(booking, segments, today, clock);
+        return new InHouseGuest(booking, overdueDays(booking, today), booking.getCheckOut().equals(today), awaitsRoom(booking, segments, today),
+                holder == null ? booking.getCheckIn() : holder.getCheckIn());
     }
 
     /**
@@ -285,44 +301,55 @@ public class OverstayRule {
         return waiting;
     }
 
-    /** A room somebody was moved into while {@code holder}, waiting for a new one, has not left it. */
+    /** A room somebody was moved into while {@code holder}, who should have left it by now, is still there. */
     public record DoubledRoom(String roomUnitId, InHouseGuest holder) {}
 
     /**
-     * Whether {@code bookingId} is the incoming one of two guests in a room: in it by their own stay, while somebody
-     * whose new room is not picked is still there. A planned move takes effect by date, so nothing refuses it - this is
-     * what the screens warn with. Gone once the other guest's room is picked, or this one's changed.
+     * Whether {@code bookingId} is the later of two guests in a room: moved into it ({@link InHouseGuest#inRoomSince})
+     * while one who came before is still there - past check-out, due out today, or waiting for a new room ({@link
+     * InHouseGuest#holding}). A planned move takes effect by date, so nothing refuses it - this is what the screens warn
+     * with. Gone once the earlier guest is checked out, or either one's room is changed.
      */
     public static Optional<DoubledRoom> roomStillHeld(Map<String, List<InHouseGuest>> byUnit, String bookingId) {
-        return byUnit.entrySet().stream()
-                .filter(e -> e.getValue().stream().anyMatch(g -> !g.awaitingRoom() && g.booking().getId().equals(bookingId)))
-                .findFirst()
-                .flatMap(e -> e.getValue().stream()
-                        .filter(g -> g.awaitingRoom() && !g.booking().getId().equals(bookingId))
-                        .max(LONGEST_OVERDUE)
-                        .map(holder -> new DoubledRoom(e.getKey(), holder)));
+        for (Map.Entry<String, List<InHouseGuest>> room : byUnit.entrySet()) {
+            for (InHouseGuest guest : room.getValue()) {
+                if (guest.booking().getId().equals(bookingId)) {
+                    return room.getValue().stream()
+                            .filter(other -> other.holding() != null && other.inRoomSince().isBefore(guest.inRoomSince()))
+                            .max(LONGEST_OVERDUE)
+                            .map(holder -> new DoubledRoom(room.getKey(), holder));
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     public static String stillHeldMessage(String unitLabel, InHouseGuest holder) {
-        return "Room " + unitLabel + " is still held by " + holder.booking().getGuestName() + " (waiting for a new room)";
+        String why = switch (holder.holding()) {
+            case PAST_CHECK_OUT -> "past check-out";
+            case AWAITING_ROOM -> "waiting for a new room";
+            case DUE_OUT_TODAY -> "due out today";
+        };
+        return "Room " + unitLabel + " is still held by " + holder.booking().getGuestName() + " (" + why + ")";
     }
 
     /**
-     * Whether a guest whose new room is not picked, other than {@code bookingId}, lives in {@code roomUnitId}: somebody
-     * else's move out of it does not make it a room to clean.
+     * Whether somebody other than {@code bookingId} who should have left {@code roomUnitId} by now ({@link
+     * InHouseGuest#holding}) is still in it: another guest's move out of it does not make it a room to clean. Their own
+     * check-out, or picking their new room, does.
      */
-    public static boolean heldByWaitingGuest(Map<String, List<InHouseGuest>> byUnit, String roomUnitId, String bookingId) {
+    public static boolean stillHeldByAnother(Map<String, List<InHouseGuest>> byUnit, String roomUnitId, String bookingId) {
         return byUnit.getOrDefault(roomUnitId, List.of()).stream()
-                .anyMatch(g -> g.awaitingRoom() && !g.booking().getId().equals(bookingId));
+                .anyMatch(g -> g.holding() != null && !g.booking().getId().equals(bookingId));
     }
 
     /**
-     * The guest a room's tile stands for, where only one can: of several, one whose stay names the room (the incoming
-     * one, who carries the {@link #roomStillHeld} warning about the other), then the longest overdue.
+     * The guest a room's tile stands for, where only one can: of several, the one who came last (who carries the {@link
+     * #roomStillHeld} warning about the other), then the longest overdue.
      */
     public static Optional<InHouseGuest> shownIn(Map<String, List<InHouseGuest>> byUnit, String roomUnitId) {
         return byUnit.getOrDefault(roomUnitId, List.of()).stream()
-                .max(Comparator.<InHouseGuest, Boolean>comparing(g -> !g.awaitingRoom()).thenComparing(LONGEST_OVERDUE));
+                .max(Comparator.comparing(InHouseGuest::inRoomSince).thenComparing(LONGEST_OVERDUE));
     }
 
     /**

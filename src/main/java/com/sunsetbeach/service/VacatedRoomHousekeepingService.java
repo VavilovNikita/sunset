@@ -113,8 +113,9 @@ public class VacatedRoomHousekeepingService {
             own.stream()
                     .filter(prev -> prev.getCheckOut().equals(today) && prev.getRoomUnitId() != null)
                     .filter(prev -> !prev.getRoomUnitId().equals(livingIn))
-                    // Or still home to somebody else whose new room is not picked: no segment of theirs says so today.
-                    .filter(prev -> !OverstayRule.heldByWaitingGuest(inHouse, prev.getRoomUnitId(), segment.getBookingId()))
+                    // Or somebody else who should have left it is still there (overdue, due out, waiting for a room):
+                    // no segment of theirs says so for tonight.
+                    .filter(prev -> !OverstayRule.stillHeldByAnother(inHouse, prev.getRoomUnitId(), segment.getBookingId()))
                     .forEach(prev -> {
                         if (markDirty(prev.getRoomUnitId(), segment.getBookingId(), today)) {
                             marked.add(prev.getRoomUnitId());

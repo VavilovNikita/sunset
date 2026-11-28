@@ -223,7 +223,7 @@ public class HousekeepingRoom {
   }
 
   /**
-   * The guest in the room is due out today.
+   * A guest in the room is due out today (of two in it, either one).
    * @return departingToday
    */
   @NotNull 
@@ -242,7 +242,7 @@ public class HousekeepingRoom {
   }
 
   /**
-   * Days the guest in the room is past check-out, `0` otherwise.
+   * Days a guest in the room is past check-out (of two in it, the longest), `0` otherwise.
    * minimum: 0
    * @return overdueDays
    */

@@ -1270,8 +1270,8 @@ public class BookingService {
         if (livedIn.equals(roomTheGuestIsIn(booking.getId()))) {
             return null;
         }
-        // Moved out of a room somebody waiting for a new one never left (two in one room, resolved by moving this one).
-        if (OverstayRule.heldByWaitingGuest(overstayRule.inHouseByRoomUnit(), livedIn, booking.getId())) {
+        // Moved out of a room an earlier guest never left (two in one room, resolved by moving this one): still theirs.
+        if (OverstayRule.stillHeldByAnother(overstayRule.inHouseByRoomUnit(), livedIn, booking.getId())) {
             return null;
         }
         RoomUnitEntity left = roomUnitRepository.findById(livedIn).orElse(null);

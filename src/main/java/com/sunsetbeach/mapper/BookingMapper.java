@@ -145,11 +145,12 @@ public class BookingMapper {
         return today.isBefore(entity.getCheckOut()) ? today : entity.getCheckOut().minusDays(1);
     }
 
-    /** The warning on the guest moved into a room whose waiting guest has not left it ({@link OverstayRule#roomStillHeld}). */
+    /** The warning on the guest moved into a room an earlier guest has not left ({@link OverstayRule#roomStillHeld}). */
     public static RoomStillHeld roomStillHeld(OverstayRule.DoubledRoom doubled, String unitLabel) {
         return new RoomStillHeld(
                 doubled.holder().booking().getId(),
                 doubled.holder().booking().getGuestName(),
+                doubled.holder().holding(),
                 OverstayRule.stillHeldMessage(unitLabel, doubled.holder()));
     }
 
