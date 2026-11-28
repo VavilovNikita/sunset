@@ -79,6 +79,10 @@ public class OverstayRule {
         }
     }
 
+    /** Which of two guests in one room is named: the longest overdue, then any stable order. */
+    private static final Comparator<InHouseGuest> LONGEST_OVERDUE =
+            Comparator.<InHouseGuest>comparingInt(InHouseGuest::overdueDays).thenComparing(g -> g.booking().getId());
+
     private final BookingRepository bookingRepository;
     private final BookingSegmentRepository segmentRepository;
     private final RoomNightPricing roomNightPricing;
@@ -242,6 +246,86 @@ public class OverstayRule {
     }
 
     /**
+     * A checked-in guest who sleeps on {@code night} in the room of an earlier part of their stay, their new room not
+     * picked: {@code heldIn} is that part. The calendar and the per-room availability read this, so they show the room
+     * taken as the map and Today do - the room type's count already has the night under the new part.
+     */
+    public record WaitingGuest(BookingEntity booking, BookingSegmentEntity heldIn, LocalDate night) {
+
+        public String roomUnitId() {
+            return heldIn.getRoomUnitId();
+        }
+    }
+
+    /**
+     * Every {@link WaitingGuest} tonight. Not one due out today: that night is free to sell, as on anybody's departure
+     * day. Nobody to report for a guest with no earlier room to be in.
+     */
+    public List<WaitingGuest> waitingTonight() {
+        LocalDate today = today();
+        List<BookingEntity> inHouse =
+                bookingRepository.findByOccupancyStatusAndStatusNot(OccupancyStatus.CHECKED_IN, BookingStatus.CANCELLED);
+        if (inHouse.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<BookingSegmentEntity>> segmentsByBooking = segmentRepository
+                .findByBookingIdIn(inHouse.stream().map(BookingEntity::getId).toList()).stream()
+                .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+        List<WaitingGuest> waiting = new ArrayList<>();
+        for (BookingEntity booking : inHouse) {
+            List<BookingSegmentEntity> segments = segmentsByBooking.getOrDefault(booking.getId(), List.of());
+            if (booking.getCheckOut().equals(today) || !awaitsRoom(booking, segments, today)) {
+                continue;
+            }
+            BookingSegmentEntity heldIn = roomSegmentOn(booking, segments, today, clock);
+            if (heldIn.getRoomUnitId() != null) {
+                waiting.add(new WaitingGuest(booking, heldIn, today));
+            }
+        }
+        return waiting;
+    }
+
+    /** A room somebody was moved into while {@code holder}, waiting for a new one, has not left it. */
+    public record DoubledRoom(String roomUnitId, InHouseGuest holder) {}
+
+    /**
+     * Whether {@code bookingId} is the incoming one of two guests in a room: in it by their own stay, while somebody
+     * whose new room is not picked is still there. A planned move takes effect by date, so nothing refuses it - this is
+     * what the screens warn with. Gone once the other guest's room is picked, or this one's changed.
+     */
+    public static Optional<DoubledRoom> roomStillHeld(Map<String, List<InHouseGuest>> byUnit, String bookingId) {
+        return byUnit.entrySet().stream()
+                .filter(e -> e.getValue().stream().anyMatch(g -> !g.awaitingRoom() && g.booking().getId().equals(bookingId)))
+                .findFirst()
+                .flatMap(e -> e.getValue().stream()
+                        .filter(g -> g.awaitingRoom() && !g.booking().getId().equals(bookingId))
+                        .max(LONGEST_OVERDUE)
+                        .map(holder -> new DoubledRoom(e.getKey(), holder)));
+    }
+
+    public static String stillHeldMessage(String unitLabel, InHouseGuest holder) {
+        return "Room " + unitLabel + " is still held by " + holder.booking().getGuestName() + " (waiting for a new room)";
+    }
+
+    /**
+     * Whether a guest whose new room is not picked, other than {@code bookingId}, lives in {@code roomUnitId}: somebody
+     * else's move out of it does not make it a room to clean.
+     */
+    public static boolean heldByWaitingGuest(Map<String, List<InHouseGuest>> byUnit, String roomUnitId, String bookingId) {
+        return byUnit.getOrDefault(roomUnitId, List.of()).stream()
+                .anyMatch(g -> g.awaitingRoom() && !g.booking().getId().equals(bookingId));
+    }
+
+    /**
+     * The guest a room's tile stands for, where only one can: of several, one whose stay names the room (the incoming
+     * one, who carries the {@link #roomStillHeld} warning about the other), then the longest overdue.
+     */
+    public static Optional<InHouseGuest> shownIn(Map<String, List<InHouseGuest>> byUnit, String roomUnitId) {
+        return byUnit.getOrDefault(roomUnitId, List.of()).stream()
+                .max(Comparator.<InHouseGuest, Boolean>comparing(g -> !g.awaitingRoom()).thenComparing(LONGEST_OVERDUE));
+    }
+
+    /**
      * The other guest in {@code roomUnitId} right now, if any - the longest overdue first, since
      * that is the one nobody is expecting to find there.
      */
@@ -258,7 +342,7 @@ public class OverstayRule {
     public static Optional<InHouseGuest> guestInExcept(Map<String, List<InHouseGuest>> byUnit, String roomUnitId, Set<String> bookingIds) {
         return byUnit.getOrDefault(roomUnitId, List.of()).stream()
                 .filter(g -> !bookingIds.contains(g.booking().getId()))
-                .max(Comparator.comparingInt(InHouseGuest::overdueDays).thenComparing(g -> g.booking().getId()));
+                .max(LONGEST_OVERDUE);
     }
 
     /**

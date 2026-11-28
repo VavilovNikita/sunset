@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.PendingRoomMove;
+import com.sunsetbeach.model.RoomStillHeld;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
 import jakarta.validation.Valid;
@@ -24,6 +25,8 @@ import jakarta.annotation.Generated;
 public class PropertyMapCurrentBooking {
 
   private PendingRoomMove pendingRoomMove;
+
+  private RoomStillHeld roomStillHeld;
 
   private String bookingId;
 
@@ -72,6 +75,25 @@ public class PropertyMapCurrentBooking {
 
   public void setPendingRoomMove(PendingRoomMove pendingRoomMove) {
     this.pendingRoomMove = pendingRoomMove;
+  }
+
+  public PropertyMapCurrentBooking roomStillHeld(RoomStillHeld roomStillHeld) {
+    this.roomStillHeld = roomStillHeld;
+    return this;
+  }
+
+  /**
+   * Get roomStillHeld
+   * @return roomStillHeld
+   */
+  @Valid 
+  @JsonProperty("roomStillHeld")
+  public RoomStillHeld getRoomStillHeld() {
+    return roomStillHeld;
+  }
+
+  public void setRoomStillHeld(RoomStillHeld roomStillHeld) {
+    this.roomStillHeld = roomStillHeld;
   }
 
   public PropertyMapCurrentBooking bookingId(String bookingId) {
@@ -217,6 +239,7 @@ public class PropertyMapCurrentBooking {
     }
     PropertyMapCurrentBooking propertyMapCurrentBooking = (PropertyMapCurrentBooking) o;
     return Objects.equals(this.pendingRoomMove, propertyMapCurrentBooking.pendingRoomMove) &&
+        Objects.equals(this.roomStillHeld, propertyMapCurrentBooking.roomStillHeld) &&
         Objects.equals(this.bookingId, propertyMapCurrentBooking.bookingId) &&
         Objects.equals(this.guestName, propertyMapCurrentBooking.guestName) &&
         Objects.equals(this.checkOut, propertyMapCurrentBooking.checkOut) &&
@@ -228,7 +251,7 @@ public class PropertyMapCurrentBooking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(pendingRoomMove, bookingId, guestName, checkOut, occupancyStatus, owes, outstandingBalance, overdueDays);
+    return Objects.hash(pendingRoomMove, roomStillHeld, bookingId, guestName, checkOut, occupancyStatus, owes, outstandingBalance, overdueDays);
   }
 
   @Override
@@ -236,6 +259,7 @@ public class PropertyMapCurrentBooking {
     StringBuilder sb = new StringBuilder();
     sb.append("class PropertyMapCurrentBooking {\n");
     sb.append("    pendingRoomMove: ").append(toIndentedString(pendingRoomMove)).append("\n");
+    sb.append("    roomStillHeld: ").append(toIndentedString(roomStillHeld)).append("\n");
     sb.append("    bookingId: ").append(toIndentedString(bookingId)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");

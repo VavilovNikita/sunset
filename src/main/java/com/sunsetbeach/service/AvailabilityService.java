@@ -104,6 +104,10 @@ public class AvailabilityService {
         // A guest still checked in past checkOut keeps their room - see OverstayRule.
         List<OverstayRule.Overstay> overstays = overstayRule.overlapping(room.getId(), monthStart, monthEnd.plusDays(1));
 
+        // A guest whose new room is not picked is physically in an earlier one tonight. Marks the room, never the count:
+        // the night is already counted under the part of the stay that has no room.
+        List<OverstayRule.WaitingGuest> waiting = overstayRule.waitingTonight();
+
         return DateRangeUtil.eachDateInRange(monthStart, monthEnd).stream()
                 .map(date -> {
                     List<RoomUnitBlockEntity> blockedToday =
@@ -122,6 +126,14 @@ public class AvailabilityService {
                     overstayingToday.stream()
                             .filter(o -> o.roomUnitId() != null)
                             .forEach(o -> bookingIdByUnitId.putIfAbsent(o.roomUnitId(), o.bookingId()));
+                    Set<String> heldUnitIds = new java.util.HashSet<>();
+                    waiting.stream()
+                            .filter(w -> w.night().equals(date))
+                            .forEach(w -> {
+                                if (bookingIdByUnitId.putIfAbsent(w.roomUnitId(), w.booking().getId()) == null) {
+                                    heldUnitIds.add(w.roomUnitId());
+                                }
+                            });
 
                     Map<String, String> guestNameByBookingId = bookingIdByUnitId.isEmpty()
                             ? Map.of()
@@ -134,7 +146,8 @@ public class AvailabilityService {
                                 boolean booked = bookingId != null;
                                 return new RoomUnitAvailability(unit.getId(), unit.getLabel(), blocked, booked, !blocked && !booked,
                                         bookingId, blocked ? blockReasonByUnitId.get(unit.getId()) : null)
-                                        .guestName(booked ? guestNameByBookingId.get(bookingId) : null);
+                                        .guestName(booked ? guestNameByBookingId.get(bookingId) : null)
+                                        .waitingForRoom(heldUnitIds.contains(unit.getId()));
                             })
                             .toList();
 

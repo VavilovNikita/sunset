@@ -13282,6 +13282,29 @@ components:
             missed departures show.
         roomOccupant:
           $ref: "#/components/schemas/TodayBoardRoomOccupant"
+        roomStillHeld:
+          $ref: "#/components/schemas/RoomStillHeld"
+
+    RoomStillHeld:
+      type: object
+      description: >
+        Present on the guest a planned room move has put into a room that another checked-in guest, whose new room is
+        not picked, is still in (see `PendingRoomMove`). The move takes effect by date, so nothing refuses it; this is
+        the warning. The way out is to pick the other guest's room (their `PendingRoomMove`), or to move this one. Set on
+        a `TodayBoard` entry, on `GET /bookings/{id}` and on the property map's current booking (a tile with both guests
+        shows this one); absent otherwise.
+      required: [bookingId, guestName, reason]
+      properties:
+        bookingId:
+          type: string
+          description: The booking of the guest still in the room - the one whose room has to be picked.
+        guestName:
+          type: string
+          x-sensitive: true
+        reason:
+          type: string
+          x-sensitive: true
+          description: The line to show, e.g. "Room 101 is still held by Ann (waiting for a new room)".
 
     PendingRoomMove:
       type: object
@@ -14436,6 +14459,8 @@ components:
       properties:
         pendingRoomMove:
           $ref: "#/components/schemas/PendingRoomMove"
+        roomStillHeld:
+          $ref: "#/components/schemas/RoomStillHeld"
         bookingId:
           type: string
         guestName:
@@ -15068,6 +15093,15 @@ components:
             agreed stay - tomorrow, so tonight is covered. Not an agreed date and never priced;
             availability counts the room as taken through it, so it can't be sold over the guest.
             Absent for every other segment.
+        waitingForRoomNight:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: >
+            Tonight, set only on the segment whose room a guest in the house is still in because their new one is not
+            picked (see `PendingRoomMove`): the guest is physically in this segment's room that night although its dates
+            are over. The segment is listed even if it ended before `from`. The part of the stay without a room stays its
+            own entry (`roomUnitId: null`). Not a booked night: `dailyAvailable` counts it once, under that part. Absent
+            otherwise (and for a guest due out today, whose night is free).
 
     BookingCalendarResponse:
       type: object
@@ -15372,6 +15406,10 @@ components:
             are still in. Show this one's room as where the guest is.
         pendingRoomMove:
           $ref: "#/components/schemas/PendingRoomMove"
+        roomStillHeld:
+          allOf:
+            - $ref: "#/components/schemas/RoomStillHeld"
+          description: Only on `GET /bookings/{id}`, for a guest in the house; absent otherwise and in lists.
         checkInClosedReason:
           type: string
           description: >
@@ -17082,7 +17120,9 @@ components:
           description: True if a `RoomUnitBlock` covers this day.
         isBooked:
           type: boolean
-          description: True if a non-CANCELLED booking has this unit assigned and covers this day.
+          description: >
+            True if a non-CANCELLED booking has this unit assigned and covers this day, or its guest is physically in it
+            (overstaying, or `waitingForRoom`).
         isAvailable:
           type: boolean
           description: '`!isBlocked && !isBooked`.'
@@ -17101,6 +17141,12 @@ components:
             The name on the booking that holds this unit that day - set when `isBooked` is true. A
             screen shows it in place of `blockReason` on a day that has a booking (a block laid over
             a booking is still a booking day for the person looking at the room).
+        waitingForRoom:
+          type: boolean
+          description: >
+            True for tonight on the room a guest in the house is still in because their new one is not picked (see
+            `PendingRoomMove`). The room is marked taken, but `bookedCount`/`availableCount` count that night under the
+            guest's new part of the stay, not here.
 
     AvailabilityDay:
       type: object

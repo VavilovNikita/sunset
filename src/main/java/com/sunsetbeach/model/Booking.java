@@ -15,6 +15,7 @@ import com.sunsetbeach.model.Guest;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.PendingRoomMove;
 import com.sunsetbeach.model.Room;
+import com.sunsetbeach.model.RoomStillHeld;
 import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.SettlementStatus;
 import com.sunsetbeach.model.StayStatus;
@@ -125,6 +126,8 @@ public class Booking {
   private String roomSegmentId;
 
   private PendingRoomMove pendingRoomMove;
+
+  private RoomStillHeld roomStillHeld;
 
   private String checkInClosedReason;
 
@@ -944,6 +947,25 @@ public class Booking {
     this.pendingRoomMove = pendingRoomMove;
   }
 
+  public Booking roomStillHeld(RoomStillHeld roomStillHeld) {
+    this.roomStillHeld = roomStillHeld;
+    return this;
+  }
+
+  /**
+   * Only on `GET /bookings/{id}`, for a guest in the house; absent otherwise and in lists.
+   * @return roomStillHeld
+   */
+  @Valid 
+  @JsonProperty("roomStillHeld")
+  public RoomStillHeld getRoomStillHeld() {
+    return roomStillHeld;
+  }
+
+  public void setRoomStillHeld(RoomStillHeld roomStillHeld) {
+    this.roomStillHeld = roomStillHeld;
+  }
+
   public Booking checkInClosedReason(String checkInClosedReason) {
     this.checkInClosedReason = checkInClosedReason;
     return this;
@@ -1088,6 +1110,7 @@ public class Booking {
         Objects.equals(this.checkInRoomNeeded, booking.checkInRoomNeeded) &&
         Objects.equals(this.roomSegmentId, booking.roomSegmentId) &&
         Objects.equals(this.pendingRoomMove, booking.pendingRoomMove) &&
+        Objects.equals(this.roomStillHeld, booking.roomStillHeld) &&
         Objects.equals(this.checkInClosedReason, booking.checkInClosedReason) &&
         Objects.equals(this.roomOccupant, booking.roomOccupant) &&
         Objects.equals(this.createdAt, booking.createdAt) &&
@@ -1101,7 +1124,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, currentSegmentId, checkInRoomNeeded, roomSegmentId, pendingRoomMove, checkInClosedReason, roomOccupant, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, currentSegmentId, checkInRoomNeeded, roomSegmentId, pendingRoomMove, roomStillHeld, checkInClosedReason, roomOccupant, createdAt, updatedAt, warning);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -1155,6 +1178,7 @@ public class Booking {
     sb.append("    checkInRoomNeeded: ").append(toIndentedString(checkInRoomNeeded)).append("\n");
     sb.append("    roomSegmentId: ").append(toIndentedString(roomSegmentId)).append("\n");
     sb.append("    pendingRoomMove: ").append(toIndentedString(pendingRoomMove)).append("\n");
+    sb.append("    roomStillHeld: ").append(toIndentedString(roomStillHeld)).append("\n");
     sb.append("    checkInClosedReason: ").append(toIndentedString(checkInClosedReason)).append("\n");
     sb.append("    roomOccupant: ").append(toIndentedString(roomOccupant)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");

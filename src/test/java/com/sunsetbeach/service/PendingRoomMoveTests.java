@@ -13,6 +13,9 @@ import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingScheduleInput;
 import com.sunsetbeach.model.BookingScheduleQuote;
+import com.sunsetbeach.model.CalendarBooking;
+import com.sunsetbeach.model.RoomStillHeld;
+import com.sunsetbeach.model.RoomUnitAvailability;
 import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.InHouseRow;
 import com.sunsetbeach.model.PendingRoomMove;
@@ -29,6 +32,7 @@ import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.support.FixedHotelClockConfig;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +59,9 @@ class PendingRoomMoveTests extends AbstractIntegrationTest {
     @Autowired private com.sunsetbeach.repository.BookingSegmentRepository segmentRepository;
     @Autowired private ReportService reportService;
     @Autowired private RoomUnitService roomUnitService;
+    @Autowired private BookingCalendarService calendarService;
+    @Autowired private AvailabilityService availabilityService;
+    @Autowired private jakarta.persistence.EntityManager entityManager;
     @Autowired private java.time.Clock clock;
     @Autowired private RoomRepository roomRepository;
     @Autowired private RoomUnitRepository roomUnitRepository;
@@ -269,6 +276,175 @@ class PendingRoomMoveTests extends AbstractIntegrationTest {
         assertThatThrownBy(() -> roomUnitService.update(old.unit().getId(), new RoomUnitUpdateInput(old.unit().getLabel(), false)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Moving Guest");
+    }
+
+    private List<CalendarBooking> bars(Booking booking) {
+        // As a request of its own reads them: segments written in this transaction carry no loaded booking.
+        entityManager.flush();
+        entityManager.clear();
+        return calendarService.getCalendar(TODAY, TODAY.plusDays(7)).getBookings().stream()
+                .filter(b -> b.getBookingId().equals(booking.getId()))
+                .toList();
+    }
+
+    private int typeCountTonight(Room room) {
+        entityManager.flush();
+        entityManager.clear();
+        return calendarService.getCalendar(TODAY, TODAY.plusDays(1)).getRoomTypes().stream()
+                .filter(t -> t.getRoomId().equals(room.type().getId()))
+                .findFirst().orElseThrow()
+                .getDailyAvailable().get(0).getAvailableCount();
+    }
+
+    private RoomUnitAvailability unitOn(Room room, LocalDate date) {
+        return availabilityService.getAvailability(room.type().getId(), "2034-03").getDays().stream()
+                .filter(d -> d.getDate().equals(date.toString()))
+                .findFirst().orElseThrow()
+                .getUnits().get(0);
+    }
+
+    @Test
+    void theCalendarListsTheOldRoomForTonight_besideThePartWithoutARoom_andCountsTheNightOnce() {
+        Room old = room();
+        Room next = room();
+        Booking guest = movingToday(old, next);
+
+        List<CalendarBooking> bars = bars(guest);
+        // The old part ended before the window and is listed for its tonight; the new one stays unassigned.
+        assertThat(bars).extracting(b -> b.getRoomUnitId().orElse(null), CalendarBooking::getWaitingForRoomNight)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(old.unit().getId(), TODAY.toString()),
+                        org.assertj.core.groups.Tuple.tuple(null, null));
+        assertThat(typeCountTonight(old)).isEqualTo(1);
+        assertThat(typeCountTonight(next)).isZero();
+    }
+
+    @Test
+    void theRoomListMarksTheOldRoomTakenTonightOnly_withoutCountingIt() {
+        Room old = room();
+        Booking guest = movingToday(old, room());
+
+        RoomUnitAvailability tonight = unitOn(old, TODAY);
+        assertThat(tonight.getIsBooked()).isTrue();
+        assertThat(tonight.getIsAvailable()).isFalse();
+        assertThat(tonight.getBookingId().get()).isEqualTo(guest.getId());
+        assertThat(tonight.getGuestName().get()).isEqualTo("Moving Guest");
+        assertThat(tonight.getWaitingForRoom()).isTrue();
+        assertThat(unitOn(old, TODAY.plusDays(1)).getIsBooked()).isFalse();
+        assertThat(unitOn(old, TODAY.plusDays(1)).getWaitingForRoom()).isFalse();
+        var day = availabilityService.getAvailability(old.type().getId(), "2034-03").getDays().get(TODAY.getDayOfMonth() - 1);
+        assertThat(day.getBookedCount()).isZero();
+        assertThat(day.getAvailableCount()).isEqualTo(1);
+    }
+
+    @Test
+    void aGuestDueOutTodayHoldsNoNight_andAnOverdueOneStillDoes() {
+        Room dueOut = room();
+        Booking leaving = booking(dueOut, true, "Leaves Today", TODAY.minusDays(3), TODAY);
+        leaving = bookingService.relocate(leaving.getId(), new RelocationInput(TODAY.minusDays(1).toString(), room().type().getId()));
+        arrived(leaving);
+        Room overdueIn = room();
+        Booking overdue = booking(overdueIn, true, "Overdue", TODAY.minusDays(4), TODAY.minusDays(1));
+        overdue = bookingService.relocate(overdue.getId(), new RelocationInput(TODAY.minusDays(2).toString(), room().type().getId()));
+        arrived(overdue);
+
+        // Nothing of theirs reaches the window: the stay ends today, and no earlier part is listed for tonight.
+        assertThat(bars(leaving)).isEmpty();
+        assertThat(unitOn(dueOut, TODAY).getIsBooked()).isFalse();
+        assertThat(bars(overdue)).extracting(CalendarBooking::getWaitingForRoomNight).contains(TODAY.toString());
+        assertThat(unitOn(overdueIn, TODAY).getWaitingForRoom()).isTrue();
+    }
+
+    /** Both move today: {@code waiting} out of {@code shared} with no room picked, {@code incoming} into it as planned. */
+    private record Doubled(Room shared, Room vacated, Room target, Booking waiting, Booking incoming) {}
+
+    private Doubled twoInOneRoom() {
+        Room shared = room();
+        Room vacated = room();
+        Room target = room();
+        Booking waiting = booking(shared, true, "Waits", TODAY.minusDays(2), TODAY.plusDays(3));
+        waiting = bookingService.relocate(waiting.getId(), new RelocationInput(TODAY.toString(), target.type().getId()));
+        Booking incoming = booking(vacated, true, "Moves In", TODAY.minusDays(2), TODAY.plusDays(3));
+        incoming = bookingService.relocate(
+                incoming.getId(), new RelocationInput(TODAY.toString(), shared.type().getId()).roomUnitId(shared.unit().getId()));
+        arrived(waiting);
+        arrived(incoming);
+        return new Doubled(shared, vacated, target, waiting, incoming);
+    }
+
+    @Test
+    void theGuestMovedIntoARoomStillHeld_isWarned_onToday_theBookingAndTheMap() {
+        Doubled d = twoInOneRoom();
+        String line = "Room " + d.shared().unit().getLabel() + " is still held by Waits (waiting for a new room)";
+
+        RoomStillHeld onToday = inHouse(d.incoming()).getRoomStillHeld();
+        assertThat(onToday.getReason()).isEqualTo(line);
+        assertThat(onToday.getBookingId()).isEqualTo(d.waiting().getId());
+        assertThat(inHouse(d.waiting()).getRoomStillHeld()).isNull();
+        assertThat(inHouse(d.waiting()).getPendingRoomMove()).isNotNull();
+        assertThat(bookingService.getById(d.incoming().getId()).getRoomStillHeld().getReason()).isEqualTo(line);
+        assertThat(bookingService.getById(d.waiting().getId()).getRoomStillHeld()).isNull();
+        assertThat(tile(d.shared()).getCurrentBooking().getBookingId()).isEqualTo(d.incoming().getId());
+        assertThat(tile(d.shared()).getCurrentBooking().getRoomStillHeld().getReason()).isEqualTo(line);
+        // The calendar has both in the room tonight; the room list names the one whose stay says so.
+        assertThat(bars(d.waiting()))
+                .anyMatch(b -> d.shared().unit().getId().equals(b.getRoomUnitId().orElse(null)) && b.getWaitingForRoomNight() != null);
+        assertThat(unitOn(d.shared(), TODAY).getBookingId().get()).isEqualTo(d.incoming().getId());
+        assertThat(unitOn(d.shared(), TODAY).getWaitingForRoom()).isFalse();
+    }
+
+    @Test
+    void theWarningGoesOnceTheWaitingGuestsRoomIsPicked() {
+        Doubled d = twoInOneRoom();
+
+        bookingService.assignSegmentRoomUnit(d.waiting().getId(), d.waiting().getSegments().get(1).getId(),
+                new RoomUnitAssignmentInput().roomUnitId(d.target().unit().getId()));
+
+        assertThat(inHouse(d.incoming()).getRoomStillHeld()).isNull();
+        assertThat(bookingService.getById(d.incoming().getId()).getRoomStillHeld()).isNull();
+        assertThat(tile(d.shared()).getCurrentBooking().getRoomStillHeld()).isNull();
+        // Just left by the guest who lived in it.
+        assertThat(housekeeping(d.shared())).isEqualTo(HousekeepingStatus.DIRTY);
+    }
+
+    @Test
+    void theSweepDoesNotDirtyTheRoomAnotherGuestMovedIntoThatDay() {
+        Doubled d = twoInOneRoom();
+
+        vacatedRooms.runForToday();
+
+        assertThat(housekeeping(d.shared())).isEqualTo(HousekeepingStatus.CLEAN);
+        assertThat(housekeeping(d.vacated())).isEqualTo(HousekeepingStatus.DIRTY);
+    }
+
+    @Test
+    void movingTheIncomingGuestElsewhere_leavesTheRoomStillLivedInClean() {
+        Doubled d = twoInOneRoom();
+        Room other = room();
+
+        bookingService.relocate(d.incoming().getId(),
+                new RelocationInput(TODAY.toString(), other.type().getId()).roomUnitId(other.unit().getId()));
+
+        assertThat(housekeeping(d.shared())).isEqualTo(HousekeepingStatus.CLEAN);
+        assertThat(inHouse(d.incoming()).getRoomStillHeld()).isNull();
+    }
+
+    @Test
+    void theSweepLeavesAWaitingGuestsRoomClean_whenSomebodyElsesSegmentEndsInIt() {
+        Room shared = room();
+        Room other = room();
+        // Waiting since yesterday; somebody else had the room for last night and moves on today.
+        Booking waiting = booking(shared, true, "Waits", TODAY.minusDays(3), TODAY.plusDays(3));
+        waiting = bookingService.relocate(waiting.getId(), new RelocationInput(TODAY.minusDays(1).toString(), room().type().getId()));
+        Booking passing = booking(shared, true, "Passing", TODAY.minusDays(1), TODAY.plusDays(3));
+        passing = bookingService.relocate(
+                passing.getId(), new RelocationInput(TODAY.toString(), other.type().getId()).roomUnitId(other.unit().getId()));
+        arrived(waiting);
+        arrived(passing);
+
+        vacatedRooms.runForToday();
+
+        assertThat(housekeeping(shared)).isEqualTo(HousekeepingStatus.CLEAN);
     }
 
     @Test

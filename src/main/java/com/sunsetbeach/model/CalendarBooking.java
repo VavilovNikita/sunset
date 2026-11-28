@@ -44,6 +44,8 @@ public class CalendarBooking {
 
   private String overstayUntil;
 
+  private String waitingForRoomNight;
+
   public CalendarBooking() {
     super();
   }
@@ -273,6 +275,25 @@ public class CalendarBooking {
     this.overstayUntil = overstayUntil;
   }
 
+  public CalendarBooking waitingForRoomNight(String waitingForRoomNight) {
+    this.waitingForRoomNight = waitingForRoomNight;
+    return this;
+  }
+
+  /**
+   * Tonight, set only on the segment whose room a guest in the house is still in because their new one is not picked (see `PendingRoomMove`): the guest is physically in this segment's room that night although its dates are over. The segment is listed even if it ended before `from`. The part of the stay without a room stays its own entry (`roomUnitId: null`). Not a booked night: `dailyAvailable` counts it once, under that part. Absent otherwise (and for a guest due out today, whose night is free). 
+   * @return waitingForRoomNight
+   */
+  @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$") 
+  @JsonProperty("waitingForRoomNight")
+  public String getWaitingForRoomNight() {
+    return waitingForRoomNight;
+  }
+
+  public void setWaitingForRoomNight(String waitingForRoomNight) {
+    this.waitingForRoomNight = waitingForRoomNight;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -292,12 +313,13 @@ public class CalendarBooking {
         Objects.equals(this.status, calendarBooking.status) &&
         Objects.equals(this.totalPrice, calendarBooking.totalPrice) &&
         Objects.equals(this.segmentCount, calendarBooking.segmentCount) &&
-        Objects.equals(this.overstayUntil, calendarBooking.overstayUntil);
+        Objects.equals(this.overstayUntil, calendarBooking.overstayUntil) &&
+        Objects.equals(this.waitingForRoomNight, calendarBooking.waitingForRoomNight);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(segmentId, bookingId, roomId, roomUnitId, guestName, checkIn, checkOut, status, totalPrice, segmentCount, overstayUntil);
+    return Objects.hash(segmentId, bookingId, roomId, roomUnitId, guestName, checkIn, checkOut, status, totalPrice, segmentCount, overstayUntil, waitingForRoomNight);
   }
 
   @Override
@@ -315,6 +337,7 @@ public class CalendarBooking {
     sb.append("    totalPrice: ").append(toIndentedString(totalPrice)).append("\n");
     sb.append("    segmentCount: ").append(toIndentedString(segmentCount)).append("\n");
     sb.append("    overstayUntil: ").append(toIndentedString(overstayUntil)).append("\n");
+    sb.append("    waitingForRoomNight: ").append(toIndentedString(waitingForRoomNight)).append("\n");
     sb.append("}");
     return sb.toString();
   }

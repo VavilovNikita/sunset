@@ -46,7 +46,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -175,12 +174,15 @@ public class PropertyMapService {
             Map<String, RoomUnitBlockEntity> blockByUnit,
             Map<String, PropertyMapMaintenanceTask> openTaskByUnit,
             LocalDate today) {
-        // The longest overdue first, should old data hold two guests in one room.
-        BookingEntity checkedIn =
-                OverstayRule.guestInExcept(inHouse, unit.getId(), Set.of()).map(OverstayRule.InHouseGuest::booking).orElse(null);
+        // One guest to a tile: of two, the one who was moved in, with the warning that names the other.
+        BookingEntity checkedIn = OverstayRule.shownIn(inHouse, unit.getId()).map(OverstayRule.InHouseGuest::booking).orElse(null);
         BookingEntity arrival = arrivingTodayByUnit.get(unit.getId());
         PropertyMapCurrentBooking currentBooking =
                 checkedIn != null ? toCurrentBookingDto(checkedIn, today) : toCurrentBookingDtoOrNull(arrival, today);
+        if (checkedIn != null) {
+            OverstayRule.roomStillHeld(inHouse, checkedIn.getId())
+                    .ifPresent(held -> currentBooking.setRoomStillHeld(BookingMapper.roomStillHeld(held, unit.getLabel())));
+        }
 
         RoomUnitBlockEntity block = blockByUnit.get(unit.getId());
         PropertyMapActiveBlock activeBlock =

@@ -808,6 +808,11 @@ public class BookingService {
         Booking dto = bookingMapper.toDto(booking, room, findRoomUnit(booking.getRoomUnitId()), findGuest(booking.getGuestId()), segments);
         // Only here, not in lists: it answers "can this guest be checked in now", asked on a booking's own screen.
         dto.setRoomOccupant(roomOccupant(booking, segments));
+        if (booking.getOccupancyStatus() == OccupancyStatus.CHECKED_IN) {
+            OverstayRule.roomStillHeld(overstayRule.inHouseByRoomUnit(), id)
+                    .ifPresent(held -> dto.setRoomStillHeld(BookingMapper.roomStillHeld(
+                            held, roomUnitRepository.findById(held.roomUnitId()).map(RoomUnitEntity::getLabel).orElse(""))));
+        }
         // Not stored: read fresh each time, so the warning stays until staff have dealt with the
         // paid spa appointment and goes away by itself afterwards.
         if (booking.getStatus() == BookingStatus.CANCELLED) {
@@ -1263,6 +1268,10 @@ public class BookingService {
             return null;
         }
         if (livedIn.equals(roomTheGuestIsIn(booking.getId()))) {
+            return null;
+        }
+        // Moved out of a room somebody waiting for a new one never left (two in one room, resolved by moving this one).
+        if (OverstayRule.heldByWaitingGuest(overstayRule.inHouseByRoomUnit(), livedIn, booking.getId())) {
             return null;
         }
         RoomUnitEntity left = roomUnitRepository.findById(livedIn).orElse(null);

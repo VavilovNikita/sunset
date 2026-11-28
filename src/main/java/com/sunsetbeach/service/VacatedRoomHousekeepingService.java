@@ -30,8 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>For every booking that is {@code CHECKED_IN} and has a segment starting today, the room of the
  * segment that ended today is marked dirty (unless it already is, or another booking holds it tonight
- * - it was cleaned and re-let, or the guest is still in it because the new room is not picked yet:
- * {@code BookingService} marks it when it is). One run per hotel day: {@code HousekeepingSweep} (V145) keeps the day,
+ * - it was cleaned and re-let, which covers a guest moved into it today; or the guest is still in it
+ * because the new room is not picked yet: {@code BookingService} marks it when it is; or another guest
+ * waiting for a new room lives in it). One run per hotel day: {@code HousekeepingSweep} (V145) keeps the day,
  * so a repeat run - the hourly catch-up after a restart, a second instance - changes nothing, and a
  * room housekeeping cleaned meanwhile is not dirtied again. Same {@code @Scheduled} shape as the other
  * sweeps (CLAUDE.md, "Failure handling").
@@ -46,6 +47,7 @@ public class VacatedRoomHousekeepingService {
     private final BookingRepository bookingRepository;
     private final AuditLogService auditLogService;
     private final JdbcTemplate jdbc;
+    private final OverstayRule overstayRule;
     private final Clock clock;
 
     public VacatedRoomHousekeepingService(
@@ -54,7 +56,9 @@ public class VacatedRoomHousekeepingService {
             BookingRepository bookingRepository,
             AuditLogService auditLogService,
             JdbcTemplate jdbc,
+            OverstayRule overstayRule,
             Clock clock) {
+        this.overstayRule = overstayRule;
         this.segmentRepository = segmentRepository;
         this.roomUnitRepository = roomUnitRepository;
         this.bookingRepository = bookingRepository;
@@ -96,6 +100,7 @@ public class VacatedRoomHousekeepingService {
 
         Map<String, BookingEntity> bookings = bookingRepository.findAllById(byBooking.keySet()).stream()
                 .collect(Collectors.toMap(BookingEntity::getId, b -> b));
+        Map<String, List<OverstayRule.InHouseGuest>> inHouse = overstayRule.inHouseByRoomUnit();
         List<String> marked = new ArrayList<>();
         for (BookingSegmentEntity segment : starting) {
             BookingEntity booking = bookings.get(segment.getBookingId());
@@ -108,6 +113,8 @@ public class VacatedRoomHousekeepingService {
             own.stream()
                     .filter(prev -> prev.getCheckOut().equals(today) && prev.getRoomUnitId() != null)
                     .filter(prev -> !prev.getRoomUnitId().equals(livingIn))
+                    // Or still home to somebody else whose new room is not picked: no segment of theirs says so today.
+                    .filter(prev -> !OverstayRule.heldByWaitingGuest(inHouse, prev.getRoomUnitId(), segment.getBookingId()))
                     .forEach(prev -> {
                         if (markDirty(prev.getRoomUnitId(), segment.getBookingId(), today)) {
                             marked.add(prev.getRoomUnitId());

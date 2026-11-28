@@ -39,6 +39,8 @@ public class RoomUnitAvailability {
 
   private JsonNullable<String> guestName = JsonNullable.<String>undefined();
 
+  private Boolean waitingForRoom;
+
   public RoomUnitAvailability() {
     super();
   }
@@ -119,7 +121,7 @@ public class RoomUnitAvailability {
   }
 
   /**
-   * True if a non-CANCELLED booking has this unit assigned and covers this day.
+   * True if a non-CANCELLED booking has this unit assigned and covers this day, or its guest is physically in it (overstaying, or `waitingForRoom`). 
    * @return isBooked
    */
   @NotNull 
@@ -208,6 +210,25 @@ public class RoomUnitAvailability {
     this.guestName = guestName;
   }
 
+  public RoomUnitAvailability waitingForRoom(Boolean waitingForRoom) {
+    this.waitingForRoom = waitingForRoom;
+    return this;
+  }
+
+  /**
+   * True for tonight on the room a guest in the house is still in because their new one is not picked (see `PendingRoomMove`). The room is marked taken, but `bookedCount`/`availableCount` count that night under the guest's new part of the stay, not here. 
+   * @return waitingForRoom
+   */
+  
+  @JsonProperty("waitingForRoom")
+  public Boolean getWaitingForRoom() {
+    return waitingForRoom;
+  }
+
+  public void setWaitingForRoom(Boolean waitingForRoom) {
+    this.waitingForRoom = waitingForRoom;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -224,7 +245,8 @@ public class RoomUnitAvailability {
         Objects.equals(this.isAvailable, roomUnitAvailability.isAvailable) &&
         Objects.equals(this.bookingId, roomUnitAvailability.bookingId) &&
         Objects.equals(this.blockReason, roomUnitAvailability.blockReason) &&
-        equalsNullable(this.guestName, roomUnitAvailability.guestName);
+        equalsNullable(this.guestName, roomUnitAvailability.guestName) &&
+        Objects.equals(this.waitingForRoom, roomUnitAvailability.waitingForRoom);
   }
 
   private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
@@ -233,7 +255,7 @@ public class RoomUnitAvailability {
 
   @Override
   public int hashCode() {
-    return Objects.hash(roomUnitId, label, isBlocked, isBooked, isAvailable, bookingId, blockReason, hashCodeNullable(guestName));
+    return Objects.hash(roomUnitId, label, isBlocked, isBooked, isAvailable, bookingId, blockReason, hashCodeNullable(guestName), waitingForRoom);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -255,6 +277,7 @@ public class RoomUnitAvailability {
     sb.append("    bookingId: ").append(toIndentedString(bookingId)).append("\n");
     sb.append("    blockReason: ").append(toIndentedString(blockReason)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
+    sb.append("    waitingForRoom: ").append(toIndentedString(waitingForRoom)).append("\n");
     sb.append("}");
     return sb.toString();
   }

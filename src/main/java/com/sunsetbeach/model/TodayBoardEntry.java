@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.PendingRoomMove;
+import com.sunsetbeach.model.RoomStillHeld;
 import com.sunsetbeach.model.TodayBoardRoomOccupant;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -36,6 +37,8 @@ public class TodayBoardEntry {
   private Integer overdueDays;
 
   private TodayBoardRoomOccupant roomOccupant;
+
+  private RoomStillHeld roomStillHeld;
 
   public TodayBoardEntry() {
     super();
@@ -183,6 +186,25 @@ public class TodayBoardEntry {
     this.roomOccupant = roomOccupant;
   }
 
+  public TodayBoardEntry roomStillHeld(RoomStillHeld roomStillHeld) {
+    this.roomStillHeld = roomStillHeld;
+    return this;
+  }
+
+  /**
+   * Get roomStillHeld
+   * @return roomStillHeld
+   */
+  @Valid 
+  @JsonProperty("roomStillHeld")
+  public RoomStillHeld getRoomStillHeld() {
+    return roomStillHeld;
+  }
+
+  public void setRoomStillHeld(RoomStillHeld roomStillHeld) {
+    this.roomStillHeld = roomStillHeld;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -198,12 +220,13 @@ public class TodayBoardEntry {
         Objects.equals(this.overstayNights, todayBoardEntry.overstayNights) &&
         Objects.equals(this.overstayIncludesTonight, todayBoardEntry.overstayIncludesTonight) &&
         Objects.equals(this.overdueDays, todayBoardEntry.overdueDays) &&
-        Objects.equals(this.roomOccupant, todayBoardEntry.roomOccupant);
+        Objects.equals(this.roomOccupant, todayBoardEntry.roomOccupant) &&
+        Objects.equals(this.roomStillHeld, todayBoardEntry.roomStillHeld);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(pendingRoomMove, booking, outstandingBalance, overstayNights, overstayIncludesTonight, overdueDays, roomOccupant);
+    return Objects.hash(pendingRoomMove, booking, outstandingBalance, overstayNights, overstayIncludesTonight, overdueDays, roomOccupant, roomStillHeld);
   }
 
   @Override
@@ -217,6 +240,7 @@ public class TodayBoardEntry {
     sb.append("    overstayIncludesTonight: ").append(toIndentedString(overstayIncludesTonight)).append("\n");
     sb.append("    overdueDays: ").append(toIndentedString(overdueDays)).append("\n");
     sb.append("    roomOccupant: ").append(toIndentedString(roomOccupant)).append("\n");
+    sb.append("    roomStillHeld: ").append(toIndentedString(roomStillHeld)).append("\n");
     sb.append("}");
     return sb.toString();
   }

@@ -9,6 +9,7 @@ import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.CheckInRoomNeeded;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.PendingRoomMove;
+import com.sunsetbeach.model.RoomStillHeld;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.service.BookingFolioCalculator;
@@ -142,6 +143,14 @@ public class BookingMapper {
     /** The night a check-in made today is for: tonight, or on the departure day the one just ending. */
     private static LocalDate nightCheckedInto(BookingEntity entity, LocalDate today) {
         return today.isBefore(entity.getCheckOut()) ? today : entity.getCheckOut().minusDays(1);
+    }
+
+    /** The warning on the guest moved into a room whose waiting guest has not left it ({@link OverstayRule#roomStillHeld}). */
+    public static RoomStillHeld roomStillHeld(OverstayRule.DoubledRoom doubled, String unitLabel) {
+        return new RoomStillHeld(
+                doubled.holder().booking().getId(),
+                doubled.holder().booking().getGuestName(),
+                OverstayRule.stillHeldMessage(unitLabel, doubled.holder()));
     }
 
     /**

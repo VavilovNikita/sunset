@@ -22,6 +22,7 @@ import com.sunsetbeach.model.CheckOutPreview;
 import com.sunsetbeach.model.CheckOutResult;
 import com.sunsetbeach.model.HousekeepingStatus;
 import com.sunsetbeach.model.OccupancyStatus;
+import com.sunsetbeach.model.RoomStillHeld;
 import com.sunsetbeach.model.TodayBoard;
 import com.sunsetbeach.model.TodayBoardEntry;
 import com.sunsetbeach.model.TodayBoardRoomOccupant;
@@ -387,19 +388,19 @@ public class BookingOccupancyService {
         List<TodayBoardEntry> arriving = bookingRepository
                 .findByOccupancyStatusAndStatusNotAndCheckInIs(OccupancyStatus.EXPECTED, BookingStatus.CANCELLED, today)
                 .stream()
-                .map(b -> toEntry(b, today).roomOccupant(roomOccupant(inHouseByUnit, b)))
+                .map(b -> toEntry(b, today, inHouseByUnit).roomOccupant(roomOccupant(inHouseByUnit, b)))
                 .toList();
         // On or before today, not only on it: a guest who should have left on an earlier day is
         // still due out (OverstayRule), and this list is where the desk's check-out button lives.
         List<TodayBoardEntry> departing = bookingRepository
                 .findByOccupancyStatusAndStatusNotAndCheckOutLessThanEqual(OccupancyStatus.CHECKED_IN, BookingStatus.CANCELLED, today)
                 .stream()
-                .map(b -> toEntry(b, today))
+                .map(b -> toEntry(b, today, inHouseByUnit))
                 .toList();
         List<TodayBoardEntry> inHouse = bookingRepository
                 .findByOccupancyStatusAndStatusNot(OccupancyStatus.CHECKED_IN, BookingStatus.CANCELLED)
                 .stream()
-                .map(b -> toEntry(b, today))
+                .map(b -> toEntry(b, today, inHouseByUnit))
                 .toList();
         return new TodayBoard(arriving, departing, inHouse);
     }
@@ -427,15 +428,23 @@ public class BookingOccupancyService {
         return LocalDateTime.now(clock.withZone(ZoneOffset.UTC));
     }
 
-    private TodayBoardEntry toEntry(BookingEntity entity, LocalDate today) {
+    private TodayBoardEntry toEntry(BookingEntity entity, LocalDate today, Map<String, List<OverstayRule.InHouseGuest>> inHouseByUnit) {
         BookingFolioCalculator.FolioBreakdown folio = folioCalculator.breakdown(entity);
         Booking dto = toDto(entity);
         return new TodayBoardEntry(dto, PriceFormat.asDecimalString(folio.balanceDue()))
                 .pendingRoomMove(dto.getPendingRoomMove())
+                .roomStillHeld(roomStillHeld(inHouseByUnit, entity.getId()))
                 .overdueDays(OverstayRule.overdueDays(entity, today))
                 // The one count to show next to the guest: the nights charged, tonight's among them or not.
                 .overstayNights(folio.overstayNightsOwed())
                 .overstayIncludesTonight(folio.overstayNightsOwed() > 0 && folio.overstayIncludesTonight());
+    }
+
+    private RoomStillHeld roomStillHeld(Map<String, List<OverstayRule.InHouseGuest>> inHouseByUnit, String bookingId) {
+        return OverstayRule.roomStillHeld(inHouseByUnit, bookingId)
+                .map(held -> BookingMapper.roomStillHeld(
+                        held, roomUnitRepository.findById(held.roomUnitId()).map(RoomUnitEntity::getLabel).orElse("")))
+                .orElse(null);
     }
 
     private Booking toDto(BookingEntity entity) {

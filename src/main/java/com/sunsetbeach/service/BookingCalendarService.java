@@ -120,6 +120,16 @@ public class BookingCalendarService {
         Map<String, List<OverstayRule.Overstay>> overstaysByRoomId =
                 overstayBySegmentId.values().stream().collect(Collectors.groupingBy(OverstayRule.Overstay::roomId));
 
+        // A guest whose new room is not picked sleeps tonight in the room of an earlier part (OverstayRule): that bar is
+        // listed too, so the grid can draw the night in its row. Not counted - the type's count has the night already.
+        Map<String, OverstayRule.WaitingGuest> waitingBySegmentId = overstayRule.waitingTonight().stream()
+                .filter(w -> !w.night().isBefore(from) && w.night().isBefore(to))
+                .collect(Collectors.toMap(w -> w.heldIn().getId(), w -> w, (a, b) -> a));
+        Set<String> shownSegmentIds = segments.stream().map(BookingSegmentEntity::getId).collect(Collectors.toSet());
+        waitingBySegmentId.values().stream()
+                .filter(w -> !shownSegmentIds.contains(w.heldIn().getId()))
+                .forEach(w -> segments.add(w.heldIn()));
+
         // segmentCount on each CalendarBooking is the *whole* booking's segment count, not just
         // how many fall inside [from, to) - the grid needs to know "has this booking ever been
         // relocated" (to decide whether drag-resize/move is offered) even when only one of its
@@ -142,7 +152,10 @@ public class BookingCalendarService {
         List<CalendarBooking> calendarBookings = segments.stream()
                 .sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn))
                 .map(s -> toCalendarBooking(
-                        s, segmentCountByBookingId.getOrDefault(s.getBookingId(), 1L).intValue(), overstayBySegmentId.get(s.getId())))
+                        s,
+                        segmentCountByBookingId.getOrDefault(s.getBookingId(), 1L).intValue(),
+                        overstayBySegmentId.get(s.getId()),
+                        waitingBySegmentId.get(s.getId())))
                 .toList();
 
         List<RoomUnitBlock> blockDtos = toBlockDtos(blocks);
@@ -207,7 +220,8 @@ public class BookingCalendarService {
     }
 
     /** One bar per *segment* - see {@code CalendarBooking}'s schema description for why. */
-    private static CalendarBooking toCalendarBooking(BookingSegmentEntity s, int segmentCount, OverstayRule.Overstay overstay) {
+    private static CalendarBooking toCalendarBooking(
+            BookingSegmentEntity s, int segmentCount, OverstayRule.Overstay overstay, OverstayRule.WaitingGuest waiting) {
         CalendarBooking dto = new CalendarBooking(
                 s.getId(),
                 s.getBookingId(),
@@ -221,6 +235,9 @@ public class BookingCalendarService {
                 segmentCount);
         if (overstay != null) {
             dto.setOverstayUntil(overstay.toExclusive().toString());
+        }
+        if (waiting != null) {
+            dto.setWaitingForRoomNight(waiting.night().toString());
         }
         return dto;
     }
