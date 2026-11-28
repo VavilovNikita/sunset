@@ -118,6 +118,8 @@ public class Booking {
 
   private String currentSegmentId;
 
+  private String checkInClosedReason;
+
   private TodayBoardRoomOccupant roomOccupant;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
@@ -877,6 +879,25 @@ public class Booking {
     this.currentSegmentId = currentSegmentId;
   }
 
+  public Booking checkInClosedReason(String checkInClosedReason) {
+    this.checkInClosedReason = checkInClosedReason;
+    return this;
+  }
+
+  /**
+   * Present when this booking can no longer be checked in because its stay is over: the guest never arrived (`EXPECTED` or `NO_SHOW`, not cancelled) and the hotel date is past `checkOut`. The text is `POST /bookings/{id}/check-in`'s 409, ready to show in place of the button; changing the dates clears it. Absent otherwise. 
+   * @return checkInClosedReason
+   */
+  
+  @JsonProperty("checkInClosedReason")
+  public String getCheckInClosedReason() {
+    return checkInClosedReason;
+  }
+
+  public void setCheckInClosedReason(String checkInClosedReason) {
+    this.checkInClosedReason = checkInClosedReason;
+  }
+
   public Booking roomOccupant(TodayBoardRoomOccupant roomOccupant) {
     this.roomOccupant = roomOccupant;
     return this;
@@ -999,6 +1020,7 @@ public class Booking {
         Objects.equals(this.cancellationReason, booking.cancellationReason) &&
         Objects.equals(this.segments, booking.segments) &&
         Objects.equals(this.currentSegmentId, booking.currentSegmentId) &&
+        Objects.equals(this.checkInClosedReason, booking.checkInClosedReason) &&
         Objects.equals(this.roomOccupant, booking.roomOccupant) &&
         Objects.equals(this.createdAt, booking.createdAt) &&
         Objects.equals(this.updatedAt, booking.updatedAt) &&
@@ -1011,7 +1033,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, currentSegmentId, roomOccupant, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, currentSegmentId, checkInClosedReason, roomOccupant, createdAt, updatedAt, warning);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -1062,6 +1084,7 @@ public class Booking {
     sb.append("    cancellationReason: ").append(toIndentedString(cancellationReason)).append("\n");
     sb.append("    segments: ").append(toIndentedString(segments)).append("\n");
     sb.append("    currentSegmentId: ").append(toIndentedString(currentSegmentId)).append("\n");
+    sb.append("    checkInClosedReason: ").append(toIndentedString(checkInClosedReason)).append("\n");
     sb.append("    roomOccupant: ").append(toIndentedString(roomOccupant)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");

@@ -51,6 +51,8 @@ class CheckInVersusMoveRaceTests extends AbstractIntegrationTest {
     @Autowired private RoomRepository roomRepository;
     @Autowired private RoomUnitRepository roomUnitRepository;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private com.sunsetbeach.repository.BookingRepository bookingRepository;
+    @Autowired private OverstayChargeService overstayCharges;
 
     private final List<String> bookingIds = new ArrayList<>();
     private final List<String> unitIds = new ArrayList<>();
@@ -87,7 +89,7 @@ class CheckInVersusMoveRaceTests extends AbstractIntegrationTest {
                 RoomUnitEntity from = unit(room);
                 RoomUnitEntity target = unit(room);
                 Booking overdue = booking(room, from, "Overdue " + round, TODAY.minusDays(3), TODAY.minusDays(1));
-                occupancyService.checkIn(overdue.getId());
+                com.sunsetbeach.support.Overstayers.leftCheckedIn(bookingRepository, overstayCharges, overdue.getId());
                 Booking arrival = booking(room, target, "Arrival " + round, TODAY, TODAY.plusDays(2));
 
                 CyclicBarrier together = new CyclicBarrier(2);

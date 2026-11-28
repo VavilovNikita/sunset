@@ -190,6 +190,9 @@ class PosRoleHierarchyTests {
     private RoomUnitService roomUnitService;
 
     @MockitoBean
+    private com.sunsetbeach.service.HousekeepingBoardService housekeepingBoardService;
+
+    @MockitoBean
     private PropertyMapService propertyMapService;
 
     @MockitoBean

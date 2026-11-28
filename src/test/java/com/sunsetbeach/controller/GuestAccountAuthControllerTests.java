@@ -46,7 +46,8 @@ import org.springframework.test.web.servlet.MockMvc;
  */
 @WebMvcTest(controllers = {GuestAccountAuthController.class})
 @Import({SecurityConfig.class, JwtService.class, GuestJwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class,
-        GuestAccountMapper.class, GuestAccountAuthRateLimiter.class, GuestAccountLoginRateLimiter.class})
+        GuestAccountMapper.class, GuestAccountAuthRateLimiter.class, GuestAccountLoginRateLimiter.class,
+        com.sunsetbeach.config.ClockConfig.class})
 class GuestAccountAuthControllerTests {
 
     private static final String JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long!!";
@@ -63,6 +64,9 @@ class GuestAccountAuthControllerTests {
 
     @MockitoBean
     private RoomRepository roomRepository;
+
+    @MockitoBean
+    private com.sunsetbeach.repository.BookingSegmentRepository bookingSegmentRepository;
 
     // GuestAccountMapper (imported above) also takes a RoomUnitRepository - without this the
     // slice's context never starts.

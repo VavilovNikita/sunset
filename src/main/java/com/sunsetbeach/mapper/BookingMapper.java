@@ -6,15 +6,18 @@ import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.service.BookingFolioCalculator;
 import com.sunsetbeach.service.OverstayRule;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
@@ -86,6 +89,20 @@ public class BookingMapper {
         };
     }
 
+    /**
+     * Why this booking can't be checked in any more, or empty: its stay is over ({@code today} is past
+     * {@code checkOut}) and the guest never arrived. The one rule and the one sentence, for {@code
+     * BookingOccupancyService#checkIn}'s 409 and for every screen that would otherwise offer the button. On the
+     * departure day check-in is still allowed - a guest arriving after midnight for last night.
+     */
+    public static Optional<String> checkInClosedReason(BookingEntity entity, LocalDate today) {
+        boolean awaiting = entity.getStatus() != com.sunsetbeach.model.BookingStatus.CANCELLED
+                && (entity.getOccupancyStatus() == OccupancyStatus.EXPECTED || entity.getOccupancyStatus() == OccupancyStatus.NO_SHOW);
+        return awaiting && today.isAfter(entity.getCheckOut())
+                ? Optional.of("This stay ended on " + DateText.date(entity.getCheckOut()) + ". Change the dates first, then check in.")
+                : Optional.empty();
+    }
+
     public Booking toDto(BookingEntity entity, RoomEntity room, RoomUnitEntity roomUnit, GuestEntity guest, List<BookingSegmentEntity> segments) {
         return toDto(entity, room, roomUnit, guest, segments, folioCalculator.breakdown(entity));
     }
@@ -149,6 +166,7 @@ public class BookingMapper {
                 TimestampFormat.toUtc(entity.getUpdatedAt()))
                 .stayStatus(stayStatusOf(entity))
                 .currentSegmentId(current != null ? current.getId() : null)
+                .checkInClosedReason(checkInClosedReason(entity, java.time.LocalDate.now(clock)).orElse(null))
                 .notes(entity.getNotes())
                 .breakfastGuests(entity.getBreakfastGuests())
                 .breakfastRate(entity.getBreakfastRate() != null ? com.sunsetbeach.model.BreakfastRate.fromValue(entity.getBreakfastRate()) : null)

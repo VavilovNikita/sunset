@@ -42,6 +42,8 @@ public class NightAuditBooking {
 
   private JsonNullable<String> roomUnitLabel = JsonNullable.<String>undefined();
 
+  private String checkInClosedReason;
+
   private String checkIn;
 
   private String checkOut;
@@ -209,7 +211,7 @@ public class NightAuditBooking {
   }
 
   /**
-   * The room type's name.
+   * The room type of the night of the reviewed date (for a date outside the stay, of the nearest night) - after a move, not necessarily the booking's own room type. 
    * @return roomName
    */
   @NotNull 
@@ -228,7 +230,7 @@ public class NightAuditBooking {
   }
 
   /**
-   * The assigned physical room's label, or null if none is assigned.
+   * The label of the physical room the guest is in on the reviewed date (for a date outside the stay, the nearest night's), or null if none is assigned. 
    * @return roomUnitLabel
    */
   @NotNull 
@@ -239,6 +241,25 @@ public class NightAuditBooking {
 
   public void setRoomUnitLabel(JsonNullable<String> roomUnitLabel) {
     this.roomUnitLabel = roomUnitLabel;
+  }
+
+  public NightAuditBooking checkInClosedReason(String checkInClosedReason) {
+    this.checkInClosedReason = checkInClosedReason;
+    return this;
+  }
+
+  /**
+   * As `Booking.checkInClosedReason`, judged against today, not the reviewed date.
+   * @return checkInClosedReason
+   */
+  
+  @JsonProperty("checkInClosedReason")
+  public String getCheckInClosedReason() {
+    return checkInClosedReason;
+  }
+
+  public void setCheckInClosedReason(String checkInClosedReason) {
+    this.checkInClosedReason = checkInClosedReason;
   }
 
   public NightAuditBooking checkIn(String checkIn) {
@@ -335,6 +356,7 @@ public class NightAuditBooking {
         Objects.equals(this.guestName, nightAuditBooking.guestName) &&
         Objects.equals(this.roomName, nightAuditBooking.roomName) &&
         Objects.equals(this.roomUnitLabel, nightAuditBooking.roomUnitLabel) &&
+        Objects.equals(this.checkInClosedReason, nightAuditBooking.checkInClosedReason) &&
         Objects.equals(this.checkIn, nightAuditBooking.checkIn) &&
         Objects.equals(this.checkOut, nightAuditBooking.checkOut) &&
         Objects.equals(this.status, nightAuditBooking.status) &&
@@ -343,7 +365,7 @@ public class NightAuditBooking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, balanceDue, settlement, overstayIncludesTonight, unpaidOverstayNights, unpaidOverstayValue, guestName, roomName, roomUnitLabel, checkIn, checkOut, status, occupancyStatus);
+    return Objects.hash(id, balanceDue, settlement, overstayIncludesTonight, unpaidOverstayNights, unpaidOverstayValue, guestName, roomName, roomUnitLabel, checkInClosedReason, checkIn, checkOut, status, occupancyStatus);
   }
 
   @Override
@@ -359,6 +381,7 @@ public class NightAuditBooking {
     sb.append("    guestName: ").append("[REDACTED]").append("\n");
     sb.append("    roomName: ").append(toIndentedString(roomName)).append("\n");
     sb.append("    roomUnitLabel: ").append(toIndentedString(roomUnitLabel)).append("\n");
+    sb.append("    checkInClosedReason: ").append(toIndentedString(checkInClosedReason)).append("\n");
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");

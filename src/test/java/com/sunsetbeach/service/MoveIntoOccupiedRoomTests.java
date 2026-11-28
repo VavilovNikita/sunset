@@ -52,6 +52,7 @@ class MoveIntoOccupiedRoomTests extends AbstractIntegrationTest {
     @Autowired private BookingOccupancyService occupancyService;
     @Autowired private PropertyMapService propertyMapService;
     @Autowired private OverstayChargeService overstayChargeService;
+    @Autowired private com.sunsetbeach.repository.BookingRepository bookingRepository;
     @Autowired private RoomRepository roomRepository;
     @Autowired private RoomUnitRepository roomUnitRepository;
     @Autowired private jakarta.persistence.EntityManager entityManager;
@@ -93,6 +94,10 @@ class MoveIntoOccupiedRoomTests extends AbstractIntegrationTest {
 
     private Booking inHouse(Type type, int unit, String guest, LocalDate checkIn, LocalDate checkOut) {
         Booking b = booking(type, unit, guest, checkIn, checkOut);
+        if (checkOut.isBefore(TODAY)) {
+            com.sunsetbeach.support.Overstayers.leftCheckedIn(bookingRepository, overstayChargeService, b.getId());
+            return bookingService.getById(b.getId());
+        }
         return occupancyService.checkIn(b.getId()).getBooking();
     }
 

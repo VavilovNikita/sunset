@@ -45,7 +45,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * for real; the DB it reads from is mocked.
  */
 @WebMvcTest(controllers = {GuestAccountController.class})
-@Import({SecurityConfig.class, JwtService.class, GuestJwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, GuestAccountMapper.class})
+@Import({SecurityConfig.class, JwtService.class, GuestJwtService.class, RestAuthEntryPoint.class, RestAccessDeniedHandler.class, GuestAccountMapper.class,
+        com.sunsetbeach.config.ClockConfig.class})
 class GuestAccountControllerTests {
 
     private static final String JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long!!";
@@ -68,6 +69,9 @@ class GuestAccountControllerTests {
 
     @MockitoBean
     private RoomRepository roomRepository;
+
+    @MockitoBean
+    private com.sunsetbeach.repository.BookingSegmentRepository bookingSegmentRepository;
 
     @MockitoBean
     private RoomUnitRepository roomUnitRepository;

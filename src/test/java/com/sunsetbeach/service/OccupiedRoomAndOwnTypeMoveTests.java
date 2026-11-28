@@ -49,6 +49,7 @@ class OccupiedRoomAndOwnTypeMoveTests extends AbstractIntegrationTest {
     @Autowired private RoomRepository roomRepository;
     @Autowired private RoomUnitRepository roomUnitRepository;
     @Autowired private BookingRepository bookingRepository;
+    @Autowired private OverstayChargeService overstayCharges;
 
     private record Type(RoomEntity room, List<RoomUnitEntity> units) {}
 
@@ -94,7 +95,7 @@ class OccupiedRoomAndOwnTypeMoveTests extends AbstractIntegrationTest {
         // Both assigned while the first guest's stay had simply not been checked in yet.
         Booking late = booking(type, unit, "Late Leaver", TODAY.minusDays(3), TODAY.minusDays(1));
         Booking arriving = booking(type, unit, "New Arrival", TODAY, TODAY.plusDays(2));
-        occupancyService.checkIn(late.getId());
+        com.sunsetbeach.support.Overstayers.leftCheckedIn(bookingRepository, overstayCharges, late.getId());
 
         assertThat(arrival(arriving.getId()).getRoomOccupant().getGuestName()).isEqualTo("Late Leaver");
         assertThat(arrival(arriving.getId()).getRoomOccupant().getOverdueDays()).isEqualTo(1);
@@ -148,7 +149,7 @@ class OccupiedRoomAndOwnTypeMoveTests extends AbstractIntegrationTest {
         Booking mover = booking(type, type.units().get(1), "Mover", TODAY, TODAY.plusDays(3));
         booking(type, null, "Unassigned One", TODAY, TODAY.plusDays(3));
         booking(type, null, "Unassigned Two", TODAY, TODAY.plusDays(3));
-        occupancyService.checkIn(overstay.getId());
+        com.sunsetbeach.support.Overstayers.leftCheckedIn(bookingRepository, overstayCharges, overstay.getId());
         return new Oversold(type, mover, overstay);
     }
 

@@ -1,6 +1,7 @@
 package com.sunsetbeach.controller;
 
 import com.sunsetbeach.api.RoomUnitsApi;
+import com.sunsetbeach.model.HousekeepingRoom;
 import com.sunsetbeach.model.HousekeepingStatusInput;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.RoomUnit;
@@ -11,6 +12,7 @@ import com.sunsetbeach.model.RoomUnitInput;
 import com.sunsetbeach.model.RoomUnitPositionInput;
 import com.sunsetbeach.model.RoomUnitUpdateInput;
 import com.sunsetbeach.security.StaffPrincipal;
+import com.sunsetbeach.service.HousekeepingBoardService;
 import com.sunsetbeach.service.RoomUnitService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -23,8 +25,16 @@ public class RoomUnitController implements RoomUnitsApi {
 
     private final RoomUnitService roomUnitService;
 
-    public RoomUnitController(RoomUnitService roomUnitService) {
+    private final HousekeepingBoardService housekeepingBoardService;
+
+    public RoomUnitController(RoomUnitService roomUnitService, HousekeepingBoardService housekeepingBoardService) {
         this.roomUnitService = roomUnitService;
+        this.housekeepingBoardService = housekeepingBoardService;
+    }
+
+    @Override
+    public ResponseEntity<List<HousekeepingRoom>> listHousekeepingRooms() {
+        return ResponseEntity.ok(housekeepingBoardService.rooms());
     }
 
     @Override

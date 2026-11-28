@@ -132,8 +132,12 @@ public class SecurityConfig {
                         // Housekeeping status is a deliberately lower bar than the rest of
                         // /room-units/** (MANAGER+ below) - front desk flips this day to day, not
                         // just managers - so it needs its own rule ahead of the catch-all, same
-                        // ordering requirement as the GET carve-out above.
-                        .requestMatchers(HttpMethod.PATCH, "/room-units/*/housekeeping").hasRole(com.sunsetbeach.model.Role.CASHIER.getValue())
+                        // ordering requirement as the GET carve-out above. CASHIER+ *or* the
+                        // HOUSEKEEPER job function, whatever the role (owner's decision): these two
+                        // routes are all the function opens. The board is its own narrow read because
+                        // GET /property-map and GET /rooms carry guest names and money.
+                        .requestMatchers(HttpMethod.PATCH, "/room-units/*/housekeeping").access(cashierPlusOrHousekeeper())
+                        .requestMatchers(HttpMethod.GET, "/housekeeping/rooms").access(cashierPlusOrHousekeeper())
                         // PATCH /room-units/positions (the property map editor's batch save) needs no
                         // separate rule here - it isn't the GET or housekeeping carve-out above, so it
                         // falls straight through to the MANAGER+ catch-all below, which is exactly the
@@ -547,10 +551,18 @@ public class SecurityConfig {
      * function half is a plain authority (never a role, so it can't climb the ladder).
      */
     private AuthorizationManager<RequestAuthorizationContext> cashierPlusOrTherapist() {
+        return cashierPlusOr("FUNCTION_THERAPIST");
+    }
+
+    /** Role CASHIER-or-above OR FUNCTION_HOUSEKEEPER - the housekeeping board and marking a room clean or dirty. */
+    private AuthorizationManager<RequestAuthorizationContext> cashierPlusOrHousekeeper() {
+        return cashierPlusOr("FUNCTION_HOUSEKEEPER");
+    }
+
+    private AuthorizationManager<RequestAuthorizationContext> cashierPlusOr(String functionAuthority) {
         AuthorityAuthorizationManager<RequestAuthorizationContext> cashierOrAbove =
                 AuthorityAuthorizationManager.hasRole(com.sunsetbeach.model.Role.CASHIER.getValue());
         cashierOrAbove.setRoleHierarchy(roleHierarchy());
-        AuthorityAuthorizationManager<RequestAuthorizationContext> therapistFunction = AuthorityAuthorizationManager.hasAuthority("FUNCTION_THERAPIST");
-        return AuthorizationManagers.anyOf(cashierOrAbove, therapistFunction);
+        return AuthorizationManagers.anyOf(cashierOrAbove, AuthorityAuthorizationManager.hasAuthority(functionAuthority));
     }
 }

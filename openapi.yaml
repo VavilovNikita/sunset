@@ -1565,6 +1565,33 @@ paths:
               example:
                 error: "Room 203 has an upcoming booking assigned and can't be deleted."
 
+  /housekeeping/rooms:
+    get:
+      operationId: listHousekeepingRooms
+      tags: [RoomUnits]
+      summary: Every physical room's cleaning state and whether someone is in it
+      description: >
+        Requires CASHIER or above, **or the HOUSEKEEPER job function whatever the role** - the Housekeeping
+        page's one read. Occupancy is `GET /property-map`'s own, without anything that endpoint knows about
+        the guest: no names, no booking ids, no amounts, no block reason, no maintenance text.
+      responses:
+        "200":
+          description: Every physical room, in no particular order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HousekeepingRoom"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Neither CASHIER or above nor the HOUSEKEEPER function.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+
   /room-units/{id}/housekeeping:
     parameters:
       - name: id
@@ -1577,8 +1604,9 @@ paths:
       tags: [RoomUnits]
       summary: Mark a physical room clean or dirty
       description: >
-        Requires CASHIER or above - deliberately a lower bar than the rest of `/room-units/**`
-        (MANAGER+), since front desk is who actually needs to flip this day to day. Independent
+        Requires CASHIER or above, or the HOUSEKEEPER job function whatever the role - deliberately a
+        lower bar than the rest of `/room-units/**`
+        (MANAGER+), since front desk and housekeeping are who actually flip this day to day. Independent
         of `PATCH /room-units/{id}` (label/isActive) and of `RoomUnitBlock` (which pulls a unit
         off sale for a reason, not a cleaning state) - see `HousekeepingStatus`'s own
         description.
@@ -1604,7 +1632,11 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          $ref: "#/components/responses/ForbiddenCashierPlus"
+          description: Neither CASHIER or above nor the HOUSEKEEPER function.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
         "404":
           description: Room unit not found.
           content:
@@ -13463,6 +13495,43 @@ components:
         - DIRTY
         - CLEAN
 
+    HousekeepingRoom:
+      type: object
+      description: >
+        One physical room on the Housekeeping page (`GET /housekeeping/rooms`). Deliberately carries nothing about
+        who is in it: the page is read by people who see no guest data.
+      required: [roomUnitId, roomId, roomName, unitLabel, isActive, housekeepingStatus, occupied, arrivingToday, departingToday, overdueDays, outOfOrder]
+      properties:
+        roomUnitId:
+          type: string
+        roomId:
+          type: string
+        roomName:
+          type: string
+          description: The room type's name.
+        unitLabel:
+          type: string
+        isActive:
+          type: boolean
+        housekeepingStatus:
+          $ref: "#/components/schemas/HousekeepingStatus"
+        occupied:
+          type: boolean
+          description: A guest is checked into the room right now (an overstaying guest included).
+        arrivingToday:
+          type: boolean
+          description: A guest expected today has this room and has not checked in - whether or not someone is still in it.
+        departingToday:
+          type: boolean
+          description: The guest in the room is due out today.
+        overdueDays:
+          type: integer
+          minimum: 0
+          description: Days the guest in the room is past check-out, `0` otherwise.
+        outOfOrder:
+          type: boolean
+          description: The room is blocked (`RoomUnitBlock`) today.
+
     HousekeepingStatusInput:
       type: object
       description: Body of `PATCH /room-units/{id}/housekeeping`.
@@ -15206,6 +15275,13 @@ components:
             The `segments` entry the stay is in today (hotel date): the one holding tonight; before the first night the
             first; from the departure day on the last. For a guest in the house its room is where they are now -
             `roomUnit` is the *last* segment's room, which a move planned for a later night has not reached yet.
+        checkInClosedReason:
+          type: string
+          description: >
+            Present when this booking can no longer be checked in because its stay is over: the guest never arrived
+            (`EXPECTED` or `NO_SHOW`, not cancelled) and the hotel date is past `checkOut`. The text is
+            `POST /bookings/{id}/check-in`'s 409, ready to show in place of the button; changing the dates clears it.
+            Absent otherwise.
         roomOccupant:
           allOf:
             - $ref: "#/components/schemas/TodayBoardRoomOccupant"
@@ -19953,11 +20029,18 @@ components:
           x-sensitive: true
         roomName:
           type: string
-          description: The room type's name.
+          description: >
+            The room type of the night of the reviewed date (for a date outside the stay, of the nearest night) - after
+            a move, not necessarily the booking's own room type.
         roomUnitLabel:
           type: string
           nullable: true
-          description: The assigned physical room's label, or null if none is assigned.
+          description: >
+            The label of the physical room the guest is in on the reviewed date (for a date outside the stay, the
+            nearest night's), or null if none is assigned.
+        checkInClosedReason:
+          type: string
+          description: As `Booking.checkInClosedReason`, judged against today, not the reviewed date.
         checkIn:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'

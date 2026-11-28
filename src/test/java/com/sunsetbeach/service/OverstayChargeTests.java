@@ -270,20 +270,6 @@ class OverstayChargeTests extends AbstractIntegrationTest {
     }
 
     @Test
-    void checkingInAnOverdueStay_accruesTheNightsAtOnce_soTheBookingAndTheFolioAgree() {
-        BookingEntity booking = stay("2033-03-15", "2033-03-18", OccupancyStatus.EXPECTED);
-
-        var result = occupancyService.checkIn(booking.getId());
-        entityManager.flush();
-        entityManager.clear();
-
-        String folioBalance = bookingService.getFolio(booking.getId()).getBalanceDue();
-        assertThat(folioBalance).isEqualTo("7500.00");
-        assertThat(result.getBooking().getBalanceDue()).isEqualTo(folioBalance);
-        assertThat(bookingService.getById(booking.getId()).getBalanceDue()).isEqualTo(folioBalance);
-    }
-
-    @Test
     void aCancelledBooking_refusesScheduleRelocationAndRepriceWith409() {
         BookingEntity booking = stay("2033-03-25", "2033-03-27", OccupancyStatus.EXPECTED);
         booking.setStatus(com.sunsetbeach.model.BookingStatus.CANCELLED);

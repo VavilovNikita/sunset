@@ -1,6 +1,7 @@
 package com.sunsetbeach.service;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.NightAuditEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
@@ -8,6 +9,7 @@ import com.sunsetbeach.entity.UserEntity;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.SqlStates;
 import com.sunsetbeach.error.ValidationException;
+import com.sunsetbeach.mapper.BookingMapper;
 import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.TimestampFormat;
@@ -20,6 +22,7 @@ import com.sunsetbeach.model.NightAuditCloseInput;
 import com.sunsetbeach.model.NightAuditClosure;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.NightAuditRepository;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
@@ -29,9 +32,10 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -54,6 +58,7 @@ public class NightAuditService {
     private final UserRepository userRepository;
     private final RoomRepository roomRepository;
     private final RoomUnitRepository roomUnitRepository;
+    private final BookingSegmentRepository segmentRepository;
     private final ReportService reportService;
     private final AuditLogService auditLogService;
     private final BookingFolioCalculator folioCalculator;
@@ -66,6 +71,7 @@ public class NightAuditService {
             UserRepository userRepository,
             RoomRepository roomRepository,
             RoomUnitRepository roomUnitRepository,
+            BookingSegmentRepository segmentRepository,
             ReportService reportService,
             AuditLogService auditLogService,
             BookingFolioCalculator folioCalculator,
@@ -78,6 +84,7 @@ public class NightAuditService {
         this.userRepository = userRepository;
         this.roomRepository = roomRepository;
         this.roomUnitRepository = roomUnitRepository;
+        this.segmentRepository = segmentRepository;
         this.reportService = reportService;
         this.auditLogService = auditLogService;
         this.clock = clock;
@@ -93,9 +100,9 @@ public class NightAuditService {
         String iso = day.toString();
         return new NightAudit(
                 iso,
-                toBookingDtos(missedArrivals(day), null),
-                toBookingDtos(notArrived(day), null),
-                toBookingDtos(missedDepartures(day), day),
+                toBookingDtos(missedArrivals(day), day, false),
+                toBookingDtos(notArrived(day), day, false),
+                toBookingDtos(missedDepartures(day), day, true),
                 unpaidBalances(day),
                 reportService.occupancy(iso, iso).getTotal(),
                 nightAuditRepository.findByDate(day).map(this::toClosureDto).orElse(null));
@@ -147,7 +154,7 @@ public class NightAuditService {
         List<BookingEntity> candidates = bookingRepository.findStayOver(day, BookingStatus.CANCELLED, OccupancyStatus.CHECKED_OUT, OccupancyStatus.CHECKED_IN);
         Map<String, BookingFolioCalculator.FolioBreakdown> folios = folioCalculator.breakdowns(candidates);
         List<BookingEntity> owing = candidates.stream().filter(b -> folios.get(b.getId()).balanceDue().signum() > 0).toList();
-        List<NightAuditBooking> rows = toBookingDtos(owing, null);
+        List<NightAuditBooking> rows = toBookingDtos(owing, day, false);
         for (int i = 0; i < rows.size(); i++) {
             rows.get(i).balanceDue(PriceFormat.asDecimalString(folios.get(owing.get(i).getId()).balanceDue()));
         }
@@ -186,22 +193,48 @@ public class NightAuditService {
         }
     }
 
-    /** Room type and unit names in two batched lookups, not a lazy load per booking. */
-    private List<NightAuditBooking> toBookingDtos(List<BookingEntity> bookings, LocalDate overstayDay) {
-        Map<String, String> roomNames = roomRepository.findAllById(bookings.stream().map(BookingEntity::getRoomId).distinct().toList())
+    /**
+     * Room type and unit names in batched lookups, not a lazy load per booking. Both are those of the night of
+     * {@code day}, the reviewed date ({@link OverstayRule#currentSegment}): after a move the booking's own room is the
+     * last segment's, which is not where the guest slept on the other nights.
+     */
+    private List<NightAuditBooking> toBookingDtos(List<BookingEntity> bookings, LocalDate day, boolean countOverstay) {
+        if (bookings.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<BookingSegmentEntity>> segments = segmentRepository
+                .findByBookingIdIn(bookings.stream().map(BookingEntity::getId).toList()).stream()
+                .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+        Map<String, BookingSegmentEntity> nightOfDay = new HashMap<>();
+        Map<String, String> unitIds = new HashMap<>();
+        for (BookingEntity b : bookings) {
+            List<BookingSegmentEntity> own = segments.getOrDefault(b.getId(), List.of());
+            BookingSegmentEntity onDay = OverstayRule.currentSegment(own, day);
+            if (onDay != null) {
+                nightOfDay.put(b.getId(), onDay);
+            }
+            String unitId = OverstayRule.unitOn(own, b.getRoomUnitId(), day);
+            if (unitId != null) {
+                unitIds.put(b.getId(), unitId);
+            }
+        }
+        Function<BookingEntity, String> roomIdOf = b -> nightOfDay.containsKey(b.getId()) ? nightOfDay.get(b.getId()).getRoomId() : b.getRoomId();
+        Map<String, String> roomNames = roomRepository.findAllById(bookings.stream().map(roomIdOf).distinct().toList())
                 .stream().collect(Collectors.toMap(RoomEntity::getId, RoomEntity::getName));
-        Map<String, String> unitLabels = roomUnitRepository.findAllById(
-                        bookings.stream().map(BookingEntity::getRoomUnitId).filter(Objects::nonNull).distinct().toList())
+        Map<String, String> unitLabels = roomUnitRepository.findAllById(unitIds.values().stream().distinct().toList())
                 .stream().collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
         Map<String, BookingFolioCalculator.FolioBreakdown> folios = folioCalculator.breakdowns(bookings);
         LocalDate today = LocalDate.now(clock);
         return bookings.stream()
                 .map(b -> {
-                    int nights = overstayDay == null ? 0 : unpaidOverstayNights(b, overstayDay);
-                    NightAuditBooking dto = toBookingDto(b, roomNames.get(b.getRoomId()), unitLabels.get(b.getRoomUnitId()), nights);
+                    int nights = countOverstay ? unpaidOverstayNights(b, day) : 0;
+                    String unitId = unitIds.get(b.getId());
+                    NightAuditBooking dto =
+                            toBookingDto(b, roomNames.get(roomIdOf.apply(b)), unitId == null ? null : unitLabels.get(unitId), nights);
                     dto.setSettlement(folios.get(b.getId()).settlement());
                     // The count runs through the reviewed night; it is "tonight" only when that night is today's.
-                    dto.setOverstayIncludesTonight(nights > 0 && overstayDay.equals(today));
+                    dto.setOverstayIncludesTonight(nights > 0 && day.equals(today));
+                    BookingMapper.checkInClosedReason(b, today).ifPresent(dto::setCheckInClosedReason);
                     if (nights > 0) {
                         // The same nights at the same price function the charge uses (it is on the folio).
                         dto.setUnpaidOverstayValue(PriceFormat.asDecimalString(

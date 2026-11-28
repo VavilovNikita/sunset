@@ -7,6 +7,7 @@ import static com.sunsetbeach.service.GymHallSettingsService.MIN_DURATION_MINUTE
 import static com.sunsetbeach.service.GymHallSettingsService.STEP_MINUTES;
 
 import com.sunsetbeach.entity.BookingEntity;
+import com.sunsetbeach.entity.BookingSegmentEntity;
 import com.sunsetbeach.entity.GuestAccountEntity;
 import com.sunsetbeach.entity.GymHallSettingsEntity;
 import com.sunsetbeach.entity.GymReservationActionEntity;
@@ -37,6 +38,7 @@ import com.sunsetbeach.model.GymSlot;
 import com.sunsetbeach.model.GymSlotDay;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.repository.BookingRepository;
+import com.sunsetbeach.repository.BookingSegmentRepository;
 import com.sunsetbeach.repository.GuestAccountRepository;
 import com.sunsetbeach.repository.GymReservationActionRepository;
 import com.sunsetbeach.repository.GymReservationRepository;
@@ -53,6 +55,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -85,6 +88,7 @@ public class GymReservationService {
     private final BookingRepository bookings;
     private final GuestAccountRepository guestAccounts;
     private final RoomUnitRepository roomUnits;
+    private final BookingSegmentRepository segments;
     private final UserRepository users;
     private final AuditLogService auditLogService;
     private final Clock clock;
@@ -96,6 +100,7 @@ public class GymReservationService {
             BookingRepository bookings,
             GuestAccountRepository guestAccounts,
             RoomUnitRepository roomUnits,
+            BookingSegmentRepository segments,
             UserRepository users,
             AuditLogService auditLogService,
             Clock clock) {
@@ -105,6 +110,7 @@ public class GymReservationService {
         this.bookings = bookings;
         this.guestAccounts = guestAccounts;
         this.roomUnits = roomUnits;
+        this.segments = segments;
         this.users = users;
         this.auditLogService = auditLogService;
         this.clock = clock;
@@ -590,9 +596,10 @@ public class GymReservationService {
     }
 
     private List<GymGuestStay> stays(List<BookingEntity> eligible) {
-        Map<String, String> labels = roomLabels(eligible);
+        RoomLabels labels = roomLabels(eligible);
+        LocalDate today = LocalDate.now(clock);
         return eligible.stream()
-                .map(b -> new GymGuestStay(b.getId(), labels.get(b.getId()), b.getCheckIn().toString(), b.getCheckOut().toString()))
+                .map(b -> new GymGuestStay(b.getId(), labels.on(b, today), b.getCheckIn().toString(), b.getCheckOut().toString()))
                 .toList();
     }
 
@@ -610,7 +617,7 @@ public class GymReservationService {
         }
         Map<String, BookingEntity> bookingsById = bookings.findAllById(list.stream().map(GymReservationEntity::getBookingId).distinct().toList())
                 .stream().collect(Collectors.toMap(BookingEntity::getId, b -> b));
-        Map<String, String> labels = roomLabels(bookingsById.values());
+        RoomLabels labels = roomLabels(bookingsById.values());
         Set<String> staffIds = list.stream().map(GymReservationEntity::getCreatedByUserId).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
         Map<String, UserEntity> staff = users.findAllById(staffIds).stream().collect(Collectors.toMap(UserEntity::getId, u -> u));
         Map<String, List<GymReservationActionEntity>> actionRows = actions.findByReservationIdIn(list.stream().map(GymReservationEntity::getId).toList())
@@ -628,7 +635,7 @@ public class GymReservationService {
                     r.getStartTime().format(HHMM), r.end().toLocalTime().format(HHMM), r.getDurationMinutes(), r.getStatus(),
                     byGuest ? GymReservation.CreatedByTypeEnum.GUEST : GymReservation.CreatedByTypeEnum.STAFF, creatorName,
                     GymAutomationView.of(actionRows.getOrDefault(r.getId(), List.of())), TimestampFormat.toUtc(r.getCreatedAt()));
-            String label = labels.get(r.getBookingId());
+            String label = booking == null ? null : labels.on(booking, r.getDate());
             if (label != null) {
                 dto.roomLabel(label);
             }
@@ -643,24 +650,31 @@ public class GymReservationService {
         return result;
     }
 
-    /** Booking id to the label of its assigned room (null entries are simply absent). */
-    private Map<String, String> roomLabels(Collection<BookingEntity> list) {
-        Map<String, String> unitIdByBooking = new HashMap<>();
-        for (BookingEntity b : list) {
-            if (b.getRoomUnitId() != null) {
-                unitIdByBooking.put(b.getId(), b.getRoomUnitId());
-            }
+    /** The room a booking's guest is in on a date, by its label; null when that night has no room assigned. */
+    private interface RoomLabels {
+        String on(BookingEntity booking, LocalDate date);
+    }
+
+    /**
+     * {@link OverstayRule#unitOn} for each booking and date: after a move the booking's own room is the last segment's,
+     * which is not where the guest is on the other nights. Two queries for any number of bookings.
+     */
+    private RoomLabels roomLabels(Collection<BookingEntity> list) {
+        if (list.isEmpty()) {
+            return (booking, date) -> null;
         }
-        Map<String, String> labelByUnit = roomUnits.findAllById(unitIdByBooking.values()).stream()
+        Map<String, List<BookingSegmentEntity>> segmentsByBooking = segments.findByBookingIdIn(list.stream().map(BookingEntity::getId).toList())
+                .stream().collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+        Set<String> unitIds = new HashSet<>();
+        list.forEach(b -> unitIds.add(b.getRoomUnitId()));
+        segmentsByBooking.values().forEach(own -> own.forEach(s -> unitIds.add(s.getRoomUnitId())));
+        unitIds.remove(null);
+        Map<String, String> labelByUnit = roomUnits.findAllById(unitIds).stream()
                 .collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
-        Map<String, String> result = new HashMap<>();
-        unitIdByBooking.forEach((bookingId, unitId) -> {
-            String label = labelByUnit.get(unitId);
-            if (label != null) {
-                result.put(bookingId, label);
-            }
-        });
-        return result;
+        return (booking, date) -> {
+            String unitId = OverstayRule.unitOn(segmentsByBooking.getOrDefault(booking.getId(), List.of()), booking.getRoomUnitId(), date);
+            return unitId == null ? null : labelByUnit.get(unitId);
+        };
     }
 
     private String guestEmail(String accountId) {

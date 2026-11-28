@@ -115,8 +115,8 @@ public class BookingOccupancyService {
     }
 
     /**
-     * Only legal for a booking that is not {@code CANCELLED}, on or after its check-in date (hotel
-     * date), once a physical room is assigned ({@code booking.roomUnitId} - the moment a key is
+     * Only legal for a booking that is not {@code CANCELLED}, from its check-in date through its
+     * check-out date (hotel date; {@link BookingMapper#checkInClosedReason}), once a physical room is assigned ({@code booking.roomUnitId} - the moment a key is
      * handed over) and while occupancy is {@code EXPECTED} or {@code NO_SHOW} (a guest who
      * no-showed can still turn up late and check in normally). Anything else is a 409 (400 for the
      * missing room). Checking into a {@code DIRTY} room is a warning, not a rejection - a room
@@ -132,6 +132,11 @@ public class BookingOccupancyService {
         if (today.isBefore(booking.getCheckIn())) {
             throw new ConflictException("This booking can't be checked in before its check-in date (" + DateText.date(booking.getCheckIn()) + ").");
         }
+        // A stay that is over is not checked into: the guest would be overdue from the first minute, with the nights
+        // charged at the price list instead of the agreed price.
+        BookingMapper.checkInClosedReason(booking, today).ifPresent(reason -> {
+            throw new ConflictException(reason);
+        });
         if (booking.getRoomUnitId() == null) {
             throw new BadRequestException("Assign a room before checking in.");
         }
@@ -160,9 +165,6 @@ public class BookingOccupancyService {
         booking.setOccupancyStatus(OccupancyStatus.CHECKED_IN);
         booking.setCheckedInAt(nowUtc());
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
-        // A guest checked in after the departure date is overdue from the first minute: accrue those nights now, so the
-        // booking's balanceDue is the folio's from this response on, not only after the next folio read.
-        overstayChargeService.reconcile(saved.getId());
 
         auditLogService.record(
                 AuditAction.BOOKING_CHECKED_IN,

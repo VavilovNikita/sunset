@@ -6,6 +6,7 @@
 package com.sunsetbeach.api;
 
 import com.sunsetbeach.model.ErrorMessage;
+import com.sunsetbeach.model.HousekeepingRoom;
 import com.sunsetbeach.model.HousekeepingStatusInput;
 import com.sunsetbeach.model.OkTrue;
 import com.sunsetbeach.model.RoomUnit;
@@ -256,6 +257,47 @@ public interface RoomUnitsApi {
 
 
     /**
+     * GET /housekeeping/rooms : Every physical room&#39;s cleaning state and whether someone is in it
+     * Requires CASHIER or above, **or the HOUSEKEEPER job function whatever the role** - the Housekeeping page&#39;s one read. Occupancy is &#x60;GET /property-map&#x60;&#39;s own, without anything that endpoint knows about the guest: no names, no booking ids, no amounts, no block reason, no maintenance text. 
+     *
+     * @return Every physical room, in no particular order. (status code 200)
+     *         or No valid JWT. (status code 401)
+     *         or Neither CASHIER or above nor the HOUSEKEEPER function. (status code 403)
+     */
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = "/housekeeping/rooms",
+        produces = { "application/json" }
+    )
+    
+    default ResponseEntity<List<HousekeepingRoom>> listHousekeepingRooms(
+        
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "[ { \"unitLabel\" : \"unitLabel\", \"overdueDays\" : 0, \"departingToday\" : true, \"outOfOrder\" : true, \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : true, \"roomUnitId\" : \"roomUnitId\", \"arrivingToday\" : true }, { \"unitLabel\" : \"unitLabel\", \"overdueDays\" : 0, \"departingToday\" : true, \"outOfOrder\" : true, \"housekeepingStatus\" : \"DIRTY\", \"isActive\" : true, \"roomId\" : \"roomId\", \"roomName\" : \"roomName\", \"occupied\" : true, \"roomUnitId\" : \"roomUnitId\", \"arrivingToday\" : true } ]";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"error\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    /**
      * GET /room-units/{id}/blocks : List manual blocks for a physical room
      * Requires MANAGER or above - deliberately more restricted than &#x60;GET /room-units&#x60;/ &#x60;GET /room-units/{id}&#x60;, which any staff role may call. &#x60;reason&#x60; is free text staff write for each other and can carry internal notes, so this list is not exposed to CASHIER/ WAITER the way the room list itself is; do not assume the two endpoints share visibility. 
      *
@@ -453,14 +495,14 @@ public interface RoomUnitsApi {
 
     /**
      * PATCH /room-units/{id}/housekeeping : Mark a physical room clean or dirty
-     * Requires CASHIER or above - deliberately a lower bar than the rest of &#x60;/room-units/_**&#x60; (MANAGER+), since front desk is who actually needs to flip this day to day. Independent of &#x60;PATCH /room-units/{id}&#x60; (label/isActive) and of &#x60;RoomUnitBlock&#x60; (which pulls a unit off sale for a reason, not a cleaning state) - see &#x60;HousekeepingStatus&#x60;&#39;s own description. 
+     * Requires CASHIER or above, or the HOUSEKEEPER job function whatever the role - deliberately a lower bar than the rest of &#x60;/room-units/_**&#x60; (MANAGER+), since front desk and housekeeping are who actually flip this day to day. Independent of &#x60;PATCH /room-units/{id}&#x60; (label/isActive) and of &#x60;RoomUnitBlock&#x60; (which pulls a unit off sale for a reason, not a cleaning state) - see &#x60;HousekeepingStatus&#x60;&#39;s own description. 
      *
      * @param id  (required)
      * @param housekeepingStatusInput  (required)
      * @return Updated room unit. (status code 200)
      *         or Body failed validation. (status code 400)
      *         or No valid JWT. (status code 401)
-     *         or Token is valid but lacks the required role (&#x60;CASHIER&#x60; or above). (status code 403)
+     *         or Neither CASHIER or above nor the HOUSEKEEPER function. (status code 403)
      *         or Room unit not found. (status code 404)
      */
     @RequestMapping(

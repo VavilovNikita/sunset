@@ -56,6 +56,8 @@ class TodayBoardClockTests extends AbstractIntegrationTest {
     @Autowired private BookingOccupancyService occupancyService;
     @Autowired private RoomRepository roomRepository;
     @Autowired private RoomUnitRepository roomUnitRepository;
+    @Autowired private com.sunsetbeach.repository.BookingRepository bookingRepository;
+    @Autowired private OverstayChargeService overstayCharges;
 
     /** The regression itself: at 02:00 Bangkok the board is the hotel's today, not UTC's yesterday. */
     @Test
@@ -69,7 +71,7 @@ class TodayBoardClockTests extends AbstractIntegrationTest {
         Booking departingToday = assignedBooking(room, TODAY.minusDays(3), TODAY);
         occupancyService.checkIn(departingToday.getId());
         Booking departingYesterday = assignedBooking(room, TODAY.minusDays(4), yesterday); // an overstay still checked in
-        occupancyService.checkIn(departingYesterday.getId());
+        com.sunsetbeach.support.Overstayers.leftCheckedIn(bookingRepository, overstayCharges, departingYesterday.getId());
 
         TodayBoard board = occupancyService.getTodayBoard();
 

@@ -85,6 +85,7 @@ class StaffBotScreenTests extends NotificationTestBase {
     @Autowired private BookingOccupancyService occupancyService;
     @Autowired private com.sunsetbeach.repository.OverstayChargeRepository overstayChargeRepository;
     @Autowired private BookingRepository bookingRepository;
+    @Autowired private OverstayChargeService overstayCharges;
     @Autowired private TableRepository tableRepository;
     @Autowired private MenuItemRepository menuItemRepository;
     @Autowired private SpaAppointmentService spaService;
@@ -591,7 +592,7 @@ class StaffBotScreenTests extends NotificationTestBase {
         actAs(manager);
         occupancyService.checkIn(arrivedBooking.getId());
         occupancyService.checkIn(leavingBooking.getId());
-        occupancyService.checkIn(overdueBooking.getId());
+        com.sunsetbeach.support.Overstayers.leftCheckedIn(bookingRepository, overstayCharges, overdueBooking.getId());
         roomUnitService.createBlock(blocked.getId(), new RoomUnitBlockInput(TODAY.toString(), TODAY.plusDays(1).toString(), "Pipe"), manager.getId());
         SecurityContextHolderClear.clear();
         var dirtyUnit = roomUnitRepository.findById(dirty.getId()).orElseThrow();

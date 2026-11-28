@@ -870,11 +870,9 @@ public class SpaAppointmentService {
     }
 
     /**
-     * {@code SpaAppointment.roomUnitLabel}: the room each booking occupies on {@code date}, read
-     * from its segments so a relocated stay names the room the guest is actually in that day.
-     * Outside the stay, the nearest segment - the last one from the departure day on (which is
-     * also the room an overdue guest still holds, see {@link OverstayRule}), the first one before
-     * arrival. Two queries for any number of bookings. A booking whose segment has no unit yet is
+     * {@code SpaAppointment.roomUnitLabel}: the room each booking occupies on {@code date}
+     * ({@link OverstayRule#unitOn}), so a relocated stay names the room the guest is actually in
+     * that day. Two queries for any number of bookings. A booking whose segment has no unit yet is
      * simply missing from the result.
      */
     private Map<String, String> roomUnitLabelsOn(LocalDate date, Collection<String> bookingIds) {
@@ -886,13 +884,9 @@ public class SpaAppointmentService {
 
         Map<String, String> unitIdByBookingId = new HashMap<>();
         segmentsByBookingId.forEach((bookingId, segments) -> {
-            List<BookingSegmentEntity> ordered =
-                    segments.stream().sorted(Comparator.comparing(BookingSegmentEntity::getCheckIn)).toList();
-            BookingSegmentEntity onDate = ordered.stream()
-                    .filter(seg -> !date.isBefore(seg.getCheckIn()) && date.isBefore(seg.getCheckOut()))
-                    .findFirst()
-                    .orElse(date.isBefore(ordered.get(0).getCheckIn()) ? ordered.get(0) : ordered.get(ordered.size() - 1));
-            if (onDate.getRoomUnitId() != null) unitIdByBookingId.put(bookingId, onDate.getRoomUnitId());
+            // No fallback to the booking's own room: a night without a room assigned shows none.
+            String unitId = OverstayRule.unitOn(segments, null, date);
+            if (unitId != null) unitIdByBookingId.put(bookingId, unitId);
         });
 
         Map<String, String> labelsByUnitId = roomUnitRepository.findAllById(new HashSet<>(unitIdByBookingId.values())).stream()
