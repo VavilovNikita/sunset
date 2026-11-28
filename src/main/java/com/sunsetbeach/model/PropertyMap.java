@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.sunsetbeach.model.PropertyMapArrivalWithoutRoom;
 import com.sunsetbeach.model.PropertyMapUnit;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -33,6 +34,9 @@ public class PropertyMap {
 
   @Valid
   private List<@Valid PropertyMapUnit> units = new ArrayList<>();
+
+  @Valid
+  private List<@Valid PropertyMapArrivalWithoutRoom> arrivalsWithoutRoom = new ArrayList<>();
 
   public PropertyMap() {
     super();
@@ -112,6 +116,33 @@ public class PropertyMap {
     this.units = units;
   }
 
+  public PropertyMap arrivalsWithoutRoom(List<@Valid PropertyMapArrivalWithoutRoom> arrivalsWithoutRoom) {
+    this.arrivalsWithoutRoom = arrivalsWithoutRoom;
+    return this;
+  }
+
+  public PropertyMap addArrivalsWithoutRoomItem(PropertyMapArrivalWithoutRoom arrivalsWithoutRoomItem) {
+    if (this.arrivalsWithoutRoom == null) {
+      this.arrivalsWithoutRoom = new ArrayList<>();
+    }
+    this.arrivalsWithoutRoom.add(arrivalsWithoutRoomItem);
+    return this;
+  }
+
+  /**
+   * Today's expected arrivals with no room for tonight, by guest name. Empty when there are none.
+   * @return arrivalsWithoutRoom
+   */
+  @Valid 
+  @JsonProperty("arrivalsWithoutRoom")
+  public List<@Valid PropertyMapArrivalWithoutRoom> getArrivalsWithoutRoom() {
+    return arrivalsWithoutRoom;
+  }
+
+  public void setArrivalsWithoutRoom(List<@Valid PropertyMapArrivalWithoutRoom> arrivalsWithoutRoom) {
+    this.arrivalsWithoutRoom = arrivalsWithoutRoom;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -123,12 +154,13 @@ public class PropertyMap {
     PropertyMap propertyMap = (PropertyMap) o;
     return Objects.equals(this.imagePath, propertyMap.imagePath) &&
         Objects.equals(this.imageUpdatedAt, propertyMap.imageUpdatedAt) &&
-        Objects.equals(this.units, propertyMap.units);
+        Objects.equals(this.units, propertyMap.units) &&
+        Objects.equals(this.arrivalsWithoutRoom, propertyMap.arrivalsWithoutRoom);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(imagePath, imageUpdatedAt, units);
+    return Objects.hash(imagePath, imageUpdatedAt, units, arrivalsWithoutRoom);
   }
 
   @Override
@@ -138,6 +170,7 @@ public class PropertyMap {
     sb.append("    imagePath: ").append(toIndentedString(imagePath)).append("\n");
     sb.append("    imageUpdatedAt: ").append(toIndentedString(imageUpdatedAt)).append("\n");
     sb.append("    units: ").append(toIndentedString(units)).append("\n");
+    sb.append("    arrivalsWithoutRoom: ").append(toIndentedString(arrivalsWithoutRoom)).append("\n");
     sb.append("}");
     return sb.toString();
   }

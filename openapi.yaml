@@ -3392,8 +3392,9 @@ paths:
       tags: [Bookings]
       summary: Mark a guest as physically checked in
       description: >
-        Requires CASHIER or above. Only legal once a physical room is assigned
-        (`booking.roomUnitId` - this is the moment a key is handed over) and while
+        Requires CASHIER or above. Only legal once the part of the stay the guest sleeps in today has a
+        physical room (this is the moment a key is handed over; a move planned for a later night may still
+        have none - see `Booking.checkInRoomNeeded`) and while
         `occupancyStatus` is `EXPECTED` or `NO_SHOW` (a guest who no-showed can still turn up
         late and check in normally). A `CANCELLED` booking cannot be checked in, and neither can
         one before its `checkIn` date (the hotel's today) - both 409. A room that still has another
@@ -3845,7 +3846,7 @@ paths:
               schema:
                 type: string
                 example: |
-                  ID,Room,Room unit,Guest,Email,Phone,Check-in,Check-out,Total,Balance due,Status,Payment note,Created at (Asia/Bangkok)
+                  ID,Room,Room unit,Guest,Email,Phone,Check-in,Check-out,Stay total,Balance due,Status,Payment note,Created at (Asia/Bangkok)
                   clx123,Ocean View Suite,OV-2,Jane Doe,jane@example.com,+66801234567,2026-08-01,2026-08-05,24000.00,0.00,PAID,,2026-07-01 17:00:00 +07:00
           headers:
             Content-Disposition:
@@ -4403,17 +4404,12 @@ paths:
         between equal-length treatments, and isn't offered here - see `SwapSpaAppointmentTableInput`.
 
         Both appointments must already be `BOOKED` - the same lifecycle boundary
-        `PATCH /spa-appointments/{id}/schedule` already enforces.
+        `PATCH /spa-appointments/{id}/schedule` already enforces - and on two different tables: two on
+        one table are a 400 ("nothing to swap"), and nothing is written.
 
-        Moves both rows in one native `UPDATE`, not two sequential saves: PostgreSQL checks a
-        `NOT DEFERRABLE` exclusion constraint at the end of the *statement*, not per row and not
-        per transaction, so a single statement that sets both `tableId` values at once is checked
-        exactly once, against both rows' final state - never against the transient moment where
-        one side has already moved into a table the other hasn't vacated yet, which is the trap
-        two separate `UPDATE`s (even inside one transaction) would fall into. No deferred
-        constraints, no migration to make `spa_appointment_no_table_overlap` `DEFERRABLE` - see
-        `SpaAppointmentTableSwapConstraintTimingTests`, which exists specifically to fail loudly
-        if a future Postgres/JDBC/Hibernate change ever makes that assumption false.
+        Both rows move in one transaction, with the two overlap constraints deferred for it
+        (`DEFERRABLE`, V56) and checked before it ends, so the moment where one side has moved into a
+        table the other hasn't left is not a conflict.
       requestBody:
         required: true
         content:
@@ -13285,6 +13281,51 @@ components:
         roomOccupant:
           $ref: "#/components/schemas/TodayBoardRoomOccupant"
 
+    CheckInRoomNeeded:
+      type: object
+      description: >
+        Present when a booking could be checked in today but the part of the stay holding tonight has no physical
+        room (not cancelled, `EXPECTED` or `NO_SHOW`, the hotel date within `checkIn`..`checkOut`). Assign one with
+        `PUT /bookings/{id}/segments/{segmentId}/room-unit`; `reason` is `POST /bookings/{id}/check-in`'s 400.
+        Rooms of later segments are not asked for. Absent otherwise.
+      required: [segmentId, roomId, roomName, night, checkIn, checkOut, reason]
+      properties:
+        segmentId:
+          type: string
+          description: The segment that needs the room.
+        roomId:
+          type: string
+          description: That segment's room type.
+        roomName:
+          type: string
+        night:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The night a check-in today is for - today, or on the departure day the night before.
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The segment's first night.
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The segment's departure day (not a night of it).
+        reason:
+          type: string
+
+    PropertyMapArrivalWithoutRoom:
+      type: object
+      description: A guest due to arrive today whom no room tile can show, because tonight has no room assigned.
+      required: [bookingId, guestName, roomNeeded]
+      properties:
+        bookingId:
+          type: string
+        guestName:
+          type: string
+          x-sensitive: true
+        roomNeeded:
+          $ref: "#/components/schemas/CheckInRoomNeeded"
+
     TodayBoardRoomOccupant:
       type: object
       description: >
@@ -14492,6 +14533,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PropertyMapUnit"
+        arrivalsWithoutRoom:
+          type: array
+          items:
+            $ref: "#/components/schemas/PropertyMapArrivalWithoutRoom"
+          description: Today's expected arrivals with no room for tonight, by guest name. Empty when there are none.
 
     RoomUnitAssignmentInput:
       type: object
@@ -15275,6 +15321,8 @@ components:
             The `segments` entry the stay is in today (hotel date): the one holding tonight; before the first night the
             first; from the departure day on the last. For a guest in the house its room is where they are now -
             `roomUnit` is the *last* segment's room, which a move planned for a later night has not reached yet.
+        checkInRoomNeeded:
+          $ref: "#/components/schemas/CheckInRoomNeeded"
         checkInClosedReason:
           type: string
           description: >
@@ -20041,6 +20089,8 @@ components:
         checkInClosedReason:
           type: string
           description: As `Booking.checkInClosedReason`, judged against today, not the reviewed date.
+        checkInRoomNeeded:
+          $ref: "#/components/schemas/CheckInRoomNeeded"
         checkIn:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'

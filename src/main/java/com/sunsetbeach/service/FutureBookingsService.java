@@ -138,7 +138,7 @@ public class FutureBookingsService {
     public Export exportCsv(String from, String to, List<BookingStatus> statuses) {
         FutureBookingsReport report = report(from, to, statuses);
         CsvBuilder csv = new CsvBuilder();
-        csv.row("Booking ID", "Guest", "Room", "Room unit", "Check-in", "Check-out", "Nights", "Adults", "Children", "Channel", "Status", "Total",
+        csv.row("Booking ID", "Guest", "Room", "Room unit", "Check-in", "Check-out", "Nights", "Adults", "Children", "Channel", "Status", "Stay total",
                 "Balance due", "Notes");
         for (FutureBookingRow r : report.getRows()) {
             csv.row(

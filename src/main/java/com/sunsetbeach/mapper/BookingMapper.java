@@ -6,6 +6,7 @@ import com.sunsetbeach.entity.GuestEntity;
 import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.CheckInRoomNeeded;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
@@ -103,6 +104,45 @@ public class BookingMapper {
                 : Optional.empty();
     }
 
+    /**
+     * The part of the stay that must get a room before this booking can be checked in today, or empty - nothing to
+     * ask for: not awaiting a check-in that is possible today, or tonight's room is there. What {@code
+     * BookingOccupancyService#checkIn} refuses, said in advance so a screen can offer the room picker for exactly that
+     * segment. {@code roomName}: a room type's name by its id.
+     */
+    public static Optional<CheckInRoomNeeded> checkInRoomNeeded(
+            BookingEntity entity, List<BookingSegmentEntity> segments, Function<String, String> roomName, LocalDate today) {
+        boolean awaiting = entity.getStatus() != com.sunsetbeach.model.BookingStatus.CANCELLED
+                && (entity.getOccupancyStatus() == OccupancyStatus.EXPECTED || entity.getOccupancyStatus() == OccupancyStatus.NO_SHOW);
+        if (!awaiting || today.isBefore(entity.getCheckIn()) || today.isAfter(entity.getCheckOut())) {
+            return Optional.empty();
+        }
+        BookingSegmentEntity current = OverstayRule.currentSegment(segments, today);
+        if (current == null || current.getRoomUnitId() != null) {
+            return Optional.empty();
+        }
+        return Optional.of(new CheckInRoomNeeded(
+                current.getId(),
+                current.getRoomId(),
+                roomName.apply(current.getRoomId()),
+                nightCheckedInto(entity, today).toString(),
+                current.getCheckIn().toString(),
+                current.getCheckOut().toString(),
+                roomNeededReason(entity, segments, today)));
+    }
+
+    /** {@code POST /bookings/{id}/check-in}'s 400 when tonight has no room: a moved stay names the night. */
+    public static String roomNeededReason(BookingEntity entity, List<BookingSegmentEntity> segments, LocalDate today) {
+        return segments.size() > 1
+                ? "Assign a room for the night of " + DateText.date(nightCheckedInto(entity, today)) + " before checking in."
+                : "Assign a room before checking in.";
+    }
+
+    /** The night a check-in made today is for: tonight, or on the departure day the one just ending. */
+    private static LocalDate nightCheckedInto(BookingEntity entity, LocalDate today) {
+        return today.isBefore(entity.getCheckOut()) ? today : entity.getCheckOut().minusDays(1);
+    }
+
     public Booking toDto(BookingEntity entity, RoomEntity room, RoomUnitEntity roomUnit, GuestEntity guest, List<BookingSegmentEntity> segments) {
         return toDto(entity, room, roomUnit, guest, segments, folioCalculator.breakdown(entity));
     }
@@ -167,6 +207,7 @@ public class BookingMapper {
                 .stayStatus(stayStatusOf(entity))
                 .currentSegmentId(current != null ? current.getId() : null)
                 .checkInClosedReason(checkInClosedReason(entity, java.time.LocalDate.now(clock)).orElse(null))
+                .checkInRoomNeeded(checkInRoomNeeded(entity, sorted, id -> roomsById.get(id).getName(), java.time.LocalDate.now(clock)).orElse(null))
                 .notes(entity.getNotes())
                 .breakfastGuests(entity.getBreakfastGuests())
                 .breakfastRate(entity.getBreakfastRate() != null ? com.sunsetbeach.model.BreakfastRate.fromValue(entity.getBreakfastRate()) : null)

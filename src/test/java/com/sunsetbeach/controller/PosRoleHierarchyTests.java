@@ -1824,7 +1824,7 @@ class PosRoleHierarchyTests {
 
     @Test
     void exportBookings_withManagerToken_isOk() throws Exception {
-        when(bookingService.exportCsv(any(), any(), any())).thenReturn("ID,Room,Guest,Email,Phone,Check-in,Check-out,Total,Status,Payment note,Created at");
+        when(bookingService.exportCsv(any(), any(), any())).thenReturn("ID,Room,Guest,Email,Phone,Check-in,Check-out,Stay total,Status,Payment note,Created at");
         mockMvc.perform(get("/bookings/export").header("Authorization", token(Role.MANAGER))).andExpect(status().isOk());
     }
 

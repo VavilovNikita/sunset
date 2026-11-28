@@ -554,6 +554,11 @@ public class SpaAppointmentService {
         BookingEntity otherBooking = bookingRepository.findById(other.getBookingId()).orElseThrow(() -> new NotFoundException("Booking not found"));
         TableEntity entityOldTable = tableRepository.findById(entityOldTableId).orElseThrow(() -> new NotFoundException("Table not found"));
         TableEntity otherOldTable = tableRepository.findById(otherOldTableId).orElseThrow(() -> new NotFoundException("Table not found"));
+        if (entityOldTableId.equals(otherOldTableId)) {
+            // Exchanging a table with itself changes nothing, yet would be written to the history as "Swapped
+            // tables" - the same rule as BookingWriter#swapSegmentRoomUnits for one room.
+            throw new BadRequestException("Both appointments are already on table " + entityOldTable.getLabel() + ", so there is nothing to swap");
+        }
 
         // Lock the two rows in a deterministic (lowest id first) order, not in whichever order
         // the caller happened to name entity/other - see this method's own Concurrency section.

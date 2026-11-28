@@ -39,6 +39,10 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
+import com.sunsetbeach.security.StaffPrincipal;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -90,6 +94,9 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private final List<String> createdRoomIds = new ArrayList<>();
     private final List<String> createdTableIds = new ArrayList<>();
@@ -739,6 +746,39 @@ class SpaAppointmentServiceTests extends AbstractIntegrationTest {
         assertThatThrownBy(() -> spaAppointmentService.swapTables(
                         created.getId(), new SwapSpaAppointmentTableInput(created.getId()), receptionist.getId()))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void swapTables_bothOnOneTable_isRejected_andNothingIsWritten() {
+        LocalDate checkIn = LocalDate.now().plusDays(357);
+        Booking booking = createBooking(checkIn, checkIn.plusDays(2));
+        TableEntity table = createSpaTable();
+        MenuItemEntity treatment = createTreatment(60, MenuDepartment.SPA);
+        UserEntity therapist = createTherapist();
+        UserEntity receptionist = createReceptionist();
+        // Without a signed-in person the audit log writes nothing at all, and "no entry" below would prove nothing.
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                new StaffPrincipal(receptionist.getId(), receptionist.getEmail(), receptionist.getRole()), null, List.of()));
+        List<String> ids = Stream.of("10:00", "12:00")
+                .map(time -> spaAppointmentService
+                        .create(
+                                new SpaAppointmentCreateInput(booking.getId(), table.getId(), therapist.getId(), treatment.getId(), checkIn.toString(), time),
+                                receptionist.getId())
+                        .getAppointment()
+                        .getId())
+                .toList();
+
+        assertThatThrownBy(() -> spaAppointmentService.swapTables(ids.get(0), new SwapSpaAppointmentTableInput(ids.get(1)), receptionist.getId()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Both appointments are already on table " + table.getLabel() + ", so there is nothing to swap");
+        assertThat(spaAppointmentService.getSchedule(checkIn).getAppointments().stream().filter(a -> ids.contains(a.getId())))
+                .extracting(SpaAppointment::getTableId)
+                .containsExactly(table.getId(), table.getId());
+        List<String> actions = jdbc.queryForList(
+                "SELECT action::text FROM \"AuditLog\" WHERE \"entityId\" IN (?, ?)", String.class, ids.get(0), ids.get(1));
+        SecurityContextHolder.clearContext();
+        jdbc.update("DELETE FROM \"AuditLog\" WHERE \"entityId\" IN (?, ?)", ids.get(0), ids.get(1));
+        assertThat(actions).hasSize(2).doesNotContain("SPA_APPOINTMENT_TABLES_SWAPPED");
     }
 
     @Test

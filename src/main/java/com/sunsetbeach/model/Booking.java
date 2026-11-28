@@ -10,6 +10,7 @@ import com.sunsetbeach.model.BookingPurpose;
 import com.sunsetbeach.model.BookingSegment;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.BreakfastRate;
+import com.sunsetbeach.model.CheckInRoomNeeded;
 import com.sunsetbeach.model.Guest;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.Room;
@@ -117,6 +118,8 @@ public class Booking {
   private List<@Valid BookingSegment> segments = new ArrayList<>();
 
   private String currentSegmentId;
+
+  private CheckInRoomNeeded checkInRoomNeeded;
 
   private String checkInClosedReason;
 
@@ -879,6 +882,25 @@ public class Booking {
     this.currentSegmentId = currentSegmentId;
   }
 
+  public Booking checkInRoomNeeded(CheckInRoomNeeded checkInRoomNeeded) {
+    this.checkInRoomNeeded = checkInRoomNeeded;
+    return this;
+  }
+
+  /**
+   * Get checkInRoomNeeded
+   * @return checkInRoomNeeded
+   */
+  @Valid 
+  @JsonProperty("checkInRoomNeeded")
+  public CheckInRoomNeeded getCheckInRoomNeeded() {
+    return checkInRoomNeeded;
+  }
+
+  public void setCheckInRoomNeeded(CheckInRoomNeeded checkInRoomNeeded) {
+    this.checkInRoomNeeded = checkInRoomNeeded;
+  }
+
   public Booking checkInClosedReason(String checkInClosedReason) {
     this.checkInClosedReason = checkInClosedReason;
     return this;
@@ -1020,6 +1042,7 @@ public class Booking {
         Objects.equals(this.cancellationReason, booking.cancellationReason) &&
         Objects.equals(this.segments, booking.segments) &&
         Objects.equals(this.currentSegmentId, booking.currentSegmentId) &&
+        Objects.equals(this.checkInRoomNeeded, booking.checkInRoomNeeded) &&
         Objects.equals(this.checkInClosedReason, booking.checkInClosedReason) &&
         Objects.equals(this.roomOccupant, booking.roomOccupant) &&
         Objects.equals(this.createdAt, booking.createdAt) &&
@@ -1033,7 +1056,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, currentSegmentId, checkInClosedReason, roomOccupant, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, currentSegmentId, checkInRoomNeeded, checkInClosedReason, roomOccupant, createdAt, updatedAt, warning);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -1084,6 +1107,7 @@ public class Booking {
     sb.append("    cancellationReason: ").append(toIndentedString(cancellationReason)).append("\n");
     sb.append("    segments: ").append(toIndentedString(segments)).append("\n");
     sb.append("    currentSegmentId: ").append(toIndentedString(currentSegmentId)).append("\n");
+    sb.append("    checkInRoomNeeded: ").append(toIndentedString(checkInRoomNeeded)).append("\n");
     sb.append("    checkInClosedReason: ").append(toIndentedString(checkInClosedReason)).append("\n");
     sb.append("    roomOccupant: ").append(toIndentedString(roomOccupant)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");

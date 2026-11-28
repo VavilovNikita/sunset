@@ -8,6 +8,7 @@ import com.sunsetbeach.entity.RoomEntity;
 import com.sunsetbeach.entity.RoomUnitBlockEntity;
 import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.mapper.BookingMapper;
 import com.sunsetbeach.mapper.PriceFormat;
 import com.sunsetbeach.mapper.TimestampFormat;
 import com.sunsetbeach.model.AuditAction;
@@ -17,6 +18,7 @@ import com.sunsetbeach.model.MaintenanceTaskStatus;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.PropertyMap;
 import com.sunsetbeach.model.PropertyMapActiveBlock;
+import com.sunsetbeach.model.PropertyMapArrivalWithoutRoom;
 import com.sunsetbeach.model.PropertyMapCurrentBooking;
 import com.sunsetbeach.model.PropertyMapMaintenanceTask;
 import com.sunsetbeach.model.PropertyMapUnit;
@@ -37,6 +39,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -131,11 +134,16 @@ public class PropertyMapService {
                 : segmentRepository.findByBookingIdIn(arrivals.stream().map(BookingEntity::getId).toList()).stream()
                         .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
         Map<String, BookingEntity> arrivingTodayByUnit = new HashMap<>();
+        // An arrival whose first nights have no room is under no tile; the screen lists them to be given one.
+        List<PropertyMapArrivalWithoutRoom> withoutRoom = new ArrayList<>();
         arrivals.stream().sorted(Comparator.comparing(BookingEntity::getGuestName).thenComparing(BookingEntity::getId)).forEach(b -> {
-            String unitId = OverstayRule.unitOn(arrivalSegments.getOrDefault(b.getId(), List.of()), b.getRoomUnitId(), today);
+            List<BookingSegmentEntity> own = arrivalSegments.getOrDefault(b.getId(), List.of());
+            String unitId = OverstayRule.unitOn(own, b.getRoomUnitId(), today);
             if (unitId != null) {
                 arrivingTodayByUnit.putIfAbsent(unitId, b);
             }
+            BookingMapper.checkInRoomNeeded(b, own, roomNames::get, today)
+                    .ifPresent(needed -> withoutRoom.add(new PropertyMapArrivalWithoutRoom(b.getId(), b.getGuestName(), needed)));
         });
 
         // Same repository method + single-day-range trick AvailabilityService#computeInventory
@@ -155,7 +163,7 @@ public class PropertyMapService {
         String imagePath = map != null ? map.getImagePath() : null;
         OffsetDateTime imageUpdatedAt = map != null ? TimestampFormat.toUtc(map.getUpdatedAt()) : null;
 
-        return new PropertyMap(imagePath, imageUpdatedAt, unitDtos);
+        return new PropertyMap(imagePath, imageUpdatedAt, unitDtos).arrivalsWithoutRoom(withoutRoom);
     }
 
     private PropertyMapUnit toUnitDto(

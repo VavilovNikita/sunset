@@ -237,13 +237,15 @@ public class OverstayRule {
     }
 
     /**
-     * The physical room a stay is in on {@code today}: that of its {@link #currentSegment current segment}, or
-     * {@code fallback} (the booking's own, i.e. last, room) when that segment has none. Not the booking's room: a move
-     * planned for a later night changes that one at once and the guest's whereabouts only on the night.
+     * The physical room a stay is in on {@code today}: that of its {@link #currentSegment current segment}, null when
+     * that part of the stay has no room assigned. Not the booking's room: that is the last segment's, which a move
+     * planned for a later night changes at once and the guest's whereabouts only on the night - so it never stands in
+     * for a night without a room (it used to, and an arrival with no room tonight was checked into the later one).
+     * {@code fallback} answers only for a booking with no segments at all.
      */
     public static String unitOn(List<BookingSegmentEntity> segments, String fallback, LocalDate today) {
         BookingSegmentEntity current = currentSegment(segments, today);
-        return current != null && current.getRoomUnitId() != null ? current.getRoomUnitId() : fallback;
+        return current != null ? current.getRoomUnitId() : fallback;
     }
 
     /**

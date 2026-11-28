@@ -790,10 +790,11 @@ public class BookingService {
         boolean awaitingCheckIn = booking.getStatus() != BookingStatus.CANCELLED
                 && (booking.getOccupancyStatus() == OccupancyStatus.EXPECTED || booking.getOccupancyStatus() == OccupancyStatus.NO_SHOW)
                 && !today.isBefore(booking.getCheckIn());
-        if (!awaitingCheckIn || booking.getRoomUnitId() == null) {
+        String unitId = awaitingCheckIn ? OverstayRule.unitOn(segments, booking.getRoomUnitId(), today) : null;
+        if (unitId == null) {
             return null;
         }
-        return overstayRule.otherGuestIn(OverstayRule.unitOn(segments, booking.getRoomUnitId(), today), booking.getId())
+        return overstayRule.otherGuestIn(unitId, booking.getId())
                 .map(g -> new com.sunsetbeach.model.TodayBoardRoomOccupant(g.booking().getId(), g.booking().getGuestName(), g.overdueDays()))
                 .orElse(null);
     }
@@ -1738,7 +1739,7 @@ public class BookingService {
         Map<String, FolioBreakdown> folios = bookings.isEmpty() ? Map.of() : folioCalculator.breakdowns(bookings);
         CsvBuilder csv = new CsvBuilder();
         csv.row(
-                "ID", "Room", "Room unit", "Guest", "Email", "Phone", "Check-in", "Check-out", "Total", "Balance due", "Status", "Payment note",
+                "ID", "Room", "Room unit", "Guest", "Email", "Phone", "Check-in", "Check-out", "Stay total", "Balance due", "Status", "Payment note",
                 "Created at (Asia/Bangkok)");
         for (BookingEntity b : bookings) {
             csv.row(

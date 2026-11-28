@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -219,7 +220,11 @@ public class NightAuditService {
             }
         }
         Function<BookingEntity, String> roomIdOf = b -> nightOfDay.containsKey(b.getId()) ? nightOfDay.get(b.getId()).getRoomId() : b.getRoomId();
-        Map<String, String> roomNames = roomRepository.findAllById(bookings.stream().map(roomIdOf).distinct().toList())
+        // The room types of the reviewed night, and of today's - a row may ask for today's room to be assigned.
+        Map<String, String> roomNames = roomRepository.findAllById(Stream.concat(
+                                bookings.stream().map(roomIdOf), segments.values().stream().flatMap(List::stream).map(BookingSegmentEntity::getRoomId))
+                        .distinct()
+                        .toList())
                 .stream().collect(Collectors.toMap(RoomEntity::getId, RoomEntity::getName));
         Map<String, String> unitLabels = roomUnitRepository.findAllById(unitIds.values().stream().distinct().toList())
                 .stream().collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
@@ -235,6 +240,8 @@ public class NightAuditService {
                     // The count runs through the reviewed night; it is "tonight" only when that night is today's.
                     dto.setOverstayIncludesTonight(nights > 0 && day.equals(today));
                     BookingMapper.checkInClosedReason(b, today).ifPresent(dto::setCheckInClosedReason);
+                    BookingMapper.checkInRoomNeeded(b, segments.getOrDefault(b.getId(), List.of()), roomNames::get, today)
+                            .ifPresent(dto::setCheckInRoomNeeded);
                     if (nights > 0) {
                         // The same nights at the same price function the charge uses (it is on the folio).
                         dto.setUnpaidOverstayValue(PriceFormat.asDecimalString(

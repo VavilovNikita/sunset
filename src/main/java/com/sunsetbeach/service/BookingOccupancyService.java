@@ -116,7 +116,8 @@ public class BookingOccupancyService {
 
     /**
      * Only legal for a booking that is not {@code CANCELLED}, from its check-in date through its
-     * check-out date (hotel date; {@link BookingMapper#checkInClosedReason}), once a physical room is assigned ({@code booking.roomUnitId} - the moment a key is
+     * check-out date (hotel date; {@link BookingMapper#checkInClosedReason}), once the part of the stay the guest sleeps
+     * in today has a physical room ({@link OverstayRule#unitOn} - the moment a key is
      * handed over) and while occupancy is {@code EXPECTED} or {@code NO_SHOW} (a guest who
      * no-showed can still turn up late and check in normally). Anything else is a 409 (400 for the
      * missing room). Checking into a {@code DIRTY} room is a warning, not a rejection - a room
@@ -137,9 +138,6 @@ public class BookingOccupancyService {
         BookingMapper.checkInClosedReason(booking, today).ifPresent(reason -> {
             throw new ConflictException(reason);
         });
-        if (booking.getRoomUnitId() == null) {
-            throw new BadRequestException("Assign a room before checking in.");
-        }
         if (booking.getOccupancyStatus() == OccupancyStatus.CHECKED_IN) {
             throw new ConflictException("This booking is already checked in.");
         }
@@ -147,8 +145,13 @@ public class BookingOccupancyService {
             throw new ConflictException("This booking has already checked out.");
         }
 
-        // The room the guest walks into today - after a move planned for a later night, not the booking's (last) room.
-        String arrivalUnitId = currentRoomUnitId(bookingId, booking.getRoomUnitId());
+        // The room the guest walks into today, and the only one check-in needs: a move planned for a later night may
+        // still have none.
+        List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+        String arrivalUnitId = OverstayRule.unitOn(segments, booking.getRoomUnitId(), today);
+        if (arrivalUnitId == null) {
+            throw new BadRequestException(BookingMapper.roomNeededReason(booking, segments, today));
+        }
         // Locked, so two arrivals assigned to one room can't both find it empty.
         RoomUnitEntity unit =
                 roomUnitRepository.findByIdForUpdate(arrivalUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
@@ -245,10 +248,9 @@ public class BookingOccupancyService {
         int gymCancelled = gymReservations.onBookingEnded(saved, "Guest checked out");
 
         String roomLabel = null;
-        String dirtyUnitId = currentRoomUnitId != null ? currentRoomUnitId : saved.getRoomUnitId();
-        if (dirtyUnitId != null) {
+        if (currentRoomUnitId != null) {
             RoomUnitEntity unit =
-                    roomUnitRepository.findById(dirtyUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
+                    roomUnitRepository.findById(currentRoomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
             unit.setHousekeepingStatus(HousekeepingStatus.DIRTY);
             roomUnitRepository.saveAndFlush(unit);
             roomLabel = unit.getLabel();

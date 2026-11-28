@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.sunsetbeach.model.BookingStatus;
+import com.sunsetbeach.model.CheckInRoomNeeded;
 import com.sunsetbeach.model.OccupancyStatus;
 import com.sunsetbeach.model.SettlementStatus;
 import org.openapitools.jackson.nullable.JsonNullable;
@@ -43,6 +44,8 @@ public class NightAuditBooking {
   private JsonNullable<String> roomUnitLabel = JsonNullable.<String>undefined();
 
   private String checkInClosedReason;
+
+  private CheckInRoomNeeded checkInRoomNeeded;
 
   private String checkIn;
 
@@ -262,6 +265,25 @@ public class NightAuditBooking {
     this.checkInClosedReason = checkInClosedReason;
   }
 
+  public NightAuditBooking checkInRoomNeeded(CheckInRoomNeeded checkInRoomNeeded) {
+    this.checkInRoomNeeded = checkInRoomNeeded;
+    return this;
+  }
+
+  /**
+   * Get checkInRoomNeeded
+   * @return checkInRoomNeeded
+   */
+  @Valid 
+  @JsonProperty("checkInRoomNeeded")
+  public CheckInRoomNeeded getCheckInRoomNeeded() {
+    return checkInRoomNeeded;
+  }
+
+  public void setCheckInRoomNeeded(CheckInRoomNeeded checkInRoomNeeded) {
+    this.checkInRoomNeeded = checkInRoomNeeded;
+  }
+
   public NightAuditBooking checkIn(String checkIn) {
     this.checkIn = checkIn;
     return this;
@@ -357,6 +379,7 @@ public class NightAuditBooking {
         Objects.equals(this.roomName, nightAuditBooking.roomName) &&
         Objects.equals(this.roomUnitLabel, nightAuditBooking.roomUnitLabel) &&
         Objects.equals(this.checkInClosedReason, nightAuditBooking.checkInClosedReason) &&
+        Objects.equals(this.checkInRoomNeeded, nightAuditBooking.checkInRoomNeeded) &&
         Objects.equals(this.checkIn, nightAuditBooking.checkIn) &&
         Objects.equals(this.checkOut, nightAuditBooking.checkOut) &&
         Objects.equals(this.status, nightAuditBooking.status) &&
@@ -365,7 +388,7 @@ public class NightAuditBooking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, balanceDue, settlement, overstayIncludesTonight, unpaidOverstayNights, unpaidOverstayValue, guestName, roomName, roomUnitLabel, checkInClosedReason, checkIn, checkOut, status, occupancyStatus);
+    return Objects.hash(id, balanceDue, settlement, overstayIncludesTonight, unpaidOverstayNights, unpaidOverstayValue, guestName, roomName, roomUnitLabel, checkInClosedReason, checkInRoomNeeded, checkIn, checkOut, status, occupancyStatus);
   }
 
   @Override
@@ -382,6 +405,7 @@ public class NightAuditBooking {
     sb.append("    roomName: ").append(toIndentedString(roomName)).append("\n");
     sb.append("    roomUnitLabel: ").append(toIndentedString(roomUnitLabel)).append("\n");
     sb.append("    checkInClosedReason: ").append(toIndentedString(checkInClosedReason)).append("\n");
+    sb.append("    checkInRoomNeeded: ").append(toIndentedString(checkInRoomNeeded)).append("\n");
     sb.append("    checkIn: ").append(toIndentedString(checkIn)).append("\n");
     sb.append("    checkOut: ").append(toIndentedString(checkOut)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
