@@ -16,6 +16,7 @@ import com.sunsetbeach.model.AuditEntityType;
 import com.sunsetbeach.model.BookingStatus;
 import com.sunsetbeach.model.MaintenanceTaskStatus;
 import com.sunsetbeach.model.OccupancyStatus;
+import com.sunsetbeach.model.PendingRoomMove;
 import com.sunsetbeach.model.PropertyMap;
 import com.sunsetbeach.model.PropertyMapActiveBlock;
 import com.sunsetbeach.model.PropertyMapArrivalWithoutRoom;
@@ -138,7 +139,7 @@ public class PropertyMapService {
         List<PropertyMapArrivalWithoutRoom> withoutRoom = new ArrayList<>();
         arrivals.stream().sorted(Comparator.comparing(BookingEntity::getGuestName).thenComparing(BookingEntity::getId)).forEach(b -> {
             List<BookingSegmentEntity> own = arrivalSegments.getOrDefault(b.getId(), List.of());
-            String unitId = OverstayRule.unitOn(own, b.getRoomUnitId(), today);
+            String unitId = OverstayRule.unitOn(b, own, today, clock);
             if (unitId != null) {
                 arrivingTodayByUnit.putIfAbsent(unitId, b);
             }
@@ -254,6 +255,13 @@ public class PropertyMapService {
 
     private PropertyMapCurrentBooking toCurrentBookingDto(BookingEntity booking, LocalDate today) {
         BigDecimal outstanding = bookingService.computeOutstandingBalance(booking.getId());
+        PendingRoomMove pending = BookingMapper.pendingRoomMove(
+                        booking,
+                        segmentRepository.findByBookingIdOrderByCheckInAsc(booking.getId()),
+                        id -> roomRepository.findById(id).map(RoomEntity::getName).orElse(""),
+                        id -> roomUnitRepository.findById(id).map(RoomUnitEntity::getLabel).orElse(null),
+                        clock)
+                .orElse(null);
         return new PropertyMapCurrentBooking(
                 booking.getId(),
                 booking.getGuestName(),
@@ -261,7 +269,8 @@ public class PropertyMapService {
                 booking.getOccupancyStatus(),
                 BookingFolioCalculator.debtHasFallenDue(booking, outstanding, today),
                 PriceFormat.asDecimalString(outstanding))
-                .overdueDays(OverstayRule.overdueDays(booking, today));
+                .overdueDays(OverstayRule.overdueDays(booking, today))
+                .pendingRoomMove(pending);
     }
 
     @Transactional

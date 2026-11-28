@@ -8,6 +8,7 @@ import com.sunsetbeach.entity.RoomUnitEntity;
 import com.sunsetbeach.model.Booking;
 import com.sunsetbeach.model.CheckInRoomNeeded;
 import com.sunsetbeach.model.OccupancyStatus;
+import com.sunsetbeach.model.PendingRoomMove;
 import com.sunsetbeach.repository.RoomRepository;
 import com.sunsetbeach.repository.RoomUnitRepository;
 import com.sunsetbeach.service.BookingFolioCalculator;
@@ -143,6 +144,39 @@ public class BookingMapper {
         return today.isBefore(entity.getCheckOut()) ? today : entity.getCheckOut().minusDays(1);
     }
 
+    /**
+     * Present for a guest in the house whose part of the stay holding today has no room: their move has taken effect
+     * (or the room was taken off) and nobody picked the new one. They are still where they were ({@link
+     * OverstayRule#unitOn}); the screens show {@code reason} with a way to pick the room for exactly that part.
+     */
+    public static Optional<PendingRoomMove> pendingRoomMove(
+            BookingEntity entity,
+            List<BookingSegmentEntity> segments,
+            Function<String, String> roomName,
+            Function<String, String> unitLabel,
+            java.time.Clock clock) {
+        LocalDate today = LocalDate.now(clock);
+        if (!OverstayRule.awaitsRoom(entity, segments, today)) {
+            return Optional.empty();
+        }
+        BookingSegmentEntity current = OverstayRule.currentSegment(segments, today);
+        BookingSegmentEntity livedIn = OverstayRule.roomSegmentOn(entity, segments, today, clock);
+        String stayingIn = livedIn.getRoomUnitId() == null ? null : unitLabel.apply(livedIn.getRoomUnitId());
+        String reason = current.getCheckIn().equals(today)
+                ? "Moving today — choose the new room"
+                : stayingIn != null
+                        ? "Move of " + DateText.date(current.getCheckIn()) + " not completed — choose the new room"
+                        : "No room assigned — choose one";
+        PendingRoomMove pending = new PendingRoomMove(
+                current.getId(),
+                current.getRoomId(),
+                roomName.apply(current.getRoomId()),
+                current.getCheckIn().toString(),
+                current.getCheckOut().toString(),
+                reason);
+        return Optional.of(pending.stayingInRoom(stayingIn));
+    }
+
     public Booking toDto(BookingEntity entity, RoomEntity room, RoomUnitEntity roomUnit, GuestEntity guest, List<BookingSegmentEntity> segments) {
         return toDto(entity, room, roomUnit, guest, segments, folioCalculator.breakdown(entity));
     }
@@ -206,6 +240,10 @@ public class BookingMapper {
                 TimestampFormat.toUtc(entity.getUpdatedAt()))
                 .stayStatus(stayStatusOf(entity))
                 .currentSegmentId(current != null ? current.getId() : null)
+                .roomSegmentId(current != null ? OverstayRule.roomSegmentOn(entity, sorted, java.time.LocalDate.now(clock), clock).getId() : null)
+                .pendingRoomMove(pendingRoomMove(
+                                entity, sorted, id -> roomsById.get(id).getName(), id -> roomUnitsById.get(id).getLabel(), clock)
+                        .orElse(null))
                 .checkInClosedReason(checkInClosedReason(entity, java.time.LocalDate.now(clock)).orElse(null))
                 .checkInRoomNeeded(checkInRoomNeeded(entity, sorted, id -> roomsById.get(id).getName(), java.time.LocalDate.now(clock)).orElse(null))
                 .notes(entity.getNotes())

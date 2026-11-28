@@ -568,17 +568,32 @@ public class ReportService {
         List<InHouseStay> stays = inHouseStays(range, slices, bookingsOf(slices));
         LocalDate today = overstayRule.today();
 
-        Map<String, String> roomNames = roomRepository.findAllById(stays.stream().map(s -> s.segment().getRoomId()).distinct().toList())
+        // Where each guest is that night (OverstayRule), which is the slice's own room unless that part has none yet.
+        Map<String, List<BookingSegmentEntity>> segments = stays.isEmpty()
+                ? Map.of()
+                : segmentRepository.findByBookingIdIn(stays.stream().map(s -> s.booking().getId()).distinct().toList()).stream()
+                        .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
+        Map<String, String> roomIdByBooking = new HashMap<>();
+        Map<String, String> unitIdByBooking = new HashMap<>();
+        for (InHouseStay s : stays) {
+            List<BookingSegmentEntity> own = segments.getOrDefault(s.booking().getId(), List.of());
+            BookingSegmentEntity in = OverstayRule.roomSegmentOn(s.booking(), own, night, clock);
+            roomIdByBooking.put(s.booking().getId(), in != null ? in.getRoomId() : s.segment().getRoomId());
+            String unitId = OverstayRule.unitOn(s.booking(), own, night, clock);
+            if (unitId != null) {
+                unitIdByBooking.put(s.booking().getId(), unitId);
+            }
+        }
+        Map<String, String> roomNames = roomRepository.findAllById(roomIdByBooking.values().stream().distinct().toList())
                 .stream().collect(Collectors.toMap(RoomEntity::getId, RoomEntity::getName));
-        Map<String, String> unitLabels = roomUnitRepository.findAllById(
-                        stays.stream().map(s -> s.segment().getRoomUnitId()).filter(Objects::nonNull).distinct().toList())
+        Map<String, String> unitLabels = roomUnitRepository.findAllById(unitIdByBooking.values().stream().distinct().toList())
                 .stream().collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
 
         List<InHouseRow> rows = stays.stream()
                 .map(s -> new InHouseRow(
                         s.booking().getId(),
-                        roomNames.get(s.segment().getRoomId()),
-                        unitLabels.get(s.segment().getRoomUnitId()),
+                        roomNames.get(roomIdByBooking.get(s.booking().getId())),
+                        unitIdByBooking.containsKey(s.booking().getId()) ? unitLabels.get(unitIdByBooking.get(s.booking().getId())) : null,
                         s.booking().getAdults(),
                         s.booking().getChildren(),
                         s.booking().getGuestName(),

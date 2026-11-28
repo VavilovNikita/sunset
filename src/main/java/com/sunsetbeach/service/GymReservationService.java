@@ -672,7 +672,7 @@ public class GymReservationService {
         Map<String, String> labelByUnit = roomUnits.findAllById(unitIds).stream()
                 .collect(Collectors.toMap(RoomUnitEntity::getId, RoomUnitEntity::getLabel));
         return (booking, date) -> {
-            String unitId = OverstayRule.unitOn(segmentsByBooking.getOrDefault(booking.getId(), List.of()), booking.getRoomUnitId(), date);
+            String unitId = OverstayRule.unitOn(booking, segmentsByBooking.getOrDefault(booking.getId(), List.of()), date, clock);
             return unitId == null ? null : labelByUnit.get(unitId);
         };
     }

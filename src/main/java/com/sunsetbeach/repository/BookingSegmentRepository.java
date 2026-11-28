@@ -14,6 +14,10 @@ public interface BookingSegmentRepository extends JpaRepository<BookingSegmentEn
     /** Bulk counterpart of {@link #findByBookingIdOrderByCheckInAsc} for {@code GET /bookings} - one query for a whole listed page, not one per row. */
     List<BookingSegmentEntity> findByBookingIdIn(List<String> bookingIds);
 
+    /** The parts of checked-in stays in this room that have ended - see {@code OverstayRule#stillLivingIn}. */
+    List<BookingSegmentEntity> findByRoomUnitIdAndBooking_OccupancyStatusAndCheckOutLessThanEqual(
+            String roomUnitId, com.sunsetbeach.model.OccupancyStatus occupancyStatus, java.time.LocalDate day);
+
     List<BookingSegmentEntity> findByCheckInEquals(java.time.LocalDate checkIn);
 
     /** Type-level overlap test, replacing the old Booking-based query of the same name/shape. */

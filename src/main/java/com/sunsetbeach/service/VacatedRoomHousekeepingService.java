@@ -30,7 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>For every booking that is {@code CHECKED_IN} and has a segment starting today, the room of the
  * segment that ended today is marked dirty (unless it already is, or another booking holds it tonight
- * - it was cleaned and re-let). One run per hotel day: {@code HousekeepingSweep} (V145) keeps the day,
+ * - it was cleaned and re-let, or the guest is still in it because the new room is not picked yet:
+ * {@code BookingService} marks it when it is). One run per hotel day: {@code HousekeepingSweep} (V145) keeps the day,
  * so a repeat run - the hourly catch-up after a restart, a second instance - changes nothing, and a
  * room housekeeping cleaned meanwhile is not dirtied again. Same {@code @Scheduled} shape as the other
  * sweeps (CLAUDE.md, "Failure handling").
@@ -101,9 +102,12 @@ public class VacatedRoomHousekeepingService {
             if (booking == null || booking.getStatus() == BookingStatus.CANCELLED || booking.getOccupancyStatus() != OccupancyStatus.CHECKED_IN) {
                 continue;
             }
-            byBooking.getOrDefault(segment.getBookingId(), List.of()).stream()
+            List<BookingSegmentEntity> own = byBooking.getOrDefault(segment.getBookingId(), List.of());
+            // Where the guest is today: still the old room while the new one is not picked, which is then not vacated.
+            String livingIn = OverstayRule.unitOn(booking, own, today, clock);
+            own.stream()
                     .filter(prev -> prev.getCheckOut().equals(today) && prev.getRoomUnitId() != null)
-                    .filter(prev -> !prev.getRoomUnitId().equals(segment.getRoomUnitId()))
+                    .filter(prev -> !prev.getRoomUnitId().equals(livingIn))
                     .forEach(prev -> {
                         if (markDirty(prev.getRoomUnitId(), segment.getBookingId(), today)) {
                             marked.add(prev.getRoomUnitId());

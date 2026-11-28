@@ -13256,6 +13256,8 @@ components:
         own payment lookup per booking.
       required: [booking, outstandingBalance]
       properties:
+        pendingRoomMove:
+          $ref: "#/components/schemas/PendingRoomMove"
         booking:
           $ref: "#/components/schemas/Booking"
         outstandingBalance:
@@ -13280,6 +13282,38 @@ components:
             missed departures show.
         roomOccupant:
           $ref: "#/components/schemas/TodayBoardRoomOccupant"
+
+    PendingRoomMove:
+      type: object
+      description: >
+        Present for a guest in the house whose part of the stay holding today has no physical room - a move that took
+        effect with none picked, or a room taken off by hand. They are still in the earlier room (`stayingInRoom`):
+        occupied on every screen, closed to other check-ins, not marked dirty. Pick the room with
+        `PUT /bookings/{id}/segments/{segmentId}/room-unit`. Absent otherwise.
+      required: [segmentId, roomId, roomName, checkIn, checkOut, reason]
+      properties:
+        segmentId:
+          type: string
+          description: The segment that needs the room.
+        roomId:
+          type: string
+          description: That segment's room type.
+        roomName:
+          type: string
+        checkIn:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The segment's first night - the day of the move.
+        checkOut:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: The segment's departure day (not a night of it).
+        reason:
+          type: string
+          description: The line to show, e.g. "Moving today — choose the new room".
+        stayingInRoom:
+          type: string
+          description: Label of the room the guest is still in; absent when there is none.
 
     CheckInRoomNeeded:
       type: object
@@ -13335,6 +13369,11 @@ components:
         null otherwise.
       required: [bookingId, guestName, overdueDays]
       properties:
+        awaitingRoom:
+          type: boolean
+          description: >
+            True when this guest is in the room only because their new one is not picked yet (see `PendingRoomMove`):
+            the way out is to pick it, not to check them out.
         bookingId:
           type: string
           description: The booking of the guest in the room.
@@ -14395,6 +14434,8 @@ components:
         where they are.
       required: [bookingId, guestName, checkOut, occupancyStatus, outstandingBalance, owes]
       properties:
+        pendingRoomMove:
+          $ref: "#/components/schemas/PendingRoomMove"
         bookingId:
           type: string
         guestName:
@@ -15323,6 +15364,14 @@ components:
             `roomUnit` is the *last* segment's room, which a move planned for a later night has not reached yet.
         checkInRoomNeeded:
           $ref: "#/components/schemas/CheckInRoomNeeded"
+        roomSegmentId:
+          type: string
+          description: >
+            The `segments` entry whose room the stay is in today: `currentSegmentId`, except for a checked-in guest
+            whose part of the stay holding today has begun with no room picked - then the earlier part whose room they
+            are still in. Show this one's room as where the guest is.
+        pendingRoomMove:
+          $ref: "#/components/schemas/PendingRoomMove"
         checkInClosedReason:
           type: string
           description: >

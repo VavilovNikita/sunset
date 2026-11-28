@@ -60,11 +60,11 @@ public class GuestAccountMapper {
         if (entity.getOccupancyStatus() == OccupancyStatus.CHECKED_IN) {
             LocalDate today = LocalDate.now(clock);
             List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(entity.getId());
-            BookingSegmentEntity current = OverstayRule.currentSegment(segments, today);
+            BookingSegmentEntity current = OverstayRule.roomSegmentOn(entity, segments, today, clock);
             if (current != null) {
                 roomId = current.getRoomId();
             }
-            roomUnitId = OverstayRule.unitOn(segments, roomUnitId, today);
+            roomUnitId = OverstayRule.unitOn(entity, segments, today, clock);
         }
         String roomName = roomRepository.findById(roomId).map(RoomEntity::getName).orElse(roomId);
         String roomLabel = roomUnitId == null

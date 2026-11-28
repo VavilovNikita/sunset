@@ -210,11 +210,11 @@ public class NightAuditService {
         Map<String, String> unitIds = new HashMap<>();
         for (BookingEntity b : bookings) {
             List<BookingSegmentEntity> own = segments.getOrDefault(b.getId(), List.of());
-            BookingSegmentEntity onDay = OverstayRule.currentSegment(own, day);
+            BookingSegmentEntity onDay = OverstayRule.roomSegmentOn(b, own, day, clock);
             if (onDay != null) {
                 nightOfDay.put(b.getId(), onDay);
             }
-            String unitId = OverstayRule.unitOn(own, b.getRoomUnitId(), day);
+            String unitId = OverstayRule.unitOn(b, own, day, clock);
             if (unitId != null) {
                 unitIds.put(b.getId(), unitId);
             }

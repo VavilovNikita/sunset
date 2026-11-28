@@ -148,7 +148,7 @@ public class BookingOccupancyService {
         // The room the guest walks into today, and the only one check-in needs: a move planned for a later night may
         // still have none.
         List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
-        String arrivalUnitId = OverstayRule.unitOn(segments, booking.getRoomUnitId(), today);
+        String arrivalUnitId = OverstayRule.unitOn(booking, segments, today, clock);
         if (arrivalUnitId == null) {
             throw new BadRequestException(BookingMapper.roomNeededReason(booking, segments, today));
         }
@@ -208,7 +208,7 @@ public class BookingOccupancyService {
         BigDecimal priceBefore = before.getTotalPrice();
         // The room the guest is physically in now, read before an early departure drops trailing segments
         // (a move that took effect today puts them in the new room, which the shortened stay forgets).
-        String currentRoomUnitId = currentRoomUnitId(bookingId, before.getRoomUnitId());
+        String currentRoomUnitId = currentRoomUnitId(before);
         if (shorten) {
             EarlyDeparture plan = planEarlyDeparture(before);
             if (plan != null) {
@@ -227,8 +227,8 @@ public class BookingOccupancyService {
     }
 
     /** {@link OverstayRule#unitOn} for a booking's stored segments, today. */
-    private String currentRoomUnitId(String bookingId, String fallback) {
-        return OverstayRule.unitOn(segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId), fallback, LocalDate.now(clock));
+    private String currentRoomUnitId(BookingEntity booking) {
+        return OverstayRule.unitOn(booking, segmentRepository.findByBookingIdOrderByCheckInAsc(booking.getId()), LocalDate.now(clock), clock);
     }
 
     private CheckOutResult completeCheckOut(
@@ -406,12 +406,12 @@ public class BookingOccupancyService {
 
     /** The guest still in the room an arrival would check into, or null - {@link #checkIn}'s own question. */
     private TodayBoardRoomOccupant roomOccupant(Map<String, List<OverstayRule.InHouseGuest>> inHouseByUnit, BookingEntity arrival) {
-        String unitId = currentRoomUnitId(arrival.getId(), arrival.getRoomUnitId());
+        String unitId = currentRoomUnitId(arrival);
         if (unitId == null) {
             return null;
         }
         return OverstayRule.otherGuestIn(inHouseByUnit, unitId, arrival.getId())
-                .map(g -> new TodayBoardRoomOccupant(g.booking().getId(), g.booking().getGuestName(), g.overdueDays()))
+                .map(g -> new TodayBoardRoomOccupant(g.booking().getId(), g.booking().getGuestName(), g.overdueDays()).awaitingRoom(g.awaitingRoom()))
                 .orElse(null);
     }
 
@@ -429,7 +429,9 @@ public class BookingOccupancyService {
 
     private TodayBoardEntry toEntry(BookingEntity entity, LocalDate today) {
         BookingFolioCalculator.FolioBreakdown folio = folioCalculator.breakdown(entity);
-        return new TodayBoardEntry(toDto(entity), PriceFormat.asDecimalString(folio.balanceDue()))
+        Booking dto = toDto(entity);
+        return new TodayBoardEntry(dto, PriceFormat.asDecimalString(folio.balanceDue()))
+                .pendingRoomMove(dto.getPendingRoomMove())
                 .overdueDays(OverstayRule.overdueDays(entity, today))
                 // The one count to show next to the guest: the nights charged, tonight's among them or not.
                 .overstayNights(folio.overstayNightsOwed())

@@ -13,6 +13,7 @@ import com.sunsetbeach.model.BreakfastRate;
 import com.sunsetbeach.model.CheckInRoomNeeded;
 import com.sunsetbeach.model.Guest;
 import com.sunsetbeach.model.OccupancyStatus;
+import com.sunsetbeach.model.PendingRoomMove;
 import com.sunsetbeach.model.Room;
 import com.sunsetbeach.model.RoomUnit;
 import com.sunsetbeach.model.SettlementStatus;
@@ -120,6 +121,10 @@ public class Booking {
   private String currentSegmentId;
 
   private CheckInRoomNeeded checkInRoomNeeded;
+
+  private String roomSegmentId;
+
+  private PendingRoomMove pendingRoomMove;
 
   private String checkInClosedReason;
 
@@ -901,6 +906,44 @@ public class Booking {
     this.checkInRoomNeeded = checkInRoomNeeded;
   }
 
+  public Booking roomSegmentId(String roomSegmentId) {
+    this.roomSegmentId = roomSegmentId;
+    return this;
+  }
+
+  /**
+   * The `segments` entry whose room the stay is in today: `currentSegmentId`, except for a checked-in guest whose part of the stay holding today has begun with no room picked - then the earlier part whose room they are still in. Show this one's room as where the guest is. 
+   * @return roomSegmentId
+   */
+  
+  @JsonProperty("roomSegmentId")
+  public String getRoomSegmentId() {
+    return roomSegmentId;
+  }
+
+  public void setRoomSegmentId(String roomSegmentId) {
+    this.roomSegmentId = roomSegmentId;
+  }
+
+  public Booking pendingRoomMove(PendingRoomMove pendingRoomMove) {
+    this.pendingRoomMove = pendingRoomMove;
+    return this;
+  }
+
+  /**
+   * Get pendingRoomMove
+   * @return pendingRoomMove
+   */
+  @Valid 
+  @JsonProperty("pendingRoomMove")
+  public PendingRoomMove getPendingRoomMove() {
+    return pendingRoomMove;
+  }
+
+  public void setPendingRoomMove(PendingRoomMove pendingRoomMove) {
+    this.pendingRoomMove = pendingRoomMove;
+  }
+
   public Booking checkInClosedReason(String checkInClosedReason) {
     this.checkInClosedReason = checkInClosedReason;
     return this;
@@ -1043,6 +1086,8 @@ public class Booking {
         Objects.equals(this.segments, booking.segments) &&
         Objects.equals(this.currentSegmentId, booking.currentSegmentId) &&
         Objects.equals(this.checkInRoomNeeded, booking.checkInRoomNeeded) &&
+        Objects.equals(this.roomSegmentId, booking.roomSegmentId) &&
+        Objects.equals(this.pendingRoomMove, booking.pendingRoomMove) &&
         Objects.equals(this.checkInClosedReason, booking.checkInClosedReason) &&
         Objects.equals(this.roomOccupant, booking.roomOccupant) &&
         Objects.equals(this.createdAt, booking.createdAt) &&
@@ -1056,7 +1101,7 @@ public class Booking {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, currentSegmentId, checkInRoomNeeded, checkInClosedReason, roomOccupant, createdAt, updatedAt, warning);
+    return Objects.hash(id, roomId, room, roomUnitId, roomUnit, guestName, guestEmail, guestPhone, guestId, guest, checkIn, checkOut, totalPrice, earlyDepartureFee, balanceDue, owes, status, channel, purpose, adults, children, paymentNote, hashCodeNullable(notes), occupancyStatus, stayStatus, settlement, creditBalance, checkedInAt, checkedOutAt, hashCodeNullable(breakfastGuests), hashCodeNullable(breakfastRate), hashCodeNullable(bookedAt), externalReference, externalChannel, cancellationReason, segments, currentSegmentId, checkInRoomNeeded, roomSegmentId, pendingRoomMove, checkInClosedReason, roomOccupant, createdAt, updatedAt, warning);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -1108,6 +1153,8 @@ public class Booking {
     sb.append("    segments: ").append(toIndentedString(segments)).append("\n");
     sb.append("    currentSegmentId: ").append(toIndentedString(currentSegmentId)).append("\n");
     sb.append("    checkInRoomNeeded: ").append(toIndentedString(checkInRoomNeeded)).append("\n");
+    sb.append("    roomSegmentId: ").append(toIndentedString(roomSegmentId)).append("\n");
+    sb.append("    pendingRoomMove: ").append(toIndentedString(pendingRoomMove)).append("\n");
     sb.append("    checkInClosedReason: ").append(toIndentedString(checkInClosedReason)).append("\n");
     sb.append("    roomOccupant: ").append(toIndentedString(roomOccupant)).append("\n");
     sb.append("    createdAt: ").append(toIndentedString(createdAt)).append("\n");

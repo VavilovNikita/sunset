@@ -10,6 +10,7 @@ import com.sunsetbeach.repository.RoomRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -172,9 +173,10 @@ public class OverstayRule {
 
     /**
      * A guest who is physically in a room right now. {@code overdueDays} is {@code 0} for one still
-     * within their stay (the departure day included).
+     * within their stay (the departure day included). {@code awaitingRoom}: their move has taken effect with
+     * no new room picked, so the room they are listed under is the one they have not left yet.
      */
-    public record InHouseGuest(BookingEntity booking, int overdueDays, boolean dueOutToday) {
+    public record InHouseGuest(BookingEntity booking, int overdueDays, boolean dueOutToday, boolean awaitingRoom) {
 
         public boolean overdue() {
             return overdueDays > 0;
@@ -183,7 +185,7 @@ public class OverstayRule {
 
     /**
      * Who is physically in a room right now, keyed by room unit: every {@code CHECKED_IN},
-     * not-cancelled booking under the unit of its {@link #currentSegment current segment} - an
+     * not-cancelled booking under the unit {@link #unitOn} answers for today - an
      * overstaying guest included, and a guest due out today who has not been checked out yet.
      * Not the same question as availability ({@link #overlapping}): a departure-day guest leaves
      * the night free to sell, but is still in the room until someone checks them out.
@@ -200,13 +202,43 @@ public class OverstayRule {
                 .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
         Map<String, List<InHouseGuest>> byUnit = new HashMap<>();
         for (BookingEntity booking : inHouse) {
-            String unitId = unitOn(segmentsByBooking.getOrDefault(booking.getId(), List.of()), booking.getRoomUnitId(), today);
+            List<BookingSegmentEntity> segments = segmentsByBooking.getOrDefault(booking.getId(), List.of());
+            String unitId = unitOn(booking, segments, today, clock);
             if (unitId != null) {
-                byUnit.computeIfAbsent(unitId, k -> new ArrayList<>())
-                        .add(new InHouseGuest(booking, overdueDays(booking, today), booking.getCheckOut().equals(today)));
+                byUnit.computeIfAbsent(unitId, k -> new ArrayList<>()).add(inHouseGuest(booking, segments, today));
             }
         }
         return byUnit;
+    }
+
+    private static InHouseGuest inHouseGuest(BookingEntity booking, List<BookingSegmentEntity> segments, LocalDate today) {
+        return new InHouseGuest(booking, overdueDays(booking, today), booking.getCheckOut().equals(today), awaitsRoom(booking, segments, today));
+    }
+
+    /**
+     * The checked-in guest who sleeps in {@code roomUnitId} tonight although no part of their stay says so - their move
+     * took effect with no new room picked - leaving out {@code except}. Not one due out today: that night is free to
+     * sell, as for anybody's departure day. The one case an assignment's overlap query cannot see; asked narrowly (only
+     * stays whose part in this room has ended), since it runs inside the SERIALIZABLE availability writes.
+     */
+    public Optional<InHouseGuest> stillLivingIn(String roomUnitId, Set<String> except) {
+        LocalDate today = today();
+        List<String> candidates = segmentRepository
+                .findByRoomUnitIdAndBooking_OccupancyStatusAndCheckOutLessThanEqual(roomUnitId, OccupancyStatus.CHECKED_IN, today).stream()
+                .map(BookingSegmentEntity::getBookingId)
+                .distinct()
+                .filter(id -> !except.contains(id))
+                .toList();
+        for (BookingEntity booking : bookingRepository.findAllById(candidates)) {
+            List<BookingSegmentEntity> segments = segmentRepository.findByBookingIdOrderByCheckInAsc(booking.getId());
+            if (booking.getStatus() != BookingStatus.CANCELLED
+                    && !booking.getCheckOut().equals(today)
+                    && awaitsRoom(booking, segments, today)
+                    && roomUnitId.equals(unitOn(booking, segments, today, clock))) {
+                return Optional.of(inHouseGuest(booking, segments, today));
+            }
+        }
+        return Optional.empty();
     }
 
     /**
@@ -229,23 +261,62 @@ public class OverstayRule {
                 .max(Comparator.comparingInt(InHouseGuest::overdueDays).thenComparing(g -> g.booking().getId()));
     }
 
-    /** The one sentence for a room another guest is still checked into; {@code whatToDo} is the caller's way out. */
+    /**
+     * The one sentence for a room another guest is still checked into; {@code whatToDo} is the caller's way out - except
+     * for a guest whose new room is not picked yet, where the way out is to pick it.
+     */
     public static String occupiedMessage(String unitLabel, InHouseGuest other, String whatToDo) {
-        String state = other.overdue() ? "past check-out" : other.dueOutToday() ? "due out today" : null;
+        String state = other.overdue() ? "past check-out" : other.awaitingRoom() ? "new room not chosen yet" : other.dueOutToday() ? "due out today" : null;
         return "Room " + unitLabel + " is still occupied by " + other.booking().getGuestName() + " (checked in"
-                + (state == null ? "" : ", " + state) + "). " + whatToDo;
+                + (state == null ? "" : ", " + state) + "). "
+                + (other.awaitingRoom() && !other.overdue() ? "Choose their new room first, or use another room." : whatToDo);
     }
 
     /**
-     * The physical room a stay is in on {@code today}: that of its {@link #currentSegment current segment}, null when
-     * that part of the stay has no room assigned. Not the booking's room: that is the last segment's, which a move
-     * planned for a later night changes at once and the guest's whereabouts only on the night - so it never stands in
-     * for a night without a room (it used to, and an arrival with no room tonight was checked into the later one).
-     * {@code fallback} answers only for a booking with no segments at all.
+     * The physical room a stay is in on {@code date}: that of {@link #roomSegmentOn}, null when there is none. Not the
+     * booking's own room: that is the last segment's, which a move planned for a later night changes at once and the
+     * guest's whereabouts only on the night - so it never stands in for a night without a room (it used to, and an
+     * arrival with no room tonight was checked into the later one). {@code booking.roomUnitId} answers only for a
+     * booking with no segments at all. {@code clock} says which part of the stay has begun.
      */
-    public static String unitOn(List<BookingSegmentEntity> segments, String fallback, LocalDate today) {
+    public static String unitOn(BookingEntity booking, List<BookingSegmentEntity> segments, LocalDate date, Clock clock) {
+        BookingSegmentEntity holder = roomSegmentOn(booking, segments, date, clock);
+        return holder != null ? holder.getRoomUnitId() : booking.getRoomUnitId();
+    }
+
+    /**
+     * The segment that says which room a stay is in on {@code date}: its {@link #currentSegment current segment} - but
+     * a guest who is checked in stays where they are until a new room is picked. When the part holding {@code date} has
+     * begun and has no room, it is the latest earlier part with a room that they slept in; with none, the part itself
+     * (no room). A part that has not begun yet is never filled in: where they will be then is still open. Null only when
+     * there are no segments.
+     */
+    public static BookingSegmentEntity roomSegmentOn(BookingEntity booking, List<BookingSegmentEntity> segments, LocalDate date, Clock clock) {
+        BookingSegmentEntity holder = currentSegment(segments, date);
+        if (holder == null
+                || holder.getRoomUnitId() != null
+                || booking.getOccupancyStatus() != OccupancyStatus.CHECKED_IN
+                || holder.getCheckIn().isAfter(LocalDate.now(clock))) {
+            return holder;
+        }
+        // The hotel day they came: a part that had ended by then was never slept in (a late arrival).
+        LocalDate arrived = booking.getCheckedInAt() == null
+                ? null
+                : booking.getCheckedInAt().atOffset(ZoneOffset.UTC).atZoneSameInstant(clock.getZone()).toLocalDate();
+        return segments.stream()
+                .filter(s -> s.getCheckIn().isBefore(holder.getCheckIn()) && s.getRoomUnitId() != null)
+                .filter(s -> arrived == null || arrived.isBefore(s.getCheckOut()))
+                .max(Comparator.comparing(BookingSegmentEntity::getCheckIn))
+                .orElse(holder);
+    }
+
+    /** A guest in the house whose part of the stay holding {@code today} has no room: someone has to pick it. */
+    public static boolean awaitsRoom(BookingEntity booking, List<BookingSegmentEntity> segments, LocalDate today) {
         BookingSegmentEntity current = currentSegment(segments, today);
-        return current != null ? current.getRoomUnitId() : fallback;
+        return booking.getOccupancyStatus() == OccupancyStatus.CHECKED_IN
+                && booking.getStatus() != BookingStatus.CANCELLED
+                && current != null
+                && current.getRoomUnitId() == null;
     }
 
     /**

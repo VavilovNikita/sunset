@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.sunsetbeach.model.Booking;
+import com.sunsetbeach.model.PendingRoomMove;
 import com.sunsetbeach.model.TodayBoardRoomOccupant;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -21,6 +22,8 @@ import jakarta.annotation.Generated;
 
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class TodayBoardEntry {
+
+  private PendingRoomMove pendingRoomMove;
 
   private Booking booking;
 
@@ -44,6 +47,25 @@ public class TodayBoardEntry {
   public TodayBoardEntry(Booking booking, String outstandingBalance) {
     this.booking = booking;
     this.outstandingBalance = outstandingBalance;
+  }
+
+  public TodayBoardEntry pendingRoomMove(PendingRoomMove pendingRoomMove) {
+    this.pendingRoomMove = pendingRoomMove;
+    return this;
+  }
+
+  /**
+   * Get pendingRoomMove
+   * @return pendingRoomMove
+   */
+  @Valid 
+  @JsonProperty("pendingRoomMove")
+  public PendingRoomMove getPendingRoomMove() {
+    return pendingRoomMove;
+  }
+
+  public void setPendingRoomMove(PendingRoomMove pendingRoomMove) {
+    this.pendingRoomMove = pendingRoomMove;
   }
 
   public TodayBoardEntry booking(Booking booking) {
@@ -170,7 +192,8 @@ public class TodayBoardEntry {
       return false;
     }
     TodayBoardEntry todayBoardEntry = (TodayBoardEntry) o;
-    return Objects.equals(this.booking, todayBoardEntry.booking) &&
+    return Objects.equals(this.pendingRoomMove, todayBoardEntry.pendingRoomMove) &&
+        Objects.equals(this.booking, todayBoardEntry.booking) &&
         Objects.equals(this.outstandingBalance, todayBoardEntry.outstandingBalance) &&
         Objects.equals(this.overstayNights, todayBoardEntry.overstayNights) &&
         Objects.equals(this.overstayIncludesTonight, todayBoardEntry.overstayIncludesTonight) &&
@@ -180,13 +203,14 @@ public class TodayBoardEntry {
 
   @Override
   public int hashCode() {
-    return Objects.hash(booking, outstandingBalance, overstayNights, overstayIncludesTonight, overdueDays, roomOccupant);
+    return Objects.hash(pendingRoomMove, booking, outstandingBalance, overstayNights, overstayIncludesTonight, overdueDays, roomOccupant);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class TodayBoardEntry {\n");
+    sb.append("    pendingRoomMove: ").append(toIndentedString(pendingRoomMove)).append("\n");
     sb.append("    booking: ").append(toIndentedString(booking)).append("\n");
     sb.append("    outstandingBalance: ").append(toIndentedString(outstandingBalance)).append("\n");
     sb.append("    overstayNights: ").append(toIndentedString(overstayNights)).append("\n");

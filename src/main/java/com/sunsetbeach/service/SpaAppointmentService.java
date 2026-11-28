@@ -219,7 +219,7 @@ public class SpaAppointmentService {
                 .stream()
                 .collect(Collectors.toMap(UserEntity::getId, u -> u));
 
-        Map<String, String> roomUnitLabelsByBookingId = roomUnitLabelsOn(date, bookingsById.keySet());
+        Map<String, String> roomUnitLabelsByBookingId = roomUnitLabelsOn(date, bookingsById.values());
 
         List<SpaAppointment> appointments = appointmentEntities.stream()
                 .map(e -> {
@@ -870,7 +870,7 @@ public class SpaAppointmentService {
         }
 
         SpaAppointment dto = buildDto(e, booking, table, therapist, treatmentRows, menuItemsById, orderBills, orderItems);
-        dto.setRoomUnitLabel(roomUnitLabelsOn(e.getDate(), List.of(e.getBookingId())).get(e.getBookingId()));
+        dto.setRoomUnitLabel(roomUnitLabelsOn(e.getDate(), List.of(booking)).get(e.getBookingId()));
         return dto;
     }
 
@@ -880,17 +880,17 @@ public class SpaAppointmentService {
      * that day. Two queries for any number of bookings. A booking whose segment has no unit yet is
      * simply missing from the result.
      */
-    private Map<String, String> roomUnitLabelsOn(LocalDate date, Collection<String> bookingIds) {
-        if (bookingIds.isEmpty()) return Map.of();
+    private Map<String, String> roomUnitLabelsOn(LocalDate date, Collection<BookingEntity> bookings) {
+        if (bookings.isEmpty()) return Map.of();
+        Map<String, BookingEntity> byId = bookings.stream().collect(Collectors.toMap(BookingEntity::getId, b -> b, (a, b) -> a));
         Map<String, List<BookingSegmentEntity>> segmentsByBookingId = bookingSegmentRepository
-                .findByBookingIdIn(List.copyOf(bookingIds))
+                .findByBookingIdIn(List.copyOf(byId.keySet()))
                 .stream()
                 .collect(Collectors.groupingBy(BookingSegmentEntity::getBookingId));
 
         Map<String, String> unitIdByBookingId = new HashMap<>();
         segmentsByBookingId.forEach((bookingId, segments) -> {
-            // No fallback to the booking's own room: a night without a room assigned shows none.
-            String unitId = OverstayRule.unitOn(segments, null, date);
+            String unitId = OverstayRule.unitOn(byId.get(bookingId), segments, date, clock);
             if (unitId != null) unitIdByBookingId.put(bookingId, unitId);
         });
 

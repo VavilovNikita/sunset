@@ -58,6 +58,7 @@ public class RoomUnitService {
     private final UserRepository userRepository;
     private final MaintenanceTaskRepository maintenanceTaskRepository;
     private final Clock clock;
+    private final OverstayRule overstayRule;
     private final NotificationEvents notificationEvents;
 
     public RoomUnitService(
@@ -71,7 +72,9 @@ public class RoomUnitService {
             UserRepository userRepository,
             MaintenanceTaskRepository maintenanceTaskRepository,
             NotificationEvents notificationEvents,
-            Clock clock) {
+            Clock clock,
+            OverstayRule overstayRule) {
+        this.overstayRule = overstayRule;
         this.clock = clock;
         this.notificationEvents = notificationEvents;
         this.roomRepository = roomRepository;
@@ -125,8 +128,11 @@ public class RoomUnitService {
         String oldLabel = entity.getLabel();
         boolean oldActive = entity.isActive();
 
-        if (entity.isActive() && !input.getIsActive() && hasUpcomingBooking(id)) {
-            throw new ConflictException("Room " + entity.getLabel() + " has an upcoming booking assigned and can't be deactivated.");
+        if (entity.isActive() && !input.getIsActive()) {
+            if (hasUpcomingBooking(id)) {
+                throw new ConflictException("Room " + entity.getLabel() + " has an upcoming booking assigned and can't be deactivated.");
+            }
+            requireNobodyInIt(entity, "deactivated");
         }
 
         requireLabelFree(input.getLabel(), id);
@@ -254,6 +260,7 @@ public class RoomUnitService {
         if (hasUpcomingBooking(id)) {
             throw new ConflictException("Room " + entity.getLabel() + " has an upcoming booking assigned and can't be deleted.");
         }
+        requireNobodyInIt(entity, "deleted");
         try {
             // Backstop for a unit that still has *past* (checked-out) bookings pointing at it -
             // hasUpcomingBooking only screens out future commitments, but Booking.roomUnitId's
@@ -267,6 +274,14 @@ public class RoomUnitService {
     }
 
     /** A non-cancelled booking assigned to this unit whose stay hasn't ended yet - deactivating/deleting would silently orphan it. */
+    /** A guest can be in a room no segment holds from today on: due out, overdue, or not yet given their new room. */
+    private void requireNobodyInIt(RoomUnitEntity unit, String what) {
+        overstayRule.inHouseByRoomUnit().getOrDefault(unit.getId(), List.of()).stream().findFirst().ifPresent(guest -> {
+            throw new ConflictException("Room " + unit.getLabel() + " has a guest checked into it (" + guest.booking().getGuestName()
+                    + ") and can't be " + what + ".");
+        });
+    }
+
     private boolean hasUpcomingBooking(String roomUnitId) {
         return segmentRepository.existsByRoomUnitIdAndBooking_StatusNotAndCheckOutGreaterThan(roomUnitId, BookingStatus.CANCELLED, LocalDate.now(clock));
     }
@@ -382,7 +397,18 @@ public class RoomUnitService {
         List<BookingSegmentEntity> overlapping = segmentRepository
                 .findByRoomUnitIdAndBooking_StatusNotAndCheckInLessThanEqualAndCheckOutGreaterThan(
                         roomUnitId, BookingStatus.CANCELLED, toDate, fromDate);
-        return toAffectedBookings(overlapping);
+        List<RoomUnitBlockAffectedBooking> affected = new ArrayList<>(toAffectedBookings(overlapping));
+        // A guest who has not left this room because their new one is not picked: no segment says they are in it.
+        LocalDate today = LocalDate.now(clock);
+        if (!fromDate.isAfter(today) && !toDate.isBefore(today)) {
+            overstayRule.inHouseByRoomUnit().getOrDefault(roomUnitId, List.of()).stream()
+                    .filter(OverstayRule.InHouseGuest::awaitingRoom)
+                    .map(OverstayRule.InHouseGuest::booking)
+                    .filter(b -> affected.stream().noneMatch(a -> a.getBookingId().equals(b.getId())))
+                    .forEach(b -> affected.add(new RoomUnitBlockAffectedBooking(
+                            b.getId(), b.getGuestName(), b.getCheckIn().toString(), b.getCheckOut().toString(), b.getStatus())));
+        }
+        return affected;
     }
 
     /**

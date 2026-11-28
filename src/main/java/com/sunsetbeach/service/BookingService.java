@@ -790,12 +790,13 @@ public class BookingService {
         boolean awaitingCheckIn = booking.getStatus() != BookingStatus.CANCELLED
                 && (booking.getOccupancyStatus() == OccupancyStatus.EXPECTED || booking.getOccupancyStatus() == OccupancyStatus.NO_SHOW)
                 && !today.isBefore(booking.getCheckIn());
-        String unitId = awaitingCheckIn ? OverstayRule.unitOn(segments, booking.getRoomUnitId(), today) : null;
+        String unitId = awaitingCheckIn ? OverstayRule.unitOn(booking, segments, today, clock) : null;
         if (unitId == null) {
             return null;
         }
         return overstayRule.otherGuestIn(unitId, booking.getId())
-                .map(g -> new com.sunsetbeach.model.TodayBoardRoomOccupant(g.booking().getId(), g.booking().getGuestName(), g.overdueDays()))
+                .map(g -> new com.sunsetbeach.model.TodayBoardRoomOccupant(g.booking().getId(), g.booking().getGuestName(), g.overdueDays())
+                        .awaitingRoom(g.awaitingRoom()))
                 .orElse(null);
     }
 
@@ -864,6 +865,7 @@ public class BookingService {
         String roomUnitId = requireRoomUnitIdPresent(input.getRoomUnitId());
         String oldRoomUnitId =
                 bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found")).getRoomUnitId();
+        String awaited = roomAwaitingDeparture(bookingId);
 
         BookingEntity saved;
         try {
@@ -878,13 +880,14 @@ public class BookingService {
         RoomEntity room = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         RoomUnitEntity oldUnit = findRoomUnit(oldRoomUnitId);
         RoomUnitEntity newUnit = findRoomUnit(saved.getRoomUnitId());
+        RoomUnitEntity markedDirty = markVacatedRoomDirty(saved, awaited, LocalDate.now(clock));
         auditLogService.record(
                 AuditAction.BOOKING_ROOM_ASSIGNED,
                 AuditEntityType.BOOKING,
                 saved.getId(),
                 "Room " + (oldUnit != null ? oldUnit.getLabel() : "unassigned") + " → "
                         + (newUnit != null ? newUnit.getLabel() : "unassigned") + " for " + saved.getGuestName() + " (" + room.getName()
-                        + ")");
+                        + ")" + (markedDirty != null ? "; " + markedDirty.getLabel() + " marked dirty" : ""));
         return bookingMapper.toDto(saved, room, newUnit, findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
@@ -899,6 +902,7 @@ public class BookingService {
         String roomUnitId = requireRoomUnitIdPresent(input.getRoomUnitId());
         BookingSegmentEntity before = segmentRepository.findById(segmentId).orElseThrow(() -> new NotFoundException("Segment not found"));
         String oldRoomUnitId = before.getRoomUnitId();
+        String awaited = roomAwaitingDeparture(bookingId);
 
         BookingWriter.SegmentRoomUnitResult result;
         try {
@@ -917,13 +921,15 @@ public class BookingService {
         RoomEntity bookingRoom = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
         RoomUnitEntity oldUnit = findRoomUnit(oldRoomUnitId);
         RoomUnitEntity newUnit = result.unit();
+        RoomUnitEntity markedDirty = markVacatedRoomDirty(saved, awaited, LocalDate.now(clock));
         auditLogService.record(
                 AuditAction.BOOKING_SEGMENT_ROOM_CHANGED,
                 AuditEntityType.BOOKING,
                 saved.getId(),
                 "Room " + (oldUnit != null ? oldUnit.getLabel() : "unassigned") + " → "
                         + (newUnit != null ? newUnit.getLabel() : "unassigned") + " for one segment of " + saved.getGuestName() + "'s stay ("
-                        + segmentRoom.getName() + ", " + DateText.date(result.segment().getCheckIn()) + " to " + DateText.date(result.segment().getCheckOut()) + ")");
+                        + segmentRoom.getName() + ", " + DateText.date(result.segment().getCheckIn()) + " to " + DateText.date(result.segment().getCheckOut()) + ")"
+                        + (markedDirty != null ? "; " + markedDirty.getLabel() + " marked dirty" : ""));
         return bookingMapper.toDto(saved, bookingRoom, findRoomUnit(saved.getRoomUnitId()), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
@@ -1002,6 +1008,7 @@ public class BookingService {
         String oldRoomUnitId = before.getRoomUnitId();
         // An early departure has its own settlement (the early-departure fee); every other schedule change reprices the stay.
         PaidSnapshot paid = earlyDeparture ? null : paidSnapshot(before);
+        String awaited = roomAwaitingDeparture(bookingId);
 
         BookingEntity saved;
         try {
@@ -1049,6 +1056,10 @@ public class BookingService {
         int spaCancelled = spaBookingCancellation.onStayChanged(saved);
         if (spaCancelled > 0) {
             summary.append("; ").append(spaCancelled).append(" spa appointment(s) outside the new stay cancelled");
+        }
+        RoomUnitEntity markedDirty = markVacatedRoomDirty(saved, awaited, LocalDate.now(clock));
+        if (markedDirty != null) {
+            summary.append("; ").append(markedDirty.getLabel()).append(" marked dirty");
         }
         auditLogService.record(AuditAction.BOOKING_SCHEDULE_CHANGED, AuditEntityType.BOOKING, saved.getId(), summary.toString());
 
@@ -1101,6 +1112,7 @@ public class BookingService {
             throw ValidationException.field("roomUnitId", "A checked-in guest needs a room");
         }
         PaidSnapshot paid = paidSnapshot(target);
+        String livedIn = roomTheGuestIsIn(bookingId);
 
         BookingWriter.RelocationResult result;
         try {
@@ -1114,7 +1126,7 @@ public class BookingService {
 
         BookingEntity saved = reopenPaidIfPriceChanged(result.booking(), paid, "the guest was moved to another room");
         RoomEntity newRoom = roomRepository.findById(saved.getRoomId()).orElseThrow(() -> new NotFoundException("Room not found"));
-        boolean markedDirty = markVacatedRoomDirty(saved, result.oldUnitId(), result.newUnit(), effectiveDate);
+        RoomUnitEntity markedDirty = markVacatedRoomDirty(saved, livedIn, effectiveDate);
         String rate = result.rateMode() == null ? ""
                 : "; " + (result.rateMode() == RelocationRateMode.KEEP_RATE ? "original rate kept" : "new rate applied") + ", total "
                         + PriceFormat.baht(result.oldTotal()) + " → " + PriceFormat.baht(result.newTotal());
@@ -1126,7 +1138,7 @@ public class BookingService {
                         + (result.oldUnitLabel() != null ? " (" + result.oldUnitLabel() + ")" : "") + " to " + result.newRoom().getName()
                         + (result.newUnit() != null ? " (" + result.newUnit().getLabel() + ")" : "") + ", effective " + DateText.date(effectiveDate)
                         + (Boolean.TRUE.equals(result.wholeSegment()) ? " (from the first night of the stay segment)" : "") + rate
-                        + (markedDirty ? "; " + result.oldUnitLabel() + " marked dirty" : ""));
+                        + (markedDirty != null ? "; " + markedDirty.getLabel() + " marked dirty" : ""));
         return bookingMapper.toDto(saved, newRoom, result.newUnit(), findGuest(saved.getGuestId()), loadSegments(saved.getId()));
     }
 
@@ -1240,25 +1252,44 @@ public class BookingService {
     /**
      * The room a guest in the house has just moved out of needs cleaning from that moment, not at
      * their eventual check-out (which only marks the room of the last night - re-marking the earlier
-     * one then would dirty a room housekeeping had long since cleaned). Only when the move has
-     * already happened or happens today and the guest is {@code CHECKED_IN}; a move planned for a
-     * later day, or for a guest who has not arrived, leaves the room alone (nobody has left it).
-     * A room that is already dirty is not touched again. Returns whether it was marked now.
+     * one then would dirty a room housekeeping had long since cleaned). {@code livedIn} is where they
+     * were before the write ({@link #roomTheGuestIsIn}); nothing is marked if they are still there -
+     * a move planned for a later day, or one whose new room is not picked yet. Only when the move has
+     * already happened or happens today and the guest is {@code CHECKED_IN}.
+     * A room that is already dirty is not touched again. Returns the room marked now, else null.
      */
-    private boolean markVacatedRoomDirty(BookingEntity booking, String oldUnitId, RoomUnitEntity newUnit, LocalDate effectiveDate) {
-        if (oldUnitId == null || booking.getOccupancyStatus() != OccupancyStatus.CHECKED_IN || effectiveDate.isAfter(LocalDate.now(clock))) {
-            return false;
+    private RoomUnitEntity markVacatedRoomDirty(BookingEntity booking, String livedIn, LocalDate effectiveDate) {
+        if (livedIn == null || booking.getOccupancyStatus() != OccupancyStatus.CHECKED_IN || effectiveDate.isAfter(LocalDate.now(clock))) {
+            return null;
         }
-        if (newUnit != null && oldUnitId.equals(newUnit.getId())) {
-            return false;
+        if (livedIn.equals(roomTheGuestIsIn(booking.getId()))) {
+            return null;
         }
-        RoomUnitEntity oldUnit = roomUnitRepository.findById(oldUnitId).orElse(null);
-        if (oldUnit == null || oldUnit.getHousekeepingStatus() == HousekeepingStatus.DIRTY) {
-            return false;
+        RoomUnitEntity left = roomUnitRepository.findById(livedIn).orElse(null);
+        if (left == null || left.getHousekeepingStatus() == HousekeepingStatus.DIRTY) {
+            return null;
         }
-        oldUnit.setHousekeepingStatus(HousekeepingStatus.DIRTY);
-        roomUnitRepository.saveAndFlush(oldUnit);
-        return true;
+        left.setHousekeepingStatus(HousekeepingStatus.DIRTY);
+        return roomUnitRepository.saveAndFlush(left);
+    }
+
+    /** Where a checked-in guest is today ({@link OverstayRule#unitOn}); null for anybody else. */
+    private String roomTheGuestIsIn(String bookingId) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElse(null);
+        return booking == null || booking.getOccupancyStatus() != OccupancyStatus.CHECKED_IN
+                ? null
+                : OverstayRule.unitOn(booking, loadSegments(bookingId), LocalDate.now(clock), clock);
+    }
+
+    /**
+     * The room a guest is still living in only because their new one is not picked, else null. Picking it is the moment
+     * the move happens - nothing else marks the old room then ({@code VacatedRoomHousekeepingService} left it alone).
+     */
+    private String roomAwaitingDeparture(String bookingId) {
+        BookingEntity booking = bookingRepository.findById(bookingId).orElse(null);
+        return booking != null && OverstayRule.awaitsRoom(booking, loadSegments(bookingId), LocalDate.now(clock))
+                ? roomTheGuestIsIn(bookingId)
+                : null;
     }
 
     /**

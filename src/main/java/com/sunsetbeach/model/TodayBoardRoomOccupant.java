@@ -20,6 +20,8 @@ import jakarta.annotation.Generated;
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", comments = "Generator version: 7.10.0")
 public class TodayBoardRoomOccupant {
 
+  private Boolean awaitingRoom;
+
   private String bookingId;
 
   private String guestName;
@@ -37,6 +39,25 @@ public class TodayBoardRoomOccupant {
     this.bookingId = bookingId;
     this.guestName = guestName;
     this.overdueDays = overdueDays;
+  }
+
+  public TodayBoardRoomOccupant awaitingRoom(Boolean awaitingRoom) {
+    this.awaitingRoom = awaitingRoom;
+    return this;
+  }
+
+  /**
+   * True when this guest is in the room only because their new one is not picked yet (see `PendingRoomMove`): the way out is to pick it, not to check them out. 
+   * @return awaitingRoom
+   */
+  
+  @JsonProperty("awaitingRoom")
+  public Boolean getAwaitingRoom() {
+    return awaitingRoom;
+  }
+
+  public void setAwaitingRoom(Boolean awaitingRoom) {
+    this.awaitingRoom = awaitingRoom;
   }
 
   public TodayBoardRoomOccupant bookingId(String bookingId) {
@@ -106,20 +127,22 @@ public class TodayBoardRoomOccupant {
       return false;
     }
     TodayBoardRoomOccupant todayBoardRoomOccupant = (TodayBoardRoomOccupant) o;
-    return Objects.equals(this.bookingId, todayBoardRoomOccupant.bookingId) &&
+    return Objects.equals(this.awaitingRoom, todayBoardRoomOccupant.awaitingRoom) &&
+        Objects.equals(this.bookingId, todayBoardRoomOccupant.bookingId) &&
         Objects.equals(this.guestName, todayBoardRoomOccupant.guestName) &&
         Objects.equals(this.overdueDays, todayBoardRoomOccupant.overdueDays);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(bookingId, guestName, overdueDays);
+    return Objects.hash(awaitingRoom, bookingId, guestName, overdueDays);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class TodayBoardRoomOccupant {\n");
+    sb.append("    awaitingRoom: ").append(toIndentedString(awaitingRoom)).append("\n");
     sb.append("    bookingId: ").append(toIndentedString(bookingId)).append("\n");
     sb.append("    guestName: ").append(toIndentedString(guestName)).append("\n");
     sb.append("    overdueDays: ").append(toIndentedString(overdueDays)).append("\n");

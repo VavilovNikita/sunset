@@ -12,6 +12,7 @@ import com.sunsetbeach.error.BadRequestException;
 import com.sunsetbeach.error.ConflictException;
 import com.sunsetbeach.error.ForbiddenException;
 import com.sunsetbeach.error.NotFoundException;
+import com.sunsetbeach.error.ValidationException;
 import com.sunsetbeach.mapper.DateText;
 import com.sunsetbeach.model.BookingChannel;
 import com.sunsetbeach.model.BookingPurpose;
@@ -114,6 +115,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class BookingWriter {
+
+    private static final String GUEST_NEEDS_A_ROOM = "A checked-in guest needs a room";
 
     static final String MULTI_SEGMENT_MESSAGE =
             "This booking has been split by a room relocation — change dates via relocate/undo-relocate, or one "
@@ -436,13 +439,15 @@ public class BookingWriter {
         return bookingRepository.saveAndFlush(booking);
     }
 
-    /** No contention to protect against when clearing an assignment, so plain default isolation is enough. */
-    @Transactional
+    /** SERIALIZABLE for a guest in the house, whom clearing a room can send back to an earlier one - see {@link #requireGuestStillHasARoom}. */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public BookingEntity unassignRoomUnit(String bookingId) {
         BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         BookingSegmentEntity segment = requireSoleSegment(bookingId);
+        String livedIn = OverstayRule.unitOn(booking, List.of(segment), LocalDate.now(clock), clock);
         segment.setRoomUnitId(null);
         segmentRepository.saveAndFlush(segment);
+        requireGuestStillHasARoom(booking, livedIn, List.of(segment));
         syncBookingFromSegments(booking, List.of(segment));
         return bookingRepository.saveAndFlush(booking);
     }
@@ -476,14 +481,17 @@ public class BookingWriter {
         return new SegmentRoomUnitResult(saved, segment, unit);
     }
 
-    /** No contention to protect against when clearing an assignment - same reasoning as {@link #unassignRoomUnit}. */
-    @Transactional
+    /** SERIALIZABLE for the same reason as {@link #unassignRoomUnit}. */
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public SegmentRoomUnitResult unassignSegmentRoomUnit(String bookingId, String segmentId) {
         BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
         BookingSegmentEntity segment = requireSegmentOnBooking(bookingId, segmentId);
+        String livedIn = OverstayRule.unitOn(
+                booking, segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId), LocalDate.now(clock), clock);
         segment.setRoomUnitId(null);
         segmentRepository.saveAndFlush(segment);
         List<BookingSegmentEntity> allSegments = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
+        requireGuestStillHasARoom(booking, livedIn, allSegments);
         syncBookingFromSegments(booking, allSegments);
         BookingEntity saved = bookingRepository.saveAndFlush(booking);
         return new SegmentRoomUnitResult(saved, segment, null);
@@ -630,6 +638,7 @@ public class BookingWriter {
             throw new ConflictException("Selected dates are no longer available");
         }
 
+        String livedIn = OverstayRule.unitOn(booking, segments, LocalDate.now(clock), clock);
         if (roomUnitId != null) {
             RoomUnitEntity unit = roomUnitRepository.findById(roomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
             failIfUnassignable(lockedOccupantConflict(booking, segments, segment, unit, room.getId(), Set.of()));
@@ -677,6 +686,9 @@ public class BookingWriter {
         List<BookingSegmentEntity> updated = segmentRepository.findByBookingIdOrderByCheckInAsc(bookingId);
         syncBookingFromSegments(booking, updated);
         assertContinuity(booking, updated);
+        if (roomUnitId == null) {
+            requireGuestStillHasARoom(booking, livedIn, updated);
+        }
         return bookingRepository.saveAndFlush(booking);
     }
 
@@ -721,9 +733,12 @@ public class BookingWriter {
             return new ScheduleQuote(totalPrice, nights, false, "Selected dates are no longer available");
         }
 
+        BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
+        if (roomUnitId == null && leavesGuestWithoutRoom(booking, segments, target)) {
+            return new ScheduleQuote(totalPrice, nights, false, GUEST_NEEDS_A_ROOM);
+        }
         if (roomUnitId != null) {
             RoomUnitEntity unit = roomUnitRepository.findById(roomUnitId).orElseThrow(() -> new NotFoundException("Room unit not found"));
-            BookingEntity booking = bookingRepository.findById(bookingId).orElseThrow(() -> new NotFoundException("Booking not found"));
             UnitConflict conflict = occupantConflict(booking, segments, segment, unit, room.getId(), Set.of());
             if (conflict == null) {
                 conflict = checkUnitAssignable(unit, room.getId(), segCheckIn, segCheckOut, bookingId);
@@ -1451,7 +1466,56 @@ public class BookingWriter {
                 && isCurrentSegment(segments, moved)
                 && target.getRoomId().equals(targetRoomId)
                 && target.isActive()
-                && !target.getId().equals(OverstayRule.unitOn(segments, booking.getRoomUnitId(), LocalDate.now(clock)));
+                && !target.getId().equals(OverstayRule.unitOn(booking, segments, LocalDate.now(clock), clock));
+    }
+
+    /**
+     * A write that took a room off a checked-in guest's stay leaves them in an earlier one ({@link
+     * OverstayRule#unitOn}) or is refused: with no room to fall back to they would be nowhere, and a room they fall
+     * back to may meanwhile hold somebody else.
+     */
+    private void requireGuestStillHasARoom(BookingEntity booking, String livedIn, List<BookingSegmentEntity> segmentsAfter) {
+        if (booking.getOccupancyStatus() != OccupancyStatus.CHECKED_IN) {
+            return;
+        }
+        String now = OverstayRule.unitOn(booking, segmentsAfter, LocalDate.now(clock), clock);
+        if (now == null) {
+            if (livedIn != null) {
+                throw ValidationException.field("roomUnitId", GUEST_NEEDS_A_ROOM);
+            }
+            return;
+        }
+        if (now.equals(livedIn)) {
+            return;
+        }
+        RoomUnitEntity back = roomUnitRepository.findByIdForUpdate(now).orElseThrow(() -> new NotFoundException("Room unit not found"));
+        OverstayRule.guestInExcept(overstayRule.inHouseByRoomUnit(), now, Set.of(booking.getId())).ifPresent(other -> {
+            throw new ConflictException(OverstayRule.occupiedMessage(
+                    back.getLabel(), other, "Without a new room this guest would be back in it - choose another room instead."));
+        });
+    }
+
+    /** The quote's side of {@link #requireGuestStillHasARoom}: the stay as the change would leave it, on copies that are never saved. */
+    private boolean leavesGuestWithoutRoom(BookingEntity booking, List<BookingSegmentEntity> segments, ScheduleTarget target) {
+        if (booking.getOccupancyStatus() != OccupancyStatus.CHECKED_IN) {
+            return false;
+        }
+        LocalDate today = LocalDate.now(clock);
+        if (OverstayRule.unitOn(booking, segments, today, clock) == null) {
+            return false;
+        }
+        List<BookingSegmentEntity> after = segments.stream()
+                .filter(s -> !target.dropped().contains(s))
+                .map(s -> {
+                    boolean changed = s.getId().equals(target.segment().getId());
+                    BookingSegmentEntity copy = new BookingSegmentEntity();
+                    copy.setRoomUnitId(changed ? null : s.getRoomUnitId());
+                    copy.setCheckIn(changed ? target.segmentCheckIn() : s.getCheckIn());
+                    copy.setCheckOut(changed ? target.segmentCheckOut() : s.getCheckOut());
+                    return copy;
+                })
+                .toList();
+        return OverstayRule.unitOn(booking, after, today, clock) == null;
     }
 
     private static void failIfUnassignable(UnitConflict conflict) {
@@ -1512,7 +1576,27 @@ public class BookingWriter {
         if (!overlapping.isEmpty()) {
             return new UnitConflict("Room " + unit.getLabel() + " is already booked for an overlapping stay", false);
         }
+        UnitConflict lived = stillLivedInConflict(
+                unit, checkIn, checkOut, excludeBookingId == null ? Set.of() : Set.of(excludeBookingId));
+        if (lived != null) {
+            return lived;
+        }
         return overstayConflict(unit, roomId, checkIn, checkOut, o -> !o.bookingId().equals(excludeBookingId));
+    }
+
+    /**
+     * Tonight, in a room somebody has not left: their move took effect with no new room picked, so no segment holds
+     * this night ({@link OverstayRule#stillLivingIn}). Unit-level only - the type's count already has their night,
+     * and later nights are not held.
+     */
+    private UnitConflict stillLivedInConflict(RoomUnitEntity unit, LocalDate checkIn, LocalDate checkOut, Set<String> excludeBookingIds) {
+        LocalDate today = LocalDate.now(clock);
+        if (checkIn.isAfter(today) || !checkOut.isAfter(today)) {
+            return null;
+        }
+        return overstayRule.stillLivingIn(unit.getId(), excludeBookingIds)
+                .map(guest -> new UnitConflict(OverstayRule.occupiedMessage(unit.getLabel(), guest, ""), false))
+                .orElse(null);
     }
 
     /**
@@ -1552,6 +1636,13 @@ public class BookingWriter {
                         unit.getId(), BookingStatus.CANCELLED, checkOut, checkIn, excludeSegmentIds);
         if (!overlapping.isEmpty()) {
             return new UnitConflict("Room " + unit.getLabel() + " is already booked for an overlapping stay", false);
+        }
+        Set<String> swapping = segmentRepository.findAllById(excludeSegmentIds).stream()
+                .map(BookingSegmentEntity::getBookingId)
+                .collect(Collectors.toSet());
+        UnitConflict lived = stillLivedInConflict(unit, checkIn, checkOut, swapping);
+        if (lived != null) {
+            return lived;
         }
         return overstayConflict(unit, roomId, checkIn, checkOut, o -> !excludeSegmentIds.contains(o.lastSegment().getId()));
     }
